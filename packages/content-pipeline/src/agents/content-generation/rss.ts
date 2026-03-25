@@ -56,6 +56,9 @@ export function parseRssFeed(xml: string): RssItem {
   const link = extractText(item["link"]);
   const pubDate = extractText(item["pubDate"]) ?? "";
 
+  if (!title) throw new Error("RSS item is missing a title");
+  if (!link) throw new Error("RSS item is missing a link");
+
   // Prefer content:encoded over description
   const contentEncoded = item["content:encoded"] ?? item["encoded"];
   const htmlContent = extractText(contentEncoded) || extractText(item["description"]) || "";
@@ -120,12 +123,18 @@ export function parseHtmlContent(html: string, enclosureUrl: string | undefined)
   return { textBody, featuredImageUrl, inlineImages, youtubeEmbeds };
 }
 
-function extractText(value: unknown): string {
-  if (typeof value === "string") return value;
+function extractText(value: unknown): string | undefined {
+  if (typeof value === "string") return value || undefined;
   if (typeof value === "object" && value !== null) {
     const obj = value as Record<string, unknown>;
-    if ("__cdata" in obj) return String(obj["__cdata"]);
-    if ("#text" in obj) return String(obj["#text"]);
+    if ("__cdata" in obj) {
+      const s = String(obj["__cdata"]);
+      return s || undefined;
+    }
+    if ("#text" in obj) {
+      const s = String(obj["#text"]);
+      return s || undefined;
+    }
   }
-  return "";
+  return undefined;
 }
