@@ -1,5 +1,34 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { parseRssFeed, parseHtmlContent } from "../agents/content-generation/rss.js";
+import { fetchRss, parseRssFeed, parseHtmlContent } from "../agents/content-generation/rss.js";
+
+describe("fetchRss", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it("returns response text on a successful fetch", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve("<rss>...</rss>"),
+    }));
+
+    const result = await fetchRss("https://example.com/feed.xml");
+    expect(result).toBe("<rss>...</rss>");
+    expect(fetch).toHaveBeenCalledWith("https://example.com/feed.xml");
+  });
+
+  it("throws with status info on a non-ok response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+    }));
+
+    await expect(fetchRss("https://example.com/missing.xml")).rejects.toThrow(
+      "RSS fetch failed: 404 Not Found"
+    );
+  });
+});
 
 describe("parseRssFeed", () => {
   it("returns the latest item from an RSS feed", () => {
@@ -59,6 +88,23 @@ describe("parseRssFeed", () => {
 
     const item = parseRssFeed(xml);
     expect(item.enclosureUrl).toBe("https://img.com/hero.jpg");
+  });
+
+  it("extracts media:content URL as enclosureUrl when no enclosure tag", () => {
+    const xml = `<?xml version="1.0"?>
+    <rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+      <channel>
+        <item>
+          <title>Article</title>
+          <link>https://example.com/article</link>
+          <description><![CDATA[content]]></description>
+          <media:content url="https://img.com/media.jpg" medium="image" />
+        </item>
+      </channel>
+    </rss>`;
+
+    const item = parseRssFeed(xml);
+    expect(item.enclosureUrl).toBe("https://img.com/media.jpg");
   });
 
   it("throws if feed has no items", () => {
