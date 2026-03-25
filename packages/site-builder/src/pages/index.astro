@@ -13,9 +13,11 @@ import Footer from '../../themes/modern/components/Footer.astro';
 import ArticleCard from '../../themes/modern/components/ArticleCard.astro';
 import ArticleCarousel from '../../themes/modern/components/ArticleCarousel.astro';
 import NewsletterForm from '../../themes/modern/components/NewsletterForm.astro';
+import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import { getConfig } from '../config';
 
 const config = await getConfig();
+const sidebarEnabled = config.sidebar.enabled && config.sidebar.widgets.length > 0;
 const allArticles = await getCollection('articles');
 
 // Filter to published only, sort newest first
@@ -49,46 +51,63 @@ const mustReads = articles.slice(6, 12);
 
   <main class="homepage">
     <div class="container">
-      {/* What's New — main article grid */}
-      <section class="section">
-        <h2 class="section-heading">What's New</h2>
-        <div class="article-grid">
-          {latestArticles.map((article) => (
-            <ArticleCard
-              title={article.data.title}
-              slug={article.data.slug}
-              featuredImage={article.data.featuredImage}
-              description={article.data.description}
-              author={article.data.author}
-              publishDate={article.data.publishDate}
-              tags={article.data.tags}
-              type={article.data.type}
+      <div class:list={['homepage-layout', { 'has-sidebar': sidebarEnabled }]}>
+        <div class="homepage-main">
+          {/* What's New — main article grid */}
+          <section class="section">
+            <h2 class="section-heading">What's New</h2>
+            <div class="article-grid">
+              {latestArticles.map((article) => (
+                <ArticleCard
+                  title={article.data.title}
+                  slug={article.data.slug}
+                  featuredImage={article.data.featuredImage}
+                  description={article.data.description}
+                  author={article.data.author}
+                  publishDate={article.data.publishDate}
+                  tags={article.data.tags}
+                  type={article.data.type}
+                />
+              ))}
+            </div>
+
+            {articles.length === 0 && (
+              <p class="empty-state">No published articles yet.</p>
+            )}
+          </section>
+
+          {/* Must Reads — carousel */}
+          {mustReads.length > 0 && (
+            <ArticleCarousel
+              articles={mustReads.map((a) => ({
+                title: a.data.title,
+                slug: a.data.slug,
+                featuredImage: a.data.featuredImage,
+                author: a.data.author,
+                publishDate: a.data.publishDate,
+                tags: a.data.tags,
+                type: a.data.type,
+              }))}
+              heading="Must Reads"
             />
-          ))}
+          )}
         </div>
 
-        {articles.length === 0 && (
-          <p class="empty-state">No published articles yet.</p>
+        {/* Sidebar — collapses below content on mobile */}
+        {sidebarEnabled && (
+          <Sidebar
+            config={config}
+            articles={articles.slice(0, 10).map((a) => ({
+              title: a.data.title,
+              slug: a.data.slug,
+              publishDate: a.data.publishDate,
+              featuredImage: a.data.featuredImage,
+            }))}
+          />
         )}
-      </section>
+      </div>
 
-      {/* Must Reads — carousel */}
-      {mustReads.length > 0 && (
-        <ArticleCarousel
-          articles={mustReads.map((a) => ({
-            title: a.data.title,
-            slug: a.data.slug,
-            featuredImage: a.data.featuredImage,
-            author: a.data.author,
-            publishDate: a.data.publishDate,
-            tags: a.data.tags,
-            type: a.data.type,
-          }))}
-          heading="Must Reads"
-        />
-      )}
-
-      {/* Newsletter */}
+      {/* Newsletter — always full-width below content + sidebar */}
       <NewsletterForm siteName={config.site_name} />
     </div>
   </main>
@@ -105,6 +124,23 @@ const mustReads = articles.slice(6, 12);
     max-width: var(--container-max, 1200px);
     margin: 0 auto;
     padding: 0 1rem;
+  }
+
+  /* Two-column layout when sidebar is enabled */
+  .homepage-layout {
+    display: block;
+  }
+
+  .homepage-layout.has-sidebar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  @media (min-width: 960px) {
+    .homepage-layout.has-sidebar {
+      grid-template-columns: 1fr 300px;
+    }
   }
 
   .section {
@@ -131,9 +167,14 @@ const mustReads = articles.slice(6, 12);
     }
   }
 
+  /* When sidebar is present, only 2 columns on desktop (less space) */
   @media (min-width: 960px) {
     .article-grid {
       grid-template-columns: repeat(3, 1fr);
+    }
+
+    .has-sidebar .article-grid {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 

@@ -45,7 +45,7 @@ const typeLabel = type ? type.replace('-', ' ').toUpperCase() : null;
     {featuredImage ? (
       <img src={featuredImage} alt={title} loading="lazy" class="card-image" />
     ) : (
-      <div class="card-image-placeholder"></div>
+      <img src="/assets/images/placeholder.png" alt="Article image" loading="lazy" class="card-image" />
     )}
     {typeLabel && <span class="card-badge">{typeLabel}</span>}
   </div>

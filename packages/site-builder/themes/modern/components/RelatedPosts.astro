@@ -37,7 +37,7 @@ const { articles, heading = 'Related Posts' } = Astro.props;
               {article.featuredImage ? (
                 <img src={article.featuredImage} alt={article.title} loading="lazy" class="related-image" />
               ) : (
-                <div class="related-image-placeholder"></div>
+                <img src="/assets/images/placeholder.png" alt="Article image" loading="lazy" class="related-image" />
               )}
             </div>
             <div class="related-body">

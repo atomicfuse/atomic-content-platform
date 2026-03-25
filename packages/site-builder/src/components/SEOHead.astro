@@ -11,9 +11,11 @@ interface Props {
   image?: string;
   siteName: string;
   publishDate?: string;
+  /** When true, emits a noindex robots meta tag. */
+  noindex?: boolean;
 }
 
-const { title, description, canonicalUrl, image, siteName, publishDate } = Astro.props;
+const { title, description, canonicalUrl, image, siteName, publishDate, noindex = false } = Astro.props;
 
 // Build JSON-LD Article structured data when we have a publish date
 const jsonLd = publishDate
@@ -39,6 +41,7 @@ const jsonLd = publishDate
 <title>{title}</title>
 <meta name="description" content={description} />
 <link rel="canonical" href={canonicalUrl} />
+{noindex && <meta name="robots" content="noindex, follow" />}
 
 {/* ---- Open Graph ---- */}
 <meta property="og:type" content={publishDate ? 'article' : 'website'} />
