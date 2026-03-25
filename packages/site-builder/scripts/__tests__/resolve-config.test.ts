@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { resolveConfig } from "../resolve-config.js";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
-const REAL_NETWORK = "/Users/michal/Documents/ATL-content-network/atomic-labs-network";
+const REAL_NETWORK = join(import.meta.dirname, "..", "..", "..", "..", "..", "atomic-labs-network");
 
 // ---------------------------------------------------------------------------
 // Unit tests using fixtures
