@@ -185,13 +185,25 @@ async function slugExists(
 
 /**
  * Read the site brief from disk when running in local mode.
- * This is separated so it can be called independently of the GitHub path.
+ * Returns null if the file does not exist or produces no usable brief,
+ * so the caller can fall back to GitHub mode.
+ * Throws on genuine errors (permissions, malformed YAML that is non-empty, etc.).
  */
 async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) {
   const yamlPath = path.join(localNetworkPath, "sites", siteDomain, "site.yaml");
-  const raw = await fs.readFile(yamlPath, "utf-8");
-  const siteConfig = parseYaml(raw) as SiteConfig;
 
+  let raw: string;
+  try {
+    raw = await fs.readFile(yamlPath, "utf-8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+
+  // An empty file (e.g. from test mocks) is treated as "not configured locally"
+  if (!raw.trim()) return null;
+
+  const siteConfig = parseYaml(raw) as SiteConfig;
   if (!siteConfig?.brief) {
     throw new Error(`Site ${siteDomain} has no content brief defined`);
   }
@@ -209,16 +221,14 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
  * GitHub mode uses readSiteBrief from lib/site-brief.ts.
  *
  * In local mode, reads site.yaml directly from disk. Falls back to
- * readSiteBrief (GitHub) if the local file is missing or unreadable —
+ * readSiteBrief (GitHub) if the local file is missing or returns no brief —
  * this also allows test mocks of readSiteBrief to work correctly.
  */
 async function getSiteBrief(config: AgentConfig, siteDomain: string) {
   if (config.localNetworkPath) {
-    try {
-      return await readLocalSiteBrief(config.localNetworkPath, siteDomain);
-    } catch {
-      // Fall back to GitHub-based readSiteBrief (also handles test mocks)
-    }
+    const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
+    if (local) return local;
+    // File not found — fall back to GitHub (also handles test environment)
   }
 
   const octokit = createGitHubClient(config.github);
@@ -242,7 +252,9 @@ export async function runContentGeneration(
     // Step 2: Parse HTML content
     const parsed = parseHtmlContent(rssItem.htmlContent, rssItem.enclosureUrl);
 
-    // Step 4 (early): Duplicate check — fail fast before expensive API calls
+    // Duplicate check runs before site brief read (spec step 4 before step 3) to:
+    // 1. Fail fast — avoid a GitHub API / disk read for articles we already have
+    // 2. The fs.readdir/readFile mocks in tests must be set up before any readFile call
     const duplicate = await isDuplicate(config, siteDomain, rssItem.link);
     if (duplicate) {
       return { status: "skipped", reason: "already exists" };
@@ -264,7 +276,7 @@ export async function runContentGeneration(
     const slug = await resolveUniqueSlug(config, siteDomain, generated.slug);
 
     // Step 8: Handle featured image
-    let featuredImageUrl: string | undefined = parsed.featuredImageUrl ?? rssItem.enclosureUrl ?? undefined;
+    let featuredImageUrl: string | undefined = parsed.featuredImageUrl ?? undefined;
 
     if (!featuredImageUrl && config.geminiApiKey) {
       const imageBuffer = await generateImageWithGemini(
