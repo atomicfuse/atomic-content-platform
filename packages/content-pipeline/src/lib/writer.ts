@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { createGitHubClient, commitFile } from "./github.js";
+import { createGitHubClient, commitFile, parseRepo } from "./github.js";
 import type { GitHubConfig } from "./github.js";
 
 export interface WriterConfig {
@@ -55,10 +55,23 @@ export async function writeAsset(
     return;
   }
 
+  // Bypass commitFile: it re-encodes content via Buffer.from().toString("base64"),
+  // which would double-encode an already-base64 buffer. Call Octokit directly.
   const octokit = createGitHubClient(config.github);
-  await commitFile(octokit, config.github.repo, {
+  const { owner, repo: repoName } = parseRepo(config.github.repo);
+
+  let sha: string | undefined;
+  try {
+    const existing = await octokit.repos.getContent({ owner, repo: repoName, path: filePath });
+    if ("sha" in existing.data) sha = existing.data.sha;
+  } catch { /* new file */ }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner,
+    repo: repoName,
     path: filePath,
-    content: data.toString("base64"),
     message: `feat(assets): add generated image ${assetPath}`,
+    content: data.toString("base64"),
+    ...(sha ? { sha } : {}),
   });
 }
