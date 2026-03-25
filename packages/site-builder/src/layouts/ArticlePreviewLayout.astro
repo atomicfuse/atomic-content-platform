@@ -1,16 +1,10 @@
 ---
 /**
- * Layout for individual article pages.
+ * Layout for article preview/intermediate pages.
  *
- * Wraps BaseLayout and adds:
- *  - Modern theme Header and Footer
- *  - SEO head with article metadata
- *  - Hero featured image (full-width)
- *  - Article header (title, date, author)
- *  - Content area with prose styling
- *  - Ad slots positioned around content
- *  - RelatedPosts section below content
- *  - Sidebar with sticky ad on desktop
+ * Shows a featured image, title, author/date, excerpt, "Continue Reading"
+ * CTA, ad slots, and related posts. Matches the WordPress preview-page.php
+ * pattern for doubling pageviews and ad impressions.
  */
 import { getCollection } from 'astro:content';
 import BaseLayout from './BaseLayout.astro';
@@ -19,6 +13,8 @@ import AdSlot from '../components/AdSlot.astro';
 import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
+import NewsletterForm from '../../themes/modern/components/NewsletterForm.astro';
+import ContinueReadingCTA from '../../themes/modern/components/ContinueReadingCTA.astro';
 import { getConfig } from '../config';
 
 interface Props {
@@ -28,28 +24,48 @@ interface Props {
   publishDate: string;
   featuredImage?: string;
   slug: string;
-  /** Emit noindex robots meta tag (used for full article when preview is canonical). */
-  noindex?: boolean;
-  /** Override canonical URL (used to point full article back to preview page). */
-  canonicalOverride?: string;
+  /** The excerpt content (plain text or HTML). */
+  excerpt: string;
+  /** Whether the excerpt is HTML (from auto-extraction) or plain text. */
+  excerptIsHtml?: boolean;
+  tags?: string[];
 }
 
-const { title, description, author, publishDate, featuredImage, slug, noindex = false, canonicalOverride } = Astro.props;
+const {
+  title,
+  description,
+  author,
+  publishDate,
+  featuredImage,
+  slug,
+  excerpt,
+  excerptIsHtml = false,
+  tags = [],
+} = Astro.props;
+
 const config = await getConfig();
-const canonicalUrl = canonicalOverride ?? `https://${config.domain}/${slug}`;
+const canonicalUrl = `https://${config.domain}/${slug}`;
+const fullArticleUrl = `/${slug}/full`;
+const ctaText = config.preview_page.cta_text;
+const showAds = config.preview_page.show_ads;
 
 // Separate ad placements by position type
-const aboveContent = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'above-content',
-);
-const sidebar = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'sidebar',
-);
-const stickyBottom = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'sticky-bottom',
-);
+const aboveContent = showAds
+  ? config.ads_config.ad_placements.filter((p) => p.position === 'above-content')
+  : [];
+const belowCta = showAds
+  ? config.ads_config.ad_placements.filter((p) =>
+      p.position === 'after-paragraph-1' || p.position === 'after-paragraph-2',
+    )
+  : [];
+const sidebar = showAds
+  ? config.ads_config.ad_placements.filter((p) => p.position === 'sidebar')
+  : [];
+const stickyBottom = showAds
+  ? config.ads_config.ad_placements.filter((p) => p.position === 'sticky-bottom')
+  : [];
 
-// Gather related posts (other published articles, excluding current)
+// Gather related posts
 const allArticles = await getCollection('articles');
 const related = allArticles
   .filter((a) => a.data.status === 'published' && a.data.slug !== slug)
@@ -71,6 +87,9 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   month: 'long',
   day: 'numeric',
 });
+
+// First tag as category badge
+const categoryBadge = tags[0] ?? null;
 ---
 
 <BaseLayout title={`${title} | ${config.site_name}`} description={description}>
@@ -82,36 +101,49 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
       image={featuredImage}
       siteName={config.site_name}
       publishDate={publishDate}
-      noindex={noindex}
     />
   </Fragment>
 
   <Header config={config} currentPath={`/${slug}`} />
 
-  <main class="article-page">
+  <main class="preview-page">
     {/* Above-content ads */}
     {aboveContent.map((p) => <AdSlot placement={p} />)}
 
     {/* Hero image */}
     {featuredImage && (
-      <div class="article-hero">
+      <div class="preview-hero">
         <img src={featuredImage} alt={title} loading="eager" />
       </div>
     )}
 
-    <div class="article-container">
-      <article class="article-content">
-        <header class="article-header">
+    <div class="preview-container">
+      <article class="preview-content">
+        <header class="preview-header">
+          {categoryBadge && (
+            <span class="category-badge">{categoryBadge}</span>
+          )}
           <h1>{title}</h1>
-          <div class="article-meta">
-            <span class="article-author">{author}</span>
+          <div class="preview-meta">
+            <span class="preview-author">{author}</span>
             <time datetime={publishDate}>{formattedDate}</time>
           </div>
         </header>
 
-        <div class="article-body prose" data-pagefind-body>
-          <slot />
+        {/* Excerpt */}
+        <div class="preview-excerpt prose">
+          {excerptIsHtml ? (
+            <Fragment set:html={excerpt} />
+          ) : (
+            <p>{excerpt}</p>
+          )}
         </div>
+
+        {/* Continue Reading CTA */}
+        <ContinueReadingCTA href={fullArticleUrl} text={ctaText} />
+
+        {/* Below-CTA ads */}
+        {belowCta.map((p) => <AdSlot placement={p} />)}
 
         {/* Related Posts */}
         <RelatedPosts articles={related} heading="You Might Also Like" />
@@ -119,11 +151,14 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
 
       {/* Sidebar ads (desktop only) */}
       {sidebar.length > 0 && (
-        <aside class="article-sidebar">
+        <aside class="preview-sidebar">
           {sidebar.map((p) => <AdSlot placement={p} />)}
         </aside>
       )}
     </div>
+
+    {/* Newsletter */}
+    <NewsletterForm siteName={config.site_name} />
 
     {/* Sticky bottom ads (mobile only) */}
     {stickyBottom.map((p) => <AdSlot placement={p} />)}
@@ -133,20 +168,20 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
 </BaseLayout>
 
 <style>
-  .article-page {
+  .preview-page {
     max-width: var(--container-max, 1200px);
     margin: 0 auto;
     padding: 0 1rem 2rem;
   }
 
   /* Hero */
-  .article-hero {
+  .preview-hero {
     margin-bottom: 2rem;
     border-radius: var(--radius-lg, 12px);
     overflow: hidden;
   }
 
-  .article-hero img {
+  .preview-hero img {
     width: 100%;
     max-height: 520px;
     object-fit: cover;
@@ -154,26 +189,39 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   }
 
   /* Two-column layout */
-  .article-container {
+  .preview-container {
     display: grid;
     grid-template-columns: 1fr;
     gap: 2rem;
   }
 
   @media (min-width: 960px) {
-    .article-container {
+    .preview-container {
       grid-template-columns: 1fr 300px;
     }
   }
 
   /* Header */
-  .article-header {
+  .preview-header {
     margin-bottom: 2rem;
     padding-bottom: 1.5rem;
     border-bottom: 1px solid var(--color-border, #e5e7eb);
   }
 
-  .article-header h1 {
+  .category-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #fff;
+    background-color: var(--color-primary, #0066ff);
+    border-radius: var(--radius-sm, 4px);
+    margin-bottom: 0.75rem;
+  }
+
+  .preview-header h1 {
     font-family: var(--fontHeading, sans-serif);
     font-size: var(--text-4xl, 2.25rem);
     line-height: 1.2;
@@ -181,7 +229,7 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
     color: var(--color-text, #1a1a2e);
   }
 
-  .article-meta {
+  .preview-meta {
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -189,34 +237,48 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
     font-size: 0.9375rem;
   }
 
-  .article-author {
+  .preview-author {
     font-weight: 600;
     color: var(--color-text, #1a1a2e);
   }
 
-  .article-meta time::before {
+  .preview-meta time::before {
     content: '\00B7';
     margin-right: 0.75rem;
     color: var(--color-muted, #6b7280);
   }
 
-  /* Body — prose styles from theme.css */
-  .article-body {
+  /* Excerpt */
+  .preview-excerpt {
     line-height: 1.8;
     font-size: 1.0625rem;
   }
 
   /* Sidebar */
-  .article-sidebar {
+  .preview-sidebar {
     display: none;
   }
 
   @media (min-width: 960px) {
-    .article-sidebar {
+    .preview-sidebar {
       display: block;
       position: sticky;
       top: 80px;
       align-self: start;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 639px) {
+    .preview-header h1 {
+      font-size: var(--text-2xl, 1.5rem);
+    }
+
+    .preview-hero {
+      margin-bottom: 1.25rem;
+      border-radius: 0;
+      margin-left: -1rem;
+      margin-right: -1rem;
     }
   }
 </style>

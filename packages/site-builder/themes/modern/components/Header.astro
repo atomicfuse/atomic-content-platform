@@ -16,6 +16,14 @@ const { config, currentPath } = Astro.props;
 
 // Show first 5 topics as nav items
 const navTopics = (config.brief.topics ?? []).slice(0, 5);
+const categoriesEnabled = config.categories.enabled;
+const searchEnabled = config.search.enabled;
+
+/** Build the URL for a topic link. */
+function topicHref(topic: string): string {
+  const slug = topic.toLowerCase().replace(/\s+/g, '-');
+  return categoriesEnabled ? `/category/${slug}` : `/#${slug}`;
+}
 ---
 
 <header class="site-nav" id="site-nav">
@@ -31,25 +39,31 @@ const navTopics = (config.brief.topics ?? []).slice(0, 5);
 
     {/* Desktop nav links */}
     <nav class="nav-links" aria-label="Main navigation">
-      {navTopics.map((topic) => {
-        const href = `/#${topic.toLowerCase().replace(/\s+/g, '-')}`;
-        return (
-          <a href={href} class="nav-link">
-            {topic}
-          </a>
-        );
-      })}
+      {navTopics.map((topic) => (
+        <a href={topicHref(topic)} class="nav-link">
+          {topic}
+        </a>
+      ))}
     </nav>
 
     {/* Right actions */}
     <div class="nav-actions">
-      {/* Search icon (decorative) */}
-      <button class="nav-icon-btn" aria-label="Search" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-      </button>
+      {/* Search icon — links to /search when enabled, otherwise decorative */}
+      {searchEnabled ? (
+        <a href="/search" class="nav-icon-btn" aria-label="Search">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </a>
+      ) : (
+        <button class="nav-icon-btn" aria-label="Search" type="button">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      )}
 
       {/* Mobile hamburger */}
       <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" type="button">
@@ -65,10 +79,7 @@ const navTopics = (config.brief.topics ?? []).slice(0, 5);
     <nav class="drawer-links">
       <a href="/" class="drawer-link">Home</a>
       {navTopics.map((topic) => (
-        <a
-          href={`/#${topic.toLowerCase().replace(/\s+/g, '-')}`}
-          class="drawer-link"
-        >
+        <a href={topicHref(topic)} class="drawer-link">
           {topic}
         </a>
       ))}
@@ -122,7 +133,7 @@ const navTopics = (config.brief.topics ?? []).slice(0, 5);
   }
 
   .logo-img {
-    height: 36px;
+    height: 56px;
     width: auto;
   }
 

@@ -105,6 +105,86 @@ export interface ResolvedThemeConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Preview page
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the preview/intermediate article page.
+ * When enabled, clicking an article shows an excerpt with a "Continue Reading"
+ * button before the full article — doubling pageviews for ad monetization.
+ */
+export interface PreviewPageConfig {
+  /** Whether preview pages are enabled. Default: false. */
+  enabled: boolean;
+
+  /** Number of paragraphs to auto-extract if no excerpt field exists. Default: 3. */
+  excerpt_paragraphs: number;
+
+  /** Text for the "Continue Reading" CTA button. Default: "Continue Reading". */
+  cta_text: string;
+
+  /** Whether to show ad slots on the preview page. Default: true. */
+  show_ads: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Category pages
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for category/archive pages.
+ * Generates paginated pages at /category/{topic-slug}/ for each topic.
+ */
+export interface CategoryConfig {
+  /** Whether category pages are enabled. Default: true. */
+  enabled: boolean;
+
+  /** Number of articles per page. Default: 12. */
+  per_page: number;
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+
+/**
+ * A widget displayed in the sidebar.
+ */
+export interface SidebarWidget {
+  /** Widget type. */
+  type: "search" | "recent_posts" | "categories" | "newsletter" | "ad";
+
+  /** Whether this widget is enabled. Default: true. */
+  enabled?: boolean;
+
+  /** Widget-specific options (e.g. { count: 5 } for recent_posts). */
+  options?: Record<string, unknown>;
+}
+
+/**
+ * Configuration for the optional homepage/page sidebar.
+ */
+export interface SidebarConfig {
+  /** Whether the sidebar is displayed. Default: false. */
+  enabled: boolean;
+
+  /** Ordered list of widgets to render. */
+  widgets: SidebarWidget[];
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for site search powered by Pagefind.
+ */
+export interface SearchConfig {
+  /** Whether search is enabled. Default: false. */
+  enabled: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Scripts
 // ---------------------------------------------------------------------------
 
@@ -163,6 +243,18 @@ export interface OrgConfig {
 
   /** Legal page templates keyed by slug (e.g. "privacy-policy", "terms"). */
   legal: Record<string, string>;
+
+  /** Default preview page configuration. */
+  preview_page?: Partial<PreviewPageConfig>;
+
+  /** Default category page configuration. */
+  categories?: Partial<CategoryConfig>;
+
+  /** Default sidebar configuration. */
+  sidebar?: Partial<SidebarConfig>;
+
+  /** Default search configuration. */
+  search?: Partial<SearchConfig>;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +288,18 @@ export interface GroupConfig {
 
   /** Legal page overrides keyed by slug. */
   legal_pages_override?: Record<string, string>;
+
+  /** Group-level preview page overrides. */
+  preview_page?: Partial<PreviewPageConfig>;
+
+  /** Group-level category page overrides. */
+  categories?: Partial<CategoryConfig>;
+
+  /** Group-level sidebar overrides. */
+  sidebar?: Partial<SidebarConfig>;
+
+  /** Group-level search overrides. */
+  search?: Partial<SearchConfig>;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +345,18 @@ export interface SiteConfig {
 
   /** Site-level advertising overrides. */
   ads_config?: Partial<AdsConfig>;
+
+  /** Site-level preview page overrides. */
+  preview_page?: Partial<PreviewPageConfig>;
+
+  /** Site-level category page overrides. */
+  categories?: Partial<CategoryConfig>;
+
+  /** Site-level sidebar overrides. */
+  sidebar?: Partial<SidebarConfig>;
+
+  /** Site-level search overrides. */
+  search?: Partial<SearchConfig>;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,4 +419,16 @@ export interface ResolvedConfig {
 
   /** Merged legal pages. */
   legal: Record<string, string>;
+
+  /** Fully-resolved preview page configuration. */
+  preview_page: PreviewPageConfig;
+
+  /** Fully-resolved category page configuration. */
+  categories: CategoryConfig;
+
+  /** Fully-resolved sidebar configuration. */
+  sidebar: SidebarConfig;
+
+  /** Fully-resolved search configuration. */
+  search: SearchConfig;
 }
