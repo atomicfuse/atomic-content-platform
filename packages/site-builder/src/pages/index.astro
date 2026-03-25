@@ -1,0 +1,147 @@
+---
+/**
+ * Homepage — lists published articles sorted by date descending.
+ *
+ * Uses modern theme components: Header, ArticleCard, ArticleCarousel,
+ * NewsletterForm, and Footer.
+ */
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
+import ArticleCard from '../../themes/modern/components/ArticleCard.astro';
+import ArticleCarousel from '../../themes/modern/components/ArticleCarousel.astro';
+import NewsletterForm from '../../themes/modern/components/NewsletterForm.astro';
+import { getConfig } from '../config';
+
+const config = await getConfig();
+const allArticles = await getCollection('articles');
+
+// Filter to published only, sort newest first
+const articles = allArticles
+  .filter((a) => a.data.status === 'published')
+  .sort(
+    (a, b) =>
+      new Date(b.data.publishDate).getTime() -
+      new Date(a.data.publishDate).getTime(),
+  );
+
+// Split into sections
+const latestArticles = articles.slice(0, 6);
+const mustReads = articles.slice(6, 12);
+---
+
+<BaseLayout
+  title={config.site_name}
+  description={config.site_tagline ?? `${config.site_name} — latest articles`}
+>
+  <Fragment slot="head">
+    <SEOHead
+      title={config.site_name}
+      description={config.site_tagline ?? `${config.site_name} — latest articles`}
+      canonicalUrl={`https://${config.domain}`}
+      siteName={config.site_name}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath="/" />
+
+  <main class="homepage">
+    <div class="container">
+      {/* What's New — main article grid */}
+      <section class="section">
+        <h2 class="section-heading">What's New</h2>
+        <div class="article-grid">
+          {latestArticles.map((article) => (
+            <ArticleCard
+              title={article.data.title}
+              slug={article.data.slug}
+              featuredImage={article.data.featuredImage}
+              description={article.data.description}
+              author={article.data.author}
+              publishDate={article.data.publishDate}
+              tags={article.data.tags}
+              type={article.data.type}
+            />
+          ))}
+        </div>
+
+        {articles.length === 0 && (
+          <p class="empty-state">No published articles yet.</p>
+        )}
+      </section>
+
+      {/* Must Reads — carousel */}
+      {mustReads.length > 0 && (
+        <ArticleCarousel
+          articles={mustReads.map((a) => ({
+            title: a.data.title,
+            slug: a.data.slug,
+            featuredImage: a.data.featuredImage,
+            author: a.data.author,
+            publishDate: a.data.publishDate,
+            tags: a.data.tags,
+            type: a.data.type,
+          }))}
+          heading="Must Reads"
+        />
+      )}
+
+      {/* Newsletter */}
+      <NewsletterForm siteName={config.site_name} />
+    </div>
+  </main>
+
+  <Footer config={config} />
+</BaseLayout>
+
+<style>
+  .homepage {
+    min-height: 60vh;
+  }
+
+  .container {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+
+  .section {
+    padding: 2.5rem 0 1rem;
+  }
+
+  .section-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .article-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (min-width: 640px) {
+    .article-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 960px) {
+    .article-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--color-muted, #9ca3af);
+    padding: 4rem 0;
+    font-size: 1.125rem;
+  }
+</style>

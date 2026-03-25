@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site-builder-dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/packages/site-builder && SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=/Users/michal/Documents/ATL-content-network/atomic-labs-network npx astro dev --port 4321"],
+      "port": 4321
+    },
+    {
+      "name": "site-builder-preview",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/packages/site-builder && SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=/Users/michal/Documents/ATL-content-network/atomic-labs-network npx astro preview --port 4321"],
+      "port": 4321
+    }
+  ]
+}

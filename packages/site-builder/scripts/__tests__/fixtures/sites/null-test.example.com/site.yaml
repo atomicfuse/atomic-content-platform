@@ -1,0 +1,26 @@
+domain: null-test.example.com
+site_name: "Null Test Site"
+site_tagline: null
+group: test-group
+active: true
+
+tracking:
+  ga4: null
+  gtm: null
+
+brief:
+  audience: "Test audience"
+  tone: "Professional"
+  article_types:
+    standard: 100
+  topics:
+    - testing
+  seo_keywords_focus:
+    - "test"
+  content_guidelines: "Write well"
+  review_percentage: 10
+  schedule:
+    articles_per_week: 1
+    preferred_days:
+      - Monday
+    preferred_time: "09:00"

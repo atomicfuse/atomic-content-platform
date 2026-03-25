@@ -1,0 +1,5 @@
+platform_version: "1.0.0"
+platform_repo: "test/test-platform"
+network_id: "test-network"
+network_name: "Test Network"
+created: "2026-01-01"

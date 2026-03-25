@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Astro
+.astro/
+
+# Next.js
+.next/
+out/
+
+# Debug
+npm-debug.log*
+pnpm-debug.log*

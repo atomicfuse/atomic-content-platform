@@ -1,0 +1,160 @@
+---
+/**
+ * Modern theme — horizontal scrolling article carousel.
+ *
+ * Renders a row of compact ArticleCards with snap-scrolling
+ * and optional left/right navigation buttons on desktop.
+ */
+import ArticleCard from './ArticleCard.astro';
+
+interface CarouselArticle {
+  title: string;
+  slug: string;
+  featuredImage?: string;
+  description?: string;
+  author: string;
+  publishDate: Date | string;
+  tags?: string[];
+  type?: string;
+}
+
+interface Props {
+  articles: CarouselArticle[];
+  heading: string;
+}
+
+const { articles, heading } = Astro.props;
+const carouselId = `carousel-${heading.replace(/\s+/g, '-').toLowerCase()}`;
+---
+
+{articles.length > 0 && (
+  <section class="carousel-section">
+    <div class="carousel-header">
+      <h2 class="section-heading">{heading}</h2>
+      <div class="carousel-nav">
+        <button
+          class="carousel-btn carousel-prev"
+          aria-label="Scroll left"
+          data-carousel={carouselId}
+          data-dir="prev"
+          type="button"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6" />
+          </svg>
+        </button>
+        <button
+          class="carousel-btn carousel-next"
+          aria-label="Scroll right"
+          data-carousel={carouselId}
+          data-dir="next"
+          type="button"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="carousel-track" id={carouselId}>
+      {articles.map((article) => (
+        <ArticleCard
+          title={article.title}
+          slug={article.slug}
+          featuredImage={article.featuredImage}
+          author={article.author}
+          publishDate={article.publishDate}
+          tags={article.tags}
+          type={article.type}
+          compact
+        />
+      ))}
+    </div>
+  </section>
+)}
+
+<script>
+  document.querySelectorAll('.carousel-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.carousel;
+      const dir = (btn as HTMLElement).dataset.dir;
+      const track = document.getElementById(id!);
+      if (!track) return;
+      const scrollAmount = 300;
+      track.scrollBy({
+        left: dir === 'next' ? scrollAmount : -scrollAmount,
+        behavior: 'smooth',
+      });
+    });
+  });
+</script>
+
+<style>
+  .carousel-section {
+    padding: 2rem 0;
+  }
+
+  .carousel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+  }
+
+  .section-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .carousel-nav {
+    display: none;
+    gap: 0.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .carousel-nav {
+      display: flex;
+    }
+  }
+
+  .carousel-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-background, #fff);
+    border-radius: 50%;
+    cursor: pointer;
+    color: var(--color-text, #1a1a2e);
+    transition: background var(--transition-fast, 150ms ease),
+                border-color var(--transition-fast, 150ms ease);
+  }
+
+  .carousel-btn:hover {
+    background: var(--color-surface, #f8f9fa);
+    border-color: var(--color-muted, #6b7280);
+  }
+
+  .carousel-track {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: 0.5rem;
+  }
+
+  .carousel-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .carousel-track > :global(.article-card) {
+    scroll-snap-align: start;
+  }
+</style>

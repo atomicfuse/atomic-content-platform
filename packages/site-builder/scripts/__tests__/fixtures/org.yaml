@@ -1,0 +1,43 @@
+organization: "Test Org"
+legal_entity: "Test Org Ltd"
+company_address: "123 Test St"
+support_email_pattern: "support@{{domain}}"
+
+default_theme: modern
+
+default_fonts:
+  heading: "Arial"
+  body: "Helvetica"
+
+tracking:
+  ga4: null
+  gtm: "GTM-ORG001"
+  google_ads: null
+  facebook_pixel: null
+  custom: []
+
+scripts:
+  head:
+    - id: analytics
+      src: "https://analytics.example.com/v1.js"
+      async: true
+    - id: consent-manager
+      src: "https://consent.example.com/cmp.js"
+  body_start: []
+  body_end:
+    - id: footer-script
+      inline: "console.log('org footer')"
+
+ads_config:
+  interstitial: false
+  in_content_slots: 2
+  sidebar: false
+  layout: standard
+  ad_placements: []
+  ads_txt:
+    - "google.com, pub-org, DIRECT"
+
+legal:
+  company_name: "Test Org Ltd"
+  company_country: "Testland"
+  effective_date: "2026-01-01"

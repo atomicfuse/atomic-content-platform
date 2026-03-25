@@ -1,0 +1,35 @@
+---
+/**
+ * Scripts injected immediately after the opening <body> tag.
+ * Includes GTM noscript fallback and any body_start[] scripts.
+ */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+
+interface Props {
+  config: ResolvedConfig;
+}
+
+const { config } = Astro.props;
+const { tracking, scripts } = config;
+---
+
+{/* ---- GTM noscript fallback ---- */}
+{tracking.gtm && (
+  <noscript>
+    <iframe
+      src={`https://www.googletagmanager.com/ns.html?id=${tracking.gtm}`}
+      height="0"
+      width="0"
+      style="display:none;visibility:hidden"
+    ></iframe>
+  </noscript>
+)}
+
+{/* ---- body_start scripts ---- */}
+{scripts.body_start.map((entry) =>
+  entry.src ? (
+    <script is:inline src={entry.src} async={entry.async ?? true}></script>
+  ) : entry.inline ? (
+    <script is:inline set:html={entry.inline}></script>
+  ) : null
+)}

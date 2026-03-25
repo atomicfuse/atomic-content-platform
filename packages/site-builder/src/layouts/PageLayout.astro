@@ -1,0 +1,47 @@
+---
+/**
+ * Simple content page layout for legal / static pages.
+ */
+import BaseLayout from './BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import { getConfig } from '../config';
+
+interface Props {
+  title: string;
+  description: string;
+  slug: string;
+}
+
+const { title, description, slug } = Astro.props;
+const config = await getConfig();
+const canonicalUrl = `https://${config.domain}/${slug}`;
+---
+
+<BaseLayout title={`${title} | ${config.site_name}`} description={description}>
+  <Fragment slot="head">
+    <SEOHead
+      title={`${title} | ${config.site_name}`}
+      description={description}
+      canonicalUrl={canonicalUrl}
+      siteName={config.site_name}
+    />
+  </Fragment>
+
+  <main class="page-content">
+    <h1>{title}</h1>
+    <slot />
+  </main>
+</BaseLayout>
+
+<style>
+  .page-content {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+    line-height: 1.75;
+  }
+  .page-content h1 {
+    font-size: 2rem;
+    margin-bottom: 1.5rem;
+  }
+</style>

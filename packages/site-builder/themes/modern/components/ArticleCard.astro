@@ -1,0 +1,205 @@
+---
+/**
+ * Modern theme — article card for grids and carousels.
+ *
+ * Renders a linked card with featured image, type badge, title,
+ * author/date meta, description excerpt, and tag pills.
+ */
+
+interface Props {
+  title: string;
+  slug: string;
+  featuredImage?: string;
+  description?: string;
+  author: string;
+  publishDate: Date | string;
+  tags?: string[];
+  type?: string;
+  /** Compact mode for carousel cards */
+  compact?: boolean;
+}
+
+const {
+  title,
+  slug,
+  featuredImage,
+  description,
+  author,
+  publishDate,
+  tags = [],
+  type,
+  compact = false,
+} = Astro.props;
+
+const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+});
+
+const typeLabel = type ? type.replace('-', ' ').toUpperCase() : null;
+---
+
+<a href={`/${slug}`} class:list={['article-card', { compact }]}>
+  <div class="card-image-wrap">
+    {featuredImage ? (
+      <img src={featuredImage} alt={title} loading="lazy" class="card-image" />
+    ) : (
+      <div class="card-image-placeholder"></div>
+    )}
+    {typeLabel && <span class="card-badge">{typeLabel}</span>}
+  </div>
+
+  <div class="card-body">
+    <h3 class="card-title">{title}</h3>
+    <div class="card-meta">
+      <span class="card-author">{author}</span>
+      <time datetime={new Date(publishDate).toISOString()}>{formattedDate}</time>
+    </div>
+    {description && !compact && (
+      <p class="card-excerpt">{description}</p>
+    )}
+    {tags.length > 0 && !compact && (
+      <div class="card-tags">
+        {tags.slice(0, 3).map((tag) => (
+          <span class="card-tag">{tag}</span>
+        ))}
+      </div>
+    )}
+  </div>
+</a>
+
+<style>
+  .article-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-background, #fff);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: box-shadow var(--transition-base, 250ms ease),
+                transform var(--transition-base, 250ms ease);
+  }
+
+  .article-card:hover {
+    box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.12));
+    transform: translateY(-2px);
+  }
+
+  .article-card.compact {
+    width: 280px;
+    flex-shrink: 0;
+  }
+
+  /* Image */
+  .card-image-wrap {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: var(--color-surface, #f8f9fa);
+  }
+
+  .card-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform var(--transition-base, 250ms ease);
+  }
+
+  .article-card:hover .card-image {
+    transform: scale(1.03);
+  }
+
+  .card-image-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--color-surface, #f8f9fa), var(--color-border, #e5e7eb));
+  }
+
+  /* Badge */
+  .card-badge {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #fff;
+    background: var(--color-accent, #00ccff);
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  /* Body */
+  .card-body {
+    padding: 1rem 1.125rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1;
+  }
+
+  .compact .card-body {
+    padding: 0.75rem 1rem 1rem;
+  }
+
+  .card-title {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 1.125rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--color-text, #1a1a2e);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .compact .card-title {
+    font-size: 1rem;
+  }
+
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    color: var(--color-muted, #6b7280);
+  }
+
+  .card-meta time::before {
+    content: '\00B7';
+    margin-right: 0.5rem;
+  }
+
+  .card-excerpt {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--color-muted, #6b7280);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin-top: auto;
+    padding-top: 0.25rem;
+  }
+
+  .card-tag {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    padding: 0.2rem 0.5rem;
+    background: var(--color-surface, #f8f9fa);
+    color: var(--color-muted, #6b7280);
+    border-radius: 999px;
+    border: 1px solid var(--color-border, #e5e7eb);
+  }
+</style>

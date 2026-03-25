@@ -1,0 +1,91 @@
+---
+/**
+ * Base HTML shell used by all page types.
+ *
+ * - Loads Google Fonts for the resolved heading + body fonts
+ * - Sets CSS custom properties from the theme colour map
+ * - Injects tracking / ad scripts in the correct positions
+ */
+import HeadScripts from '../components/HeadScripts.astro';
+import BodyStartScripts from '../components/BodyStartScripts.astro';
+import BodyEndScripts from '../components/BodyEndScripts.astro';
+import Interstitial from '../components/Interstitial.astro';
+import { getConfig } from '../config';
+import '../../themes/modern/styles/theme.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const config = await getConfig();
+const { theme, ads_config } = config;
+
+// Build Google Fonts URL
+const fontFamilies = [theme.fonts.heading, theme.fonts.body]
+  .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
+  .map((f) => f.replace(/ /g, '+'))
+  .filter((v, i, a) => a.indexOf(v) === i); // dedupe
+
+const googleFontsUrl =
+  fontFamilies.length > 0
+    ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
+    : null;
+
+// Build CSS custom property string from theme colours
+const cssVars = Object.entries(theme.colors)
+  .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {theme.favicon && <link rel="icon" href={theme.favicon} />}
+
+    {googleFontsUrl && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontsUrl} />
+      </>
+    )}
+
+    <HeadScripts config={config} />
+
+    <slot name="head" />
+
+    <style
+      define:vars={{
+        fontHeading: theme.fonts.heading,
+        fontBody: theme.fonts.body,
+      }}
+    >
+      :root {
+        font-family: var(--fontBody), sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--fontHeading), sans-serif;
+      }
+    </style>
+
+    {/* Inject theme colour custom properties */}
+    <style set:html={`:root { ${cssVars} }`}></style>
+  </head>
+
+  <body>
+    <BodyStartScripts config={config} />
+
+    <slot />
+
+    <Interstitial enabled={ads_config.interstitial} />
+    <BodyEndScripts config={config} />
+  </body>
+</html>

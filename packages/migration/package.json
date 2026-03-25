@@ -1,0 +1,6 @@
+{
+  "name": "@atomic-platform/migration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WordPress migration tooling (Phase 5)"
+}

@@ -1,0 +1,21 @@
+---
+/**
+ * Scripts injected just before the closing </body> tag.
+ */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+
+interface Props {
+  config: ResolvedConfig;
+}
+
+const { config } = Astro.props;
+const { scripts } = config;
+---
+
+{scripts.body_end.map((entry) =>
+  entry.src ? (
+    <script is:inline src={entry.src} async={entry.async ?? true}></script>
+  ) : entry.inline ? (
+    <script is:inline set:html={entry.inline}></script>
+  ) : null
+)}
