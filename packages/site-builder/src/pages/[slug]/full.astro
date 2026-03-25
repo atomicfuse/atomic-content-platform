@@ -1,15 +1,24 @@
 ---
 /**
- * Dynamic article route — renders a single article by slug.
+ * Full article page — only generated when preview pages are enabled.
  *
- * Uses getStaticPaths to generate a page for each published article.
- * The inject-ads utility is available for theme-level components that
- * need to insert ad slots into rendered HTML.
+ * Renders the complete article content at /{slug}/full/.
+ * SEO: noindex (canonical points back to preview at /{slug}/).
  */
 import { getCollection, render } from 'astro:content';
-import ArticleLayout from '../layouts/ArticleLayout.astro';
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import { getConfig } from '../../config';
+
+const config = await getConfig();
 
 export async function getStaticPaths() {
+  const cfg = await (await import('../../config')).getConfig();
+
+  // Only generate full article pages when preview is enabled
+  if (!cfg.preview_page.enabled) {
+    return [];
+  }
+
   const articles = await getCollection('articles');
   return articles
     .filter((a) => a.data.status === 'published')
@@ -21,6 +30,9 @@ export async function getStaticPaths() {
 
 const { article } = Astro.props;
 const { Content } = await render(article);
+
+// Canonical points back to the preview page
+const canonicalUrl = `https://${config.domain}/${article.data.slug}`;
 ---
 
 <ArticleLayout
@@ -30,6 +42,8 @@ const { Content } = await render(article);
   publishDate={article.data.publishDate.toISOString().split('T')[0]!}
   featuredImage={article.data.featuredImage}
   slug={article.data.slug}
+  noindex={true}
+  canonicalOverride={canonicalUrl}
 >
   <Content />
 </ArticleLayout>

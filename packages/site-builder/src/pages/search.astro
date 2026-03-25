@@ -1,0 +1,132 @@
+---
+/**
+ * Search results page — powered by Pagefind.
+ *
+ * Pagefind builds a search index from the static HTML output.
+ * The search UI is loaded only when this page is visited (lazy).
+ * noindex to prevent search result pages from being indexed.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
+import { getConfig } from '../config';
+
+const config = await getConfig();
+
+// Only render a useful page when search is enabled
+const searchEnabled = config.search.enabled;
+---
+
+<BaseLayout
+  title={`Search | ${config.site_name}`}
+  description={`Search articles on ${config.site_name}`}
+>
+  <Fragment slot="head">
+    <SEOHead
+      title={`Search | ${config.site_name}`}
+      description={`Search articles on ${config.site_name}`}
+      canonicalUrl={`https://${config.domain}/search`}
+      siteName={config.site_name}
+      noindex={true}
+    />
+    {searchEnabled && (
+      <link rel="stylesheet" href="/pagefind/pagefind-ui.css" />
+    )}
+  </Fragment>
+
+  <Header config={config} currentPath="/search" />
+
+  <main class="search-page">
+    <div class="container">
+      <h1 class="search-heading">Search</h1>
+
+      {searchEnabled ? (
+        <div id="search-results"></div>
+      ) : (
+        <p class="search-unavailable">Search is not available on this site.</p>
+      )}
+    </div>
+  </main>
+
+  <Footer config={config} />
+</BaseLayout>
+
+{searchEnabled && (
+  <script is:inline src="/pagefind/pagefind-ui.js"></script>
+  <script is:inline>
+    // Initialize Pagefind search UI
+    window.addEventListener('DOMContentLoaded', function () {
+      new PagefindUI({
+        element: '#search-results',
+        showSubResults: true,
+        showImages: true,
+      });
+
+      // Pre-fill search from URL query parameter
+      var params = new URLSearchParams(window.location.search);
+      var query = params.get('q');
+      if (query) {
+        var input = document.querySelector('#search-results input[type="text"]');
+        if (input) {
+          input.value = query;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+    });
+  </script>
+)}
+
+<style>
+  .search-page {
+    min-height: 60vh;
+  }
+
+  .container {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+
+  .search-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-3xl, 1.875rem);
+    font-weight: 700;
+    color: var(--color-text, #1a1a2e);
+    padding: 2rem 0 1.5rem;
+  }
+
+  .search-unavailable {
+    text-align: center;
+    color: var(--color-muted, #9ca3af);
+    padding: 4rem 0;
+    font-size: 1.125rem;
+  }
+
+  /* Override Pagefind UI styles for consistency */
+  :global(#search-results .pagefind-ui__search-input) {
+    font-size: 1rem;
+    padding: 0.75rem 1rem;
+    min-height: 48px;
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--color-border, #e5e7eb);
+    font-family: var(--fontBody, sans-serif);
+  }
+
+  :global(#search-results .pagefind-ui__search-input:focus) {
+    outline: none;
+    border-color: var(--color-primary, #0066ff);
+    box-shadow: 0 0 0 2px rgba(0, 102, 255, 0.15);
+  }
+
+  :global(#search-results .pagefind-ui__result-link) {
+    color: var(--color-primary, #0066ff);
+    font-weight: 600;
+  }
+
+  :global(#search-results .pagefind-ui__result-excerpt) {
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--color-text, #1a1a2e);
+  }
+</style>

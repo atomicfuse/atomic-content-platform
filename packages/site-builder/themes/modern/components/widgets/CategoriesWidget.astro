@@ -1,0 +1,71 @@
+---
+/**
+ * Sidebar categories widget — list of topic links.
+ */
+
+interface Props {
+  topics: string[];
+  /** Whether category pages exist (links to /category/slug vs /#slug). */
+  categoriesEnabled: boolean;
+}
+
+const { topics, categoriesEnabled } = Astro.props;
+---
+
+<div class="widget widget-categories">
+  <h3 class="widget-title">Categories</h3>
+  <ul class="category-list">
+    {topics.map((topic) => {
+      const slug = topic.toLowerCase().replace(/\s+/g, '-');
+      const href = categoriesEnabled ? `/category/${slug}` : `/#${slug}`;
+      return (
+        <li>
+          <a href={href} class="category-link">{topic}</a>
+        </li>
+      );
+    })}
+  </ul>
+</div>
+
+<style>
+  .widget-categories {
+    padding: 1.25rem;
+    background: var(--color-surface, #f8f9fa);
+    border-radius: var(--radius-md, 8px);
+  }
+
+  .widget-title {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .category-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .category-link {
+    display: block;
+    padding: 0.5rem 0;
+    font-size: 0.9375rem;
+    color: var(--color-text, #1a1a2e);
+    text-decoration: none;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    transition: color var(--transition-fast, 150ms ease);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .category-link:hover {
+    color: var(--color-primary, #0066ff);
+  }
+
+  li:last-child .category-link {
+    border-bottom: none;
+  }
+</style>

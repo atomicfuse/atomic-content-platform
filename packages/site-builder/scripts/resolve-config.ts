@@ -18,6 +18,10 @@ import type {
   ScriptsConfig,
   ResolvedThemeConfig,
   ThemeConfig,
+  PreviewPageConfig,
+  CategoryConfig,
+  SidebarConfig,
+  SearchConfig,
 } from "@atomic-platform/shared-types";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
 import type { ScriptEntry, AdsConfig } from "@atomic-platform/shared-types";
@@ -434,7 +438,55 @@ export async function resolveConfig(
     { domain: siteDomain },
   );
 
-  // ---- 11. Assemble ResolvedConfig ----
+  // ---- 11. Merge feature configs: org -> group -> site with defaults ----
+
+  const previewPageDefaults: PreviewPageConfig = {
+    enabled: false,
+    excerpt_paragraphs: 3,
+    cta_text: "Continue Reading",
+    show_ads: true,
+  };
+  const previewPage: PreviewPageConfig = {
+    ...previewPageDefaults,
+    ...(org.preview_page ?? {}),
+    ...(group.preview_page ?? {}),
+    ...(site.preview_page ?? {}),
+  };
+
+  const categoriesDefaults: CategoryConfig = {
+    enabled: true,
+    per_page: 12,
+  };
+  const categories: CategoryConfig = {
+    ...categoriesDefaults,
+    ...(org.categories ?? {}),
+    ...(group.categories ?? {}),
+    ...(site.categories ?? {}),
+  };
+
+  const sidebarDefaults: SidebarConfig = {
+    enabled: false,
+    widgets: [],
+  };
+  // For sidebar, widgets array should be replaced entirely (not merged)
+  const sidebarMerged: SidebarConfig = {
+    ...sidebarDefaults,
+    ...(org.sidebar ?? {}),
+    ...(group.sidebar ?? {}),
+    ...(site.sidebar ?? {}),
+  };
+
+  const searchDefaults: SearchConfig = {
+    enabled: false,
+  };
+  const search: SearchConfig = {
+    ...searchDefaults,
+    ...(org.search ?? {}),
+    ...(group.search ?? {}),
+    ...(site.search ?? {}),
+  };
+
+  // ---- 12. Assemble ResolvedConfig ----
 
   const resolved: ResolvedConfig = {
     network_id: network.network_id,
@@ -454,6 +506,10 @@ export async function resolveConfig(
     theme,
     brief: site.brief,
     legal,
+    preview_page: previewPage,
+    categories,
+    sidebar: sidebarMerged,
+    search,
   };
 
   return resolved;

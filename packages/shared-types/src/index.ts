@@ -20,6 +20,11 @@ export type {
 export type {
   PublishSchedule,
   SiteBrief,
+  PreviewPageConfig,
+  CategoryConfig,
+  SidebarWidget,
+  SidebarConfig,
+  SearchConfig,
   ThemeConfig,
   ResolvedThemeConfig,
   ScriptsConfig,
