@@ -78,7 +78,7 @@ async function handleRequest(
     } else if (result.status === "skipped") {
       sendJson(res, 200, resultBody);
     } else {
-      sendJson(res, 400, resultBody);
+      sendJson(res, 500, resultBody);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

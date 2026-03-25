@@ -50,8 +50,10 @@ interface ArticleFrontmatterWithSource extends ArticleFrontmatter {
 const VALID_ARTICLE_TYPES: ArticleType[] = ["listicle", "how-to", "review", "standard"];
 
 function parseClaudeResponse(raw: string): GeneratedArticle {
-  const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-  return JSON.parse(cleaned) as GeneratedArticle;
+  // Try to extract JSON from inside markdown code fences first
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const cleaned = fenceMatch ? fenceMatch[1]! : raw;
+  return JSON.parse(cleaned.trim()) as GeneratedArticle;
 }
 
 /**

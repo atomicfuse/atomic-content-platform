@@ -44,7 +44,7 @@ export function loadConfig(): AgentConfig {
     networkRepo: networkRepo ?? "",
     localNetworkPath,
     geminiApiKey: process.env.GEMINI_API_KEY,
-    port: process.env.PORT ? parseInt(process.env.PORT, 10) : 3001,
+    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,
