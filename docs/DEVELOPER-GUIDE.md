@@ -642,19 +642,36 @@ export CLOUDFLARE_ACCOUNT_ID=your-account-id
 
 ### Deploy Manually (Local)
 
-From the platform repo, build and deploy a specific site:
+From `packages/site-builder`, build first:
 
 ```bash
 cd packages/site-builder
-
-# Build the site (paths auto-resolve if repos are side-by-side)
 SITE_DOMAIN=coolnews.dev pnpm build
-
-# Deploy to Cloudflare Pages
-npx wrangler pages deploy dist --project-name=coolnews-dev
 ```
 
-That is it. The site is live on Cloudflare Pages.
+#### Deploy to production
+
+Deploys to the main production URL:
+
+```bash
+npx wrangler pages deploy dist --project-name=coolnews-dev --branch=main
+```
+
+Live at: **https://coolnews-dev.pages.dev**
+
+#### Deploy a branch preview
+
+Deploys a preview from your current branch (e.g. `michal-dev`):
+
+```bash
+npx wrangler pages deploy dist --project-name=coolnews-dev --branch=michal-dev
+```
+
+This gives you two URLs:
+- **Preview URL:** `https://<hash>.coolnews-dev.pages.dev`
+- **Branch alias:** `https://michal-dev.coolnews-dev.pages.dev`
+
+Replace `michal-dev` with your branch name (e.g. `asaf-dev`).
 
 ### Deploy a Different Site
 
