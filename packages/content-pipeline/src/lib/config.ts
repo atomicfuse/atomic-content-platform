@@ -1,8 +1,5 @@
 /**
  * Configuration loader for agents.
- *
- * Reads environment variables and provides typed config objects
- * for GitHub, AI, and notification services.
  */
 
 import type { GitHubConfig } from "./github.js";
@@ -12,6 +9,9 @@ export interface AgentConfig {
   github: GitHubConfig;
   ai: AIConfig;
   networkRepo: string;
+  localNetworkPath: string | undefined;
+  geminiApiKey: string | undefined;
+  port: number;
   notifications: {
     telegramBotToken?: string;
     telegramChatId?: string;
@@ -19,24 +19,32 @@ export interface AgentConfig {
   };
 }
 
-/**
- * Load agent configuration from environment variables.
- * Call dotenv.config() before this in your agent entry point.
- */
 export function loadConfig(): AgentConfig {
-  const githubToken = requireEnv("GITHUB_TOKEN");
   const anthropicKey = requireEnv("ANTHROPIC_API_KEY");
-  const networkRepo = requireEnv("NETWORK_REPO");
+
+  const localNetworkPath = process.env.LOCAL_NETWORK_PATH;
+  const githubToken = process.env.GITHUB_TOKEN;
+  const networkRepo = process.env.NETWORK_REPO;
+
+  // Validate at least one write mode is configured
+  if (!localNetworkPath && (!githubToken || !networkRepo)) {
+    throw new Error(
+      "Either LOCAL_NETWORK_PATH or both GITHUB_TOKEN + NETWORK_REPO must be set",
+    );
+  }
 
   return {
     github: {
-      token: githubToken,
-      repo: networkRepo,
+      token: githubToken ?? "",
+      repo: networkRepo ?? "",
     },
     ai: {
       apiKey: anthropicKey,
     },
-    networkRepo,
+    networkRepo: networkRepo ?? "",
+    localNetworkPath,
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,
