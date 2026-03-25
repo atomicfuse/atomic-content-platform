@@ -272,14 +272,14 @@ export async function runContentGeneration(
         `Create a featured image for an article titled: ${generated.title}`,
       );
       if (imageBuffer) {
-        const assetPath = `images/${slug}.png`;
+        const assetPath = `assets/images/${slug}.png`;
         await writeAsset(
           { localNetworkPath: config.localNetworkPath, github: config.github },
           siteDomain,
           assetPath,
           imageBuffer,
         );
-        featuredImageUrl = `/sites/${siteDomain}/${assetPath}`;
+        featuredImageUrl = `/assets/images/${slug}.png`;
       }
     }
 
@@ -305,7 +305,7 @@ export async function runContentGeneration(
       type: articleType,
       status,
       publishDate,
-      author: siteName,
+      author: "Editorial Team",
       tags,
       slug,
       reviewer_notes: "",
