@@ -46,22 +46,34 @@ This installs dependencies for all packages in the monorepo workspace (shared-ty
 ```bash
 cd ~/Documents/ATL-content-network/atomic-content-platform/packages/site-builder
 
-SITE_DOMAIN=coolnews.dev \
-NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network \
-pnpm dev
+# Network data path auto-resolves if repos are side-by-side (no env var needed)
+SITE_DOMAIN=coolnews.dev pnpm dev
 ```
 
 The site opens at **http://localhost:4321**.
 
-To build for production instead of running dev:
+To build for production:
 
 ```bash
-SITE_DOMAIN=coolnews.dev \
-NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network \
-pnpm build
+SITE_DOMAIN=coolnews.dev pnpm build
+```
+
+To deploy to Cloudflare Pages:
+
+```bash
+SITE_DOMAIN=coolnews.dev pnpm build
+npx wrangler pages deploy dist --project-name=coolnews-dev
 ```
 
 Static output lands in `packages/site-builder/dist/`.
+
+If your repos are NOT side-by-side, pass `NETWORK_DATA_PATH` explicitly:
+
+```bash
+SITE_DOMAIN=coolnews.dev \
+NETWORK_DATA_PATH=/custom/path/to/atomic-labs-network \
+pnpm dev
+```
 
 ### Environment Variables
 
@@ -598,7 +610,132 @@ legal_pages_override:
 
 ---
 
-## 8. Project Status and Roadmap
+## 8. Deploying to Cloudflare Pages
+
+### How Deployment Works
+
+Each site gets its own Cloudflare Pages project. The build process:
+1. Builds the Astro site with `SITE_DOMAIN` pointing at the target site
+2. Outputs static HTML/CSS/JS to `dist/`
+3. Deploys `dist/` to Cloudflare Pages via `wrangler`
+
+### Prerequisites
+
+Install Wrangler (Cloudflare CLI):
+
+```bash
+npm install -g wrangler
+```
+
+Authenticate with Cloudflare:
+
+```bash
+wrangler login
+```
+
+Or set environment variables (for CI or headless use):
+
+```bash
+export CLOUDFLARE_API_TOKEN=your-token-here
+export CLOUDFLARE_ACCOUNT_ID=your-account-id
+```
+
+### Deploy Manually (Local)
+
+From the platform repo, build and deploy a specific site:
+
+```bash
+cd packages/site-builder
+
+# Build the site (paths auto-resolve if repos are side-by-side)
+SITE_DOMAIN=coolnews.dev pnpm build
+
+# Deploy to Cloudflare Pages
+npx wrangler pages deploy dist --project-name=coolnews-dev
+```
+
+That is it. The site is live on Cloudflare Pages.
+
+### Deploy a Different Site
+
+Same flow, different `SITE_DOMAIN` and `--project-name`:
+
+```bash
+# Build
+SITE_DOMAIN=muvizz.com pnpm build
+
+# Deploy (project name is the Cloudflare Pages project, usually domain with dots replaced)
+npx wrangler pages deploy dist --project-name=muvizz-com
+```
+
+### Path Resolution
+
+The site-builder auto-detects the network data repo location. It assumes both repos are cloned side-by-side:
+
+```
+ATL-content-network/          (or any shared parent directory)
+  atomic-content-platform/    ← you are here
+  atomic-labs-network/         ← auto-detected
+```
+
+If your repos are in different locations, pass `NETWORK_DATA_PATH` explicitly:
+
+```bash
+SITE_DOMAIN=coolnews.dev \
+NETWORK_DATA_PATH=/path/to/atomic-labs-network \
+pnpm build
+```
+
+### Automated Deployment (GitHub Actions)
+
+The workflow at `.github/workflows/deploy-coolnews.yml` runs on every push to `main`:
+
+1. Checks out both repos (platform + network data)
+2. Installs dependencies with pnpm
+3. Builds shared-types, then builds the site
+4. Deploys to Cloudflare Pages via wrangler
+
+**Required GitHub Secrets** (set in repo Settings > Secrets > Actions):
+
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Pages edit permission |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+
+To find these:
+- **Account ID:** Cloudflare dashboard > any domain > Overview > right sidebar
+- **API Token:** Cloudflare dashboard > My Profile > API Tokens > Create Token > "Edit Cloudflare Workers" template
+
+### Adding a New Site to Deployment
+
+1. Create the site in the network data repo (see Section 3)
+2. Create a Cloudflare Pages project (via dashboard or `wrangler pages project create <name>`)
+3. Copy `.github/workflows/deploy-coolnews.yml` to a new workflow file:
+
+```bash
+cp .github/workflows/deploy-coolnews.yml .github/workflows/deploy-newsite.yml
+```
+
+4. Update the new workflow: change `SITE_DOMAIN` and `--project-name`
+5. Deploy manually first to verify:
+
+```bash
+SITE_DOMAIN=newsite.com pnpm build
+npx wrangler pages deploy dist --project-name=newsite-com
+```
+
+### Naming Convention
+
+| Domain | Cloudflare Pages project name | Workflow file |
+|--------|-------------------------------|---------------|
+| `coolnews.dev` | `coolnews-dev` | `deploy-coolnews.yml` |
+| `muvizz.com` | `muvizz-com` | `deploy-muvizz.yml` |
+| `travelnights.com` | `travelnights-com` | `deploy-travelnights.yml` |
+
+---
+
+## 9. Project Status and Roadmap
+
 
 ### Phase Breakdown
 
@@ -631,7 +768,7 @@ legal_pages_override:
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### Common Issues
 
