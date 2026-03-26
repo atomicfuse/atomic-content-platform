@@ -1,6 +1,6 @@
 ---
 title: "Privacy Policy"
-layout: page
+layout: ../layouts/PageLayout.astro
 ---
 
 # Privacy Policy for {{site_name}}

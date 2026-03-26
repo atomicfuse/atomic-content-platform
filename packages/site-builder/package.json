@@ -4,6 +4,8 @@
   "private": true,
   "description": "Astro static site generator — themes, components, build scripts, config resolver",
   "scripts": {
+    "prebuild": "tsx scripts/build-site.ts",
+    "predev": "tsx scripts/build-site.ts",
     "dev": "astro dev",
     "build": "astro build && pagefind --site dist",
     "preview": "astro preview",
@@ -24,6 +26,7 @@
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^25.5.0",
     "tailwindcss": "^4.1.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

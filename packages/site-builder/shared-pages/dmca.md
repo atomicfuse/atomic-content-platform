@@ -1,6 +1,6 @@
 ---
 title: "DMCA Notice"
-layout: page
+layout: ../layouts/PageLayout.astro
 ---
 
 # DMCA Notice -- {{site_name}}
