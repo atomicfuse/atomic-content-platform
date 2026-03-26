@@ -15,8 +15,9 @@
  * via `SITE_DOMAIN` and `NETWORK_DATA_PATH` environment variables.
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, symlink, access } from "node:fs/promises";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 import type { NetworkManifest } from "@atomic-platform/shared-types";
@@ -24,6 +25,13 @@ import type { NetworkManifest } from "@atomic-platform/shared-types";
 import { resolveConfig } from "./resolve-config.js";
 import { generateAdsTxt } from "./generate-ads-txt.js";
 import { injectSharedPages } from "./inject-shared-pages.js";
+
+// ---------------------------------------------------------------------------
+// ESM __dirname shim
+// ---------------------------------------------------------------------------
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -72,6 +80,43 @@ async function writeFileWithDir(
 ): Promise<void> {
   await mkdir(dirname(filePath), { recursive: true });
   await writeFile(filePath, content, "utf-8");
+}
+
+// ---------------------------------------------------------------------------
+// Setup helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Symlink public/assets → {networkDataPath}/sites/{siteDomain}/assets/
+ *
+ * Idempotent: removes any existing symlink/dir at the target path first.
+ * Skips gracefully (logs warning) if the source assets dir does not exist.
+ *
+ * @param networkDataPath - Root of the network data repo
+ * @param siteDomain      - Domain slug (e.g. "coolnews.dev")
+ * @param publicDir       - Astro public dir (default: process.cwd()/public)
+ */
+export async function setupAssets(
+  networkDataPath: string,
+  siteDomain: string,
+  publicDir: string = join(process.cwd(), "public"),
+): Promise<void> {
+  const linkPath = join(publicDir, "assets");
+  const targetPath = join(networkDataPath, "sites", siteDomain, "assets");
+
+  // Check target exists before creating symlink (no dangling links)
+  try {
+    await access(targetPath);
+  } catch {
+    console.log(`[build-site] No assets directory found for ${siteDomain} — skipping`);
+    return;
+  }
+
+  // Remove existing symlink or directory at link path
+  await rm(linkPath, { recursive: true, force: true });
+
+  await symlink(targetPath, linkPath);
+  console.log(`[build-site] Assets linked: ${linkPath} → ${targetPath}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +176,10 @@ export async function buildSite(
     `[build-site] Wrote ads.txt (${resolvedConfig.ads_txt.length} entries)`,
   );
 
+  // ---- 4a. Link site assets ----
+
+  await setupAssets(networkDataPath, siteDomain);
+
   // ---- 5. Inject shared legal pages ----
 
   const sharedPagesDir = join(__dirname, "..", "shared-pages");
@@ -178,7 +227,6 @@ async function main(): Promise<void> {
   }
 }
 
-// Detect if this module is the entry point (CJS).
-if (require.main === module) {
+if (process.argv[1] === __filename) {
   void main();
 }
