@@ -1,13 +1,16 @@
-name: Deploy coolnews.dev
+name: Rebuild All Sites (manual)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for rebuild (e.g. site-builder update)"
+        required: false
+        default: "Manual rebuild"
 
 jobs:
   deploy:
-    name: Build & Deploy coolnews.dev
+    name: "Rebuild all sites (manual — ${{ inputs.reason }})"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +35,7 @@ jobs:
       - name: Build shared-types
         run: pnpm --filter @atomic-platform/shared-types build
 
+      # TODO: when more sites exist, loop over all sites/*/
       - name: Build coolnews.dev
         working-directory: packages/site-builder
         run: pnpm build
