@@ -224,3 +224,48 @@ You should see:
 | `200 skipped` | No new articles found in the feed |
 | `400` | Missing/invalid `siteDomain` or `rssUrl` |
 | `502` | Agent error — check terminal logs |
+
+---
+
+## What is the dev → stage → prod deployment flow?
+
+Three environments, each with a clear trigger:
+
+| Environment | Trigger | URL |
+|-------------|---------|-----|
+| **Dev** | `pnpm dev` locally | `localhost:4321` |
+| **Stage** | Open a PR against `main` in `atomic-labs-network` | `{hash}.coolnews-dev.pages.dev` (Cloudflare preview) |
+| **Prod** | Merge PR to `main` in `atomic-labs-network` | `coolnews-dev.pages.dev` |
+
+### Key rules
+
+- **Only data changes trigger deploys.** `atomic-labs-network` owns the deploy workflow. Pushing code changes to `atomic-content-platform` does NOT trigger Cloudflare — only `workflow_dispatch` (manual) is available there.
+
+- **Only affected sites build.** The workflow detects which `sites/`, `groups/`, `org.yaml`, or `network.yaml` files changed, and builds only the relevant sites. Most commits skip most sites.
+
+- **Cloudflare knows prod vs. preview from the branch name.** Deploying from `main` → Production URL. Deploying from any other branch → Preview URL. This is handled automatically by wrangler.
+
+### How to trigger a stage (preview) deploy
+
+1. Push your changes to your branch in `atomic-labs-network` (e.g. `asaf-dev`)
+2. Open a PR against `main`
+3. GitHub Actions runs automatically — only if `sites/**`, `groups/**`, `org.yaml`, or `network.yaml` changed
+4. Cloudflare Pages creates a preview URL — check the PR for the deployment link
+
+### How to trigger a prod deploy
+
+Merge the PR to `main`. The workflow runs, detects changes, builds, and deploys Production.
+
+### How to force-rebuild all sites (e.g. after site-builder code change)
+
+Go to GitHub → `atomicfuse/atomic-labs-network` → Actions → "Deploy Sites" → Run workflow → enable "Force rebuild all sites".
+
+Or use the manual workflow in `atomic-content-platform` → Actions → "Rebuild All Sites (manual)".
+
+### Secrets required in `atomic-labs-network` GitHub repo settings
+
+| Secret | What it is |
+|--------|-----------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token scoped to `Pages: Edit` only |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID (from dashboard URL) |
+| `PLATFORM_REPO_TOKEN` | Fine-grained GitHub PAT with `Contents: Read` on `atomic-content-platform` |
