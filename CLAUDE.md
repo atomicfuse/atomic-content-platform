@@ -62,6 +62,16 @@ SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomi
 - Article files: kebab-case slug (e.g., `best-thriller-movies-2026.md`)
 - Package names: `@atomic-platform/{package-name}`
 
+## Git Workflow
+
+**Branch rules — follow these on every commit/push without being asked:**
+
+- Asaf works on `asaf-dev`. Michal works on `michal-dev`. **Never commit directly to `main`.**
+- When asked to "commit and push": stage the relevant files, write a clear commit message, commit to the current dev branch, and push to `origin/<branch>`.
+- When work is ready for review: open a PR from the dev branch to `main` using `gh pr create`. Do not merge directly.
+- Never touch the other developer's branch.
+- Always run `git branch --show-current` to confirm you are on the right branch before committing.
+
 ## Key Environment Variables
 
 | Variable | Used by | Description |
