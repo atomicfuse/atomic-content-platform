@@ -1,6 +1,6 @@
 ---
 title: "Terms of Service"
-layout: page
+layout: ../layouts/PageLayout.astro
 ---
 
 # Terms of Service for {{site_name}}

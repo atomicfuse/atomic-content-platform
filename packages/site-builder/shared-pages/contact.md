@@ -1,6 +1,6 @@
 ---
 title: "Contact Us"
-layout: page
+layout: ../layouts/PageLayout.astro
 ---
 
 # Contact {{site_name}}
