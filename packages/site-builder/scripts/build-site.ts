@@ -8,6 +8,7 @@
  *  2. Resolve config (org -> group -> site merge)
  *  3. Check active flag — emit maintenance page if inactive
  *  4. Generate ads.txt -> public/ads.txt
+ *  4a. Symlink public/assets -> site assets dir
  *  5. Inject shared legal pages -> src/pages/
  *  6. Log build summary
  *
@@ -15,7 +16,7 @@
  * via `SITE_DOMAIN` and `NETWORK_DATA_PATH` environment variables.
  */
 
-import { readFile, writeFile, mkdir, rm, symlink, access } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, symlink, stat, lstat } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -106,14 +107,30 @@ export async function setupAssets(
 
   // Check target exists before creating symlink (no dangling links)
   try {
-    await access(targetPath);
+    const s = await stat(targetPath);
+    if (!s.isDirectory()) {
+      console.warn(`[build-site] Assets path exists but is not a directory: ${targetPath} — skipping`);
+      return;
+    }
   } catch {
-    console.log(`[build-site] No assets directory found for ${siteDomain} — skipping`);
+    console.warn(`[build-site] No assets directory found for ${siteDomain} — skipping`);
     return;
   }
 
-  // Remove existing symlink or directory at link path
-  await rm(linkPath, { recursive: true, force: true });
+  // Remove existing path only if it is a symlink (never silently delete real dirs)
+  try {
+    const existing = await lstat(linkPath);
+    if (existing.isSymbolicLink()) {
+      await rm(linkPath, { force: true });
+    } else {
+      throw new Error(
+        `[build-site] ${linkPath} exists and is not a symlink — refusing to overwrite. Remove it manually.`,
+      );
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    // ENOENT = nothing there, continue
+  }
 
   await symlink(targetPath, linkPath);
   console.log(`[build-site] Assets linked: ${linkPath} → ${targetPath}`);

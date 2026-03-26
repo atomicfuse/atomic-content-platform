@@ -35,7 +35,7 @@ describe("setupAssets", () => {
     const publicDir = join(tmp, "public");
     await mkdir(publicDir, { recursive: true });
 
-    // Create stale symlink first (symlink imported statically at top of file)
+    // Create stale symlink first to verify idempotent replacement
     await symlink("/some/old/path", join(publicDir, "assets"));
 
     await setupAssets(networkPath, "test.com", publicDir);
