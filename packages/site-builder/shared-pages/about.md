@@ -1,6 +1,6 @@
 ---
 title: "About"
-layout: page
+layout: ../layouts/PageLayout.astro
 ---
 
 # About {{site_name}}

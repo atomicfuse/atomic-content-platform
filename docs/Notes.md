@@ -162,3 +162,65 @@ K8s Agent (content-pipeline)
 ```
 
 Each agent is an independent entry point — team members can work on different agents in parallel without conflicts.
+
+---
+
+## How do I run the content generation agent locally?
+
+### 1. Setup
+
+```bash
+cd atomic-content-platform/packages/content-pipeline
+cp .env.example .env
+```
+
+Edit `.env` and fill in:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...                         # required
+GITHUB_TOKEN=ghp_...                                 # required (for writing articles)
+GEMINI_API_KEY=AIzaSy_...                            # optional (for featured images)
+NETWORK_REPO=atomicfuse/atomic-labs-network          # required for GitHub write mode
+```
+
+For **local dev** (writes files directly to disk instead of GitHub):
+
+```
+LOCAL_NETWORK_PATH=/path/to/atomic-labs-network
+```
+
+### 2. Start the server
+
+```bash
+pnpm agent:content-generation
+```
+
+You should see:
+
+```
+[server] Content generation agent running on http://localhost:3001
+[server] POST http://localhost:3001/content-generate
+```
+
+### 3. Send a request (Postman or curl)
+
+- **Method:** `POST`
+- **URL:** `http://localhost:3001/content-generate`
+- **Headers:** `Content-Type: application/json`
+- **Body:**
+
+```json
+{
+  "siteDomain": "coolnews.dev",
+  "rssUrl": "https://rss.app/feeds/..."
+}
+```
+
+### Responses
+
+| Status | Meaning |
+|--------|---------|
+| `201 created` | Article generated and written |
+| `200 skipped` | No new articles found in the feed |
+| `400` | Missing/invalid `siteDomain` or `rssUrl` |
+| `502` | Agent error — check terminal logs |

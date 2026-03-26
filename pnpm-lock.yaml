@@ -23,6 +23,9 @@ importers:
       '@octokit/rest':
         specifier: ^21.1.0
         version: 21.1.1
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
       fast-xml-parser:
         specifier: ^5.5.9
         version: 5.5.9
@@ -42,9 +45,6 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
-      dotenv:
-        specifier: ^16.4.0
-        version: 16.6.1
       tsx:
         specifier: ^4.19.0
         version: 4.21.0
@@ -95,6 +95,9 @@ importers:
       tailwindcss:
         specifier: ^4.1.0
         version: 4.2.2
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
