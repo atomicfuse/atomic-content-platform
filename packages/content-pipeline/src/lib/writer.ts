@@ -6,11 +6,20 @@ import type { GitHubConfig } from "./github.js";
 export interface WriterConfig {
   localNetworkPath: string | undefined;
   github: GitHubConfig;
+  branch?: string;
+}
+
+/**
+ * When a branch is specified, ALWAYS use GitHub — the staging build
+ * reads from the git branch, not from the local filesystem.
+ * Local write mode is only used when no branch is given.
+ */
+function shouldWriteLocal(config: WriterConfig): boolean {
+  return !!config.localNetworkPath && !config.branch;
 }
 
 /**
  * Write an article markdown file to local filesystem or GitHub.
- * LOCAL_NETWORK_PATH takes priority over GitHub if both are configured.
  */
 export async function writeArticle(
   config: WriterConfig,
@@ -20,8 +29,8 @@ export async function writeArticle(
 ): Promise<void> {
   const filePath = `sites/${siteDomain}/articles/${slug}.md`;
 
-  if (config.localNetworkPath) {
-    const fullPath = join(config.localNetworkPath, filePath);
+  if (shouldWriteLocal(config)) {
+    const fullPath = join(config.localNetworkPath!, filePath);
     await mkdir(dirname(fullPath), { recursive: true });
     await writeFile(fullPath, content, "utf-8");
     console.log(`[writer] Wrote article locally: ${fullPath}`);
@@ -33,8 +42,9 @@ export async function writeArticle(
     path: filePath,
     content,
     message: `feat(content): add article ${slug} for ${siteDomain}`,
+    branch: config.branch,
   });
-  console.log(`[writer] Committed article to GitHub: ${filePath}`);
+  console.log(`[writer] Committed article to GitHub: ${filePath}${config.branch ? ` (branch: ${config.branch})` : ""}`);
 }
 
 /**
@@ -48,8 +58,8 @@ export async function writeAsset(
 ): Promise<void> {
   const filePath = `sites/${siteDomain}/${assetPath}`;
 
-  if (config.localNetworkPath) {
-    const fullPath = join(config.localNetworkPath, filePath);
+  if (shouldWriteLocal(config)) {
+    const fullPath = join(config.localNetworkPath!, filePath);
     await mkdir(dirname(fullPath), { recursive: true });
     await writeFile(fullPath, data);
     return;
@@ -62,7 +72,10 @@ export async function writeAsset(
 
   let sha: string | undefined;
   try {
-    const existing = await octokit.repos.getContent({ owner, repo: repoName, path: filePath });
+    const existing = await octokit.repos.getContent({
+      owner, repo: repoName, path: filePath,
+      ...(config.branch ? { ref: config.branch } : {}),
+    });
     if ("sha" in existing.data) sha = existing.data.sha;
   } catch { /* new file */ }
 
@@ -73,5 +86,6 @@ export async function writeAsset(
     message: `feat(assets): add generated image ${assetPath}`,
     content: data.toString("base64"),
     ...(sha ? { sha } : {}),
+    ...(config.branch ? { branch: config.branch } : {}),
   });
 }

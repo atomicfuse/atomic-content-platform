@@ -11,7 +11,8 @@
  */
 
 import * as http from "node:http";
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 
@@ -48,7 +49,7 @@ async function handleRequest(
   req.on("data", (chunk) => { body += chunk; });
   await new Promise<void>((resolve) => req.on("end", resolve));
 
-  let payload: { siteDomain?: unknown; rssUrl?: unknown };
+  let payload: { siteDomain?: unknown; rssUrl?: unknown; branch?: unknown };
   try {
     payload = JSON.parse(body) as typeof payload;
   } catch {
@@ -57,7 +58,7 @@ async function handleRequest(
   }
 
   // Validate
-  const { siteDomain, rssUrl } = payload;
+  const { siteDomain, rssUrl, branch } = payload;
   if (!siteDomain || typeof siteDomain !== "string") {
     sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
     return;
@@ -67,10 +68,11 @@ async function handleRequest(
     return;
   }
 
-  console.log(`[server] POST /content-generate — site: ${siteDomain}, rss: ${rssUrl}`);
+  const branchStr = typeof branch === "string" ? branch : undefined;
+  console.log(`[server] POST /content-generate — site: ${siteDomain}, rss: ${rssUrl}${branchStr ? `, branch: ${branchStr}` : ""}`);
 
   try {
-    const result = await runContentGeneration({ siteDomain, rssUrl }, config);
+    const result = await runContentGeneration({ siteDomain, rssUrl, branch: branchStr }, config);
 
     const resultBody = result as unknown as Record<string, unknown>;
     if (result.status === "created") {

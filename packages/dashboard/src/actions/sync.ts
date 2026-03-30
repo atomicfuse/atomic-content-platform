@@ -59,7 +59,10 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     const siteConfig = await readSiteConfig(site.domain);
 
     let correctStatus: SiteStatus;
-    if (cfInfo) {
+    if (site.staging_branch) {
+      // Preserve staging status for sites with active staging branches
+      correctStatus = "Staging";
+    } else if (cfInfo) {
       correctStatus = await detectSiteStatus(cfInfo, siteConfig);
     } else if (!siteConfig) {
       // Not in Cloudflare and no site.yaml → New
@@ -110,6 +113,10 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
         created_at: now,
         pages_project: cfInfo.pagesProject,
         zone_id: cfInfo.zoneId,
+        staging_branch: null,
+        preview_url: null,
+        saved_previews: null,
+        custom_domain: null,
       };
     })
   );
@@ -162,6 +169,10 @@ export async function addDomainManually(
     created_at: now,
     pages_project: null,
     zone_id: null,
+    staging_branch: null,
+    preview_url: null,
+    saved_previews: null,
+    custom_domain: null,
   };
 
   await addSitesToIndex([entry]);

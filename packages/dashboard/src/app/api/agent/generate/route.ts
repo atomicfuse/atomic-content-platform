@@ -5,13 +5,14 @@ const CONTENT_AGENT_URL =
 
 /**
  * Proxy to the content-generation agent.
- * POST { siteDomain, rssUrl }
+ * POST { siteDomain, rssUrl, branch? }
  * Returns the agent result + pipeline metadata.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = (await req.json()) as {
     siteDomain: string;
     rssUrl: string;
+    branch?: string | null;
   };
 
   if (!body.siteDomain || !body.rssUrl) {
@@ -30,6 +31,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         body: JSON.stringify({
           siteDomain: body.siteDomain,
           rssUrl: body.rssUrl,
+          ...(body.branch ? { branch: body.branch } : {}),
         }),
       }
     );

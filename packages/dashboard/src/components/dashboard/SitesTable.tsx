@@ -102,6 +102,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       case "New":
         router.push(`/wizard?domain=${encodeURIComponent(site.domain)}`);
         break;
+      case "Staging":
+        router.push(`/sites/${encodeURIComponent(site.domain)}?tab=staging`);
+        break;
       case "Preview":
         router.push(`/sites/${encodeURIComponent(site.domain)}?tab=preview`);
         break;

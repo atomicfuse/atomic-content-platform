@@ -1,6 +1,6 @@
 "use server";
 
-import { readSiteConfig, commitSiteFiles } from "@/lib/github";
+import { readDashboardIndex } from "@/lib/github";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import {
@@ -26,11 +26,17 @@ export async function updateSiteBrief(
   const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
   const path = `sites/${domain}/site.yaml`;
 
-  // Read current site.yaml
+  // Determine the correct branch (staging sites have files only on their staging branch)
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  const branch = site?.staging_branch ?? undefined;
+
+  // Read current site.yaml from the correct branch
   const { data } = await octokit.repos.getContent({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
     path,
+    ...(branch ? { ref: branch } : {}),
   });
 
   if (!("content" in data) || !data.content) {
@@ -53,7 +59,7 @@ export async function updateSiteBrief(
   brief.schedule = schedule;
   config.brief = brief;
 
-  // Write back
+  // Write back to the correct branch
   const newContent = stringifyYaml(config, { lineWidth: 0 });
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
@@ -62,6 +68,7 @@ export async function updateSiteBrief(
     message: `site(${domain}): update content brief`,
     content: Buffer.from(newContent).toString("base64"),
     sha: data.sha,
+    ...(branch ? { branch } : {}),
   });
 
   revalidatePath(`/sites/${domain}`);

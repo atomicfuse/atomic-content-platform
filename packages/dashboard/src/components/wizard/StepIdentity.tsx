@@ -21,25 +21,53 @@ export function StepIdentity({
   onNext,
   onCancel,
 }: StepIdentityProps): React.ReactElement {
-  const canProceed = data.domain && data.siteName;
+  const canProceed = data.pagesProjectName && data.siteName;
+
+  function handleProjectNameChange(value: string): void {
+    // Sanitize: lowercase, alphanumeric and hyphens only
+    const sanitized = value.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    // The project name IS the domain/folder name in the network repo.
+    // When a real domain is attached later, it becomes an alias on the CF project.
+    const updates: Partial<WizardFormData> = { pagesProjectName: sanitized };
+    // Auto-set domain to match project name unless user picked a real domain
+    if (!data.domain || data.domain === data.pagesProjectName || !availableDomains.includes(data.domain)) {
+      updates.domain = sanitized;
+    }
+    onChange(updates);
+  }
 
   return (
     <div className="space-y-6">
-      <h2 className="text-xl font-bold">Site Identity</h2>
+      <h2 className="text-xl font-bold">Create Site</h2>
+
+      <div className="space-y-1.5">
+        <Input
+          label="Pages Project Name"
+          placeholder="coolnews-dev-v2"
+          value={data.pagesProjectName}
+          onChange={(e): void => handleProjectNameChange(e.target.value)}
+        />
+        <p className="text-xs text-[var(--text-muted)]">
+          This creates <span className="font-mono text-cyan">{data.pagesProjectName || "your-project"}.pages.dev</span> on Cloudflare Pages
+        </p>
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Select
-          label="Domain"
-          options={availableDomains.map((d) => ({ value: d, label: d }))}
-          placeholder="Select a domain..."
-          value={data.domain}
-          onChange={(e): void => onChange({ domain: e.target.value })}
-        />
         <Input
           label="Site Name"
-          placeholder="My Awesome Site"
+          placeholder="Cool News"
           value={data.siteName}
           onChange={(e): void => onChange({ siteName: e.target.value })}
+        />
+        <Select
+          label="Domain (optional)"
+          options={[
+            { value: "", label: "None — attach later" },
+            ...availableDomains.map((d) => ({ value: d, label: d })),
+          ]}
+          placeholder="Attach a domain later..."
+          value={availableDomains.includes(data.domain) ? data.domain : ""}
+          onChange={(e): void => onChange({ domain: e.target.value || data.pagesProjectName })}
         />
       </div>
 

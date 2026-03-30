@@ -16,6 +16,7 @@ export interface FileCommit {
   path: string;
   content: string;
   message: string;
+  branch?: string;
 }
 
 export function createGitHubClient(config: GitHubConfig): Octokit {
@@ -37,12 +38,14 @@ export async function readFile(
   octokit: Octokit,
   repo: string,
   path: string,
+  branch?: string,
 ): Promise<string> {
   const { owner, repo: repoName } = parseRepo(repo);
   const response = await octokit.repos.getContent({
     owner,
     repo: repoName,
     path,
+    ...(branch ? { ref: branch } : {}),
   });
 
   if ("content" in response.data) {
@@ -69,6 +72,7 @@ export async function commitFile(
       owner,
       repo: repoName,
       path: commit.path,
+      ...(commit.branch ? { ref: commit.branch } : {}),
     });
     if ("sha" in existing.data) {
       sha = existing.data.sha;
@@ -84,6 +88,7 @@ export async function commitFile(
     message: commit.message,
     content: Buffer.from(commit.content).toString("base64"),
     ...(sha ? { sha } : {}),
+    ...(commit.branch ? { branch: commit.branch } : {}),
   });
 
   return response.data.commit.sha ?? "";
@@ -96,12 +101,14 @@ export async function listFiles(
   octokit: Octokit,
   repo: string,
   path: string,
+  branch?: string,
 ): Promise<string[]> {
   const { owner, repo: repoName } = parseRepo(repo);
   const response = await octokit.repos.getContent({
     owner,
     repo: repoName,
     path,
+    ...(branch ? { ref: branch } : {}),
   });
 
   if (Array.isArray(response.data)) {

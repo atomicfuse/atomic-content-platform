@@ -1,4 +1,4 @@
-export type SiteStatus = "New" | "Preview" | "Ready" | "Live" | "WordPress";
+export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live" | "WordPress";
 export type Company = "ATL" | "NGC";
 export type Vertical =
   | "Lifestyle"
@@ -28,6 +28,14 @@ export interface DashboardSiteEntry {
   pages_project: string | null;
   /** Cloudflare zone ID for API operations. */
   zone_id: string | null;
+  /** Git branch used for staging (e.g., "staging/coolnews-dev-v2"). */
+  staging_branch: string | null;
+  /** Current staging preview URL. */
+  preview_url: string | null;
+  /** Saved preview deployment URLs for review. */
+  saved_previews: Array<{ url: string; label: string; saved_at: string }> | null;
+  /** Custom domain attached to the Pages project. */
+  custom_domain: string | null;
 }
 
 export interface DeletedSiteEntry extends DashboardSiteEntry {
@@ -67,6 +75,7 @@ export interface ArticleEntry {
 
 export interface WizardFormData {
   domain: string;
+  pagesProjectName: string;
   siteName: string;
   siteTagline: string;
   company: Company;

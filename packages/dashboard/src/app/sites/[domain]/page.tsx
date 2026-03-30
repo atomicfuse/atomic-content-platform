@@ -4,6 +4,8 @@ import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
 import { MonetizationTab } from "@/components/site-detail/MonetizationTab";
+import { StagingTab } from "@/components/site-detail/StagingTab";
+import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +20,17 @@ export default async function SiteDetailPage({
   const { domain } = await params;
   const decodedDomain = decodeURIComponent(domain);
 
-  const [index, siteConfig, articles] = await Promise.all([
-    readDashboardIndex(),
-    readSiteConfig(decodedDomain),
-    readArticles(decodedDomain),
-  ]);
-
+  const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === decodedDomain);
   if (!site) notFound();
+
+  // Use staging branch for reads when site is in staging (files may not exist on main yet)
+  const branch = site.staging_branch ?? undefined;
+
+  const [siteConfig, articles] = await Promise.all([
+    readSiteConfig(decodedDomain, branch),
+    readArticles(decodedDomain, branch),
+  ]);
 
   const brief = siteConfig?.brief as {
     audience: string;
@@ -58,14 +63,32 @@ export default async function SiteDetailPage({
     <div className="space-y-6">
       <SiteDetailHeader site={site} />
       <SiteDetailTabs
+        stagingTab={
+          site.staging_branch ? (
+            <StagingTab
+              domain={decodedDomain}
+              pagesProject={site.pages_project}
+              stagingBranch={site.staging_branch}
+              previewUrl={site.preview_url}
+              savedPreviews={site.saved_previews}
+            />
+          ) : null
+        }
         contentTab={
           <ContentTab articles={articles} domain={decodedDomain} />
         }
         agentTab={
-          <ContentAgentTab domain={decodedDomain} pagesProject={site.pages_project} brief={normalizedBrief} />
+          <ContentAgentTab domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} brief={normalizedBrief} />
         }
         monetizationTab={<MonetizationTab site={site} />}
       />
+      {site.pages_project && (
+        <AttachDomainPanel
+          domain={decodedDomain}
+          pagesProject={site.pages_project}
+          customDomain={site.custom_domain}
+        />
+      )}
     </div>
   );
 }

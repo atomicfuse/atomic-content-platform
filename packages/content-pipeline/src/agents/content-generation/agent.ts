@@ -32,6 +32,7 @@ import type { ArticleFrontmatter, ArticleType, SiteConfig } from "@atomic-platfo
 export interface ContentGenerationParams {
   siteDomain: string;
   rssUrl: string;
+  branch?: string;
 }
 
 export interface ContentGenerationResult {
@@ -64,6 +65,7 @@ async function isDuplicate(
   config: AgentConfig,
   siteDomain: string,
   sourceUrl: string,
+  branch?: string,
 ): Promise<boolean> {
   if (config.localNetworkPath) {
     const articlesDir = path.join(
@@ -104,7 +106,7 @@ async function isDuplicate(
 
   let files: string[];
   try {
-    files = await listFiles(octokit, config.networkRepo, articlesPath);
+    files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
   } catch {
     return false;
   }
@@ -116,6 +118,7 @@ async function isDuplicate(
         octokit,
         config.networkRepo,
         `${articlesPath}/${file}`,
+        branch,
       );
       const { data } = matter(content);
       if (data.source_url === sourceUrl) {
@@ -137,11 +140,12 @@ async function resolveUniqueSlug(
   config: AgentConfig,
   siteDomain: string,
   baseSlug: string,
+  branch?: string,
 ): Promise<string> {
   let candidate = baseSlug;
   let counter = 2;
 
-  while (await slugExists(config, siteDomain, candidate)) {
+  while (await slugExists(config, siteDomain, candidate, branch)) {
     candidate = `${baseSlug}-${counter}`;
     counter++;
   }
@@ -153,6 +157,7 @@ async function slugExists(
   config: AgentConfig,
   siteDomain: string,
   slug: string,
+  branch?: string,
 ): Promise<boolean> {
   if (config.localNetworkPath) {
     const filePath = path.join(
@@ -178,6 +183,7 @@ async function slugExists(
       octokit,
       config.networkRepo,
       `sites/${siteDomain}/articles/${slug}.md`,
+      branch,
     );
     return true;
   } catch {
@@ -226,7 +232,7 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
  * readSiteBrief (GitHub) if the local file is missing or returns no brief —
  * this also allows test mocks of readSiteBrief to work correctly.
  */
-async function getSiteBrief(config: AgentConfig, siteDomain: string) {
+async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
   if (config.localNetworkPath) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
     if (local) return local;
@@ -234,7 +240,7 @@ async function getSiteBrief(config: AgentConfig, siteDomain: string) {
   }
 
   const octokit = createGitHubClient(config.github);
-  return readSiteBrief(octokit, config.networkRepo, siteDomain);
+  return readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
 }
 
 /**
@@ -244,7 +250,7 @@ export async function runContentGeneration(
   params: ContentGenerationParams,
   config: AgentConfig,
 ): Promise<ContentGenerationResult> {
-  const { siteDomain, rssUrl } = params;
+  const { siteDomain, rssUrl, branch } = params;
 
   try {
     // Step 1: Fetch RSS + parse latest item
@@ -257,13 +263,13 @@ export async function runContentGeneration(
     // Duplicate check runs before site brief read (spec step 4 before step 3) to:
     // 1. Fail fast — avoid a GitHub API / disk read for articles we already have
     // 2. The fs.readdir/readFile mocks in tests must be set up before any readFile call
-    const duplicate = await isDuplicate(config, siteDomain, rssItem.link);
+    const duplicate = await isDuplicate(config, siteDomain, rssItem.link, branch);
     if (duplicate) {
       return { status: "skipped", reason: "already exists" };
     }
 
     // Step 3: Read site brief
-    const { siteName, brief } = await getSiteBrief(config, siteDomain);
+    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
 
     // Step 5: Build prompts
     const systemPrompt = buildSystemPrompt(siteName, brief);
@@ -275,7 +281,7 @@ export async function runContentGeneration(
     const generated = parseClaudeResponse(rawResponse);
 
     // Step 7: Resolve unique slug
-    const slug = await resolveUniqueSlug(config, siteDomain, generated.slug);
+    const slug = await resolveUniqueSlug(config, siteDomain, generated.slug, branch);
 
     // Step 8: Handle featured image
     let featuredImageUrl: string | undefined = parsed.featuredImageUrl ?? undefined;
@@ -288,7 +294,7 @@ export async function runContentGeneration(
       if (imageBuffer) {
         const assetPath = `assets/images/${slug}.png`;
         await writeAsset(
-          { localNetworkPath: config.localNetworkPath, github: config.github },
+          { localNetworkPath: config.localNetworkPath, github: config.github, branch },
           siteDomain,
           assetPath,
           imageBuffer,
@@ -332,7 +338,7 @@ export async function runContentGeneration(
     // Step 10: Write article
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
     await writeArticle(
-      { localNetworkPath: config.localNetworkPath, github: config.github },
+      { localNetworkPath: config.localNetworkPath, github: config.github, branch },
       siteDomain,
       slug,
       markdown,

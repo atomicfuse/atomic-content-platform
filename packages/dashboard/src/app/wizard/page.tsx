@@ -12,6 +12,7 @@ import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 
 const DEFAULT_FORM: WizardFormData = {
   domain: "",
+  pagesProjectName: "",
   siteName: "",
   siteTagline: "",
   company: "ATL",
@@ -32,7 +33,7 @@ export default function WizardPage(): React.ReactElement {
 
   const [formData, setFormData] = useState<WizardFormData>({
     ...DEFAULT_FORM,
-    domain: preselectedDomain,
+    domain: preselectedDomain || "",
   });
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
 

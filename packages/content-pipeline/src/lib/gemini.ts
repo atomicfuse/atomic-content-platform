@@ -3,7 +3,7 @@
  * Returns null on any failure — Gemini is optional; callers skip featuredImage.
  */
 
-const GEMINI_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation";
+const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /**
@@ -21,7 +21,7 @@ export async function generateImageWithGemini(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseModalities: ["IMAGE"] },
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
       }),
     });
 

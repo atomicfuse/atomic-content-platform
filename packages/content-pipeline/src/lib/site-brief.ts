@@ -24,8 +24,9 @@ export async function readSiteBrief(
   octokit: Octokit,
   repo: string,
   domain: string,
+  branch?: string,
 ): Promise<SiteBriefData> {
-  const content = await readFile(octokit, repo, `sites/${domain}/site.yaml`);
+  const content = await readFile(octokit, repo, `sites/${domain}/site.yaml`, branch);
   const config = parseYaml(content) as SiteConfig;
 
   if (!config.brief) {

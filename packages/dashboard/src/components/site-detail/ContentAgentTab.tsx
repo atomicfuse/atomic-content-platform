@@ -11,6 +11,7 @@ import { ContentGenerationPanel } from "./ContentGenerationPanel";
 interface ContentAgentTabProps {
   domain: string;
   pagesProject: string | null;
+  stagingBranch: string | null;
   brief: {
     audience: string;
     tone: string;
@@ -30,6 +31,7 @@ const DAY_MAP: Record<string, string> = {
 export function ContentAgentTab({
   domain,
   pagesProject,
+  stagingBranch,
   brief,
 }: ContentAgentTabProps): React.ReactElement {
   const [agentRunning, setAgentRunning] = useState(true);
@@ -81,7 +83,7 @@ export function ContentAgentTab({
   return (
     <div className="space-y-6">
       {/* Content Generation Panel */}
-      <ContentGenerationPanel domain={domain} pagesProject={pagesProject} />
+      <ContentGenerationPanel domain={domain} pagesProject={pagesProject} stagingBranch={stagingBranch} />
 
       <hr className="border-[var(--border-secondary)]" />
 

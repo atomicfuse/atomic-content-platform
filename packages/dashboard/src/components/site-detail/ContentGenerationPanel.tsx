@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 interface ContentGenerationPanelProps {
   domain: string;
   pagesProject: string | null;
+  stagingBranch: string | null;
 }
 
 type PipelineStep =
@@ -36,10 +37,12 @@ interface PipelineState {
   completedAt?: number;
 }
 
-const PIPELINE_STEPS: Array<{
+const ALL_PIPELINE_STEPS: Array<{
   key: PipelineStep;
   label: string;
   description: string;
+  stagingOnly?: boolean;
+  productionOnly?: boolean;
 }> = [
   {
     key: "fetching_rss",
@@ -79,27 +82,37 @@ const PIPELINE_STEPS: Array<{
   {
     key: "staging_live",
     label: "Staging Preview",
-    description: "Staging deployment is live",
+    description: "Staging deployment is live — review on the Staging tab",
   },
   {
     key: "deploying_production",
     label: "Deploy Production",
     description: "Publishing to production site",
+    productionOnly: true,
   },
   {
     key: "complete",
     label: "Complete",
     description: "Article is live on production",
+    productionOnly: true,
   },
 ];
 
-function getStepIndex(step: PipelineStep): number {
-  return PIPELINE_STEPS.findIndex((s) => s.key === step);
+function getPipelineSteps(isStaging: boolean): typeof ALL_PIPELINE_STEPS {
+  if (isStaging) {
+    return ALL_PIPELINE_STEPS.filter((s) => !s.productionOnly);
+  }
+  return ALL_PIPELINE_STEPS;
+}
+
+function getStepIndex(step: PipelineStep, steps: typeof ALL_PIPELINE_STEPS): number {
+  return steps.findIndex((s) => s.key === step);
 }
 
 export function ContentGenerationPanel({
   domain,
   pagesProject,
+  stagingBranch,
 }: ContentGenerationPanelProps): React.ReactElement {
   const [rssUrl, setRssUrl] = useState("");
   const [pipeline, setPipeline] = useState<PipelineState>({
@@ -111,6 +124,8 @@ export function ContentGenerationPanel({
 
   const domainSlug = domain.replace(/\./g, "-");
   const projectName = pagesProject ?? domainSlug;
+  const isStaging = !!stagingBranch;
+  const PIPELINE_STEPS = getPipelineSteps(isStaging);
 
   const advancePipeline = useCallback(
     (step: PipelineStep, message: string, extras?: Partial<PipelineState>) => {
@@ -211,7 +226,7 @@ export function ContentGenerationPanel({
       const res = await fetch("/api/agent/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteDomain: domain, rssUrl: rssUrl.trim() }),
+        body: JSON.stringify({ siteDomain: domain, rssUrl: rssUrl.trim(), branch: stagingBranch }),
       });
 
       // Stop the message cycling
@@ -241,35 +256,44 @@ export function ContentGenerationPanel({
         throw new Error(result.message ?? "Agent returned an error");
       }
 
-      // Article created locally by agent — now commit to GitHub
-      advancePipeline("writing_article", "Committing article to GitHub...", {
-        articleSlug: result.slug,
-        articlePath: result.path,
-      });
-
-      // Push the locally-written article to GitHub via our API
-      if (result.path) {
-        const commitRes = await fetch("/api/agent/commit-article", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articlePath: result.path }),
+      // For staging sites, the content-pipeline already committed directly to the
+      // staging branch on GitHub (writer.ts uses GitHub mode when branch is set).
+      // For non-staging sites, the agent writes locally and we need to push to GitHub.
+      if (isStaging) {
+        advancePipeline("writing_article", "Article committed to staging branch", {
+          articleSlug: result.slug,
+          articlePath: result.path,
         });
-        const commitResult = (await commitRes.json()) as {
-          status: string;
-          message?: string;
-        };
-        if (commitResult.status === "error") {
-          throw new Error(
-            `Git commit failed: ${commitResult.message ?? "Unknown error"}`
-          );
-        }
-      }
+      } else {
+        advancePipeline("writing_article", "Committing article to GitHub...", {
+          articleSlug: result.slug,
+          articlePath: result.path,
+        });
 
-      advancePipeline(
-        "writing_article",
-        "Article committed to GitHub repository",
-        { articleSlug: result.slug, articlePath: result.path }
-      );
+        // Push the locally-written article to GitHub via our API
+        if (result.path) {
+          const commitRes = await fetch("/api/agent/commit-article", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ articlePath: result.path }),
+          });
+          const commitResult = (await commitRes.json()) as {
+            status: string;
+            message?: string;
+          };
+          if (commitResult.status === "error") {
+            throw new Error(
+              `Git commit failed: ${commitResult.message ?? "Unknown error"}`
+            );
+          }
+        }
+
+        advancePipeline(
+          "writing_article",
+          "Article committed to GitHub repository",
+          { articleSlug: result.slug, articlePath: result.path }
+        );
+      }
       await delay(500);
 
       // Trigger staging build on Cloudflare Pages
@@ -281,6 +305,10 @@ export function ContentGenerationPanel({
       // Cloudflare auto-deploys on GitHub commits. But we can also trigger manually.
       // Either way, we want the deployment-specific preview URL (e.g. 846baa09.coolnews-dev.pages.dev)
       let deploymentUrl: string | null = null;
+      // For staging sites, construct the branch-based preview URL
+      // CF Pages branch preview format: staging-{project}.{project}.pages.dev
+      const branchSlug = stagingBranch ? stagingBranch.replace(/\//g, "-") : null;
+      const stagingBaseUrl = branchSlug ? `https://${branchSlug}.${projectName}.pages.dev` : null;
       const productionBaseUrl = `https://${projectName}.pages.dev`;
 
       try {
@@ -330,9 +358,18 @@ export function ContentGenerationPanel({
         }
       }
 
-      const stagingUrl = deploymentUrl ?? productionBaseUrl;
+      // For staging sites, prefer the branch-based staging URL over a deployment-specific URL
+      const stagingUrl = deploymentUrl ?? (isStaging ? stagingBaseUrl : null) ?? productionBaseUrl;
 
-      advancePipeline("staging_live", "Build triggered — deployment preview ready", {
+      const stagingMessage = isStaging
+        ? deploymentUrl
+          ? "Article committed to staging branch — preview deployment ready. Check the Staging tab for the latest preview."
+          : "Article committed to staging branch — Cloudflare will deploy within ~2 minutes. Use the Staging tab to refresh the preview."
+        : deploymentUrl
+          ? "Deployment preview ready — review the article before going live."
+          : "Build triggered — Cloudflare will deploy within ~2 minutes. Refresh the preview link shortly.";
+
+      advancePipeline("staging_live", stagingMessage, {
         stagingUrl,
       });
 
@@ -340,9 +377,7 @@ export function ContentGenerationPanel({
       setPipeline((prev) => ({
         ...prev,
         step: "staging_live",
-        message: deploymentUrl
-          ? "Deployment preview ready — review the article before going live."
-          : "Build triggered — Cloudflare will deploy within ~2 minutes. Refresh the preview link shortly.",
+        message: stagingMessage,
         stagingUrl,
         articleSlug: result.slug,
         articlePath: result.path,
@@ -393,7 +428,7 @@ export function ContentGenerationPanel({
     setPipeline({ step: "idle", message: "" });
   }
 
-  const currentStepIndex = getStepIndex(pipeline.step);
+  const currentStepIndex = getStepIndex(pipeline.step, PIPELINE_STEPS);
   const isRunning =
     pipeline.step !== "idle" &&
     pipeline.step !== "complete" &&
@@ -691,7 +726,7 @@ export function ContentGenerationPanel({
                         GitHub:
                       </span>
                       <a
-                        href={`https://github.com/atomicfuse/atomic-labs-network/blob/main/${pipeline.articlePath}`}
+                        href={`https://github.com/atomicfuse/atomic-labs-network/blob/${stagingBranch ?? "main"}/${pipeline.articlePath}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-[var(--text-secondary)] hover:underline font-mono truncate"
@@ -715,8 +750,8 @@ export function ContentGenerationPanel({
                   )}
                 </div>
 
-                {/* Deploy to production button */}
-                {pipeline.step === "staging_live" && (
+                {/* Deploy to production button — only for non-staging (production) sites */}
+                {pipeline.step === "staging_live" && !isStaging && (
                   <div className="pt-2 border-t border-[var(--border-secondary)]">
                     <Button onClick={handleDeployProduction} size="sm">
                       <svg
@@ -734,6 +769,17 @@ export function ContentGenerationPanel({
                       </svg>
                       Deploy to Production
                     </Button>
+                  </div>
+                )}
+
+                {/* Staging info — guide user to Staging tab for go-live */}
+                {pipeline.step === "staging_live" && isStaging && (
+                  <div className="pt-2 border-t border-[var(--border-secondary)]">
+                    <p className="text-xs text-[var(--text-muted)]">
+                      This is a staging site. Use the{" "}
+                      <span className="text-amber-400 font-semibold">Staging</span>{" "}
+                      tab to preview, refresh the deployment URL, and go live when ready.
+                    </p>
                   </div>
                 )}
               </div>

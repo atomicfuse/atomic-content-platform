@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const STEPS = ["Identity", "Theme", "Content Brief", "Preview", "Go Live"] as const;
+const STEPS = ["Create Site", "Theme", "Content Brief", "Preview", "Review"] as const;
 type StepName = (typeof STEPS)[number];
 
 interface WizardShellProps {

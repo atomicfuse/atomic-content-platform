@@ -37,6 +37,10 @@ export async function readDashboardIndex(): Promise<DashboardIndex> {
         ...s,
         pages_project: (s as Partial<DashboardSiteEntry>).pages_project ?? null,
         zone_id: (s as Partial<DashboardSiteEntry>).zone_id ?? null,
+        staging_branch: (s as Partial<DashboardSiteEntry>).staging_branch ?? null,
+        preview_url: (s as Partial<DashboardSiteEntry>).preview_url ?? null,
+        saved_previews: (s as Partial<DashboardSiteEntry>).saved_previews ?? null,
+        custom_domain: (s as Partial<DashboardSiteEntry>).custom_domain ?? null,
       }));
       parsed.deleted = parsed.deleted ?? [];
       return parsed;
@@ -280,7 +284,8 @@ export async function addSitesToIndex(
 
 /** Read a site's config YAML from the network repo. */
 export async function readSiteConfig(
-  domain: string
+  domain: string,
+  branch?: string
 ): Promise<Record<string, unknown> | null> {
   const octokit = getOctokit();
   try {
@@ -288,6 +293,7 @@ export async function readSiteConfig(
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
       path: `sites/${domain}/site.yaml`,
+      ...(branch ? { ref: branch } : {}),
     });
     if ("content" in data && data.content) {
       const content = Buffer.from(data.content, "base64").toString("utf-8");
@@ -301,13 +307,14 @@ export async function readSiteConfig(
 }
 
 /** List articles for a site from the network repo. */
-export async function readArticles(domain: string): Promise<ArticleEntry[]> {
+export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {
   const octokit = getOctokit();
   try {
     const { data } = await octokit.repos.getContent({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
       path: `sites/${domain}/articles`,
+      ...(branch ? { ref: branch } : {}),
     });
     if (!Array.isArray(data)) return [];
 
@@ -319,6 +326,7 @@ export async function readArticles(domain: string): Promise<ArticleEntry[]> {
           owner: NETWORK_REPO_OWNER,
           repo: NETWORK_REPO_NAME,
           path: file.path,
+          ...(branch ? { ref: branch } : {}),
         });
         if ("content" in fileData && fileData.content) {
           const content = Buffer.from(fileData.content, "base64").toString("utf-8");
@@ -347,11 +355,11 @@ export async function readArticles(domain: string): Promise<ArticleEntry[]> {
 /** Commit multiple files atomically using the Git Data API. */
 export async function commitSiteFiles(
   domain: string,
-  files: Array<{ path: string; content: string }>,
-  message: string
+  files: Array<{ path: string; content: string | Buffer }>,
+  message: string,
+  branch: string = "main"
 ): Promise<void> {
   const octokit = getOctokit();
-  const branch = "main";
 
   // Get the latest commit SHA
   const { data: ref } = await octokit.git.getRef({
@@ -375,7 +383,9 @@ export async function commitSiteFiles(
       const { data: blob } = await octokit.git.createBlob({
         owner: NETWORK_REPO_OWNER,
         repo: NETWORK_REPO_NAME,
-        content: Buffer.from(file.content).toString("base64"),
+        content: Buffer.isBuffer(file.content)
+          ? file.content.toString("base64")
+          : Buffer.from(file.content).toString("base64"),
         encoding: "base64",
       });
       return {
@@ -411,6 +421,107 @@ export async function commitSiteFiles(
     ref: `heads/${branch}`,
     sha: newCommit.sha,
   });
+}
+
+/**
+ * Trigger a workflow run by pushing a build-trigger file via the Contents API.
+ *
+ * Git Data API commits (createTree → createCommit → updateRef) do NOT trigger
+ * GitHub Actions. The Contents API (createOrUpdateFileContents) DOES. So after
+ * committing site files, we push a small trigger file to fire the workflow.
+ */
+export async function triggerWorkflowViaPush(
+  branch: string,
+  siteFolder: string
+): Promise<void> {
+  const octokit = getOctokit();
+  const triggerPath = `sites/${siteFolder}/.build-trigger`;
+
+  // Check if the trigger file already exists (to get its SHA for update)
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      path: triggerPath,
+      ref: branch,
+    });
+    if ("sha" in data) {
+      existingSha = data.sha;
+    }
+  } catch {
+    // File doesn't exist yet — that's fine
+  }
+
+  await octokit.repos.createOrUpdateFileContents({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    path: triggerPath,
+    message: `ci: trigger staging build for ${siteFolder}`,
+    content: Buffer.from(new Date().toISOString()).toString("base64"),
+    sha: existingSha,
+    branch,
+  });
+}
+
+/** Create a new branch from an existing branch. */
+export async function createBranch(
+  branchName: string,
+  fromBranch: string = "main"
+): Promise<void> {
+  const octokit = getOctokit();
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${fromBranch}`,
+  });
+  await octokit.git.createRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `refs/heads/${branchName}`,
+    sha: ref.object.sha,
+  });
+}
+
+/** Merge a branch into main. */
+export async function mergeBranchToMain(
+  branchName: string,
+  commitMessage: string
+): Promise<string> {
+  const octokit = getOctokit();
+  const { data } = await octokit.repos.merge({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base: "main",
+    head: branchName,
+    commit_message: commitMessage,
+  });
+  return data.sha;
+}
+
+/** Delete a branch from the network repo. */
+export async function deleteBranch(branchName: string): Promise<void> {
+  const octokit = getOctokit();
+  await octokit.git.deleteRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branchName}`,
+  });
+}
+
+/** Check if a branch exists in the network repo. */
+export async function branchExists(branchName: string): Promise<boolean> {
+  const octokit = getOctokit();
+  try {
+    await octokit.git.getRef({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      ref: `heads/${branchName}`,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Fetch recent activity from git commit history. */
