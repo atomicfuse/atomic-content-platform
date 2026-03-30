@@ -17,13 +17,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     contentGuidelines: string;
   };
 
-  const isModern = body.themeBase === "modern";
+  const themeStyles: Record<string, { primary: string; accent: string; bg: string; fontHeading: string; fontBody: string; radius: string }> = {
+    modern:    { primary: "#0066FF", accent: "#00CCFF", bg: "#ffffff", fontHeading: "Inter, system-ui, sans-serif", fontBody: "Inter, system-ui, sans-serif", radius: "12px" },
+    editorial: { primary: "#1a1a2e", accent: "#e94560", bg: "#faf9f6", fontHeading: "Playfair Display, Georgia, serif", fontBody: "Lora, Georgia, serif", radius: "4px" },
+    bold:      { primary: "#0d9488", accent: "#14b8a6", bg: "#0f172a", fontHeading: "Inter, system-ui, sans-serif", fontBody: "Inter, system-ui, sans-serif", radius: "8px" },
+    classic:   { primary: "#4338ca", accent: "#7c3aed", bg: "#fffbf5", fontHeading: "Playfair Display, Georgia, serif", fontBody: "Lora, Georgia, serif", radius: "2px" },
+  };
 
-  const primaryColor = isModern ? "#0066FF" : "#1a1a2e";
-  const accentColor = isModern ? "#00CCFF" : "#e94560";
-  const bgColor = isModern ? "#ffffff" : "#faf9f6";
-  const fontHeading = isModern ? "Inter, system-ui, sans-serif" : "Playfair Display, Georgia, serif";
-  const fontBody = isModern ? "Inter, system-ui, sans-serif" : "Lora, Georgia, serif";
+  const style = themeStyles[body.themeBase] ?? themeStyles.modern!;
+  const primaryColor = style.primary;
+  const accentColor = style.accent;
+  const bgColor = style.bg;
+  const fontHeading = style.fontHeading;
+  const fontBody = style.fontBody;
 
   // Generate sample articles from topics
   const sampleArticles = body.topics.slice(0, 6).map((topic, i) => ({
@@ -139,7 +145,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     .card {
       background: white;
-      border-radius: ${isModern ? "12px" : "4px"};
+      border-radius: ${style.radius};
       overflow: hidden;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       transition: transform 0.2s, box-shadow 0.2s;
@@ -185,7 +191,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     .sidebar-section {
       background: white;
-      border-radius: ${isModern ? "12px" : "4px"};
+      border-radius: ${style.radius};
       padding: 24px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       margin-bottom: 24px;

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/Button";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface ThemeOption {
-  id: "modern" | "editorial";
+  id: WizardFormData["themeBase"];
   name: string;
   description: string;
   gradient: string;
@@ -23,18 +23,14 @@ const THEMES: ThemeOption[] = [
     description: "Magazine-style layout with rich media support",
     gradient: "from-orange-400 to-pink-500",
   },
-  // Visual-only options (these map to the same base themes with style tweaks)
-];
-
-const EXTRA_THEMES: ThemeOption[] = [
   {
-    id: "modern",
+    id: "bold",
     name: "Bold",
     description: "High-contrast, image-heavy with strong CTAs",
     gradient: "from-emerald-500 to-teal-700",
   },
   {
-    id: "editorial",
+    id: "classic",
     name: "Classic",
     description: "Traditional blog layout, content-first approach",
     gradient: "from-indigo-400 to-purple-600",
@@ -59,16 +55,13 @@ export function StepTheme({
       <h2 className="text-xl font-bold">Choose Theme</h2>
 
       <div className="grid grid-cols-2 gap-4">
-        {[...THEMES, ...EXTRA_THEMES].map((theme, i) => {
-          const isSelected = data.themeBase === theme.id && i < 2;
-          const isPrimaryOption = i < 2;
+        {THEMES.map((theme) => {
+          const isSelected = data.themeBase === theme.id;
           return (
             <button
-              key={`${theme.id}-${i}`}
+              key={theme.id}
               onClick={(): void => {
-                if (isPrimaryOption) {
-                  onChange({ themeBase: theme.id });
-                }
+                onChange({ themeBase: theme.id });
               }}
               className={`rounded-xl border-2 p-4 text-left transition-all ${
                 isSelected

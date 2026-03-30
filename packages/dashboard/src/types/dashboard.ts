@@ -71,7 +71,7 @@ export interface WizardFormData {
   siteTagline: string;
   company: Company;
   vertical: Vertical;
-  themeBase: "modern" | "editorial";
+  themeBase: "modern" | "editorial" | "bold" | "classic";
   audience: string;
   tone: string;
   topics: string[];

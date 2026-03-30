@@ -60,7 +60,7 @@ export interface SiteBrief {
  */
 export interface ThemeConfig {
   /** Base theme template to extend. */
-  base?: "modern" | "editorial";
+  base?: "modern" | "editorial" | "bold" | "classic";
 
   /** Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }). */
   colors?: Record<string, string>;
@@ -86,7 +86,7 @@ export interface ThemeConfig {
  */
 export interface ResolvedThemeConfig {
   /** Base theme template. */
-  base: "modern" | "editorial";
+  base: "modern" | "editorial" | "bold" | "classic";
 
   /** Named colour map. */
   colors: Record<string, string>;
