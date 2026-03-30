@@ -8,7 +8,7 @@ import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
-import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
+import type { WizardFormData } from "@/types/dashboard";
 
 const DEFAULT_FORM: WizardFormData = {
   domain: "",
@@ -35,6 +35,10 @@ export default function WizardPage(): React.ReactElement {
     ...DEFAULT_FORM,
     domain: preselectedDomain || "",
   });
+  const [stagingResult, setStagingResult] = useState<{
+    stagingUrl: string;
+    pagesProject: string;
+  } | null>(null);
   const [availableDomains, setAvailableDomains] = useState<string[]>([]);
 
   // Fetch available "New" domains for the dropdown
@@ -95,12 +99,14 @@ export default function WizardPage(): React.ReactElement {
                 data={formData}
                 onNext={goNext}
                 onBack={goBack}
+                onStagingResult={setStagingResult}
               />
             );
           case 4:
             return (
               <StepGoLive
                 data={formData}
+                stagingResult={stagingResult}
                 onBack={goBack}
               />
             );

@@ -6,14 +6,16 @@ import type { WizardFormData } from "@/types/dashboard";
 
 interface StepReviewProps {
   data: WizardFormData;
+  stagingResult: { stagingUrl: string; pagesProject: string } | null;
   onBack: () => void;
 }
 
-export function StepGoLive({ data, onBack }: StepReviewProps): React.ReactElement {
+export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): React.ReactElement {
   const router = useRouter();
 
-  const projectName = data.pagesProjectName;
-  const stagingUrl = `https://staging-${projectName}.${projectName}.pages.dev`;
+  const projectName = stagingResult?.pagesProject ?? data.pagesProjectName;
+  const stagingUrl = stagingResult?.stagingUrl ?? `https://staging-${projectName}.${projectName}.pages.dev`;
+  const siteFolder = data.pagesProjectName; // folder name = user-chosen name
 
   return (
     <div className="space-y-6">
@@ -53,7 +55,7 @@ export function StepGoLive({ data, onBack }: StepReviewProps): React.ReactElemen
           Your site is being staged!
         </p>
         <p className="text-sm text-[var(--text-secondary)]">
-          View staging preview at{" "}
+          The staging build is running on Cloudflare Pages. It will be ready in ~1-2 minutes at:{" "}
           <a
             href={stagingUrl}
             target="_blank"
@@ -80,7 +82,7 @@ export function StepGoLive({ data, onBack }: StepReviewProps): React.ReactElemen
             Back to Dashboard
           </Button>
           <Button
-            onClick={(): void => router.push(`/sites/${encodeURIComponent(projectName)}`)}
+            onClick={(): void => router.push(`/sites/${encodeURIComponent(siteFolder)}`)}
           >
             View Site Details
           </Button>

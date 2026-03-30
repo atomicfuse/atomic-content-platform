@@ -41,10 +41,12 @@ export async function createSiteAndBuildStaging(
   // 1. Build site.yaml content
   // domain = projectName so Astro builds with the right site URL
   // (site URL becomes https://{projectName}.pages.dev in production)
+  // Build config — pages_project is set later after CF project creation
   const siteConfig = {
     domain: projectName,
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
+    pages_project: projectName, // placeholder — updated after CF creation
     group: "premium-ads",
     active: true,
     brief: {
@@ -138,15 +140,21 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     // Update theme config to reference the logo
     siteConfig.theme.logo = "/assets/logo.png";
     siteConfig.theme.favicon = "/assets/logo.png";
-    // Re-generate site.yaml with logo references
-    files[0] = {
-      path: `sites/${siteFolder}/site.yaml`,
-      content: stringifyYaml(siteConfig, { lineWidth: 0 }),
-    };
   }
 
   // 5. Create CF Pages project on Cloudflare
-  await createPagesProject(projectName);
+  // CF may rename the project (e.g. "travel" → "travel-6jj" if name is reserved)
+  const cfProject = await createPagesProject(projectName);
+  const actualProjectName = cfProject.name; // Use whatever CF actually named it
+
+  // Update site.yaml with the actual CF project name (so deploy workflow can read it)
+  siteConfig.pages_project = actualProjectName;
+
+  // Re-generate site.yaml with final values (logo refs + actual project name)
+  files[0] = {
+    path: `sites/${siteFolder}/site.yaml`,
+    content: stringifyYaml(siteConfig, { lineWidth: 0 }),
+  };
 
   // 6. Create staging branch in git
   const stagingBranch = `staging/${projectName}`;
@@ -162,7 +170,9 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   // 7. Create site entry in dashboard index
   // Use siteFolder as domain so the dashboard can find the site by its folder name
-  const previewUrl = `https://staging-${projectName}.${projectName}.pages.dev`;
+  // Preview URL uses actual CF project name (may differ from user-chosen name)
+  const branchSlug = stagingBranch.replace(/\//g, "-");
+  const previewUrl = `https://${branchSlug}.${actualProjectName}.pages.dev`;
   const now = new Date().toISOString();
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
@@ -177,7 +187,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     fixed_ad: false,
     last_updated: now,
     created_at: now,
-    pages_project: projectName,
+    pages_project: actualProjectName,
     zone_id: null,
     staging_branch: stagingBranch,
     preview_url: previewUrl,
@@ -193,7 +203,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       status: "Staging",
       company: data.company,
       vertical: data.vertical,
-      pages_project: projectName,
+      pages_project: actualProjectName,
       staging_branch: stagingBranch,
       preview_url: previewUrl,
     });
@@ -204,7 +214,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   revalidatePath("/");
 
   // 8. Return result
-  return { stagingUrl: previewUrl, pagesProject: projectName };
+  return { stagingUrl: previewUrl, pagesProject: actualProjectName };
 }
 
 /** Merge staging branch to main and update status to Ready. */

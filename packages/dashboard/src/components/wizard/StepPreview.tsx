@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { createSiteAndBuildStaging } from "@/actions/wizard";
@@ -10,19 +10,40 @@ interface StepPreviewProps {
   data: WizardFormData;
   onNext: () => void;
   onBack: () => void;
+  onStagingResult?: (result: { stagingUrl: string; pagesProject: string }) => void;
 }
+
+const STAGING_STEPS = [
+  { key: "project", label: "Creating Cloudflare Pages project..." },
+  { key: "branch", label: "Creating staging branch on GitHub..." },
+  { key: "logo", label: "Generating logo with AI..." },
+  { key: "commit", label: "Committing site files..." },
+  { key: "build", label: "Triggering staging build..." },
+  { key: "done", label: "Staging site created!" },
+] as const;
 
 export function StepPreview({
   data,
   onNext,
   onBack,
+  onStagingResult,
 }: StepPreviewProps): React.ReactElement {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewMode, setPreviewMode] = useState<"local" | "staging" | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isBuildPending, startBuildTransition] = useTransition();
   const [stagingUrl, setStagingUrl] = useState<string | null>(null);
+  const [deployStep, setDeployStep] = useState(-1); // -1 = not started
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
+
+  // Cleanup step timer on unmount
+  useEffect(() => {
+    return (): void => {
+      if (stepTimerRef.current) clearInterval(stepTimerRef.current);
+    };
+  }, []);
 
   function handleLocalPreview(): void {
     startTransition(async () => {
@@ -48,27 +69,117 @@ export function StepPreview({
   }
 
   function handleBuildStaging(): void {
+    setDeployStep(0);
+    setDeployError(null);
+
+    // Advance steps on a timer to show progress (actual work is async)
+    // Steps roughly correspond to the operations in createSiteAndBuildStaging
+    const stepDurations = [2000, 1500, 4000, 3000, 2000]; // ms per step
+    let currentStep = 0;
+    let elapsed = 0;
+
+    stepTimerRef.current = setInterval(() => {
+      elapsed += 500;
+      const target = stepDurations.slice(0, currentStep + 1).reduce((a, b) => a + b, 0);
+      if (elapsed >= target && currentStep < STAGING_STEPS.length - 2) {
+        currentStep++;
+        setDeployStep(currentStep);
+      }
+    }, 500);
+
     startBuildTransition(async () => {
       try {
         const result = await createSiteAndBuildStaging(data);
+
+        // Stop timer and jump to done
+        if (stepTimerRef.current) {
+          clearInterval(stepTimerRef.current);
+          stepTimerRef.current = null;
+        }
+        setDeployStep(STAGING_STEPS.length - 1); // "done"
+
         setStagingUrl(result.stagingUrl);
         setPreviewUrl(result.stagingUrl);
         setPreviewMode("staging");
-        toast("Staging build triggered & site files committed", "success");
+        onStagingResult?.(result);
+        toast("Staging site created! Build will be live in ~1-2 minutes.", "success");
       } catch (error) {
-        toast(
-          `Failed to build staging: ${error instanceof Error ? error.message : "Unknown error"}`,
-          "error"
-        );
+        if (stepTimerRef.current) {
+          clearInterval(stepTimerRef.current);
+          stepTimerRef.current = null;
+        }
+        const msg = error instanceof Error ? error.message : "Unknown error";
+        setDeployError(msg);
+        toast(`Failed to build staging: ${msg}`, "error");
       }
     });
   }
+
+  const isDeploying = deployStep >= 0 && !deployError && !stagingUrl;
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Site Preview</h2>
 
-      {!previewUrl ? (
+      {/* Deploy progress overlay */}
+      {isDeploying && (
+        <div className="rounded-xl bg-[var(--bg-elevated)] border border-magenta/30 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-magenta animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <h3 className="font-semibold text-[var(--text-primary)]">
+              Deploying to Staging...
+            </h3>
+          </div>
+          <div className="space-y-2">
+            {STAGING_STEPS.map((step, i) => {
+              const isDone = i < deployStep;
+              const isActive = i === deployStep;
+              const isFuture = i > deployStep;
+              return (
+                <div
+                  key={step.key}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                    isActive ? "bg-magenta/10" : ""
+                  } ${isFuture ? "opacity-30" : ""}`}
+                >
+                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                    {isDone ? (
+                      <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    ) : isActive ? (
+                      <svg className="w-4 h-4 text-magenta animate-spin" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <div className="w-2 h-2 rounded-full bg-[var(--text-muted)]" />
+                    )}
+                  </div>
+                  <span className={`text-sm ${isActive ? "text-[var(--text-primary)] font-medium" : isDone ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"}`}>
+                    {step.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Deploy error */}
+      {deployError && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-6 space-y-3">
+          <p className="text-sm text-red-400 font-medium">Staging deploy failed: {deployError}</p>
+          <Button variant="ghost" size="sm" onClick={(): void => { setDeployStep(-1); setDeployError(null); }}>
+            Try Again
+          </Button>
+        </div>
+      )}
+
+      {!previewUrl && !isDeploying && !deployError ? (
         <div className="space-y-4">
           <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] p-6 text-center space-y-2">
             <p className="text-[var(--text-secondary)]">
@@ -112,7 +223,7 @@ export function StepPreview({
                   </svg>
                 </div>
                 <h3 className="font-semibold text-[var(--text-primary)]">
-                  {isBuildPending ? "Deploying..." : "Deploy Staging"}
+                  Deploy Staging
                 </h3>
               </div>
               <p className="text-sm text-[var(--text-muted)]">
@@ -121,7 +232,7 @@ export function StepPreview({
             </button>
           </div>
         </div>
-      ) : (
+      ) : previewUrl ? (
         <div className="space-y-4">
           {/* Browser chrome */}
           <div className="rounded-lg border border-[var(--border-primary)] overflow-hidden">
@@ -184,13 +295,13 @@ export function StepPreview({
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div className="flex justify-between pt-4">
-        <Button variant="ghost" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack} disabled={isDeploying}>
           &larr; Back
         </Button>
-        <Button onClick={onNext} disabled={!previewUrl}>
+        <Button onClick={onNext} disabled={!previewUrl || isDeploying}>
           Next &rarr;
         </Button>
       </div>
