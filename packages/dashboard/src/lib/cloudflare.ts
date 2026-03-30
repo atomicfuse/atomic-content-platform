@@ -223,7 +223,13 @@ export async function triggerPagesBuild(
 /** Get the latest deployment for a Pages project. */
 export async function getLatestDeployment(
   projectName: string
-): Promise<{ id: string; url: string; environment: string; created_on: string } | null> {
+): Promise<{
+  id: string;
+  url: string;
+  environment: string;
+  created_on: string;
+  latest_stage?: { name: string; status: string };
+} | null> {
   const accountId = getAccountId();
   try {
     const response = await fetch(
@@ -231,7 +237,13 @@ export async function getLatestDeployment(
       { headers: getHeaders() }
     );
     const data = (await response.json()) as CloudflareResponse<
-      Array<{ id: string; url: string; environment: string; created_on: string }>
+      Array<{
+        id: string;
+        url: string;
+        environment: string;
+        created_on: string;
+        latest_stage?: { name: string; status: string };
+      }>
     >;
     if (data.success && data.result.length > 0) {
       return data.result[0]!;

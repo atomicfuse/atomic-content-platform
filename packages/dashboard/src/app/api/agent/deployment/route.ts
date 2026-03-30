@@ -20,12 +20,20 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (!deployment) {
       return NextResponse.json({ status: "no_deployment" });
     }
+    // CF deployment stages: "queued" | "initialize" | "clone_repo" | "build" | "deploy" | "active"
+    // Status: "idle" | "active" | "success" | "failure"
+    const stageStatus = deployment.latest_stage?.status ?? "unknown";
+    const isReady = stageStatus === "success";
+
     return NextResponse.json({
       status: "success",
       id: deployment.id,
       url: deployment.url,
       environment: deployment.environment,
       created_on: deployment.created_on,
+      stage: deployment.latest_stage?.name ?? "unknown",
+      stage_status: stageStatus,
+      is_ready: isReady,
     });
   } catch (error) {
     const message =

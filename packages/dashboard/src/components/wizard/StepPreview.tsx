@@ -35,13 +35,18 @@ export function StepPreview({
   const [stagingUrl, setStagingUrl] = useState<string | null>(null);
   const [deployStep, setDeployStep] = useState(-1); // -1 = not started
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [waitingForBuild, setWaitingForBuild] = useState(false);
+  const [buildStage, setBuildStage] = useState<string>(""); // current CF build stage
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stagingResultRef = useRef<{ stagingUrl: string; pagesProject: string } | null>(null);
   const { toast } = useToast();
 
-  // Cleanup step timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return (): void => {
       if (stepTimerRef.current) clearInterval(stepTimerRef.current);
+      if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
@@ -91,18 +96,62 @@ export function StepPreview({
       try {
         const result = await createSiteAndBuildStaging(data);
 
-        // Stop timer and jump to done
+        // Stop progress timer and jump to "done" step
         if (stepTimerRef.current) {
           clearInterval(stepTimerRef.current);
           stepTimerRef.current = null;
         }
         setDeployStep(STAGING_STEPS.length - 1); // "done"
 
+        // Store result but DON'T show iframe yet — wait for CF build to finish
+        stagingResultRef.current = result;
         setStagingUrl(result.stagingUrl);
-        setPreviewUrl(result.stagingUrl);
-        setPreviewMode("staging");
         onStagingResult?.(result);
-        toast("Staging site created! Build will be live in ~1-2 minutes.", "success");
+
+        // Start polling CF for build readiness
+        setWaitingForBuild(true);
+        setBuildStage("queued");
+
+        pollRef.current = setInterval(async () => {
+          try {
+            const res = await fetch(
+              `/api/agent/deployment?project=${encodeURIComponent(result.pagesProject)}`
+            );
+            if (!res.ok) return;
+            const data = (await res.json()) as {
+              is_ready?: boolean;
+              stage?: string;
+              stage_status?: string;
+            };
+            if (data.stage) setBuildStage(data.stage);
+            if (data.is_ready) {
+              // Build is ready — show the iframe
+              if (pollRef.current) {
+                clearInterval(pollRef.current);
+                pollRef.current = null;
+              }
+              setWaitingForBuild(false);
+              setPreviewUrl(result.stagingUrl);
+              setPreviewMode("staging");
+              toast("Staging build is live!", "success");
+            }
+          } catch {
+            // Keep polling
+          }
+        }, 5000); // Poll every 5 seconds
+
+        // Safety timeout — stop polling after 5 minutes
+        setTimeout(() => {
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setWaitingForBuild(false);
+            // Show iframe anyway — it might be ready by the time user looks
+            setPreviewUrl(result.stagingUrl);
+            setPreviewMode("staging");
+            toast("Build may still be deploying. Preview link is ready to check.", "info");
+          }
+        }, 5 * 60 * 1000);
       } catch (error) {
         if (stepTimerRef.current) {
           clearInterval(stepTimerRef.current);
@@ -116,6 +165,15 @@ export function StepPreview({
   }
 
   const isDeploying = deployStep >= 0 && !deployError && !stagingUrl;
+
+  const buildStageLabel: Record<string, string> = {
+    queued: "Queued — waiting for Cloudflare...",
+    initialize: "Initializing build environment...",
+    clone_repo: "Cloning repository...",
+    build: "Building site with Astro...",
+    deploy: "Deploying to edge network...",
+    active: "Deployment is live!",
+  };
 
   return (
     <div className="space-y-6">
@@ -179,7 +237,35 @@ export function StepPreview({
         </div>
       )}
 
-      {!previewUrl && !isDeploying && !deployError ? (
+      {/* Waiting for CF build to finish */}
+      {waitingForBuild && (
+        <div className="rounded-xl bg-[var(--bg-elevated)] border border-cyan/30 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-cyan animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+              <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <h3 className="font-semibold text-[var(--text-primary)]">
+              Building on Cloudflare Pages...
+            </h3>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            {buildStageLabel[buildStage] ?? `Stage: ${buildStage}`}
+          </p>
+          <div className="w-full h-1.5 rounded-full bg-[var(--bg-surface)] overflow-hidden">
+            <div className="h-full bg-cyan rounded-full animate-pulse" style={{ width: "60%" }} />
+          </div>
+          {stagingUrl && (
+            <p className="text-xs text-[var(--text-muted)]">
+              Preview will appear at{" "}
+              <span className="font-mono text-cyan">{stagingUrl}</span>
+              {" "}once the build completes (~1-2 min)
+            </p>
+          )}
+        </div>
+      )}
+
+      {!previewUrl && !isDeploying && !deployError && !waitingForBuild ? (
         <div className="space-y-4">
           <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] p-6 text-center space-y-2">
             <p className="text-[var(--text-secondary)]">
