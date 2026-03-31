@@ -100,6 +100,7 @@ export default function WizardPage(): React.ReactElement {
                 onNext={goNext}
                 onBack={goBack}
                 onStagingResult={setStagingResult}
+                existingResult={stagingResult}
               />
             );
           case 4:

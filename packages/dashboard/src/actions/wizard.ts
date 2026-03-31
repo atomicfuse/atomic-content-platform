@@ -10,6 +10,7 @@ import {
   createBranch,
   mergeBranchToMain,
   deleteBranch,
+  branchExists,
   triggerWorkflowViaPush,
 } from "@/lib/github";
 import {
@@ -222,7 +223,11 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   return { stagingUrl: previewUrl, pagesProject: actualProjectName };
 }
 
-/** Merge staging branch to main and update status to Ready. */
+/**
+ * Merge staging branch to main and update status to Ready.
+ * The staging branch is KEPT (reset to main HEAD) so future edits
+ * still go through the staging → preview → approve flow.
+ */
 export async function goLive(domain: string): Promise<void> {
   // 1. Read dashboard index to get the site entry
   const index = await readDashboardIndex();
@@ -238,17 +243,86 @@ export async function goLive(domain: string): Promise<void> {
   // 3. Merge staging branch to main
   await mergeBranchToMain(stagingBranch, `site(${domain}): go live`);
 
-  // 4. Delete staging branch
+  // 4. Delete and recreate staging branch from the new main HEAD
+  // This resets it to be in sync with production, ready for future edits
   await deleteBranch(stagingBranch);
+  await createBranch(stagingBranch, "main");
 
-  // 5. Update index: status = Ready, staging_branch = null (keep preview_url)
+  // 5. Update index: status = Ready, KEEP staging_branch and preview_url
   await updateSiteInIndex(domain, {
     status: "Ready",
-    staging_branch: null,
   });
 
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
+}
+
+/**
+ * Publish staged edits to production for an already-live/ready site.
+ * Merges staging → main, then resets staging branch to main HEAD.
+ */
+export async function publishStagingToProduction(domain: string): Promise<void> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
+
+  const stagingBranch = site.staging_branch;
+  if (!stagingBranch) {
+    throw new Error(`No staging branch found for ${domain}`);
+  }
+
+  // Merge staging → main (triggers production deploy via GitHub Actions)
+  await mergeBranchToMain(
+    stagingBranch,
+    `site(${domain}): publish staging edits to production`
+  );
+
+  // Reset staging branch to match main (clean slate for next edit cycle)
+  await deleteBranch(stagingBranch);
+  await createBranch(stagingBranch, "main");
+
+  revalidatePath("/");
+  revalidatePath(`/sites/${domain}`);
+}
+
+/**
+ * Ensure a staging branch exists for a site.
+ * If the branch was somehow lost, recreate it from main.
+ * Returns the staging branch name.
+ */
+export async function ensureStagingBranch(domain: string): Promise<string> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
+
+  // If we already have a staging branch recorded, check it exists
+  if (site.staging_branch) {
+    const exists = await branchExists(site.staging_branch);
+    if (exists) return site.staging_branch;
+    // Branch was deleted externally — recreate it
+    await createBranch(site.staging_branch, "main");
+    return site.staging_branch;
+  }
+
+  // No staging branch recorded — create one
+  const projectName = site.pages_project ?? domain;
+  const stagingBranch = `staging/${projectName}`;
+  const exists = await branchExists(stagingBranch);
+  if (!exists) {
+    await createBranch(stagingBranch, "main");
+  }
+
+  // Construct preview URL
+  const branchSlug = stagingBranch.replace(/\//g, "-");
+  const previewUrl = `https://${branchSlug}.${projectName}.pages.dev`;
+
+  await updateSiteInIndex(domain, {
+    staging_branch: stagingBranch,
+    preview_url: previewUrl,
+  });
+
+  revalidatePath(`/sites/${domain}`);
+  return stagingBranch;
 }
 
 /** Attach a custom domain to the site's CF Pages project. */
@@ -549,11 +623,164 @@ export async function uploadStagingLogo(
 }
 
 // ---------------------------------------------------------------------------
+// Auto-suggest topics via Gemini
+// ---------------------------------------------------------------------------
+
+const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/**
+ * Context passed to topic suggestion — everything available at step 2 of the wizard.
+ * At this point audience/tone/guidelines are typically EMPTY (they're on the same step),
+ * but siteName, siteTagline, vertical, and company are filled from step 0.
+ */
+interface TopicSuggestionContext {
+  siteName: string;
+  siteTagline?: string;
+  vertical: string;
+  company?: string;
+  audience?: string;
+  tone?: string;
+  contentGuidelines?: string;
+}
+
+/**
+ * Auto-suggest 4 topics for a site based on whatever info is available.
+ * Uses Gemini Flash (text) for fast, cheap inference.
+ * Falls back to smart per-vertical defaults if Gemini is unavailable.
+ */
+export async function suggestTopics(
+  context: TopicSuggestionContext
+): Promise<string[]> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    return getFallbackTopics(context.siteName, context.vertical);
+  }
+
+  // Build rich context from ALL available fields
+  const contextParts = [
+    `Website name: "${context.siteName}"`,
+  ];
+  if (context.siteTagline) contextParts.push(`Tagline: "${context.siteTagline}"`);
+  if (context.vertical && context.vertical !== "Other") {
+    contextParts.push(`Category: ${context.vertical}`);
+  }
+  if (context.audience) contextParts.push(`Target audience: ${context.audience}`);
+  if (context.tone) contextParts.push(`Tone: ${context.tone}`);
+  if (context.contentGuidelines) contextParts.push(`Content guidelines: ${context.contentGuidelines}`);
+
+  const prompt = `You are a content strategist helping launch a new content website.
+
+Website info:
+${contextParts.join("\n")}
+
+Based on the website name${context.vertical !== "Other" ? ` and its "${context.vertical}" category` : ""}, suggest exactly 4 specific content topics that this site should cover. Topics should be:
+- Specific to THIS site (not generic like "How-To Guides" or "Trending Topics")
+- Short (2-4 words each)
+- Suitable as article categories / content pillars
+- Diverse — cover different angles of the site's niche
+
+Reply with ONLY a JSON array of exactly 4 strings. No markdown, no explanation.
+Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Health Guide", "Pet Nutrition", "Breed Spotlights"]`;
+
+  try {
+    const url = `${GEMINI_API_BASE}/${GEMINI_TEXT_MODEL}:generateContent?key=${geminiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 200 },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`[wizard] Topic suggestion failed: ${response.status}`);
+      return getFallbackTopics(context.siteName, context.vertical);
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{
+        content: { parts: Array<{ text?: string }> };
+      }>;
+    };
+
+    const text = data.candidates?.[0]?.content.parts[0]?.text?.trim() ?? "";
+    // Extract JSON array from response (handle markdown code blocks)
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      const topics = JSON.parse(jsonMatch[0]) as string[];
+      if (Array.isArray(topics) && topics.length >= 1) {
+        // Filter out junk: must be a real string, not "undefined", not empty
+        const clean = topics
+          .map((t) => String(t).trim())
+          .filter((t) => t.length > 0 && t !== "undefined" && t !== "null");
+        if (clean.length >= 2) return clean.slice(0, 4);
+      }
+    }
+
+    return getFallbackTopics(context.siteName, context.vertical);
+  } catch (err) {
+    console.warn("[wizard] Topic suggestion error:", err);
+    return getFallbackTopics(context.siteName, context.vertical);
+  }
+}
+
+/**
+ * Smart fallback topics — uses vertical-specific defaults
+ * but also incorporates the site name for "Other" vertical.
+ */
+function getFallbackTopics(siteName: string, vertical: string): string[] {
+  const topicMap: Record<string, string[]> = {
+    Lifestyle: ["Health & Wellness", "Home & Living", "Personal Growth", "Style & Fashion"],
+    Travel: ["Destination Guides", "Travel Tips", "Local Culture", "Adventure Activities"],
+    Entertainment: ["Movie Reviews", "TV & Streaming", "Music Spotlight", "Celebrity Culture"],
+    Animals: ["Pet Care & Health", "Animal Behavior", "Breed Guides", "Wildlife Stories"],
+    Science: ["New Discoveries", "Space & Cosmos", "Health Science", "Environment & Climate"],
+    "Food & Drink": ["Recipes & Cooking", "Restaurant Reviews", "Nutrition Tips", "Food Culture"],
+    News: ["Current Events", "In-Depth Analysis", "Policy & Politics", "Local Stories"],
+    Conspiracy: ["Unexplained Events", "Government Files", "Historical Mysteries", "Whistleblowers"],
+  };
+
+  if (topicMap[vertical]) return topicMap[vertical]!;
+
+  // For "Other" vertical, derive topics from the site name
+  // This is better than generic "Trending Topics" etc.
+  const name = siteName.toLowerCase();
+  if (name.includes("tech") || name.includes("digital") || name.includes("cyber")) {
+    return ["Tech Reviews", "Industry News", "How-To Tutorials", "Future Trends"];
+  }
+  if (name.includes("sport") || name.includes("fitness") || name.includes("gym")) {
+    return ["Training Guides", "Game Analysis", "Athlete Profiles", "Nutrition & Recovery"];
+  }
+  if (name.includes("finance") || name.includes("money") || name.includes("invest")) {
+    return ["Market Analysis", "Personal Finance", "Investment Tips", "Economic Trends"];
+  }
+  if (name.includes("health") || name.includes("wellness") || name.includes("medical")) {
+    return ["Health Tips", "Mental Wellness", "Nutrition Guide", "Medical Research"];
+  }
+  if (name.includes("game") || name.includes("gaming")) {
+    return ["Game Reviews", "Gaming News", "Tips & Strategies", "Industry Updates"];
+  }
+  if (name.includes("art") || name.includes("design") || name.includes("creative")) {
+    return ["Design Trends", "Artist Spotlights", "Tutorials", "Creative Tools"];
+  }
+  if (name.includes("auto") || name.includes("car") || name.includes("motor")) {
+    return ["Car Reviews", "Maintenance Tips", "Industry News", "EV Technology"];
+  }
+  if (name.includes("education") || name.includes("learn") || name.includes("study")) {
+    return ["Learning Tips", "Course Reviews", "Career Guidance", "Student Life"];
+  }
+
+  // True fallback — at least make them content-oriented
+  return ["Expert Guides", "Latest News", "Tips & Advice", "In-Depth Reviews"];
+}
+
+// ---------------------------------------------------------------------------
 // Gemini logo generation (internal helper)
 // ---------------------------------------------------------------------------
 
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
-const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 async function generateLogoWithGemini(
   apiKey: string,

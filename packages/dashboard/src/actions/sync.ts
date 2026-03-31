@@ -59,9 +59,12 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     const siteConfig = await readSiteConfig(site.domain);
 
     let correctStatus: SiteStatus;
-    if (site.staging_branch) {
-      // Preserve staging status for sites with active staging branches
+    if (site.staging_branch && site.status === "Staging") {
+      // Preserve staging status for sites in initial staging (not yet live)
       correctStatus = "Staging";
+    } else if (site.staging_branch && (site.status === "Ready" || site.status === "Live")) {
+      // Live/Ready sites keep their status even with a staging branch
+      correctStatus = site.status;
     } else if (cfInfo) {
       correctStatus = await detectSiteStatus(cfInfo, siteConfig);
     } else if (!siteConfig) {

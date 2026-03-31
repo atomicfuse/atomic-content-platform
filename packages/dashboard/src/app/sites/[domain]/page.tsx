@@ -64,13 +64,15 @@ export default async function SiteDetailPage({
       <SiteDetailHeader site={site} />
       <SiteDetailTabs
         stagingTab={
-          site.staging_branch ? (
+          site.pages_project ? (
             <StagingTab
               domain={decodedDomain}
               pagesProject={site.pages_project}
               stagingBranch={site.staging_branch}
               previewUrl={site.preview_url}
               savedPreviews={site.saved_previews}
+              siteStatus={site.status}
+              customDomain={site.custom_domain}
             />
           ) : null
         }
@@ -80,7 +82,11 @@ export default async function SiteDetailPage({
         agentTab={
           <ContentAgentTab domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} brief={normalizedBrief} />
         }
-        monetizationTab={<MonetizationTab site={site} />}
+        monetizationTab={
+          site.status === "Ready" || site.status === "Live"
+            ? <MonetizationTab site={site} />
+            : null
+        }
       />
       {site.pages_project && (
         <AttachDomainPanel

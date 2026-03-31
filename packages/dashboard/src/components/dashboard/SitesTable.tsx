@@ -65,10 +65,15 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
+
+  // Get the site entry for the delete target so we can show what will be cleaned up
+  const deleteTargetSite = deleteTarget ? sites.find((s) => s.domain === deleteTarget) : null;
 
   function openDeleteModal(e: React.MouseEvent, domain: string): void {
     e.stopPropagation();
     setDeleteTarget(domain);
+    setDeleteSteps(null);
   }
 
   function confirmDelete(): void {
@@ -76,13 +81,23 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
     const domain = deleteTarget;
     startTransition(async () => {
       try {
-        await deleteSiteEntry(domain);
-        toast(`Deleted ${domain}`, "success");
-        setDeleteTarget(null);
+        const result = await deleteSiteEntry(domain);
+        setDeleteSteps(result.steps);
+        const allSuccess = result.steps.every((s) => s.success);
+        if (allSuccess) {
+          toast(`Deleted ${domain}`, "success");
+        } else {
+          toast(`Deleted ${domain} with some warnings`, "info");
+        }
       } catch (error) {
         toast(error instanceof Error ? error.message : "Failed to delete", "error");
       }
     });
+  }
+
+  function closeDeleteModal(): void {
+    setDeleteTarget(null);
+    setDeleteSteps(null);
   }
 
   const filteredSites = useMemo(() => {
@@ -262,44 +277,101 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       {/* Delete confirmation modal */}
       <Modal
         open={deleteTarget !== null}
-        onClose={(): void => setDeleteTarget(null)}
-        title="Delete Domain"
+        onClose={closeDeleteModal}
+        title={deleteSteps ? "Delete Complete" : "Delete Site"}
         size="sm"
       >
         <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
-              <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-[var(--text-primary)] font-medium">
-                Are you sure you want to delete <strong>{deleteTarget}</strong>?
-              </p>
-              <p className="text-sm text-[var(--text-muted)] mt-2">
-                This action will:
-              </p>
-              <ul className="text-sm text-[var(--text-muted)] mt-1 list-disc list-inside space-y-1">
-                <li>Remove the domain from the dashboard index</li>
-                <li>Commit the change to the GitHub repository</li>
-                <li>This does <strong className="text-[var(--text-secondary)]">not</strong> delete the site files or Cloudflare zone</li>
-              </ul>
-            </div>
-          </div>
+          {/* Pre-delete confirmation */}
+          {!deleteSteps && (
+            <>
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[var(--text-primary)] font-medium">
+                    Are you sure you want to delete <strong>{deleteTarget}</strong>?
+                  </p>
+                  <p className="text-sm text-[var(--text-muted)] mt-2">
+                    This will permanently remove:
+                  </p>
+                  <ul className="text-sm text-[var(--text-muted)] mt-1 space-y-1.5">
+                    {deleteTargetSite?.staging_branch && (
+                      <li className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                        Staging branch: <span className="font-mono text-xs">{deleteTargetSite.staging_branch}</span>
+                      </li>
+                    )}
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                      Site files from Git (site.yaml, articles, assets)
+                    </li>
+                    {deleteTargetSite?.pages_project && (
+                      <li className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
+                        CF Pages project: <span className="font-mono text-xs">{deleteTargetSite.pages_project}</span>
+                      </li>
+                    )}
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      Dashboard entry (moved to trash)
+                    </li>
+                  </ul>
+                </div>
+              </div>
 
-          <div className="flex justify-end gap-3 pt-2 border-t border-[var(--border-secondary)]">
-            <Button variant="ghost" onClick={(): void => setDeleteTarget(null)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={confirmDelete}
-              loading={isPending}
-              className="!bg-red-500 hover:!bg-red-600 !text-white"
-            >
-              Delete Domain
-            </Button>
-          </div>
+              <div className="flex justify-end gap-3 pt-2 border-t border-[var(--border-secondary)]">
+                <Button variant="ghost" onClick={closeDeleteModal}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDelete}
+                  loading={isPending}
+                  className="!bg-red-500 hover:!bg-red-600 !text-white"
+                >
+                  Delete Site
+                </Button>
+              </div>
+            </>
+          )}
+
+          {/* Post-delete results */}
+          {deleteSteps && (
+            <>
+              <div className="space-y-2">
+                {deleteSteps.map((step, i) => (
+                  <div key={i} className="flex items-start gap-2.5 text-sm">
+                    {step.success ? (
+                      <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    )}
+                    <div>
+                      <span className={step.success ? "text-[var(--text-secondary)]" : "text-red-400"}>
+                        {step.label}
+                      </span>
+                      {step.error && (
+                        <p className="text-xs text-red-400/70 mt-0.5">{step.error}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
+                <Button onClick={closeDeleteModal}>
+                  Done
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>
