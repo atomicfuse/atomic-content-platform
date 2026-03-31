@@ -23,7 +23,31 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // CF deployment stages: "queued" | "initialize" | "clone_repo" | "build" | "deploy" | "active"
     // Status: "idle" | "active" | "success" | "failure"
     const stageStatus = deployment.latest_stage?.status ?? "unknown";
-    const isReady = stageStatus === "success";
+    const deployReady = stageStatus === "success";
+
+    // CF reports "success" when files are deployed, but SSL certs for new
+    // branch subdomains take an extra 1-2 min. Verify the URL actually
+    // responds before telling the client it's safe to show in an iframe.
+    let sslReady = false;
+    if (deployReady) {
+      const checkUrl = req.nextUrl.searchParams.get("url");
+      if (checkUrl) {
+        try {
+          const probe = await fetch(checkUrl, {
+            method: "HEAD",
+            redirect: "follow",
+            signal: AbortSignal.timeout(5000),
+          });
+          sslReady = probe.ok || probe.status === 304;
+        } catch {
+          // SSL not ready yet or timeout — keep polling
+          sslReady = false;
+        }
+      } else {
+        // No URL to check — trust the CF API
+        sslReady = true;
+      }
+    }
 
     return NextResponse.json({
       status: "success",
@@ -33,7 +57,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       created_on: deployment.created_on,
       stage: deployment.latest_stage?.name ?? "unknown",
       stage_status: stageStatus,
-      is_ready: isReady,
+      is_ready: deployReady && sslReady,
+      deploy_ready: deployReady,
+      ssl_ready: sslReady,
     });
   } catch (error) {
     const message =

@@ -112,20 +112,28 @@ export function StepPreview({
         setWaitingForBuild(true);
         setBuildStage("queued");
 
+        // Pass the staging URL so the server can probe SSL readiness too
+        const pollUrl = `/api/agent/deployment?project=${encodeURIComponent(result.pagesProject)}&url=${encodeURIComponent(result.stagingUrl)}`;
+
         pollRef.current = setInterval(async () => {
           try {
-            const res = await fetch(
-              `/api/agent/deployment?project=${encodeURIComponent(result.pagesProject)}`
-            );
+            const res = await fetch(pollUrl);
             if (!res.ok) return;
-            const data = (await res.json()) as {
+            const pollData = (await res.json()) as {
               is_ready?: boolean;
+              deploy_ready?: boolean;
+              ssl_ready?: boolean;
               stage?: string;
               stage_status?: string;
             };
-            if (data.stage) setBuildStage(data.stage);
-            if (data.is_ready) {
-              // Build is ready — show the iframe
+            // Show real CF build stage
+            if (pollData.stage) setBuildStage(pollData.stage);
+            // Once deploy is done but SSL pending, update the label
+            if (pollData.deploy_ready && !pollData.ssl_ready) {
+              setBuildStage("ssl");
+            }
+            if (pollData.is_ready) {
+              // Build AND SSL are ready — safe to show iframe
               if (pollRef.current) {
                 clearInterval(pollRef.current);
                 pollRef.current = null;
@@ -172,6 +180,7 @@ export function StepPreview({
     clone_repo: "Cloning repository...",
     build: "Building site with Astro...",
     deploy: "Deploying to edge network...",
+    ssl: "Deployed! Waiting for SSL certificate...",
     active: "Deployment is live!",
   };
 
