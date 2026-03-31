@@ -28,9 +28,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     // CF reports "success" when files are deployed, but SSL certs for new
     // branch subdomains take an extra 1-2 min. Verify the URL actually
     // responds before telling the client it's safe to show in an iframe.
+    // Use the ACTUAL deployment URL from CF (not our constructed one) for the probe.
     let sslReady = false;
+    const actualDeployUrl = deployment.url?.startsWith("http")
+      ? deployment.url
+      : deployment.url
+        ? `https://${deployment.url}`
+        : null;
+    // Also accept a client-provided URL to check (the staging branch alias)
+    const checkUrl = req.nextUrl.searchParams.get("url") ?? actualDeployUrl;
+
     if (deployReady) {
-      const checkUrl = req.nextUrl.searchParams.get("url");
       if (checkUrl) {
         try {
           const probe = await fetch(checkUrl, {
@@ -40,8 +48,21 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
           });
           sslReady = probe.ok || probe.status === 304;
         } catch {
-          // SSL not ready yet or timeout — keep polling
-          sslReady = false;
+          // SSL not ready yet or timeout — try the CF deployment URL as fallback
+          if (actualDeployUrl && checkUrl !== actualDeployUrl) {
+            try {
+              const fallbackProbe = await fetch(actualDeployUrl, {
+                method: "HEAD",
+                redirect: "follow",
+                signal: AbortSignal.timeout(5000),
+              });
+              sslReady = fallbackProbe.ok || fallbackProbe.status === 304;
+            } catch {
+              sslReady = false;
+            }
+          } else {
+            sslReady = false;
+          }
         }
       } else {
         // No URL to check — trust the CF API

@@ -125,6 +125,7 @@ export function StepPreview({
               ssl_ready?: boolean;
               stage?: string;
               stage_status?: string;
+              url?: string;
             };
             // Show real CF build stage
             if (pollData.stage) setBuildStage(pollData.stage);
@@ -139,7 +140,15 @@ export function StepPreview({
                 pollRef.current = null;
               }
               setWaitingForBuild(false);
-              setPreviewUrl(result.stagingUrl);
+              // Use the actual deployment URL from CF if available,
+              // falling back to our constructed staging URL
+              const liveUrl = pollData.url?.startsWith("http")
+                ? pollData.url
+                : pollData.url
+                  ? `https://${pollData.url}`
+                  : result.stagingUrl;
+              setStagingUrl(liveUrl);
+              setPreviewUrl(liveUrl);
               setPreviewMode("staging");
               toast("Staging build is live!", "success");
             }

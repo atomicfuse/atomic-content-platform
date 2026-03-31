@@ -144,8 +144,12 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   // 5. Create CF Pages project on Cloudflare
   // CF may rename the project (e.g. "travel" → "travel-6jj" if name is reserved)
+  // The `name` field is used for API calls (listing deployments, etc.)
+  // The `subdomain` field is the actual *.pages.dev subdomain (e.g. "travel-test-3pa.pages.dev")
   const cfProject = await createPagesProject(projectName);
-  const actualProjectName = cfProject.name; // Use whatever CF actually named it
+  const actualProjectName = cfProject.name;
+  // subdomain from CF is like "travel-test-3pa.pages.dev" — extract the prefix
+  const cfSubdomain = cfProject.subdomain?.replace(".pages.dev", "") ?? actualProjectName;
 
   // Update site.yaml with the actual CF project name (so deploy workflow can read it)
   siteConfig.pages_project = actualProjectName;
@@ -170,9 +174,10 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   // 7. Create site entry in dashboard index
   // Use siteFolder as domain so the dashboard can find the site by its folder name
-  // Preview URL uses actual CF project name (may differ from user-chosen name)
+  // Preview URL uses the actual CF subdomain (may differ from project name)
+  // CF subdomain format: {branch-slug}.{subdomain}.pages.dev
   const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${actualProjectName}.pages.dev`;
+  const previewUrl = `https://${branchSlug}.${cfSubdomain}.pages.dev`;
   const now = new Date().toISOString();
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
