@@ -6,12 +6,9 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { updateSiteBrief } from "@/actions/agent";
-import { ContentGenerationPanel } from "./ContentGenerationPanel";
 
 interface ContentAgentTabProps {
   domain: string;
-  pagesProject: string | null;
-  stagingBranch: string | null;
   brief: {
     audience: string;
     tone: string;
@@ -19,6 +16,14 @@ interface ContentAgentTabProps {
     articles_per_week: number;
     preferred_days: string[];
     content_guidelines: string | string[];
+    quality_threshold?: number;
+    quality_weights?: {
+      seo_quality?: number;
+      tone_match?: number;
+      content_length?: number;
+      factual_accuracy?: number;
+      keyword_relevance?: number;
+    };
   } | null;
 }
 
@@ -30,8 +35,6 @@ const DAY_MAP: Record<string, string> = {
 
 export function ContentAgentTab({
   domain,
-  pagesProject,
-  stagingBranch,
   brief,
 }: ContentAgentTabProps): React.ReactElement {
   const [agentRunning, setAgentRunning] = useState(true);
@@ -52,6 +55,17 @@ export function ContentAgentTab({
       ? brief.content_guidelines.join("\n")
       : (brief?.content_guidelines ?? "")
   );
+  const [qualityThreshold, setQualityThreshold] = useState(
+    brief?.quality_threshold ?? 75
+  );
+  const [qualityWeights, setQualityWeights] = useState({
+    seo_quality: brief?.quality_weights?.seo_quality ?? 20,
+    tone_match: brief?.quality_weights?.tone_match ?? 20,
+    content_length: brief?.quality_weights?.content_length ?? 20,
+    factual_accuracy: brief?.quality_weights?.factual_accuracy ?? 20,
+    keyword_relevance: brief?.quality_weights?.keyword_relevance ?? 20,
+  });
+  const weightsTotal = Object.values(qualityWeights).reduce((a, b) => a + b, 0);
 
   function toggleDay(day: string): void {
     const fullDay = DAY_MAP[day]!;
@@ -82,11 +96,6 @@ export function ContentAgentTab({
 
   return (
     <div className="space-y-6">
-      {/* Content Generation Panel */}
-      <ContentGenerationPanel domain={domain} pagesProject={pagesProject} stagingBranch={stagingBranch} />
-
-      <hr className="border-[var(--border-secondary)]" />
-
       {/* Agent status */}
       <div className="flex items-center justify-between p-4 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)]">
         <div className="flex items-center gap-3">
@@ -190,6 +199,77 @@ export function ContentAgentTab({
         <Button onClick={handleSave} loading={isPending}>
           Save Changes
         </Button>
+      </div>
+
+      {/* Quality Scoring Settings */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold">Quality Scoring</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Articles scoring below the threshold are flagged for review instead of auto-published.
+        </p>
+
+        <div className="space-y-3">
+          {/* Threshold slider */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                Approval Threshold
+              </label>
+              <span className="text-sm font-mono font-bold text-cyan">{qualityThreshold}/100</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={qualityThreshold}
+              onChange={(e): void => setQualityThreshold(parseInt(e.target.value, 10))}
+              className="w-full h-2 rounded-full appearance-none bg-[var(--bg-surface)] cursor-pointer accent-cyan"
+            />
+            <div className="flex justify-between text-[10px] text-[var(--text-muted)]">
+              <span>0 (publish all)</span>
+              <span>100 (review all)</span>
+            </div>
+          </div>
+
+          {/* Criteria weights */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                Criteria Weights
+              </label>
+              <span className={`text-[10px] font-mono ${weightsTotal === 100 ? "text-green-400" : "text-red-400"}`}>
+                Total: {weightsTotal}/100
+              </span>
+            </div>
+            {([
+              { key: "seo_quality" as const, label: "SEO Quality" },
+              { key: "tone_match" as const, label: "Tone Match" },
+              { key: "content_length" as const, label: "Content Length" },
+              { key: "factual_accuracy" as const, label: "Factual Accuracy" },
+              { key: "keyword_relevance" as const, label: "Keyword Relevance" },
+            ]).map(({ key, label }) => (
+              <div key={key} className="flex items-center gap-3">
+                <span className="text-xs text-[var(--text-secondary)] w-32 shrink-0">{label}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={qualityWeights[key]}
+                  onChange={(e): void =>
+                    setQualityWeights((prev) => ({
+                      ...prev,
+                      [key]: parseInt(e.target.value, 10),
+                    }))
+                  }
+                  className="flex-1 h-1.5 rounded-full appearance-none bg-[var(--bg-surface)] cursor-pointer accent-cyan"
+                />
+                <span className="text-xs font-mono text-[var(--text-muted)] w-8 text-right">
+                  {qualityWeights[key]}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

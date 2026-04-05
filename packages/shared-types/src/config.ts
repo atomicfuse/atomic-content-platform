@@ -2,6 +2,22 @@ import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
 
 // ---------------------------------------------------------------------------
+// Quality scoring
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-criterion weight configuration for the content quality agent.
+ * Values should sum to 100. Defaults to 20 each when not configured.
+ */
+export interface QualityWeights {
+  seo_quality?: number;
+  tone_match?: number;
+  content_length?: number;
+  factual_accuracy?: number;
+  keyword_relevance?: number;
+}
+
+// ---------------------------------------------------------------------------
 // Site brief
 // ---------------------------------------------------------------------------
 
@@ -58,6 +74,12 @@ export interface SiteBrief {
 
   /** Content language code (ISO 639-1). Defaults to "EN". */
   language?: string;
+
+  /** Minimum quality score (0-100) for auto-publish. Default 75. */
+  quality_threshold?: number;
+
+  /** Per-criterion weight overrides for quality scoring. Must sum to 100. */
+  quality_weights?: QualityWeights;
 }
 
 // ---------------------------------------------------------------------------

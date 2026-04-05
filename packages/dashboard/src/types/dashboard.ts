@@ -70,6 +70,14 @@ export interface ArticleEntry {
   status: string;
   publishDate: string;
   score?: number;
+  scoreBreakdown?: {
+    seo_quality: number;
+    tone_match: number;
+    content_length: number;
+    factual_accuracy: number;
+    keyword_relevance: number;
+  };
+  qualityNote?: string;
   reviewerNotes?: string;
 }
 

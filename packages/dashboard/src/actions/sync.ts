@@ -144,44 +144,6 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
   };
 }
 
-/** Manually add a domain to the dashboard index (for subdomains, test domains, etc.). */
-export async function addDomainManually(
-  domain: string,
-  company: DashboardSiteEntry["company"],
-  vertical: DashboardSiteEntry["vertical"]
-): Promise<void> {
-  const index = await readDashboardIndex();
-  const existing = index.sites.find((s) => s.domain === domain);
-  if (existing) {
-    throw new Error(`Domain ${domain} already exists in the dashboard`);
-  }
-
-  const now = new Date().toISOString();
-  const entry: DashboardSiteEntry = {
-    domain,
-    company,
-    vertical,
-    status: "New",
-    site_id: generateSiteId(),
-    exclusivity: null,
-    ob_epid: null,
-    ga_info: null,
-    cf_apo: false,
-    fixed_ad: false,
-    last_updated: now,
-    created_at: now,
-    pages_project: null,
-    zone_id: null,
-    staging_branch: null,
-    preview_url: null,
-    saved_previews: null,
-    custom_domain: null,
-  };
-
-  await addSitesToIndex([entry]);
-  revalidatePath("/");
-  revalidatePath("/sites");
-}
 
 /** Generate a unique numeric site ID. */
 function generateSiteId(): string {

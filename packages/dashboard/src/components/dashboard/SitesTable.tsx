@@ -166,7 +166,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   Status
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync or Add Domain. Stored in dashboard-index.yaml." />
+                  <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in monetization setup." />

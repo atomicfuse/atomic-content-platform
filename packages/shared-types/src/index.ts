@@ -15,9 +15,11 @@ export type {
 export type {
   ArticleType,
   ArticleFrontmatter,
+  QualityScoreBreakdown,
 } from "./article.js";
 
 export type {
+  QualityWeights,
   PublishSchedule,
   SiteBrief,
   PreviewPageConfig,

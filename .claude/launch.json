@@ -12,6 +12,12 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/packages/site-builder && SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=/Users/michal/Documents/ATL-content-network/atomic-labs-network npx astro preview --port 4321"],
       "port": 4321
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/packages/dashboard && npx next dev --port 3000"],
+      "port": 3000
     }
   ]
 }

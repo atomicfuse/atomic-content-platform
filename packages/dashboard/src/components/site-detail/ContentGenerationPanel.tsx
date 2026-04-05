@@ -20,6 +20,7 @@ type PipelineStep =
   | "checking_duplicates"
   | "reading_brief"
   | "generating_article"
+  | "scoring_quality"
   | "writing_article"
   | "triggering_build"
   | "staging_live"
@@ -39,7 +40,7 @@ interface PipelineState {
   completedAt?: number;
   /** Batch result summary */
   batchSummary?: string;
-  batchResults?: Array<{ status: string; slug?: string; path?: string; reason?: string }>;
+  batchResults?: Array<{ status: string; slug?: string; path?: string; reason?: string; qualityScore?: number; articleStatus?: string }>;
 }
 
 const PIPELINE_STEPS: Array<{
@@ -71,6 +72,11 @@ const PIPELINE_STEPS: Array<{
     key: "generating_article",
     label: "Generate Articles",
     description: "Claude is rewriting the articles",
+  },
+  {
+    key: "scoring_quality",
+    label: "Quality Scoring",
+    description: "Scoring articles against quality criteria",
   },
   {
     key: "writing_article",
@@ -206,6 +212,10 @@ export function ContentGenerationPanel({
       cancelled = true;
       clearInterval(messageTimer);
 
+      // Show quality scoring step while parsing response
+      advancePipeline("scoring_quality", "Scoring articles against quality criteria...");
+      await delay(400);
+
       const result = (await res.json()) as {
         siteDomain: string;
         requested: number;
@@ -218,6 +228,8 @@ export function ContentGenerationPanel({
           path?: string;
           message?: string;
           reason?: string;
+          qualityScore?: number;
+          articleStatus?: string;
         }>;
       };
 
@@ -691,33 +703,50 @@ export function ContentGenerationPanel({
 
                 {/* Individual article results */}
                 <div className="space-y-1">
-                  {pipeline.batchResults.map((r, i) => (
+                  {pipeline.batchResults
+                    .filter((r) => r.status === "created")
+                    .map((r, i) => (
                     <div
                       key={i}
                       className="flex items-center gap-2 text-xs"
                     >
-                      {r.status === "created" ? (
-                        <svg className="w-3.5 h-3.5 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      ) : r.status === "skipped" ? (
-                        <svg className="w-3.5 h-3.5 text-yellow-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                        </svg>
-                      ) : (
-                        <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      )}
-                      <span className={`font-mono ${
-                        r.status === "created"
-                          ? "text-[var(--text-primary)]"
-                          : "text-[var(--text-muted)]"
-                      }`}>
-                        {r.slug ?? r.reason ?? r.status}
+                      <svg className="w-3.5 h-3.5 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-mono text-[var(--text-primary)]">
+                        {r.slug}
                       </span>
+                      {r.qualityScore !== undefined && (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                          r.qualityScore >= 80 ? "text-green-400 bg-green-500/10" :
+                          r.qualityScore >= 60 ? "text-yellow-400 bg-yellow-500/10" :
+                          "text-red-400 bg-red-500/10"
+                        }`}>
+                          Score: {r.qualityScore}
+                        </span>
+                      )}
+                      {r.articleStatus === "review" && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                          Review
+                        </span>
+                      )}
+                      {r.articleStatus === "published" && r.qualityScore !== undefined && (
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                          Published
+                        </span>
+                      )}
                     </div>
                   ))}
+                  {pipeline.batchResults.filter((r) => r.status === "skipped").length > 0 && (
+                    <p className="text-[11px] text-[var(--text-muted)] italic mt-1">
+                      {pipeline.batchResults.filter((r) => r.status === "skipped").length} source{pipeline.batchResults.filter((r) => r.status === "skipped").length > 1 ? "s" : ""} skipped ({pipeline.batchResults.filter((r) => r.status === "skipped").map((r) => r.reason ?? "unknown").join(", ")})
+                    </p>
+                  )}
+                  {pipeline.batchResults.filter((r) => r.status === "error").length > 0 && (
+                    <p className="text-[11px] text-red-400 italic mt-1">
+                      {pipeline.batchResults.filter((r) => r.status === "error").length} article{pipeline.batchResults.filter((r) => r.status === "error").length > 1 ? "s" : ""} failed to generate
+                    </p>
+                  )}
                 </div>
 
                 {/* Links */}
