@@ -265,6 +265,106 @@ export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   });
 }
 
+/** Delete a single file from a specific branch using the Git Data API. */
+export async function deleteFileFromBranch(
+  filePath: string,
+  branch: string
+): Promise<void> {
+  const octokit = getOctokit();
+
+  // Get the latest commit on the branch
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  const latestCommitSha = ref.object.sha;
+
+  const { data: commit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: latestCommitSha,
+  });
+
+  // Create a tree that deletes the file (sha: null)
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: commit.tree.sha,
+    tree: [
+      {
+        path: filePath,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: null as unknown as string,
+      },
+    ],
+  });
+
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message: `delete ${filePath}`,
+    tree: newTree.sha,
+    parents: [latestCommitSha],
+  });
+
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  });
+}
+
+/** Delete multiple files from a branch in a single atomic commit. */
+export async function deleteFilesFromBranch(
+  filePaths: string[],
+  branch: string
+): Promise<void> {
+  const octokit = getOctokit();
+
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  const latestCommitSha = ref.object.sha;
+
+  const { data: commit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: latestCommitSha,
+  });
+
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: commit.tree.sha,
+    tree: filePaths.map((path) => ({
+      path,
+      mode: "100644" as const,
+      type: "blob" as const,
+      sha: null as unknown as string,
+    })),
+  });
+
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message: `delete ${filePaths.length} files`,
+    tree: newTree.sha,
+    parents: [latestCommitSha],
+  });
+
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  });
+}
+
 /** Add multiple new sites to the dashboard index. */
 export async function addSitesToIndex(
   entries: DashboardSiteEntry[]
@@ -337,7 +437,9 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
             type: (frontmatter.type as string) ?? "standard",
             status: (frontmatter.status as string) ?? "draft",
             publishDate: (frontmatter.publishDate as string) ?? "",
-            score: frontmatter.score as number | undefined,
+            score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
+            scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
+            qualityNote: frontmatter.quality_note as string | undefined,
             reviewerNotes: frontmatter.reviewer_notes as string | undefined,
           });
         }

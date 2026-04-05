@@ -9,6 +9,9 @@ import {
   deleteSiteFilesFromRepo,
   deleteBranch,
   branchExists,
+  deleteFileFromBranch,
+  deleteFilesFromBranch,
+  triggerWorkflowViaPush,
 } from "@/lib/github";
 import { deletePagesProject } from "@/lib/cloudflare";
 import type { DashboardSiteEntry } from "@/types/dashboard";
@@ -116,6 +119,46 @@ export async function restoreSiteEntry(domain: string): Promise<void> {
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
+}
+
+/** Delete a single article from the staging branch. */
+export async function deleteArticleFromStaging(
+  domain: string,
+  slug: string
+): Promise<void> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
+  if (!site.staging_branch) {
+    throw new Error(`No staging branch found for ${domain}`);
+  }
+
+  const filePath = `sites/${domain}/articles/${slug}.md`;
+  await deleteFileFromBranch(filePath, site.staging_branch);
+  await triggerWorkflowViaPush(site.staging_branch, domain);
+
+  revalidatePath(`/sites/${domain}`);
+}
+
+/** Delete multiple articles from the staging branch in a single commit + build. */
+export async function deleteArticlesFromStaging(
+  domain: string,
+  slugs: string[]
+): Promise<void> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
+  if (!site.staging_branch) {
+    throw new Error(`No staging branch found for ${domain}`);
+  }
+
+  const filePaths = slugs.map(
+    (slug) => `sites/${domain}/articles/${slug}.md`
+  );
+  await deleteFilesFromBranch(filePaths, site.staging_branch);
+  await triggerWorkflowViaPush(site.staging_branch, domain);
+
+  revalidatePath(`/sites/${domain}`);
 }
 
 /** Permanently delete a domain — remove from trash AND delete any remaining site files from Git. */
