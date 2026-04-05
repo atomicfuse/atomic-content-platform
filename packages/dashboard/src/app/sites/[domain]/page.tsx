@@ -3,6 +3,7 @@ import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
+import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { MonetizationTab } from "@/components/site-detail/MonetizationTab";
 import { StagingTab } from "@/components/site-detail/StagingTab";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
@@ -43,6 +44,14 @@ export default async function SiteDetailPage({
       articles_per_week: number;
       preferred_days: string[];
     };
+    quality_threshold?: number;
+    quality_weights?: {
+      seo_quality?: number;
+      tone_match?: number;
+      content_length?: number;
+      factual_accuracy?: number;
+      keyword_relevance?: number;
+    };
   } | null ?? null;
 
   // Normalize brief to include schedule fields at top level
@@ -56,6 +65,8 @@ export default async function SiteDetailPage({
         preferred_days:
           brief.schedule?.preferred_days ?? brief.preferred_days ?? [],
         content_guidelines: brief.content_guidelines,
+        quality_threshold: brief.quality_threshold,
+        quality_weights: brief.quality_weights,
       }
     : null;
 
@@ -77,10 +88,13 @@ export default async function SiteDetailPage({
           ) : null
         }
         contentTab={
-          <ContentTab articles={articles} domain={decodedDomain} />
+          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} />
+        }
+        identityTab={
+          <ContentAgentTab domain={decodedDomain} brief={normalizedBrief} />
         }
         agentTab={
-          <ContentAgentTab domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} brief={normalizedBrief} />
+          <ContentGenerationPanel domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} />
         }
         monetizationTab={
           site.status === "Ready" || site.status === "Live"

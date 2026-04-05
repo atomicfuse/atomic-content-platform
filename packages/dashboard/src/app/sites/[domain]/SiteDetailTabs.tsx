@@ -5,6 +5,7 @@ import { Tabs } from "@/components/ui/Tabs";
 interface SiteDetailTabsProps {
   stagingTab: React.ReactNode | null;
   contentTab: React.ReactNode;
+  identityTab: React.ReactNode;
   agentTab: React.ReactNode;
   monetizationTab: React.ReactNode | null;
 }
@@ -12,6 +13,7 @@ interface SiteDetailTabsProps {
 export function SiteDetailTabs({
   stagingTab,
   contentTab,
+  identityTab,
   agentTab,
   monetizationTab,
 }: SiteDetailTabsProps): React.ReactElement {
@@ -21,7 +23,8 @@ export function SiteDetailTabs({
   }
   tabItems.push(
     { id: "content", label: "Content", content: contentTab },
-    { id: "agent", label: "Site Identity", content: agentTab },
+    { id: "identity", label: "Site Identity", content: identityTab },
+    { id: "agent", label: "Content Agent", content: agentTab },
   );
   if (monetizationTab) {
     tabItems.push({ id: "monetization", label: "Monetization", content: monetizationTab });
