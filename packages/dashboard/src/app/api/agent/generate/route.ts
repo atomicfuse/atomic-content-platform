@@ -5,19 +5,19 @@ const CONTENT_AGENT_URL =
 
 /**
  * Proxy to the content-generation agent.
- * POST { siteDomain, rssUrl, branch? }
- * Returns the agent result + pipeline metadata.
+ * POST { siteDomain, branch?, count? }
+ * Returns the agent batch result.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = (await req.json()) as {
     siteDomain: string;
-    rssUrl: string;
     branch?: string | null;
+    count?: number | null;
   };
 
-  if (!body.siteDomain || !body.rssUrl) {
+  if (!body.siteDomain) {
     return NextResponse.json(
-      { status: "error", message: "siteDomain and rssUrl are required" },
+      { status: "error", message: "siteDomain is required" },
       { status: 400 }
     );
   }
@@ -30,8 +30,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           siteDomain: body.siteDomain,
-          rssUrl: body.rssUrl,
           ...(body.branch ? { branch: body.branch } : {}),
+          ...(body.count ? { count: body.count } : {}),
         }),
       }
     );

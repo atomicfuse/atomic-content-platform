@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
+import { publishStagingToProduction } from "@/actions/wizard";
 
 interface ContentGenerationPanelProps {
   domain: string;
@@ -13,8 +14,9 @@ interface ContentGenerationPanelProps {
 
 type PipelineStep =
   | "idle"
-  | "fetching_rss"
-  | "parsing_content"
+  | "querying_aggregator"
+  | "filtering_articles"
+  | "scraping_content"
   | "checking_duplicates"
   | "reading_brief"
   | "generating_article"
@@ -35,44 +37,45 @@ interface PipelineState {
   error?: string;
   startedAt?: number;
   completedAt?: number;
+  /** Batch result summary */
+  batchSummary?: string;
+  batchResults?: Array<{ status: string; slug?: string; path?: string; reason?: string }>;
 }
 
-const ALL_PIPELINE_STEPS: Array<{
+const PIPELINE_STEPS: Array<{
   key: PipelineStep;
   label: string;
   description: string;
-  stagingOnly?: boolean;
-  productionOnly?: boolean;
 }> = [
-  {
-    key: "fetching_rss",
-    label: "Fetch RSS",
-    description: "Fetching and parsing RSS feed",
-  },
-  {
-    key: "parsing_content",
-    label: "Parse Content",
-    description: "Extracting text, images, and embeds",
-  },
-  {
-    key: "checking_duplicates",
-    label: "Duplicate Check",
-    description: "Scanning existing articles for matches",
-  },
   {
     key: "reading_brief",
     label: "Read Brief",
     description: "Loading site configuration and brief",
   },
   {
+    key: "querying_aggregator",
+    label: "Query Sources",
+    description: "Querying content aggregator for source articles",
+  },
+  {
+    key: "filtering_articles",
+    label: "Filter & Deduplicate",
+    description: "Filtering by relevance and removing duplicates",
+  },
+  {
+    key: "scraping_content",
+    label: "Fetch Content",
+    description: "Fetching source article content",
+  },
+  {
     key: "generating_article",
-    label: "Generate Article",
-    description: "Claude is rewriting the article",
+    label: "Generate Articles",
+    description: "Claude is rewriting the articles",
   },
   {
     key: "writing_article",
-    label: "Write to Git",
-    description: "Committing article to repository",
+    label: "Write to Staging",
+    description: "Committing articles to staging branch",
   },
   {
     key: "triggering_build",
@@ -82,50 +85,43 @@ const ALL_PIPELINE_STEPS: Array<{
   {
     key: "staging_live",
     label: "Staging Preview",
-    description: "Staging deployment is live — review on the Staging tab",
+    description: "Staging deployment is live — review before publishing",
   },
   {
     key: "deploying_production",
     label: "Deploy Production",
-    description: "Publishing to production site",
-    productionOnly: true,
+    description: "Publishing staged articles to production",
   },
   {
     key: "complete",
     label: "Complete",
-    description: "Article is live on production",
-    productionOnly: true,
+    description: "Articles are live on production",
   },
 ];
 
-function getPipelineSteps(isStaging: boolean): typeof ALL_PIPELINE_STEPS {
-  if (isStaging) {
-    return ALL_PIPELINE_STEPS.filter((s) => !s.productionOnly);
-  }
-  return ALL_PIPELINE_STEPS;
-}
-
-function getStepIndex(step: PipelineStep, steps: typeof ALL_PIPELINE_STEPS): number {
+function getStepIndex(step: PipelineStep, steps: typeof PIPELINE_STEPS): number {
   return steps.findIndex((s) => s.key === step);
 }
+
+const MIN_ARTICLE_COUNT = 1;
+const MAX_ARTICLE_COUNT = 50;
 
 export function ContentGenerationPanel({
   domain,
   pagesProject,
   stagingBranch,
 }: ContentGenerationPanelProps): React.ReactElement {
-  const [rssUrl, setRssUrl] = useState("");
+  const [articleCount, setArticleCount] = useState(3);
   const [pipeline, setPipeline] = useState<PipelineState>({
     step: "idle",
     message: "",
   });
   const [history, setHistory] = useState<PipelineState[]>([]);
+  const [isPublishing, startPublish] = useTransition();
   const { toast } = useToast();
 
   const domainSlug = domain.replace(/\./g, "-");
   const projectName = pagesProject ?? domainSlug;
-  const isStaging = !!stagingBranch;
-  const PIPELINE_STEPS = getPipelineSteps(isStaging);
 
   const advancePipeline = useCallback(
     (step: PipelineStep, message: string, extras?: Partial<PipelineState>) => {
@@ -139,72 +135,46 @@ export function ContentGenerationPanel({
     []
   );
 
-  async function triggerCloudflareBuild(
-    environment: "staging" | "production"
-  ): Promise<string | null> {
-    try {
-      const cfToken = ""; // Handled server-side
-      // Call our own API to trigger the build
-      const res = await fetch("/api/agent/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, environment }),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { url?: string };
-        return data.url ?? null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
   async function handleGenerate(): Promise<void> {
-    if (!rssUrl.trim()) {
-      toast("Please enter an RSS feed URL", "error");
-      return;
-    }
-
+    const count = Math.max(MIN_ARTICLE_COUNT, Math.min(MAX_ARTICLE_COUNT, articleCount));
     const startTime = Date.now();
     setPipeline({
-      step: "fetching_rss",
-      message: "Fetching RSS feed...",
+      step: "reading_brief",
+      message: `Loading site brief for ${domain}...`,
       startedAt: startTime,
     });
 
     try {
-      // Show real-time sub-step progress while the agent works
-      advancePipeline("fetching_rss", "Fetching RSS feed...");
+      advancePipeline("reading_brief", `Loading site brief for ${domain}...`);
+      await delay(300);
+
+      advancePipeline("querying_aggregator", "Querying content aggregator for source articles...");
       await delay(400);
 
-      advancePipeline("parsing_content", "Extracting article content...");
+      advancePipeline("filtering_articles", "Filtering by relevance and checking for duplicates...");
       await delay(300);
 
-      advancePipeline("checking_duplicates", "Checking for duplicate articles...");
+      advancePipeline("scraping_content", "Fetching source article content...");
       await delay(300);
-
-      advancePipeline("reading_brief", "Loading site brief for " + domain + "...");
-      await delay(200);
 
       advancePipeline(
         "generating_article",
-        "Connecting to Claude..."
+        `Generating ${count} article${count > 1 ? "s" : ""} with Claude...`
       );
 
       // Start cycling through live generation sub-messages
       const generationMessages = [
-        { msg: "Reading source article...", delay: 2000 },
+        { msg: "Reading source articles...", delay: 2000 },
         { msg: "Analyzing content structure and key points...", delay: 2500 },
-        { msg: "Claude is crafting the headline...", delay: 3000 },
-        { msg: "Writing article introduction...", delay: 3000 },
+        { msg: "Claude is crafting headlines...", delay: 3000 },
+        { msg: "Writing article introductions...", delay: 3000 },
         { msg: "Expanding main body paragraphs...", delay: 4000 },
         { msg: "Adding relevant examples and detail...", delay: 3500 },
-        { msg: "Writing conclusion...", delay: 2500 },
-        { msg: "Generating SEO description and tags...", delay: 2000 },
+        { msg: "Writing conclusions...", delay: 2500 },
+        { msg: "Generating SEO descriptions and tags...", delay: 2000 },
         { msg: "Formatting markdown output...", delay: 2000 },
-        { msg: "Almost done — finalizing article...", delay: 5000 },
-        { msg: "Still working — large article takes longer...", delay: 10000 },
+        { msg: "Almost done — finalizing articles...", delay: 5000 },
+        { msg: "Still working — processing multiple articles takes longer...", delay: 10000 },
       ];
 
       let messageIndex = 0;
@@ -222,76 +192,123 @@ export function ContentGenerationPanel({
         }
       }, 2500);
 
-      // Actually call the agent (runs in parallel with message cycling)
+      // Actually call the agent
       const res = await fetch("/api/agent/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteDomain: domain, rssUrl: rssUrl.trim(), branch: stagingBranch }),
+        body: JSON.stringify({
+          siteDomain: domain,
+          branch: stagingBranch,
+          count,
+        }),
       });
 
-      // Stop the message cycling
       cancelled = true;
       clearInterval(messageTimer);
 
       const result = (await res.json()) as {
-        status: string;
-        slug?: string;
-        path?: string;
-        message?: string;
-        reason?: string;
+        siteDomain: string;
+        requested: number;
+        totalSourced: number;
+        duplicateCount: number;
+        availableNew: number;
+        results: Array<{
+          status: string;
+          slug?: string;
+          path?: string;
+          message?: string;
+          reason?: string;
+        }>;
       };
 
-      if (result.status === "skipped") {
+      // Build batch summary
+      const created = result.results.filter((r) => r.status === "created");
+      const skipped = result.results.filter((r) => r.status === "skipped");
+      const errors = result.results.filter((r) => r.status === "error");
+
+      if (created.length === 0 && errors.length === 0) {
+        // All skipped — build a descriptive message
+        let reason: string;
+        if (result.totalSourced === 0) {
+          reason = "No related articles found from sources.";
+        } else if (result.availableNew === 0) {
+          reason = `Found ${result.totalSourced} related article${result.totalSourced > 1 ? "s" : ""} but all ${result.duplicateCount} already exist on the site.`;
+        } else {
+          reason = result.results[0]?.reason ?? "No new articles available";
+        }
         setPipeline({
           step: "error",
-          message: `Skipped: ${result.reason ?? "Article already exists"}`,
+          message: reason,
           startedAt: startTime,
           completedAt: Date.now(),
         });
-        toast("Article skipped — already exists", "info");
+        toast(reason, "info");
         return;
       }
 
-      if (result.status === "error" || !res.ok) {
-        throw new Error(result.message ?? "Agent returned an error");
+      if (created.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]?.message ?? "All articles failed to generate");
       }
 
-      // For staging sites, the content-pipeline already committed directly to the
-      // staging branch on GitHub (writer.ts uses GitHub mode when branch is set).
-      // For non-staging sites, the agent writes locally and we need to push to GitHub.
-      if (isStaging) {
-        advancePipeline("writing_article", "Article committed to staging branch", {
-          articleSlug: result.slug,
-          articlePath: result.path,
+      // Build descriptive summary
+      const batchSummary = buildBatchSummary(
+        created.length,
+        result.requested,
+        result.totalSourced,
+        result.duplicateCount,
+        errors.length,
+      );
+
+      // Use the first created article for display
+      const firstCreated = created[0];
+
+      // Articles are always committed to the staging branch by the content-pipeline agent.
+      // If the site has a staging branch, the agent writes directly to it via GitHub API.
+      // If not, articles are written locally and we push them to GitHub.
+      if (stagingBranch) {
+        advancePipeline("writing_article", `Articles committed to staging branch (${batchSummary})`, {
+          articleSlug: firstCreated?.slug,
+          articlePath: firstCreated?.path,
+          batchSummary,
+          batchResults: result.results,
         });
       } else {
-        advancePipeline("writing_article", "Committing article to GitHub...", {
-          articleSlug: result.slug,
-          articlePath: result.path,
+        advancePipeline("writing_article", "Committing articles to staging...", {
+          articleSlug: firstCreated?.slug,
+          articlePath: firstCreated?.path,
+          batchSummary,
+          batchResults: result.results,
         });
 
-        // Push the locally-written article to GitHub via our API
-        if (result.path) {
-          const commitRes = await fetch("/api/agent/commit-article", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ articlePath: result.path }),
-          });
-          const commitResult = (await commitRes.json()) as {
-            status: string;
-            message?: string;
-          };
-          if (commitResult.status === "error") {
-            throw new Error(
-              `Git commit failed: ${commitResult.message ?? "Unknown error"}`
-            );
+        // Push locally-written articles to GitHub via our API
+        for (const article of created) {
+          if (article.path) {
+            const commitRes = await fetch("/api/agent/commit-article", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ articlePath: article.path }),
+            });
+            const commitResult = (await commitRes.json()) as {
+              status: string;
+              message?: string;
+            };
+            if (commitResult.status === "error") {
+              throw new Error(
+                `Git commit failed: ${commitResult.message ?? "Unknown error"}`
+              );
+            }
           }
         }
 
         advancePipeline(
           "writing_article",
-          "Article committed to GitHub repository",
-          { articleSlug: result.slug, articlePath: result.path }
+          `Articles committed to staging (${batchSummary})`,
+          {
+            articleSlug: firstCreated?.slug,
+            articlePath: firstCreated?.path,
+            batchSummary,
+            batchResults: result.results,
+          }
         );
       }
       await delay(500);
@@ -302,11 +319,7 @@ export function ContentGenerationPanel({
         "Triggering Cloudflare Pages build..."
       );
 
-      // Cloudflare auto-deploys on GitHub commits. But we can also trigger manually.
-      // Either way, we want the deployment-specific preview URL (e.g. 846baa09.coolnews-dev.pages.dev)
       let deploymentUrl: string | null = null;
-      // For staging sites, construct the branch-based preview URL
-      // CF Pages branch preview format: staging-{project}.{project}.pages.dev
       const branchSlug = stagingBranch ? stagingBranch.replace(/\//g, "-") : null;
       const stagingBaseUrl = branchSlug ? `https://${branchSlug}.${projectName}.pages.dev` : null;
       const productionBaseUrl = `https://${projectName}.pages.dev`;
@@ -327,16 +340,14 @@ export function ContentGenerationPanel({
           }
         }
       } catch {
-        // CF may auto-deploy from the commit — we'll poll for it
+        // CF may auto-deploy from the commit
       }
 
-      // If we didn't get a deployment URL from the trigger, poll for the latest deployment
       if (!deploymentUrl) {
         advancePipeline(
           "triggering_build",
           "Waiting for Cloudflare to pick up the commit..."
         );
-        // Poll up to 30s for a new deployment
         for (let i = 0; i < 6; i++) {
           await delay(5000);
           try {
@@ -358,32 +369,28 @@ export function ContentGenerationPanel({
         }
       }
 
-      // For staging sites, prefer the branch-based staging URL over a deployment-specific URL
-      const stagingUrl = deploymentUrl ?? (isStaging ? stagingBaseUrl : null) ?? productionBaseUrl;
+      const stagingUrl = deploymentUrl ?? stagingBaseUrl ?? productionBaseUrl;
 
-      const stagingMessage = isStaging
-        ? deploymentUrl
-          ? "Article committed to staging branch — preview deployment ready. Check the Staging tab for the latest preview."
-          : "Article committed to staging branch — Cloudflare will deploy within ~2 minutes. Use the Staging tab to refresh the preview."
-        : deploymentUrl
-          ? "Deployment preview ready — review the article before going live."
-          : "Build triggered — Cloudflare will deploy within ~2 minutes. Refresh the preview link shortly.";
+      const stagingMessage = deploymentUrl
+        ? `${batchSummary} — staged successfully. Review the preview before deploying to production.`
+        : `${batchSummary} — staged successfully. Cloudflare will deploy the preview within ~2 minutes.`;
 
       advancePipeline("staging_live", stagingMessage, {
         stagingUrl,
       });
 
-      // Don't auto-deploy production — let user click
       setPipeline((prev) => ({
         ...prev,
         step: "staging_live",
         message: stagingMessage,
         stagingUrl,
-        articleSlug: result.slug,
-        articlePath: result.path,
+        articleSlug: firstCreated?.slug,
+        articlePath: firstCreated?.path,
+        batchSummary,
+        batchResults: result.results,
       }));
 
-      toast(`Article "${result.slug}" committed to GitHub and staged!`, "success");
+      toast(`${batchSummary} for ${domain}!`, "success");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Generation failed";
@@ -398,30 +405,41 @@ export function ContentGenerationPanel({
     }
   }
 
-  async function handleDeployProduction(): Promise<void> {
-    advancePipeline(
-      "deploying_production",
-      "Deploying to production..."
-    );
+  function handleDeployProduction(): void {
+    startPublish(async () => {
+      try {
+        advancePipeline(
+          "deploying_production",
+          "Merging staging to production..."
+        );
 
-    await delay(1500);
+        await publishStagingToProduction(domain);
 
-    const productionUrl = `https://${domain}`;
+        const productionUrl = `https://${domain}`;
 
-    const completedState: PipelineState = {
-      step: "complete",
-      message: "Article is live on production!",
-      articleSlug: pipeline.articleSlug,
-      articlePath: pipeline.articlePath,
-      stagingUrl: pipeline.stagingUrl,
-      productionUrl,
-      startedAt: pipeline.startedAt,
-      completedAt: Date.now(),
-    };
+        const completedState: PipelineState = {
+          step: "complete",
+          message: "Articles are live on production!",
+          articleSlug: pipeline.articleSlug,
+          articlePath: pipeline.articlePath,
+          stagingUrl: pipeline.stagingUrl,
+          productionUrl,
+          startedAt: pipeline.startedAt,
+          completedAt: Date.now(),
+          batchSummary: pipeline.batchSummary,
+          batchResults: pipeline.batchResults,
+        };
 
-    setPipeline(completedState);
-    setHistory((prev) => [completedState, ...prev]);
-    toast("Article deployed to production!", "success");
+        setPipeline(completedState);
+        setHistory((prev) => [completedState, ...prev]);
+        toast("Articles deployed to production!", "success");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Deploy failed";
+        toast(message, "error");
+        // Stay on staging_live so user can retry
+        advancePipeline("staging_live", `Deploy failed: ${message}`);
+      }
+    });
   }
 
   function handleReset(): void {
@@ -447,7 +465,7 @@ export function ContentGenerationPanel({
         <div>
           <h3 className="text-lg font-bold">Content Generation</h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Generate articles from RSS feeds using the AI content agent
+            Generate articles from curated content sources using the AI content agent
           </p>
         </div>
         {pipeline.step !== "idle" && (
@@ -457,17 +475,23 @@ export function ContentGenerationPanel({
         )}
       </div>
 
-      {/* RSS Input */}
+      {/* Generation Controls */}
       {pipeline.step === "idle" && (
         <div className="rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-primary)] p-6 space-y-4">
           <Input
-            label="RSS Feed URL"
-            placeholder="https://rss.app/feeds/... or any RSS/Atom feed URL"
-            value={rssUrl}
-            onChange={(e): void => setRssUrl(e.target.value)}
+            label="Number of Articles"
+            type="number"
+            min={MIN_ARTICLE_COUNT}
+            max={MAX_ARTICLE_COUNT}
+            value={articleCount}
+            onChange={(e): void => {
+              const val = parseInt(e.target.value, 10);
+              if (!isNaN(val)) setArticleCount(Math.max(MIN_ARTICLE_COUNT, Math.min(MAX_ARTICLE_COUNT, val)));
+            }}
+            className="w-24"
           />
           <div className="flex items-center gap-3">
-            <Button onClick={handleGenerate} disabled={!rssUrl.trim()}>
+            <Button onClick={handleGenerate}>
               <svg
                 className="w-4 h-4 mr-2"
                 fill="none"
@@ -481,10 +505,10 @@ export function ContentGenerationPanel({
                   d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
                 />
               </svg>
-              Generate Article
+              Generate {articleCount} Article{articleCount > 1 ? "s" : ""}
             </Button>
             <p className="text-xs text-[var(--text-muted)]">
-              Fetches the latest item from the RSS feed, rewrites it with
+              Sources articles from the content aggregator, rewrites them with
               Claude, and commits to{" "}
               <code className="text-cyan text-[10px]">
                 sites/{domain}/articles/
@@ -637,18 +661,21 @@ export function ContentGenerationPanel({
             </div>
           )}
 
-          {/* Article result + links */}
+          {/* Batch results summary */}
           {(pipeline.step === "staging_live" || pipeline.step === "complete") &&
-            pipeline.articleSlug && (
+            pipeline.batchResults && pipeline.batchResults.length > 0 && (
               <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+                {/* Summary header */}
                 <div className="flex items-start justify-between">
                   <div>
                     <p className="text-sm font-semibold text-[var(--text-primary)]">
-                      {pipeline.articleSlug}
+                      {pipeline.batchSummary}
                     </p>
-                    <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">
-                      {pipeline.articlePath}
-                    </p>
+                    {pipeline.articlePath && (
+                      <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5">
+                        {pipeline.articlePath}
+                      </p>
+                    )}
                   </div>
                   {pipeline.step === "complete" && (
                     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-400">
@@ -660,6 +687,37 @@ export function ContentGenerationPanel({
                       Staging
                     </span>
                   )}
+                </div>
+
+                {/* Individual article results */}
+                <div className="space-y-1">
+                  {pipeline.batchResults.map((r, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2 text-xs"
+                    >
+                      {r.status === "created" ? (
+                        <svg className="w-3.5 h-3.5 text-green-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      ) : r.status === "skipped" ? (
+                        <svg className="w-3.5 h-3.5 text-yellow-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5 text-red-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      )}
+                      <span className={`font-mono ${
+                        r.status === "created"
+                          ? "text-[var(--text-primary)]"
+                          : "text-[var(--text-muted)]"
+                      }`}>
+                        {r.slug ?? r.reason ?? r.status}
+                      </span>
+                    </div>
+                  ))}
                 </div>
 
                 {/* Links */}
@@ -750,10 +808,10 @@ export function ContentGenerationPanel({
                   )}
                 </div>
 
-                {/* Deploy to production button — only for non-staging (production) sites */}
-                {pipeline.step === "staging_live" && !isStaging && (
-                  <div className="pt-2 border-t border-[var(--border-secondary)]">
-                    <Button onClick={handleDeployProduction} size="sm">
+                {/* Deploy to production button — always shown at staging_live */}
+                {pipeline.step === "staging_live" && (
+                  <div className="pt-2 border-t border-[var(--border-secondary)] space-y-2">
+                    <Button onClick={handleDeployProduction} size="sm" loading={isPublishing}>
                       <svg
                         className="w-4 h-4 mr-1"
                         fill="none"
@@ -769,16 +827,8 @@ export function ContentGenerationPanel({
                       </svg>
                       Deploy to Production
                     </Button>
-                  </div>
-                )}
-
-                {/* Staging info — guide user to Staging tab for go-live */}
-                {pipeline.step === "staging_live" && isStaging && (
-                  <div className="pt-2 border-t border-[var(--border-secondary)]">
                     <p className="text-xs text-[var(--text-muted)]">
-                      This is a staging site. Use the{" "}
-                      <span className="text-amber-400 font-semibold">Staging</span>{" "}
-                      tab to preview, refresh the deployment URL, and go live when ready.
+                      Review the staged articles before deploying. This will merge changes to production.
                     </p>
                   </div>
                 )}
@@ -815,7 +865,7 @@ export function ContentGenerationPanel({
                   </svg>
                   <div>
                     <p className="text-sm font-medium text-[var(--text-primary)]">
-                      {item.articleSlug}
+                      {item.batchSummary ?? item.articleSlug}
                     </p>
                     <p className="text-[11px] text-[var(--text-muted)]">
                       {item.startedAt
@@ -856,6 +906,45 @@ export function ContentGenerationPanel({
       )}
     </div>
   );
+}
+
+/**
+ * Build a human-readable summary explaining what happened.
+ * e.g. "Created 4 articles out of 10 requested — 7 related articles found, 3 already existed."
+ */
+function buildBatchSummary(
+  createdCount: number,
+  requested: number,
+  totalSourced: number,
+  duplicateCount: number,
+  errorCount: number,
+): string {
+  const parts: string[] = [];
+
+  if (createdCount === requested) {
+    // Got everything requested
+    parts.push(`Created ${createdCount} article${createdCount > 1 ? "s" : ""}`);
+  } else {
+    // Created fewer than requested — explain why
+    parts.push(`Created ${createdCount} article${createdCount > 1 ? "s" : ""} out of ${requested} requested`);
+
+    const reasons: string[] = [];
+    if (duplicateCount > 0) {
+      reasons.push(`${duplicateCount} already exist${duplicateCount === 1 ? "s" : ""} on the site`);
+    }
+    const availableNew = totalSourced - duplicateCount;
+    if (availableNew < requested && totalSourced > 0) {
+      reasons.push(`only ${totalSourced} related article${totalSourced > 1 ? "s" : ""} found`);
+    }
+    if (errorCount > 0) {
+      reasons.push(`${errorCount} failed to generate`);
+    }
+    if (reasons.length > 0) {
+      parts.push(` — ${reasons.join(", ")}`);
+    }
+  }
+
+  return parts.join("");
 }
 
 function delay(ms: number): Promise<void> {

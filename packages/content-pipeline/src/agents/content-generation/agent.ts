@@ -1,38 +1,47 @@
 /**
- * Content Generation Agent — orchestrates the full pipeline from RSS to published article.
+ * Content Generation Agent — orchestrates the full pipeline from
+ * Content Aggregator API to published articles.
  *
  * Steps:
- * 1. Fetch RSS + parse latest item
- * 2. Parse HTML content (extract text, images, YouTube embeds)
- * 3. Read site brief (local YAML or GitHub API)
- * 4. Duplicate check (scan existing articles for matching source_url)
- * 5. Build Claude prompts
- * 6. Call Claude → get generated article JSON
- * 7. Resolve unique slug (append -2/-3 if collision)
- * 8. Handle featured image (use from RSS or call Gemini if missing and key is set)
- * 9. Build frontmatter + serialize to markdown
- * 10. Write article (local or GitHub)
- * 11. Return { status: "created", slug, path }
+ * 1. Read site brief (local YAML or GitHub API)
+ * 2. Query Content Aggregator API (with fallback logic)
+ * 3. Filter by topic relevance
+ * 4. Deduplicate against already-processed source URLs
+ * 5. For each candidate article:
+ *    a. Scrape source content
+ *    b. Build Claude prompts
+ *    c. Call Claude → get generated article JSON
+ *    d. Resolve unique slug
+ *    e. Handle featured image (aggregator → scraped → Gemini)
+ *    f. Build frontmatter + serialize to markdown
+ *    g. Write article (local or GitHub)
+ * 6. Return batch results
  */
 
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
-import { fetchRss, parseRssFeed, parseHtmlContent } from "./rss.js";
-import { buildSystemPrompt, buildUserPrompt, type GeneratedArticle } from "./prompts.js";
+import {
+  fetchWithFallback,
+  filterByRelevance,
+  scrapeSourceContent,
+  type AggregatorArticle,
+} from "./aggregator.js";
+import { buildSystemPrompt, buildUserPrompt, type GeneratedArticle, type SourceArticle } from "./prompts.js";
 import { createAIClient, generateContent } from "../../lib/ai.js";
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
 import { writeArticle, writeAsset } from "../../lib/writer.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { ArticleFrontmatter, ArticleType, SiteConfig } from "@atomic-platform/shared-types";
+import type { ArticleFrontmatter, ArticleType, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
 
 export interface ContentGenerationParams {
   siteDomain: string;
-  rssUrl: string;
   branch?: string;
+  /** Override articles_per_week — for on-demand generation from dashboard. */
+  count?: number;
 }
 
 export interface ContentGenerationResult {
@@ -43,44 +52,124 @@ export interface ContentGenerationResult {
   message?: string;
 }
 
-// Extended frontmatter with RSS tracking field
+export interface BatchContentGenerationResult {
+  siteDomain: string;
+  /** How many the user requested */
+  requested: number;
+  /** How many relevant articles the aggregator API returned */
+  totalSourced: number;
+  /** How many were already on the site (duplicates) */
+  duplicateCount: number;
+  /** How many new articles were available after dedup */
+  availableNew: number;
+  results: ContentGenerationResult[];
+}
+
+// Extended frontmatter with source tracking field
 interface ArticleFrontmatterWithSource extends ArticleFrontmatter {
   source_url?: string;
 }
 
 const VALID_ARTICLE_TYPES: ArticleType[] = ["listicle", "how-to", "review", "standard"];
 
+/**
+ * Ensure at least one tag matches a site topic (for category page filtering).
+ * If Claude's tags don't include a topic, find the best match and prepend it.
+ */
+export function ensureTopicTag(
+  generatedTags: string[],
+  topics: string[],
+  articleTitle: string,
+): string[] {
+  if (topics.length === 0) return generatedTags;
+
+  const tags = generatedTags.length > 0 ? [...generatedTags] : [];
+  const lowerTopics = topics.map((t) => t.toLowerCase());
+
+  // Check if any tag already matches a topic
+  const hasTopicTag = tags.some((tag) =>
+    lowerTopics.includes(tag.toLowerCase()),
+  );
+  if (hasTopicTag) return tags;
+
+  // Try to find best matching topic from title or existing tags
+  const combined = [articleTitle, ...tags].join(" ").toLowerCase();
+  const matchedTopic = topics.find((topic) =>
+    combined.includes(topic.toLowerCase()),
+  );
+  if (matchedTopic) return [matchedTopic, ...tags];
+
+  // Fallback: prepend the first topic
+  return [topics[0]!, ...tags];
+}
+
 function parseClaudeResponse(raw: string): GeneratedArticle {
-  // Try to extract JSON from inside markdown code fences first
   const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const cleaned = fenceMatch ? fenceMatch[1]! : raw;
   return JSON.parse(cleaned.trim()) as GeneratedArticle;
 }
 
+// ---------------------------------------------------------------------------
+// Deduplication — bulk load all existing source_urls
+// ---------------------------------------------------------------------------
+
+/** Normalize a URL for dedup comparison. Strips protocol, www, query, fragment, trailing slash. */
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    // Strip www., lowercase host, keep pathname only (no query/fragment)
+    const host = u.hostname.replace(/^www\./, "").toLowerCase();
+    const pathname = u.pathname.replace(/\/+$/, "").toLowerCase();
+    return `${host}${pathname}`;
+  } catch {
+    // Fallback for malformed URLs
+    return url.replace(/\/+$/, "").toLowerCase();
+  }
+}
+
 /**
- * Check if the RSS item has already been published (duplicate detection).
- * Returns true if an article with the same source_url already exists.
+ * Normalize a title into a comparable key.
+ * Strips punctuation, extra spaces, lowercases — so "7 Expert Sleep Tips..."
+ * matches "7 Expert Sleep Tips…" or "7 expert sleep tips".
  */
-async function isDuplicate(
+function normalizeTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "") // strip punctuation
+    .replace(/\s+/g, " ")    // collapse whitespace
+    .trim();
+}
+
+interface ExistingArticles {
+  urls: Set<string>;
+  titles: Set<string>;
+}
+
+/**
+ * Read all existing articles and return the set of source_urls and titles already processed.
+ * URLs are normalized for consistent comparison. Titles are normalized for fuzzy matching.
+ */
+async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
-  sourceUrl: string,
   branch?: string,
-): Promise<boolean> {
-  if (config.localNetworkPath) {
-    const articlesDir = path.join(
-      config.localNetworkPath,
-      "sites",
-      siteDomain,
-      "articles",
-    );
+): Promise<ExistingArticles> {
+  const urls = new Set<string>();
+  const titles = new Set<string>();
+
+  function extractFromFrontmatter(data: Record<string, unknown>): void {
+    if (data.source_url) urls.add(normalizeUrl(data.source_url as string));
+    if (data.title) titles.add(normalizeTitleKey(data.title as string));
+  }
+
+  if (config.localNetworkPath && !branch) {
+    const articlesDir = path.join(config.localNetworkPath, "sites", siteDomain, "articles");
 
     let files: string[];
     try {
       files = await fs.readdir(articlesDir);
     } catch {
-      // Directory doesn't exist yet — no duplicates
-      return false;
+      return { urls, titles };
     }
 
     for (const file of files) {
@@ -88,15 +177,13 @@ async function isDuplicate(
       try {
         const content = await fs.readFile(path.join(articlesDir, file), "utf-8");
         const { data } = matter(content);
-        if (data.source_url === sourceUrl) {
-          return true;
-        }
+        extractFromFrontmatter(data);
       } catch {
         // Skip unparseable files
       }
     }
 
-    return false;
+    return { urls, titles };
   }
 
   // GitHub mode
@@ -108,7 +195,7 @@ async function isDuplicate(
   try {
     files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
   } catch {
-    return false;
+    return { urls, titles };
   }
 
   for (const file of files) {
@@ -121,21 +208,19 @@ async function isDuplicate(
         branch,
       );
       const { data } = matter(content);
-      if (data.source_url === sourceUrl) {
-        return true;
-      }
+      extractFromFrontmatter(data);
     } catch {
       // Skip unparseable files
     }
   }
 
-  return false;
+  return { urls, titles };
 }
 
-/**
- * Resolve a unique slug by checking if {slug}.md already exists.
- * If taken, appends -2, -3, etc.
- */
+// ---------------------------------------------------------------------------
+// Slug resolution
+// ---------------------------------------------------------------------------
+
 async function resolveUniqueSlug(
   config: AgentConfig,
   siteDomain: string,
@@ -159,7 +244,7 @@ async function slugExists(
   slug: string,
   branch?: string,
 ): Promise<boolean> {
-  if (config.localNetworkPath) {
+  if (config.localNetworkPath && !branch) {
     const filePath = path.join(
       config.localNetworkPath,
       "sites",
@@ -175,7 +260,6 @@ async function slugExists(
     }
   }
 
-  // GitHub mode
   const { readFile } = await import("../../lib/github.js");
   const octokit = createGitHubClient(config.github);
   try {
@@ -191,12 +275,10 @@ async function slugExists(
   }
 }
 
-/**
- * Read the site brief from disk when running in local mode.
- * Returns null if the file does not exist or produces no usable brief,
- * so the caller can fall back to GitHub mode.
- * Throws on genuine errors (permissions, malformed YAML that is non-empty, etc.).
- */
+// ---------------------------------------------------------------------------
+// Site brief reading
+// ---------------------------------------------------------------------------
+
 async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) {
   const yamlPath = path.join(localNetworkPath, "sites", siteDomain, "site.yaml");
 
@@ -208,7 +290,6 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     throw err;
   }
 
-  // An empty file (e.g. from test mocks) is treated as "not configured locally"
   if (!raw.trim()) return null;
 
   const siteConfig = parseYaml(raw) as SiteConfig;
@@ -224,67 +305,60 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
   };
 }
 
-/**
- * Read the site brief — local mode reads YAML directly from disk,
- * GitHub mode uses readSiteBrief from lib/site-brief.ts.
- *
- * In local mode, reads site.yaml directly from disk. Falls back to
- * readSiteBrief (GitHub) if the local file is missing or returns no brief —
- * this also allows test mocks of readSiteBrief to work correctly.
- */
 async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
   if (config.localNetworkPath) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
     if (local) return local;
-    // File not found — fall back to GitHub (also handles test environment)
   }
 
   const octokit = createGitHubClient(config.github);
   return readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
 }
 
-/**
- * Main entry point for the content generation agent.
- */
-export async function runContentGeneration(
-  params: ContentGenerationParams,
+// ---------------------------------------------------------------------------
+// Single article processing
+// ---------------------------------------------------------------------------
+
+async function processArticle(
+  article: AggregatorArticle,
   config: AgentConfig,
+  siteDomain: string,
+  siteName: string,
+  brief: SiteBrief,
+  branch?: string,
 ): Promise<ContentGenerationResult> {
-  const { siteDomain, rssUrl, branch } = params;
-
   try {
-    // Step 1: Fetch RSS + parse latest item
-    const xml = await fetchRss(rssUrl);
-    const rssItem = parseRssFeed(xml);
+    // Scrape source content
+    const parsed = await scrapeSourceContent(article.url);
 
-    // Step 2: Parse HTML content
-    const parsed = parseHtmlContent(rssItem.htmlContent, rssItem.enclosureUrl);
-
-    // Duplicate check runs before site brief read (spec step 4 before step 3) to:
-    // 1. Fail fast — avoid a GitHub API / disk read for articles we already have
-    // 2. The fs.readdir/readFile mocks in tests must be set up before any readFile call
-    const duplicate = await isDuplicate(config, siteDomain, rssItem.link, branch);
-    if (duplicate) {
-      return { status: "skipped", reason: "already exists" };
+    if (!parsed.textBody) {
+      return { status: "skipped", reason: "could not scrape source content" };
     }
 
-    // Step 3: Read site brief
-    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
+    // Build prompts
+    const source: SourceArticle = {
+      title: article.title,
+      url: article.url,
+      imageUrl: article.image_url,
+    };
 
-    // Step 5: Build prompts
     const systemPrompt = buildSystemPrompt(siteName, brief);
-    const userPrompt = buildUserPrompt(rssItem, parsed);
+    const userPrompt = buildUserPrompt(source, parsed);
 
-    // Step 6: Call Claude
+    // Call Claude
     const aiClient = createAIClient(config.ai);
     const rawResponse = await generateContent(aiClient, { systemPrompt, userPrompt });
     const generated = parseClaudeResponse(rawResponse);
 
-    // Step 7: Resolve unique slug
+    // Resolve unique slug
     const slug = await resolveUniqueSlug(config, siteDomain, generated.slug, branch);
 
-    // Step 8: Handle featured image
-    let featuredImageUrl: string | undefined = parsed.featuredImageUrl ?? undefined;
+    // Handle featured image: aggregator image → scraped image → Gemini
+    let featuredImageUrl: string | undefined = article.image_url ?? undefined;
+
+    if (!featuredImageUrl && parsed.featuredImageUrl) {
+      featuredImageUrl = parsed.featuredImageUrl;
+    }
 
     if (!featuredImageUrl && config.geminiApiKey) {
       const imageBuffer = await generateImageWithGemini(
@@ -303,7 +377,7 @@ export async function runContentGeneration(
       }
     }
 
-    // Step 9: Build frontmatter + serialize to markdown
+    // Build frontmatter
     const reviewPercentage = brief.review_percentage ?? 0;
     const status: "published" | "review" =
       Math.floor(Math.random() * 100) < reviewPercentage ? "review" : "published";
@@ -312,10 +386,11 @@ export async function runContentGeneration(
       ? (generated.type as ArticleType)
       : "standard";
 
-    const tags =
-      generated.tags && generated.tags.length > 0
-        ? generated.tags
-        : brief.topics.slice(0, 2);
+    const tags = ensureTopicTag(
+      generated.tags ?? [],
+      brief.topics,
+      generated.title,
+    );
 
     const publishDate = new Date().toISOString().slice(0, 10);
 
@@ -329,13 +404,13 @@ export async function runContentGeneration(
       tags,
       slug,
       reviewer_notes: "",
-      source_url: rssItem.link,
+      source_url: article.url,
       ...(featuredImageUrl ? { featuredImage: featuredImageUrl } : {}),
     };
 
     const markdown = matter.stringify(generated.body, frontmatter);
 
-    // Step 10: Write article
+    // Write article
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
     await writeArticle(
       { localNetworkPath: config.localNetworkPath, github: config.github, branch },
@@ -344,15 +419,118 @@ export async function runContentGeneration(
       markdown,
     );
 
-    // Step 11: Return result
+    return { status: "created", slug, path: filePath };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[agent] Failed to process article "${article.title}":`, message);
+    return { status: "error", message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Main entry point for the content generation agent.
+ * Queries the Content Aggregator API, filters, deduplicates, and generates
+ * multiple articles in a single run.
+ */
+export async function runContentGeneration(
+  params: ContentGenerationParams,
+  config: AgentConfig,
+): Promise<BatchContentGenerationResult> {
+  const { siteDomain, branch, count } = params;
+
+  const requested = count ?? 3;
+
+  try {
+    // Step 1: Read site brief
+    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
+
+    // Step 2: Load existing articles for deduplication (needed before fetching)
+    const existing = await getAllExistingArticles(config, siteDomain, branch);
+
+    // Step 3: Query aggregator API with fallback
+    // Request more than needed and pass existingUrls so the fallback keeps
+    // broadening filters until enough NEW (non-duplicate) articles are found.
+    const apiLimit = Math.max(requested * 3, requested + 20);
+    const articles = await fetchWithFallback(config.contentAggregatorUrl, brief, apiLimit, existing.urls);
+
+    if (articles.length === 0) {
+      return {
+        siteDomain,
+        requested,
+        totalSourced: 0,
+        duplicateCount: 0,
+        availableNew: 0,
+        results: [{ status: "skipped", reason: "no articles found from aggregator" }],
+      };
+    }
+
+    // Step 4: Filter by topic relevance
+    const relevant = filterByRelevance(articles, brief.topics);
+
+    // Step 5: Deduplicate — by URL AND title (catches syndicated/reposted content)
+    const newArticles = relevant.filter((a) => {
+      if (existing.urls.has(normalizeUrl(a.url))) return false;
+      if (existing.titles.has(normalizeTitleKey(a.title))) return false;
+      return true;
+    });
+    const duplicateCount = relevant.length - newArticles.length;
+
+    if (newArticles.length === 0) {
+      return {
+        siteDomain,
+        requested,
+        totalSourced: relevant.length,
+        duplicateCount,
+        availableNew: 0,
+        results: [{ status: "skipped", reason: "all articles already processed" }],
+      };
+    }
+
+    // Step 6: Limit to requested count
+    const toProcess = newArticles.slice(0, requested);
+
+    console.log(
+      `[agent] Processing ${toProcess.length}/${articles.length} articles for ${siteDomain}` +
+      ` (requested: ${requested}, relevant: ${relevant.length}, duplicates: ${duplicateCount}, available new: ${newArticles.length})`,
+    );
+
+    // Step 7: Process each article sequentially
+    const results: ContentGenerationResult[] = [];
+    for (const article of toProcess) {
+      console.log(`[agent] Processing: "${article.title}"`);
+      const result = await processArticle(
+        article,
+        config,
+        siteDomain,
+        siteName,
+        brief,
+        branch,
+      );
+      results.push(result);
+    }
+
     return {
-      status: "created",
-      slug,
-      path: filePath,
+      siteDomain,
+      requested,
+      totalSourced: relevant.length,
+      duplicateCount,
+      availableNew: newArticles.length,
+      results,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[agent] Content generation failed for ${siteDomain}:`, message);
-    return { status: "error", message };
+    return {
+      siteDomain,
+      requested,
+      totalSourced: 0,
+      duplicateCount: 0,
+      availableNew: 0,
+      results: [{ status: "error", message }],
+    };
   }
 }

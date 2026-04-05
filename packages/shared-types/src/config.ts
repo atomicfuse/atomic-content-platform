@@ -49,6 +49,15 @@ export interface SiteBrief {
 
   /** Publishing cadence settings. */
   schedule: PublishSchedule;
+
+  /** Content vertical for aggregator API queries. */
+  vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
+
+  /** Target audience type for aggregator API queries. */
+  audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+
+  /** Content language code (ISO 639-1). Defaults to "EN". */
+  language?: string;
 }
 
 // ---------------------------------------------------------------------------

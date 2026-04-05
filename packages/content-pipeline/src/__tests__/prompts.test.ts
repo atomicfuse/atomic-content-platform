@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildSystemPrompt, buildUserPrompt } from "../agents/content-generation/prompts.js";
+import { buildSystemPrompt, buildUserPrompt, type SourceArticle } from "../agents/content-generation/prompts.js";
 import type { SiteBrief } from "@atomic-platform/shared-types";
-import type { RssItem, ParsedContent } from "../agents/content-generation/rss.js";
+import type { ParsedContent } from "../agents/content-generation/rss.js";
 
 const mockBrief: SiteBrief = {
   audience: "Tech-savvy millennials",
@@ -14,12 +14,10 @@ const mockBrief: SiteBrief = {
   schedule: { articles_per_week: 3, preferred_days: ["Monday"], preferred_time: "10:00" },
 };
 
-const mockRssItem: RssItem = {
+const mockSource: SourceArticle = {
   title: "Snake Found in Bedroom",
-  link: "https://example.com/snake-article",
-  pubDate: "Wed, 25 Mar 2026 10:00:00 GMT",
-  htmlContent: "<p>A snake was found.</p>",
-  enclosureUrl: undefined,
+  url: "https://example.com/snake-article",
+  imageUrl: "https://img.com/source-hero.jpg",
 };
 
 const mockParsedContent: ParsedContent = {
@@ -46,22 +44,40 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt("CoolNews", mockBrief);
     expect(prompt).toContain("JSON");
   });
+
+  it("includes topic tagging rules with site topics", () => {
+    const prompt = buildSystemPrompt("CoolNews", mockBrief);
+    expect(prompt).toContain("Tagging Rules");
+    expect(prompt).toContain("The FIRST tag MUST be one of the site's topics");
+    expect(prompt).toContain("AI, gadgets");
+  });
 });
 
 describe("buildUserPrompt", () => {
   it("includes the source article title and text body", () => {
-    const prompt = buildUserPrompt(mockRssItem, mockParsedContent);
+    const prompt = buildUserPrompt(mockSource, mockParsedContent);
     expect(prompt).toContain("Snake Found in Bedroom");
     expect(prompt).toContain("A snake was found in a bedroom.");
   });
 
   it("includes YouTube embed placeholder", () => {
-    const prompt = buildUserPrompt(mockRssItem, mockParsedContent);
+    const prompt = buildUserPrompt(mockSource, mockParsedContent);
     expect(prompt).toContain("youtube.com/embed/abc");
   });
 
   it("includes inline image info", () => {
-    const prompt = buildUserPrompt(mockRssItem, mockParsedContent);
+    const prompt = buildUserPrompt(mockSource, mockParsedContent);
     expect(prompt).toContain("https://img.com/removal.jpg");
+  });
+
+  it("prefers source imageUrl over parsed featuredImageUrl", () => {
+    const prompt = buildUserPrompt(mockSource, mockParsedContent);
+    expect(prompt).toContain("https://img.com/source-hero.jpg");
+  });
+
+  it("falls back to parsed featuredImageUrl when source has no image", () => {
+    const noImageSource: SourceArticle = { ...mockSource, imageUrl: null };
+    const prompt = buildUserPrompt(noImageSource, mockParsedContent);
+    expect(prompt).toContain("https://img.com/snake.jpg");
   });
 });
