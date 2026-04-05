@@ -34,8 +34,9 @@ import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
 import { writeArticle, writeAsset } from "../../lib/writer.js";
+import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { ArticleFrontmatter, ArticleType, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
+import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
 
 export interface ContentGenerationParams {
   siteDomain: string;
@@ -50,6 +51,10 @@ export interface ContentGenerationResult {
   path?: string;
   reason?: string;
   message?: string;
+  /** Quality score 0-100 from the quality agent. */
+  qualityScore?: number;
+  /** Whether the article was auto-published or flagged for review. */
+  articleStatus?: "published" | "review";
 }
 
 export interface BatchContentGenerationResult {
@@ -65,9 +70,12 @@ export interface BatchContentGenerationResult {
   results: ContentGenerationResult[];
 }
 
-// Extended frontmatter with source tracking field
-interface ArticleFrontmatterWithSource extends ArticleFrontmatter {
+// Extended frontmatter with source tracking and quality fields
+interface ArticleFrontmatterWithExtras extends ArticleFrontmatter {
   source_url?: string;
+  quality_score?: number;
+  score_breakdown?: QualityScoreBreakdown;
+  quality_note?: string;
 }
 
 const VALID_ARTICLE_TYPES: ArticleType[] = ["listicle", "how-to", "review", "standard"];
@@ -377,11 +385,6 @@ async function processArticle(
       }
     }
 
-    // Build frontmatter
-    const reviewPercentage = brief.review_percentage ?? 0;
-    const status: "published" | "review" =
-      Math.floor(Math.random() * 100) < reviewPercentage ? "review" : "published";
-
     const articleType: ArticleType = VALID_ARTICLE_TYPES.includes(generated.type as ArticleType)
       ? (generated.type as ArticleType)
       : "standard";
@@ -392,20 +395,62 @@ async function processArticle(
       generated.title,
     );
 
+    // Quality scoring — replaces random review_percentage logic
+    let qualityScore: number | undefined;
+    let scoreBreakdown: QualityScoreBreakdown | undefined;
+    let qualityNote: string | undefined;
+    let articleStatus: "published" | "review" = "published";
+
+    try {
+      console.log(`[agent] Scoring article: "${generated.title}"`);
+      const qualityResult = await scoreArticle(
+        aiClient,
+        {
+          title: generated.title,
+          description: generated.description,
+          body: generated.body,
+          tags,
+          type: articleType,
+        },
+        siteName,
+        brief,
+        brief.quality_weights,
+      );
+
+      qualityScore = qualityResult.overallScore;
+      scoreBreakdown = qualityResult.breakdown;
+      qualityNote = qualityResult.note;
+      articleStatus = resolveQualityStatus(qualityResult.overallScore, brief.quality_threshold);
+
+      console.log(
+        `[agent] Quality score: ${qualityScore}/100 → ${articleStatus}` +
+        ` (threshold: ${brief.quality_threshold ?? 75})`,
+      );
+    } catch (scoreErr) {
+      // If quality scoring fails, fall back to published (don't block the pipeline)
+      const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
+      console.warn(`[agent] Quality scoring failed, defaulting to published: ${errMsg}`);
+      qualityNote = `Quality scoring failed: ${errMsg}`;
+    }
+
+    // Build frontmatter
     const publishDate = new Date().toISOString().slice(0, 10);
 
-    const frontmatter: ArticleFrontmatterWithSource = {
+    const frontmatter: ArticleFrontmatterWithExtras = {
       title: generated.title,
       description: generated.description,
       type: articleType,
-      status,
+      status: articleStatus,
       publishDate,
       author: "Editorial Team",
       tags,
       slug,
-      reviewer_notes: "",
+      reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
       source_url: article.url,
       ...(featuredImageUrl ? { featuredImage: featuredImageUrl } : {}),
+      ...(qualityScore !== undefined ? { quality_score: qualityScore } : {}),
+      ...(scoreBreakdown ? { score_breakdown: scoreBreakdown } : {}),
+      ...(qualityNote ? { quality_note: qualityNote } : {}),
     };
 
     const markdown = matter.stringify(generated.body, frontmatter);
@@ -419,7 +464,13 @@ async function processArticle(
       markdown,
     );
 
-    return { status: "created", slug, path: filePath };
+    return {
+      status: "created",
+      slug,
+      path: filePath,
+      qualityScore,
+      articleStatus,
+    };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[agent] Failed to process article "${article.title}":`, message);

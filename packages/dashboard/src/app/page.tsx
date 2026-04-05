@@ -3,7 +3,6 @@ import { StatsPanel } from "@/components/layout/StatsPanel";
 import { ActivityFeed } from "@/components/layout/ActivityFeed";
 import { SitesTable } from "@/components/dashboard/SitesTable";
 import { SyncDomainsButton } from "@/components/dashboard/SyncDomainsButton";
-import { AddDomainButton } from "@/components/dashboard/AddDomainButton";
 import type { DashboardStats } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +30,6 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <div className="flex items-center gap-3">
-          <AddDomainButton />
           <SyncDomainsButton />
         </div>
       </div>

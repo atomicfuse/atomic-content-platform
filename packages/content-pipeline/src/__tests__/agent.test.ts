@@ -72,6 +72,24 @@ vi.mock("../lib/gemini.js", () => ({
   generateImageWithGemini: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("../agents/content-quality/scorer.js", () => ({
+  scoreArticle: vi.fn().mockResolvedValue({
+    overallScore: 82,
+    breakdown: {
+      seo_quality: 85,
+      tone_match: 90,
+      content_length: 75,
+      factual_accuracy: 80,
+      keyword_relevance: 80,
+    },
+    note: "Good quality article with strong tone match.",
+  }),
+  resolveStatus: vi.fn().mockImplementation((score: number, threshold?: number) => {
+    const t = threshold ?? 75;
+    return score >= t ? "published" : "review";
+  }),
+}));
+
 // Mock duplicate check — no existing articles
 vi.mock("node:fs/promises", () => ({
   readdir: vi.fn().mockResolvedValue([]),
@@ -148,7 +166,7 @@ describe("runContentGeneration", () => {
     expect(result.results[0]!.status).toBe("created");
   });
 
-  it("sets status to published when review_percentage is 0", async () => {
+  it("sets status based on quality score vs threshold", async () => {
     const { writeArticle } = await import("../lib/writer.js");
 
     await runContentGeneration(
@@ -157,7 +175,43 @@ describe("runContentGeneration", () => {
     );
 
     const writtenContent = vi.mocked(writeArticle).mock.calls[0]?.[3] ?? "";
+    // Mock scorer returns 82, default threshold is 75 → published
     expect(writtenContent).toContain("status: published");
+  });
+
+  it("includes quality score in frontmatter", async () => {
+    const { writeArticle } = await import("../lib/writer.js");
+
+    await runContentGeneration(
+      { siteDomain: "coolnews.dev" },
+      config,
+    );
+
+    const writtenContent = vi.mocked(writeArticle).mock.calls[0]?.[3] ?? "";
+    expect(writtenContent).toContain("quality_score: 82");
+    expect(writtenContent).toContain("quality_note:");
+  });
+
+  it("includes quality score in result", async () => {
+    const result = await runContentGeneration(
+      { siteDomain: "coolnews.dev" },
+      config,
+    );
+
+    expect(result.results[0]!.qualityScore).toBe(82);
+    expect(result.results[0]!.articleStatus).toBe("published");
+  });
+
+  it("flags article for review when score is below threshold", async () => {
+    const { resolveStatus: resolveStatusMock } = await import("../agents/content-quality/scorer.js");
+    vi.mocked(resolveStatusMock).mockReturnValueOnce("review");
+
+    const result = await runContentGeneration(
+      { siteDomain: "coolnews.dev" },
+      config,
+    );
+
+    expect(result.results[0]!.articleStatus).toBe("review");
   });
 });
 
