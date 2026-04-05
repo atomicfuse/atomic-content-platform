@@ -1,9 +1,9 @@
 /**
- * Prompt builders for content generation from RSS sources.
+ * Prompt builders for content generation from source articles.
  */
 
 import type { SiteBrief } from "@atomic-platform/shared-types";
-import type { RssItem, ParsedContent } from "./rss.js";
+import type { ParsedContent } from "./rss.js";
 
 export interface GeneratedArticle {
   title: string;
@@ -15,6 +15,16 @@ export interface GeneratedArticle {
 }
 
 /**
+ * Source-agnostic representation of an article to rewrite.
+ * Works with both aggregator API and RSS sources.
+ */
+export interface SourceArticle {
+  title: string;
+  url: string;
+  imageUrl: string | null;
+}
+
+/**
  * Build the system prompt instructing Claude on the site's voice and output format.
  */
 export function buildSystemPrompt(siteName: string, brief: SiteBrief): string {
@@ -23,7 +33,7 @@ export function buildSystemPrompt(siteName: string, brief: SiteBrief): string {
     ? (brief.content_guidelines as string[]).map((g) => `- ${g}`).join("\n")
     : `- ${brief.content_guidelines}`;
 
-  return `You are a content writer for ${siteName}, a website focused on technology news and trends.
+  return `You are a content writer for ${siteName}, a website covering ${brief.topics.join(", ")} for ${brief.audience}.
 
 ## Site Voice
 - Tone: ${brief.tone}
@@ -39,6 +49,13 @@ You will receive a source article. Rewrite it for ${siteName}'s audience in the 
 Do NOT copy text verbatim — rewrite meaningfully while preserving all facts.
 Preserve all media (images and YouTube embeds) from the source — include them in the body at natural positions.
 
+## Tagging Rules
+The site has these main topics: ${brief.topics.join(", ")}
+- The FIRST tag MUST be one of the site's topics listed above (exact match, case-insensitive)
+- If the article genuinely relates to multiple topics, include them all as the first tags
+- After the topic tag(s), add 2-4 additional descriptive tags for the article content
+- If the article doesn't clearly fit any topic, pick the closest one
+
 ## Output Format
 Respond ONLY with a valid JSON object (no markdown fences). Schema:
 {
@@ -46,7 +63,7 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
   "slug": "string — URL-safe kebab-case slug (lowercase, hyphens only)",
   "description": "string — 1-2 sentence SEO meta description",
   "type": "string — one of: listicle, how-to, review, standard",
-  "tags": ["string", ...],
+  "tags": ["string — FIRST tag must be a site topic (${brief.topics.join(", ")}), then 2-4 additional tags"],
   "body": "string — full article body in markdown, with images as ![alt](url) and YouTube embeds as <div class=\\"embed-block embed-object\\"><iframe ...></iframe></div>"
 }`;
 }
@@ -54,13 +71,13 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
 /**
  * Build the user prompt with the source article content and media inventory.
  */
-export function buildUserPrompt(item: RssItem, parsed: ParsedContent): string {
-  const mediaSection = buildMediaSection(parsed);
+export function buildUserPrompt(source: SourceArticle, parsed: ParsedContent): string {
+  const mediaSection = buildMediaSection(source, parsed);
 
   return `## Source Article
 
-Title: ${item.title}
-URL: ${item.link}
+Title: ${source.title}
+URL: ${source.url}
 
 ## Content
 ${parsed.textBody}
@@ -70,11 +87,13 @@ ${mediaSection}
 Rewrite this article for the site. Include all media at appropriate positions in the body.`;
 }
 
-function buildMediaSection(parsed: ParsedContent): string {
+function buildMediaSection(source: SourceArticle, parsed: ParsedContent): string {
   const parts: string[] = ["## Media to Include"];
 
-  if (parsed.featuredImageUrl) {
-    parts.push(`Featured image: ${parsed.featuredImageUrl}`);
+  // Prefer source image (from aggregator API) over scraped image
+  const featuredImage = source.imageUrl ?? parsed.featuredImageUrl;
+  if (featuredImage) {
+    parts.push(`Featured image: ${featuredImage}`);
   }
 
   if (parsed.inlineImages.length > 0) {

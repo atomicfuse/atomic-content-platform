@@ -79,3 +79,4 @@ SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomi
 | `SITE_DOMAIN` | site-builder | Target domain to build (e.g., `coolnews.dev`) |
 | `NETWORK_DATA_PATH` | site-builder | Path to network data repo root |
 | `GITHUB_TOKEN` | dashboard, content-pipeline | GitHub API access for network repos |
+| `CONTENT_AGGREGATOR_URL` | content-pipeline | Content Aggregator API base URL (default: `https://content-aggregator-demo.vercel.app`) |

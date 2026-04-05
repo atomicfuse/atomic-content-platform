@@ -2,12 +2,15 @@
  * Content Generation Agent — HTTP Server
  *
  * Listens for POST /content-generate requests and runs the content generation agent.
+ * The agent autonomously queries the Content Aggregator API using the site's brief
+ * to source and rewrite articles.
  *
  * Usage:
  *   pnpm agent:content-generation
  *
  * Then POST to http://localhost:3001/content-generate:
- *   { "siteDomain": "coolnews.dev", "rssUrl": "https://rss.app/feeds/..." }
+ *   { "siteDomain": "coolnews.dev" }
+ *   { "siteDomain": "coolnews.dev", "count": 5 }
  */
 
 import * as http from "node:http";
@@ -15,15 +18,6 @@ import dotenv from "dotenv";
 dotenv.config({ override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
-
-function isValidUrl(str: string): boolean {
-  try {
-    const url = new URL(str);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
 
 function sendJson(
   res: http.ServerResponse,
@@ -49,7 +43,7 @@ async function handleRequest(
   req.on("data", (chunk) => { body += chunk; });
   await new Promise<void>((resolve) => req.on("end", resolve));
 
-  let payload: { siteDomain?: unknown; rssUrl?: unknown; branch?: unknown };
+  let payload: { siteDomain?: unknown; branch?: unknown; count?: unknown };
   try {
     payload = JSON.parse(body) as typeof payload;
   } catch {
@@ -58,29 +52,37 @@ async function handleRequest(
   }
 
   // Validate
-  const { siteDomain, rssUrl, branch } = payload;
+  const { siteDomain, branch, count } = payload;
   if (!siteDomain || typeof siteDomain !== "string") {
     sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
     return;
   }
-  if (!rssUrl || typeof rssUrl !== "string" || !isValidUrl(rssUrl)) {
-    sendJson(res, 400, { status: "error", message: "rssUrl is required and must be a valid HTTP/HTTPS URL" });
-    return;
-  }
 
   const branchStr = typeof branch === "string" ? branch : undefined;
-  console.log(`[server] POST /content-generate — site: ${siteDomain}, rss: ${rssUrl}${branchStr ? `, branch: ${branchStr}` : ""}`);
+  const countNum = typeof count === "number" && count > 0 ? Math.min(count, 50) : undefined;
+
+  console.log(
+    `[server] POST /content-generate — site: ${siteDomain}` +
+    `${countNum ? `, count: ${countNum}` : ""}` +
+    `${branchStr ? `, branch: ${branchStr}` : ""}`,
+  );
 
   try {
-    const result = await runContentGeneration({ siteDomain, rssUrl, branch: branchStr }, config);
+    const result = await runContentGeneration(
+      { siteDomain, branch: branchStr, count: countNum },
+      config,
+    );
 
     const resultBody = result as unknown as Record<string, unknown>;
-    if (result.status === "created") {
+    const hasCreated = result.results.some((r) => r.status === "created");
+    const allErrors = result.results.every((r) => r.status === "error");
+
+    if (hasCreated) {
       sendJson(res, 201, resultBody);
-    } else if (result.status === "skipped") {
-      sendJson(res, 200, resultBody);
-    } else {
+    } else if (allErrors) {
       sendJson(res, 500, resultBody);
+    } else {
+      sendJson(res, 200, resultBody);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -117,5 +119,6 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 server.listen(config.port, () => {
   console.log(`[server] Content generation agent running on http://localhost:${config.port}`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate`);
+  console.log(`[server] Aggregator: ${config.contentAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
 });
