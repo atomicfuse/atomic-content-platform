@@ -1,6 +1,6 @@
 "use server";
 
-import { readDashboardIndex } from "@/lib/github";
+import { readDashboardIndex, readArticles } from "@/lib/github";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import {
@@ -100,66 +100,44 @@ function buildStagingBaseUrl(
 export async function getReviewQueue(): Promise<ReviewArticle[]> {
   const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
   const index = await readDashboardIndex();
+
+  // Pre-fetch existing site directories to avoid 404s for sites
+  // that are in the dashboard index but don't have repo content yet.
+  let existingSiteDirs: Set<string>;
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      path: "sites",
+    });
+    existingSiteDirs = new Set(
+      Array.isArray(data)
+        ? data.filter((d) => d.type === "dir").map((d) => d.name)
+        : [],
+    );
+  } catch {
+    return [];
+  }
+
   const reviewArticles: ReviewArticle[] = [];
 
   for (const site of index.sites) {
+    if (!existingSiteDirs.has(site.domain)) continue;
+
     const branch = site.staging_branch ?? undefined;
-    const articlesPath = `sites/${site.domain}/articles`;
     const stagingBaseUrl = buildStagingBaseUrl(
       site.staging_branch,
       site.pages_project,
     );
 
-    try {
-      const { data } = await octokit.repos.getContent({
-        owner: NETWORK_REPO_OWNER,
-        repo: NETWORK_REPO_NAME,
-        path: articlesPath,
-        ...(branch ? { ref: branch } : {}),
+    const articles = await readArticles(site.domain, branch);
+    for (const article of articles) {
+      if (article.status !== "review") continue;
+      reviewArticles.push({
+        ...article,
+        domain: site.domain,
+        stagingBaseUrl,
       });
-
-      if (!Array.isArray(data)) continue;
-
-      for (const file of data) {
-        if (file.type !== "file" || !file.name.endsWith(".md")) continue;
-
-        try {
-          const { data: fileData } = await octokit.repos.getContent({
-            owner: NETWORK_REPO_OWNER,
-            repo: NETWORK_REPO_NAME,
-            path: file.path,
-            ...(branch ? { ref: branch } : {}),
-          });
-
-          if (!("content" in fileData) || !fileData.content) continue;
-
-          const content = Buffer.from(fileData.content, "base64").toString("utf-8");
-          const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-          if (!fmMatch) continue;
-
-          const fm = parseYaml(fmMatch[1]!) as Record<string, unknown>;
-
-          if (fm.status !== "review") continue;
-
-          reviewArticles.push({
-            domain: site.domain,
-            slug: file.name.replace(".md", ""),
-            title: (fm.title as string) ?? file.name,
-            type: (fm.type as string) ?? "standard",
-            status: "review",
-            publishDate: (fm.publishDate as string) ?? "",
-            score: (fm.quality_score as number) ?? undefined,
-            scoreBreakdown: fm.score_breakdown as ArticleEntry["scoreBreakdown"],
-            qualityNote: fm.quality_note as string | undefined,
-            reviewerNotes: fm.reviewer_notes as string | undefined,
-            stagingBaseUrl,
-          });
-        } catch {
-          // Skip unreadable files
-        }
-      }
-    } catch {
-      // Skip sites without articles directory
     }
   }
 

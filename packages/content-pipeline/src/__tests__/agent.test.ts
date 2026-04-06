@@ -105,7 +105,7 @@ const config: AgentConfig = {
   networkRepo: "owner/repo",
   localNetworkPath: "/tmp/network",
   geminiApiKey: undefined,
-  contentAggregatorUrl: "https://content-aggregator-demo.vercel.app",
+  contentAggregatorUrl: "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
   port: 3001,
   notifications: {},
 };

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { removeBackground } from "@/lib/remove-background";
 
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -65,7 +66,9 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    return NextResponse.json({ image: imagePart.inlineData.data });
+    const raw = Buffer.from(imagePart.inlineData.data, "base64");
+    const transparent = await removeBackground(raw);
+    return NextResponse.json({ image: transparent.toString("base64") });
   } catch (err) {
     console.error("[generate-logo] Error:", err);
     return NextResponse.json(
@@ -90,5 +93,5 @@ Requirements:
 - Square aspect ratio
 - No text or letters in the logo — pure icon/symbol only
 - Professional quality suitable for a content website
-- White or transparent-feeling background`;
+- Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
 }

@@ -20,6 +20,7 @@ import {
 } from "@/lib/cloudflare";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
+import { removeBackground } from "@/lib/remove-background";
 
 interface StagingResult {
   stagingUrl: string;
@@ -798,7 +799,7 @@ Requirements:
 - Square aspect ratio
 - No text or letters in the logo — pure icon/symbol only
 - Professional quality suitable for a content website
-- White or transparent-feeling background`;
+- Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
@@ -835,7 +836,8 @@ Requirements:
       return null;
     }
 
-    return Buffer.from(imagePart.inlineData.data, "base64");
+    const raw = Buffer.from(imagePart.inlineData.data, "base64");
+    return removeBackground(raw);
   } catch (err) {
     console.warn("[wizard] Logo generation error:", err);
     return null;
