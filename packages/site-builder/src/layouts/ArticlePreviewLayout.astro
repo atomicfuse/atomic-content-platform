@@ -16,6 +16,7 @@ import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import NewsletterForm from '../../themes/modern/components/NewsletterForm.astro';
 import ContinueReadingCTA from '../../themes/modern/components/ContinueReadingCTA.astro';
 import { getConfig } from '../config';
+import { isVisibleArticle } from '../utils/article-status';
 
 interface Props {
   title: string;
@@ -68,7 +69,7 @@ const stickyBottom = showAds
 // Gather related posts
 const allArticles = await getCollection('articles');
 const related = allArticles
-  .filter((a) => a.data.status === 'published' && a.data.slug !== slug)
+  .filter((a) => isVisibleArticle(a.data.status) && a.data.slug !== slug)
   .sort(
     (a, b) =>
       new Date(b.data.publishDate).getTime() -

@@ -66,6 +66,7 @@ vi.mock("../lib/ai.js", () => ({
 vi.mock("../lib/writer.js", () => ({
   writeArticle: vi.fn().mockResolvedValue(undefined),
   writeAsset: vi.fn().mockResolvedValue(undefined),
+  writeArticleBatch: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../lib/gemini.js", () => ({
@@ -105,7 +106,7 @@ const config: AgentConfig = {
   networkRepo: "owner/repo",
   localNetworkPath: "/tmp/network",
   geminiApiKey: undefined,
-  contentAggregatorUrl: "https://content-aggregator-demo.vercel.app",
+  contentAggregatorUrl: "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
   port: 3001,
   notifications: {},
 };
@@ -167,27 +168,31 @@ describe("runContentGeneration", () => {
   });
 
   it("sets status based on quality score vs threshold", async () => {
-    const { writeArticle } = await import("../lib/writer.js");
+    const { writeArticleBatch } = await import("../lib/writer.js");
 
     await runContentGeneration(
       { siteDomain: "coolnews.dev" },
       config,
     );
 
-    const writtenContent = vi.mocked(writeArticle).mock.calls[0]?.[3] ?? "";
+    const batchCall = vi.mocked(writeArticleBatch).mock.calls[0];
+    const articles = batchCall?.[1] ?? [];
+    const writtenContent = articles[0]?.content ?? "";
     // Mock scorer returns 82, default threshold is 75 → published
     expect(writtenContent).toContain("status: published");
   });
 
   it("includes quality score in frontmatter", async () => {
-    const { writeArticle } = await import("../lib/writer.js");
+    const { writeArticleBatch } = await import("../lib/writer.js");
 
     await runContentGeneration(
       { siteDomain: "coolnews.dev" },
       config,
     );
 
-    const writtenContent = vi.mocked(writeArticle).mock.calls[0]?.[3] ?? "";
+    const batchCall = vi.mocked(writeArticleBatch).mock.calls[0];
+    const articles = batchCall?.[1] ?? [];
+    const writtenContent = articles[0]?.content ?? "";
     expect(writtenContent).toContain("quality_score: 82");
     expect(writtenContent).toContain("quality_note:");
   });

@@ -1,15 +1,17 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { updateArticleStatus } from "@/actions/review";
+import { applyReviewDecisions } from "@/actions/review";
 import type { ReviewArticle } from "@/actions/review";
 import Link from "next/link";
 
 interface ReviewQueueClientProps {
   articles: ReviewArticle[];
 }
+
+type Decision = "approved" | "rejected";
 
 function ScoreBadge({ score }: { score?: number }): React.ReactElement {
   if (score === undefined) return <span className="text-xs text-[var(--text-muted)]">--</span>;
@@ -59,41 +61,74 @@ function ScoreBreakdown({ breakdown }: { breakdown?: ReviewArticle["scoreBreakdo
   );
 }
 
+function buildPreviewUrl(article: ReviewArticle): string | null {
+  if (!article.stagingBaseUrl) return null;
+  return `${article.stagingBaseUrl}/${article.slug}/`;
+}
+
+function buildGitHubUrl(article: ReviewArticle): string {
+  const branch = article.branch ?? "main";
+  return `https://github.com/atomicfuse/atomic-labs-network/blob/${branch}/sites/${article.domain}/articles/${article.slug}.md`;
+}
+
+function articleKey(domain: string, slug: string): string {
+  return `${domain}::${slug}`;
+}
+
 export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.ReactElement {
-  const [items, setItems] = useState(articles);
-  const [isPending, startTransition] = useTransition();
+  const [decisions, setDecisions] = useState<Map<string, Decision>>(new Map());
+  const [isApplying, startTransition] = useTransition();
   const { toast } = useToast();
 
-  function handleApprove(domain: string, slug: string): void {
+  const { pending, approved, rejected } = useMemo(() => {
+    const p: ReviewArticle[] = [];
+    const a: ReviewArticle[] = [];
+    const r: ReviewArticle[] = [];
+    for (const article of articles) {
+      const key = articleKey(article.domain, article.slug);
+      const decision = decisions.get(key);
+      if (decision === "approved") a.push(article);
+      else if (decision === "rejected") r.push(article);
+      else p.push(article);
+    }
+    return { pending: p, approved: a, rejected: r };
+  }, [articles, decisions]);
+
+  const hasDecisions = approved.length > 0 || rejected.length > 0;
+
+  function setDecision(domain: string, slug: string, decision: Decision): void {
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      next.set(articleKey(domain, slug), decision);
+      return next;
+    });
+  }
+
+  function undoDecision(domain: string, slug: string): void {
+    setDecisions((prev) => {
+      const next = new Map(prev);
+      next.delete(articleKey(domain, slug));
+      return next;
+    });
+  }
+
+  function handleApply(): void {
     startTransition(async () => {
       try {
-        await updateArticleStatus(domain, slug, "published", "Approved via review queue.");
-        setItems((prev) => prev.filter((a) => !(a.domain === domain && a.slug === slug)));
-        toast(`Approved: ${slug}`, "success");
+        const result = await applyReviewDecisions({
+          approved: approved.map((a) => ({ domain: a.domain, slug: a.slug })),
+          rejected: rejected.map((a) => ({ domain: a.domain, slug: a.slug })),
+        });
+        toast(result.summary, "success");
+        // Clear decisions — page will revalidate via server action
+        setDecisions(new Map());
       } catch (err) {
-        toast(err instanceof Error ? err.message : "Failed to approve", "error");
+        toast(err instanceof Error ? err.message : "Failed to apply review decisions", "error");
       }
     });
   }
 
-  function handleReject(domain: string, slug: string): void {
-    startTransition(async () => {
-      try {
-        await updateArticleStatus(domain, slug, "draft", "Rejected via review queue — needs regeneration.");
-        setItems((prev) => prev.filter((a) => !(a.domain === domain && a.slug === slug)));
-        toast(`Rejected: ${slug}`, "success");
-      } catch (err) {
-        toast(err instanceof Error ? err.message : "Failed to reject", "error");
-      }
-    });
-  }
-
-  function buildPreviewUrl(article: ReviewArticle): string | null {
-    if (!article.stagingBaseUrl) return null;
-    return `${article.stagingBaseUrl}/${article.slug}/`;
-  }
-
-  if (items.length === 0) {
+  if (articles.length === 0) {
     return (
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-8 text-center">
         <p className="text-[var(--text-secondary)]">All articles reviewed!</p>
@@ -103,110 +138,230 @@ export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.R
 
   return (
     <div className="space-y-3">
-      <p className="text-sm text-[var(--text-muted)]">
-        {items.length} article{items.length > 1 ? "s" : ""} pending review
-      </p>
-
-      {items.map((article) => {
-        const previewUrl = buildPreviewUrl(article);
-
-        return (
-          <div
-            key={`${article.domain}-${article.slug}`}
-            className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-5 space-y-3"
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <Link
-                    href={`/sites/${article.domain}`}
-                    className="text-[10px] font-mono text-cyan hover:underline"
-                  >
-                    {article.domain}
-                  </Link>
-                  <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
-                    {article.type}
-                  </span>
-                </div>
-                {previewUrl ? (
-                  <a
-                    href={previewUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm font-semibold text-[var(--text-primary)] hover:text-cyan hover:underline transition-colors truncate block"
-                  >
-                    {article.title}
-                  </a>
-                ) : (
-                  <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                    {article.title}
-                  </h3>
-                )}
-                <p className="text-[11px] font-mono text-[var(--text-muted)] mt-0.5">
-                  {article.slug}
-                </p>
-              </div>
-              <ScoreBadge score={article.score} />
-            </div>
-
-            {/* Score breakdown */}
-            <ScoreBreakdown breakdown={article.scoreBreakdown} />
-
-            {/* Quality note */}
-            {article.qualityNote && (
-              <p className="text-xs text-[var(--text-secondary)] italic bg-[var(--bg-elevated)] rounded-lg px-3 py-2">
-                {article.qualityNote}
-              </p>
-            )}
-
-            {/* Actions */}
-            <div className="flex items-center gap-2 pt-1">
-              <Button
-                size="sm"
-                onClick={(): void => handleApprove(article.domain, article.slug)}
-                loading={isPending}
-              >
-                <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={(): void => handleReject(article.domain, article.slug)}
-                loading={isPending}
-              >
-                <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                Reject
-              </Button>
-              {previewUrl ? (
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-cyan hover:underline ml-auto flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                  </svg>
-                  Preview on Staging
-                </a>
-              ) : (
-                <Link
-                  href={`/sites/${article.domain}`}
-                  className="text-xs text-[var(--text-muted)] hover:text-[var(--text-secondary)] ml-auto"
-                >
-                  View Site
-                </Link>
+      {/* Apply banner */}
+      {hasDecisions && (
+        <div className="flex items-center justify-between rounded-xl bg-cyan/5 border border-cyan/20 px-5 py-3 sticky top-0 z-10 backdrop-blur-sm">
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-[var(--text-primary)]">
+              {approved.length > 0 && (
+                <span className="text-green-400 font-medium mr-3">
+                  {approved.length} approved
+                </span>
+              )}
+              {rejected.length > 0 && (
+                <span className="text-red-400 font-medium">
+                  {rejected.length} rejected
+                </span>
               )}
             </div>
+            {pending.length > 0 && (
+              <span className="text-xs text-[var(--text-muted)]">
+                {pending.length} still pending
+              </span>
+            )}
           </div>
-        );
-      })}
+          <Button
+            size="sm"
+            onClick={handleApply}
+            loading={isApplying}
+          >
+            Apply review decisions
+          </Button>
+        </div>
+      )}
+
+      {/* Pending articles */}
+      {pending.length > 0 && (
+        <>
+          <p className="text-sm text-[var(--text-muted)]">
+            {pending.length} article{pending.length > 1 ? "s" : ""} pending review
+          </p>
+          {pending.map((article) => (
+            <ArticleCard
+              key={articleKey(article.domain, article.slug)}
+              article={article}
+              status="pending"
+              onApprove={(): void => setDecision(article.domain, article.slug, "approved")}
+              onReject={(): void => setDecision(article.domain, article.slug, "rejected")}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Approved articles */}
+      {approved.length > 0 && (
+        <>
+          <p className="text-sm text-green-400 mt-4">
+            {approved.length} article{approved.length > 1 ? "s" : ""} approved
+          </p>
+          {approved.map((article) => (
+            <ArticleCard
+              key={articleKey(article.domain, article.slug)}
+              article={article}
+              status="approved"
+              onUndo={(): void => undoDecision(article.domain, article.slug)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Rejected articles */}
+      {rejected.length > 0 && (
+        <>
+          <p className="text-sm text-red-400 mt-4">
+            {rejected.length} article{rejected.length > 1 ? "s" : ""} rejected
+          </p>
+          {rejected.map((article) => (
+            <ArticleCard
+              key={articleKey(article.domain, article.slug)}
+              article={article}
+              status="rejected"
+              onUndo={(): void => undoDecision(article.domain, article.slug)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* All reviewed message */}
+      {pending.length === 0 && hasDecisions && (
+        <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-6 text-center mt-4">
+          <p className="text-[var(--text-secondary)] text-sm">
+            All articles reviewed. Click &ldquo;Apply review decisions&rdquo; above to commit changes.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Article Card ─── */
+
+interface ArticleCardProps {
+  article: ReviewArticle;
+  status: "pending" | "approved" | "rejected";
+  onApprove?: () => void;
+  onReject?: () => void;
+  onUndo?: () => void;
+}
+
+function ArticleCard({ article, status, onApprove, onReject, onUndo }: ArticleCardProps): React.ReactElement {
+  const previewUrl = buildPreviewUrl(article);
+
+  const borderColor =
+    status === "approved" ? "border-green-500/30" :
+    status === "rejected" ? "border-red-500/30" :
+    "border-[var(--border-secondary)]";
+
+  const bgColor =
+    status === "approved" ? "bg-green-500/5" :
+    status === "rejected" ? "bg-red-500/5" :
+    "bg-[var(--bg-surface)]";
+
+  return (
+    <div className={`rounded-xl ${bgColor} border ${borderColor} p-5 space-y-3 transition-colors`}>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <Link
+              href={`/sites/${article.domain}`}
+              className="text-[10px] font-mono text-cyan hover:underline"
+            >
+              {article.domain}
+            </Link>
+            <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">
+              {article.type}
+            </span>
+            {status !== "pending" && (
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${
+                status === "approved" ? "text-green-400" : "text-red-400"
+              }`}>
+                {status}
+              </span>
+            )}
+          </div>
+          {previewUrl ? (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-[var(--text-primary)] hover:text-cyan hover:underline transition-colors truncate block"
+            >
+              {article.title}
+            </a>
+          ) : (
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] truncate">
+              {article.title}
+            </h3>
+          )}
+          <p className="text-[11px] font-mono text-[var(--text-muted)] mt-0.5">
+            {article.slug}
+          </p>
+        </div>
+        <ScoreBadge score={article.score} />
+      </div>
+
+      {/* Score breakdown */}
+      <ScoreBreakdown breakdown={article.scoreBreakdown} />
+
+      {/* Quality note */}
+      {article.qualityNote && (
+        <p className="text-xs text-[var(--text-secondary)] italic bg-[var(--bg-elevated)] rounded-lg px-3 py-2">
+          {article.qualityNote}
+        </p>
+      )}
+
+      {/* Actions */}
+      <div className="flex items-center gap-2 pt-1">
+        {status === "pending" && (
+          <>
+            <Button size="sm" onClick={onApprove}>
+              <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+              Approve
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onReject}>
+              <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Reject
+            </Button>
+          </>
+        )}
+        {status !== "pending" && (
+          <Button size="sm" variant="ghost" onClick={onUndo}>
+            <svg className="w-3.5 h-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+            </svg>
+            Undo
+          </Button>
+        )}
+        <a
+          href={buildGitHubUrl(article)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] ml-auto flex items-center gap-1"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5" />
+          </svg>
+          View Source
+        </a>
+        {previewUrl && (
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-cyan hover:underline flex items-center gap-1"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+            </svg>
+            Preview
+          </a>
+        )}
+      </div>
     </div>
   );
 }

@@ -15,6 +15,14 @@ const SITE_DOMAIN = process.env.SITE_DOMAIN || 'coolnews.dev';
 const DEFAULT_NETWORK_PATH = join(__dirname, '..', '..', '..', 'atomic-labs-network');
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH || DEFAULT_NETWORK_PATH;
 
+/**
+ * Staging detection: true when building a staging branch.
+ * Cloudflare Pages sets CF_PAGES_BRANCH automatically. We also support
+ * an explicit STAGING=true for local development.
+ */
+const cfBranch = process.env.CF_PAGES_BRANCH || '';
+const IS_STAGING = process.env.STAGING === 'true' || cfBranch.startsWith('staging/');
+
 export default defineConfig({
   site: `https://${SITE_DOMAIN}`,
   outDir: './dist',
@@ -25,6 +33,7 @@ export default defineConfig({
     define: {
       'import.meta.env.SITE_DOMAIN': JSON.stringify(SITE_DOMAIN),
       'import.meta.env.NETWORK_DATA_PATH': JSON.stringify(NETWORK_DATA_PATH),
+      'import.meta.env.IS_STAGING': JSON.stringify(IS_STAGING),
     },
   },
 

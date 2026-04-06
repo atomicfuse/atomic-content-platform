@@ -340,7 +340,7 @@ export function ContentGenerationPanel({
         const buildRes = await fetch("/api/agent/build", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectName }),
+          body: JSON.stringify({ projectName, stagingBranch, domain }),
         });
         if (buildRes.ok) {
           const buildData = (await buildRes.json()) as {
@@ -387,22 +387,87 @@ export function ContentGenerationPanel({
         ? `${batchSummary} — staged successfully. Review the preview before deploying to production.`
         : `${batchSummary} — staged successfully. Cloudflare will deploy the preview within ~2 minutes.`;
 
-      advancePipeline("staging_live", stagingMessage, {
-        stagingUrl,
-      });
+      // Check if any articles are published (high quality) — auto-deploy those to production
+      const hasPublished = result.results.some(
+        (r) => r.status === "created" && r.articleStatus === "published",
+      );
+      const hasReviewOnly = result.results.some(
+        (r) => r.status === "created" && r.articleStatus === "review",
+      );
 
-      setPipeline((prev) => ({
-        ...prev,
-        step: "staging_live",
-        message: stagingMessage,
-        stagingUrl,
-        articleSlug: firstCreated?.slug,
-        articlePath: firstCreated?.path,
-        batchSummary,
-        batchResults: result.results,
-      }));
+      if (hasPublished) {
+        // Auto-deploy to production — review articles are filtered out by the site builder
+        advancePipeline("deploying_production", `${batchSummary} — deploying published articles to production...`, {
+          stagingUrl,
+        });
 
-      toast(`${batchSummary} for ${domain}!`, "success");
+        try {
+          await publishStagingToProduction(domain);
+
+          const productionUrl = `https://${domain}`;
+          const completeMessage = hasReviewOnly
+            ? `${batchSummary} — published articles deployed to production. Review-status articles are available on staging.`
+            : `${batchSummary} — deployed to production!`;
+
+          const completedState: PipelineState = {
+            step: "complete",
+            message: completeMessage,
+            articleSlug: firstCreated?.slug,
+            articlePath: firstCreated?.path,
+            stagingUrl,
+            productionUrl,
+            startedAt: startTime,
+            completedAt: Date.now(),
+            batchSummary,
+            batchResults: result.results,
+          };
+
+          setPipeline(completedState);
+          setHistory((prev) => [completedState, ...prev]);
+          toast(completeMessage, "success");
+        } catch (deployErr) {
+          // If auto-deploy fails, fall back to staging_live so user can retry manually
+          const deployMsg = deployErr instanceof Error ? deployErr.message : "Auto-deploy failed";
+          console.error(`[content-gen] Auto-deploy failed: ${deployMsg}`);
+
+          advancePipeline("staging_live", `${batchSummary} — staged successfully. Auto-deploy failed: ${deployMsg}`, {
+            stagingUrl,
+          });
+
+          setPipeline((prev) => ({
+            ...prev,
+            step: "staging_live",
+            message: `${batchSummary} — staged successfully. Auto-deploy failed: ${deployMsg}`,
+            stagingUrl,
+            articleSlug: firstCreated?.slug,
+            articlePath: firstCreated?.path,
+            batchSummary,
+            batchResults: result.results,
+          }));
+
+          toast(`Staged successfully but auto-deploy failed: ${deployMsg}`, "info");
+        }
+      } else {
+        // All articles are review-only — stay on staging for manual review
+        const stagingMessage = `${batchSummary} — staged for review. Review the articles before deploying to production.`;
+
+        advancePipeline("staging_live", stagingMessage, {
+          stagingUrl,
+        });
+
+        setPipeline((prev) => ({
+          ...prev,
+          step: "staging_live",
+          message: stagingMessage,
+          stagingUrl,
+          articleSlug: firstCreated?.slug,
+          articlePath: firstCreated?.path,
+          batchSummary,
+          batchResults: result.results,
+        }));
+
+        toast(`${batchSummary} for ${domain} — review on staging`, "success");
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Generation failed";

@@ -20,6 +20,7 @@ import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import { getConfig } from '../config';
+import { isVisibleArticle } from '../utils/article-status';
 
 interface Props {
   title: string;
@@ -52,7 +53,7 @@ const stickyBottom = config.ads_config.ad_placements.filter(
 // Gather related posts (other published articles, excluding current)
 const allArticles = await getCollection('articles');
 const related = allArticles
-  .filter((a) => a.data.status === 'published' && a.data.slug !== slug)
+  .filter((a) => isVisibleArticle(a.data.status) && a.data.slug !== slug)
   .sort(
     (a, b) =>
       new Date(b.data.publishDate).getTime() -

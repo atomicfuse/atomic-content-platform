@@ -20,6 +20,7 @@ import {
 } from "@/lib/cloudflare";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
+import { removeBackground } from "@/lib/remove-background";
 
 interface StagingResult {
   stagingUrl: string;
@@ -64,6 +65,9 @@ export async function createSiteAndBuildStaging(
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
         : [],
+      vertical: ["Tech", "Travel", "News", "Sport", "Lifestyle", "Entertainment", "Food & Drink", "Animals", "Science"].includes(data.vertical)
+        ? data.vertical
+        : undefined,
       review_percentage: 5,
       schedule: {
         articles_per_week: data.articlesPerWeek,
@@ -566,9 +570,11 @@ export async function saveAllStagingEdits(
   ];
 
   if (logoBase64) {
+    const raw = Buffer.from(logoBase64, "base64");
+    const transparent = await removeBackground(raw);
     files.push({
       path: `sites/${domain}/assets/logo.png`,
-      content: Buffer.from(logoBase64, "base64"),
+      content: transparent,
     });
   }
 
@@ -580,8 +586,6 @@ export async function saveAllStagingEdits(
 
   await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-
-  revalidatePath(`/sites/${domain}`);
 }
 
 /** Upload a custom logo to the staging branch. Expects base64-encoded image data. */
@@ -593,7 +597,8 @@ export async function uploadStagingLogo(
   const site = index.sites.find((s) => s.domain === domain);
   if (!site?.staging_branch) throw new Error("No staging branch for this site");
 
-  const logoBuffer = Buffer.from(base64Data, "base64");
+  const raw = Buffer.from(base64Data, "base64");
+  const logoBuffer = await removeBackground(raw);
 
   // Read existing config to update theme references
   const config = await readSiteConfigFromGit(domain, site.staging_branch);
@@ -798,7 +803,7 @@ Requirements:
 - Square aspect ratio
 - No text or letters in the logo — pure icon/symbol only
 - Professional quality suitable for a content website
-- White or transparent-feeling background`;
+- Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
@@ -835,7 +840,8 @@ Requirements:
       return null;
     }
 
-    return Buffer.from(imagePart.inlineData.data, "base64");
+    const raw = Buffer.from(imagePart.inlineData.data, "base64");
+    return removeBackground(raw);
   } catch (err) {
     console.warn("[wizard] Logo generation error:", err);
     return null;

@@ -33,7 +33,8 @@ import { createAIClient, generateContent } from "../../lib/ai.js";
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
-import { writeArticle, writeAsset } from "../../lib/writer.js";
+import { writeArticle, writeAsset, writeArticleBatch } from "../../lib/writer.js";
+import type { PendingArticle, PendingAsset } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
@@ -55,6 +56,10 @@ export interface ContentGenerationResult {
   qualityScore?: number;
   /** Whether the article was auto-published or flagged for review. */
   articleStatus?: "published" | "review";
+  /** @internal Pending file data — used for batch commit, stripped before API response. */
+  _pendingArticle?: PendingArticle;
+  /** @internal Pending asset data — used for batch commit, stripped before API response. */
+  _pendingAsset?: PendingAsset;
 }
 
 export interface BatchContentGenerationResult {
@@ -314,13 +319,68 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
 }
 
 async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
+  let result;
   if (config.localNetworkPath) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
-    if (local) return local;
+    if (local) result = local;
   }
 
-  const octokit = createGitHubClient(config.github);
-  return readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
+  if (!result) {
+    const octokit = createGitHubClient(config.github);
+    result = await readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
+  }
+
+  // If brief has no vertical, try to resolve it from dashboard-index.yaml
+  if (!result.brief.vertical) {
+    try {
+      const vertical = await resolveVerticalFromIndex(config, siteDomain);
+      if (vertical) {
+        result.brief.vertical = vertical;
+        console.log(`[agent] Resolved vertical from dashboard index: ${vertical}`);
+      }
+    } catch {
+      // Non-critical — proceed without vertical
+    }
+  }
+
+  return result;
+}
+
+/** Read the vertical for a site from dashboard-index.yaml as a fallback. */
+async function resolveVerticalFromIndex(
+  config: AgentConfig,
+  siteDomain: string,
+): Promise<SiteBrief["vertical"] | undefined> {
+  const VALID_VERTICALS = new Set([
+    "Tech", "Travel", "News", "Sport", "Lifestyle",
+    "Entertainment", "Food & Drink", "Animals", "Science",
+  ]);
+
+  let raw: string;
+  if (config.localNetworkPath) {
+    try {
+      raw = await fs.readFile(
+        path.join(config.localNetworkPath, "dashboard-index.yaml"),
+        "utf-8",
+      );
+    } catch {
+      return undefined;
+    }
+  } else {
+    const { readFile } = await import("../../lib/github.js");
+    const octokit = createGitHubClient(config.github);
+    raw = await readFile(octokit, config.networkRepo, "dashboard-index.yaml");
+  }
+
+  const index = parseYaml(raw) as { sites?: Array<{ domain: string; vertical?: string }> };
+  const site = index.sites?.find((s) => s.domain === siteDomain);
+  const vertical = site?.vertical;
+
+  if (vertical && VALID_VERTICALS.has(vertical)) {
+    return vertical as SiteBrief["vertical"];
+  }
+
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,6 +428,7 @@ async function processArticle(
       featuredImageUrl = parsed.featuredImageUrl;
     }
 
+    let pendingImageAsset: PendingAsset | undefined;
     if (!featuredImageUrl && config.geminiApiKey) {
       const imageBuffer = await generateImageWithGemini(
         config.geminiApiKey,
@@ -375,12 +436,7 @@ async function processArticle(
       );
       if (imageBuffer) {
         const assetPath = `assets/images/${slug}.png`;
-        await writeAsset(
-          { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-          siteDomain,
-          assetPath,
-          imageBuffer,
-        );
+        pendingImageAsset = { siteDomain, assetPath, data: imageBuffer };
         featuredImageUrl = `/assets/images/${slug}.png`;
       }
     }
@@ -455,21 +511,17 @@ async function processArticle(
 
     const markdown = matter.stringify(generated.body, frontmatter);
 
-    // Write article
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
-    await writeArticle(
-      { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-      siteDomain,
-      slug,
-      markdown,
-    );
 
+    // Collect pending data for batch commit (don't write yet)
     return {
       status: "created",
       slug,
       path: filePath,
       qualityScore,
       articleStatus,
+      _pendingArticle: { siteDomain, slug, content: markdown },
+      _pendingAsset: pendingImageAsset,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -505,7 +557,7 @@ export async function runContentGeneration(
     // Step 3: Query aggregator API with fallback
     // Request more than needed and pass existingUrls so the fallback keeps
     // broadening filters until enough NEW (non-duplicate) articles are found.
-    const apiLimit = Math.max(requested * 3, requested + 20);
+    const apiLimit = Math.max(requested * 5, requested + 30);
     const articles = await fetchWithFallback(config.contentAggregatorUrl, brief, apiLimit, existing.urls);
 
     if (articles.length === 0) {
@@ -541,18 +593,23 @@ export async function runContentGeneration(
       };
     }
 
-    // Step 6: Limit to requested count
-    const toProcess = newArticles.slice(0, requested);
-
+    // Step 6: Process articles from pool until we have enough created or exhaust pool
     console.log(
-      `[agent] Processing ${toProcess.length}/${articles.length} articles for ${siteDomain}` +
-      ` (requested: ${requested}, relevant: ${relevant.length}, duplicates: ${duplicateCount}, available new: ${newArticles.length})`,
+      `[agent] Processing up to ${requested} articles for ${siteDomain}` +
+      ` from pool of ${newArticles.length}` +
+      ` (relevant: ${relevant.length}, duplicates: ${duplicateCount})`,
     );
 
-    // Step 7: Process each article sequentially
     const results: ContentGenerationResult[] = [];
-    for (const article of toProcess) {
-      console.log(`[agent] Processing: "${article.title}"`);
+    const skippedResults: ContentGenerationResult[] = [];
+    let createdSoFar = 0;
+    let poolIndex = 0;
+
+    while (createdSoFar < requested && poolIndex < newArticles.length) {
+      const article = newArticles[poolIndex]!;
+      poolIndex++;
+
+      console.log(`[agent] Processing (${createdSoFar + 1}/${requested}, pool ${poolIndex}/${newArticles.length}): "${article.title}"`);
       const result = await processArticle(
         article,
         config,
@@ -561,8 +618,41 @@ export async function runContentGeneration(
         brief,
         branch,
       );
-      results.push(result);
+
+      if (result.status === "created") {
+        results.push(result);
+        createdSoFar++;
+      } else {
+        skippedResults.push(result);
+      }
     }
+
+    // Append skipped/error results for reporting
+    results.push(...skippedResults);
+
+    // Step 8: Batch-write all created articles in a SINGLE commit
+    const created = results.filter((r) => r.status === "created");
+    if (created.length > 0) {
+      const pendingArticles = created
+        .map((r) => r._pendingArticle)
+        .filter((a): a is PendingArticle => !!a);
+      const pendingAssets = created
+        .map((r) => r._pendingAsset)
+        .filter((a): a is PendingAsset => !!a);
+
+      const slugList = pendingArticles.map((a) => a.slug).join(", ");
+      const commitMsg = `feat(content): add ${pendingArticles.length} article(s) for ${siteDomain}\n\n${slugList}`;
+
+      await writeArticleBatch(
+        { localNetworkPath: config.localNetworkPath, github: config.github, branch },
+        pendingArticles,
+        pendingAssets,
+        commitMsg,
+      );
+    }
+
+    // Strip internal fields before returning API response
+    const cleanResults = results.map(({ _pendingArticle, _pendingAsset, ...rest }) => rest);
 
     return {
       siteDomain,
@@ -570,7 +660,7 @@ export async function runContentGeneration(
       totalSourced: relevant.length,
       duplicateCount,
       availableNew: newArticles.length,
-      results,
+      results: cleanResults,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

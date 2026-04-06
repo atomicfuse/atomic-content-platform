@@ -382,6 +382,29 @@ export async function addSitesToIndex(
   return index;
 }
 
+/** Read raw file content from the network repo. */
+export async function readFileContent(
+  path: string,
+  branch?: string,
+): Promise<string | null> {
+  const octokit = getOctokit();
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      path,
+      ...(branch ? { ref: branch } : {}),
+    });
+    if ("content" in data && data.content) {
+      return Buffer.from(data.content, "base64").toString("utf-8");
+    }
+    return null;
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
 /** Read a site's config YAML from the network repo. */
 export async function readSiteConfig(
   domain: string,

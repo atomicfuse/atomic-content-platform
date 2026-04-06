@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
 import { Select } from "@/components/ui/Select";
@@ -9,7 +10,6 @@ import { useToast } from "@/components/ui/Toast";
 import {
   readStagingConfig,
   generateLogoPreview,
-  saveAllStagingEdits,
   type StagingSiteConfig,
 } from "@/actions/wizard";
 
@@ -42,9 +42,10 @@ export function StagingEditPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [config, setConfig] = useState<StagingSiteConfig | null>(null);
-  const [isSaving, startSave] = useTransition();
+  const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingLogo, startGenLogo] = useTransition();
   const { toast } = useToast();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Pending logo (base64) — previewed but not yet committed
@@ -151,25 +152,35 @@ export function StagingEditPanel({
   }
 
   // --- Save everything in a single commit + single build ---
-  function handleSave(): void {
+  // Uses a Route Handler instead of a server action to avoid
+  // "Maximum array nesting exceeded" from RSC serialization.
+  async function handleSave(): Promise<void> {
     if (!isDirty && !pendingLogo) return;
-    startSave(async () => {
-      try {
-        await saveAllStagingEdits(
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/sites/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           domain,
-          isDirty && config ? config : null,
-          pendingLogo
-        );
-        setIsDirty(false);
-        setPendingLogo(null);
-        setShowSuccess(true);
-      } catch (err) {
-        toast(
-          `Failed to save: ${err instanceof Error ? err.message : "Unknown"}`,
-          "error"
-        );
-      }
-    });
+          configUpdates: isDirty && config ? config : null,
+          logoBase64: pendingLogo,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? "Save failed");
+      setIsDirty(false);
+      setPendingLogo(null);
+      setShowSuccess(true);
+      router.refresh();
+    } catch (err) {
+      toast(
+        `Failed to save: ${err instanceof Error ? err.message : "Unknown"}`,
+        "error"
+      );
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   // --- Collapsed state ---
