@@ -567,9 +567,11 @@ export async function saveAllStagingEdits(
   ];
 
   if (logoBase64) {
+    const raw = Buffer.from(logoBase64, "base64");
+    const transparent = await removeBackground(raw);
     files.push({
       path: `sites/${domain}/assets/logo.png`,
-      content: Buffer.from(logoBase64, "base64"),
+      content: transparent,
     });
   }
 
@@ -581,8 +583,6 @@ export async function saveAllStagingEdits(
 
   await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-
-  revalidatePath(`/sites/${domain}`);
 }
 
 /** Upload a custom logo to the staging branch. Expects base64-encoded image data. */
@@ -594,7 +594,8 @@ export async function uploadStagingLogo(
   const site = index.sites.find((s) => s.domain === domain);
   if (!site?.staging_branch) throw new Error("No staging branch for this site");
 
-  const logoBuffer = Buffer.from(base64Data, "base64");
+  const raw = Buffer.from(base64Data, "base64");
+  const logoBuffer = await removeBackground(raw);
 
   // Read existing config to update theme references
   const config = await readSiteConfigFromGit(domain, site.staging_branch);

@@ -33,7 +33,8 @@ import { createAIClient, generateContent } from "../../lib/ai.js";
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
-import { writeArticle, writeAsset } from "../../lib/writer.js";
+import { writeArticle, writeAsset, writeArticleBatch } from "../../lib/writer.js";
+import type { PendingArticle, PendingAsset } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
@@ -55,6 +56,10 @@ export interface ContentGenerationResult {
   qualityScore?: number;
   /** Whether the article was auto-published or flagged for review. */
   articleStatus?: "published" | "review";
+  /** @internal Pending file data — used for batch commit, stripped before API response. */
+  _pendingArticle?: PendingArticle;
+  /** @internal Pending asset data — used for batch commit, stripped before API response. */
+  _pendingAsset?: PendingAsset;
 }
 
 export interface BatchContentGenerationResult {
@@ -368,6 +373,7 @@ async function processArticle(
       featuredImageUrl = parsed.featuredImageUrl;
     }
 
+    let pendingImageAsset: PendingAsset | undefined;
     if (!featuredImageUrl && config.geminiApiKey) {
       const imageBuffer = await generateImageWithGemini(
         config.geminiApiKey,
@@ -375,12 +381,7 @@ async function processArticle(
       );
       if (imageBuffer) {
         const assetPath = `assets/images/${slug}.png`;
-        await writeAsset(
-          { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-          siteDomain,
-          assetPath,
-          imageBuffer,
-        );
+        pendingImageAsset = { siteDomain, assetPath, data: imageBuffer };
         featuredImageUrl = `/assets/images/${slug}.png`;
       }
     }
@@ -455,21 +456,17 @@ async function processArticle(
 
     const markdown = matter.stringify(generated.body, frontmatter);
 
-    // Write article
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
-    await writeArticle(
-      { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-      siteDomain,
-      slug,
-      markdown,
-    );
 
+    // Collect pending data for batch commit (don't write yet)
     return {
       status: "created",
       slug,
       path: filePath,
       qualityScore,
       articleStatus,
+      _pendingArticle: { siteDomain, slug, content: markdown },
+      _pendingAsset: pendingImageAsset,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -549,7 +546,7 @@ export async function runContentGeneration(
       ` (requested: ${requested}, relevant: ${relevant.length}, duplicates: ${duplicateCount}, available new: ${newArticles.length})`,
     );
 
-    // Step 7: Process each article sequentially
+    // Step 7: Process each article sequentially (generate + score, but don't write yet)
     const results: ContentGenerationResult[] = [];
     for (const article of toProcess) {
       console.log(`[agent] Processing: "${article.title}"`);
@@ -564,13 +561,37 @@ export async function runContentGeneration(
       results.push(result);
     }
 
+    // Step 8: Batch-write all created articles in a SINGLE commit
+    const created = results.filter((r) => r.status === "created");
+    if (created.length > 0) {
+      const pendingArticles = created
+        .map((r) => r._pendingArticle)
+        .filter((a): a is PendingArticle => !!a);
+      const pendingAssets = created
+        .map((r) => r._pendingAsset)
+        .filter((a): a is PendingAsset => !!a);
+
+      const slugList = pendingArticles.map((a) => a.slug).join(", ");
+      const commitMsg = `feat(content): add ${pendingArticles.length} article(s) for ${siteDomain}\n\n${slugList}`;
+
+      await writeArticleBatch(
+        { localNetworkPath: config.localNetworkPath, github: config.github, branch },
+        pendingArticles,
+        pendingAssets,
+        commitMsg,
+      );
+    }
+
+    // Strip internal fields before returning API response
+    const cleanResults = results.map(({ _pendingArticle, _pendingAsset, ...rest }) => rest);
+
     return {
       siteDomain,
       requested,
       totalSourced: relevant.length,
       duplicateCount,
       availableNew: newArticles.length,
-      results,
+      results: cleanResults,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
