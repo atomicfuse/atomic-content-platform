@@ -50,7 +50,6 @@ vi.mock("../lib/site-brief.js", () => ({
 }));
 
 vi.mock("../lib/ai.js", () => ({
-  createAIClient: vi.fn(() => ({})),
   generateContent: vi.fn().mockResolvedValue(
     JSON.stringify({
       title: "Generated Title",
@@ -102,12 +101,11 @@ vi.mock("node:fs/promises", () => ({
 
 const config: AgentConfig = {
   github: { token: "token", repo: "owner/repo" },
-  ai: { apiKey: "sk-test" },
   networkRepo: "owner/repo",
   localNetworkPath: "/tmp/network",
   geminiApiKey: undefined,
   contentAggregatorUrl: "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
-  port: 3001,
+  port: 8080,
   notifications: {},
 };
 

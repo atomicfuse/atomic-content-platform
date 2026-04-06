@@ -1,0 +1,17 @@
+name: atomic-content-platform
+
+services:
+  dashboard:
+    type: nextjs
+    path: /
+
+  content-pipeline:
+    type: node
+    lang: typescript
+    path: /api
+
+  scheduled-publisher:
+    type: cron
+    schedule: "0 */4 * * *"
+    timezone: EST
+    run: http://content-pipeline/scheduled-publish

@@ -200,10 +200,7 @@ describe("resolveStatus", () => {
 
 describe("scoreArticle", () => {
   it("returns quality result with overall score and breakdown", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mockClient = {} as any;
-
-    const result = await scoreArticle(mockClient, mockArticle, "CoolNews", mockBrief);
+    const result = await scoreArticle(mockArticle, "CoolNews", mockBrief);
 
     expect(result.overallScore).toBeGreaterThanOrEqual(0);
     expect(result.overallScore).toBeLessThanOrEqual(100);
@@ -216,18 +213,13 @@ describe("scoreArticle", () => {
   });
 
   it("calculates weighted score from breakdown", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mockClient = {} as any;
-
-    const result = await scoreArticle(mockClient, mockArticle, "CoolNews", mockBrief);
+    const result = await scoreArticle(mockArticle, "CoolNews", mockBrief);
 
     // Equal weights: (85+90+75+80+70) / 5 = 80
     expect(result.overallScore).toBe(80);
   });
 
   it("respects custom weights", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mockClient = {} as any;
     const briefWithWeights = {
       ...mockBrief,
       quality_weights: {
@@ -240,7 +232,6 @@ describe("scoreArticle", () => {
     };
 
     const result = await scoreArticle(
-      mockClient,
       mockArticle,
       "CoolNews",
       briefWithWeights,

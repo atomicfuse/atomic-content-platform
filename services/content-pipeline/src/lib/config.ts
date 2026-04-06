@@ -3,11 +3,9 @@
  */
 
 import type { GitHubConfig } from "./github.js";
-import type { AIConfig } from "./ai.js";
 
 export interface AgentConfig {
   github: GitHubConfig;
-  ai: AIConfig;
   networkRepo: string;
   localNetworkPath: string | undefined;
   geminiApiKey: string | undefined;
@@ -21,8 +19,6 @@ export interface AgentConfig {
 }
 
 export function loadConfig(): AgentConfig {
-  const anthropicKey = requireEnv("ANTHROPIC_API_KEY");
-
   const localNetworkPath = process.env.LOCAL_NETWORK_PATH;
   const githubToken = process.env.GITHUB_TOKEN;
   const networkRepo = process.env.NETWORK_REPO;
@@ -39,26 +35,15 @@ export function loadConfig(): AgentConfig {
       token: githubToken ?? "",
       repo: networkRepo ?? "",
     },
-    ai: {
-      apiKey: anthropicKey,
-    },
     networkRepo: networkRepo ?? "",
     localNetworkPath,
     geminiApiKey: process.env.GEMINI_API_KEY,
     contentAggregatorUrl: process.env.CONTENT_AGGREGATOR_URL ?? "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
-    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
+    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 8080) : 8080,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,
       slackWebhookUrl: process.env.SLACK_WEBHOOK_URL,
     },
   };
-}
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
 }

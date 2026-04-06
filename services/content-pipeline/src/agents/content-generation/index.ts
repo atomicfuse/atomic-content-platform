@@ -8,7 +8,7 @@
  * Usage:
  *   pnpm agent:content-generation
  *
- * Then POST to http://localhost:3001/content-generate:
+ * Then POST to http://localhost:8080/content-generate:
  *   { "siteDomain": "coolnews.dev" }
  *   { "siteDomain": "coolnews.dev", "count": 5 }
  */
@@ -18,6 +18,7 @@ import dotenv from "dotenv";
 dotenv.config({ override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
+import { runScheduledPublish } from "../scheduled-publisher/index.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -33,6 +34,26 @@ async function handleRequest(
   res: http.ServerResponse,
   config: ReturnType<typeof loadConfig>,
 ): Promise<void> {
+  // Health check — required by CloudGrid
+  if (req.method === "GET" && req.url === "/health") {
+    sendJson(res, 200, { status: "ok" });
+    return;
+  }
+
+  // Scheduled publish — called by CloudGrid cron job
+  if (req.url === "/scheduled-publish") {
+    console.log("[server] Scheduled publish triggered");
+    try {
+      const result = await runScheduledPublish(config);
+      sendJson(res, 200, result as unknown as Record<string, unknown>);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[server] Scheduled publish error:", message);
+      sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
   if (req.method !== "POST" || req.url !== "/content-generate") {
     sendJson(res, 404, { status: "error", message: "Not found. Use POST /content-generate" });
     return;

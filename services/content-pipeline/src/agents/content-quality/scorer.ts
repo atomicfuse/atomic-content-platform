@@ -6,7 +6,6 @@
  * an article is auto-published or flagged for human review.
  */
 
-import type Anthropic from "@anthropic-ai/sdk";
 import type { SiteBrief, QualityWeights, QualityScoreBreakdown } from "@atomic-platform/shared-types";
 import { generateContent } from "../../lib/ai.js";
 
@@ -174,7 +173,6 @@ export function calculateWeightedScore(
  * Score an article using Claude.
  */
 export async function scoreArticle(
-  client: Anthropic,
   article: ArticleToScore,
   siteName: string,
   brief: SiteBrief,
@@ -186,7 +184,7 @@ export async function scoreArticle(
   // Retry once on failure (rate limits, transient errors)
   let rawResponse: string;
   try {
-    rawResponse = await generateContent(client, {
+    rawResponse = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 512,
@@ -197,7 +195,7 @@ export async function scoreArticle(
       firstErr instanceof Error ? firstErr.message : firstErr,
     );
     await new Promise((r) => setTimeout(r, 3000));
-    rawResponse = await generateContent(client, {
+    rawResponse = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 512,

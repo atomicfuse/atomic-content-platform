@@ -29,7 +29,7 @@ import {
   type AggregatorArticle,
 } from "./aggregator.js";
 import { buildSystemPrompt, buildUserPrompt, type GeneratedArticle, type SourceArticle } from "./prompts.js";
-import { createAIClient, generateContent } from "../../lib/ai.js";
+import { generateContent } from "../../lib/ai.js";
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
@@ -413,9 +413,8 @@ async function processArticle(
     const systemPrompt = buildSystemPrompt(siteName, brief);
     const userPrompt = buildUserPrompt(source, parsed);
 
-    // Call Claude
-    const aiClient = createAIClient(config.ai);
-    const rawResponse = await generateContent(aiClient, { systemPrompt, userPrompt });
+    // Call Claude via CloudGrid AI Gateway
+    const rawResponse = await generateContent({ systemPrompt, userPrompt });
     const generated = parseClaudeResponse(rawResponse);
 
     // Resolve unique slug
@@ -460,7 +459,6 @@ async function processArticle(
     try {
       console.log(`[agent] Scoring article: "${generated.title}"`);
       const qualityResult = await scoreArticle(
-        aiClient,
         {
           title: generated.title,
           description: generated.description,
