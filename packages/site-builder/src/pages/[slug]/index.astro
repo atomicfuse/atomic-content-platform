@@ -14,13 +14,14 @@ import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import ArticlePreviewLayout from '../../layouts/ArticlePreviewLayout.astro';
 import { getConfig } from '../../config';
 import { getArticleExcerpt } from '../../utils/extract-excerpt';
+import { isVisibleArticle } from '../../utils/article-status';
 
 const config = await getConfig();
 
 export async function getStaticPaths() {
   const articles = await getCollection('articles');
   return articles
-    .filter((a) => a.data.status === 'published')
+    .filter((a) => isVisibleArticle(a.data.status))
     .map((article) => ({
       params: { slug: article.data.slug },
       props: { article },

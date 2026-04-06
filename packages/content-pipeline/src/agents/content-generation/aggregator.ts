@@ -311,10 +311,13 @@ export async function scrapeSourceContent(url: string): Promise<ParsedContent> {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; ContentBot/1.0)",
-        Accept: "text/html,application/xhtml+xml",
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
       },
       signal: AbortSignal.timeout(15_000),
+      redirect: "follow",
     });
 
     if (!response.ok) {
@@ -324,10 +327,23 @@ export async function scrapeSourceContent(url: string): Promise<ParsedContent> {
 
     const html = await response.text();
 
+    if (!html || html.length < 200) {
+      console.warn(`[aggregator] Empty/tiny response from ${url}: ${html.length} bytes`);
+      return emptyParsedContent();
+    }
+
     // Try to extract the main content area, falling back to full body
     const mainContent = extractMainContent(html);
 
-    return parseHtmlContent(mainContent, undefined);
+    const parsed = parseHtmlContent(mainContent, undefined);
+
+    if (!parsed.textBody) {
+      console.warn(
+        `[aggregator] No text extracted from ${url} (html: ${html.length} bytes, mainContent: ${mainContent.length} bytes)`,
+      );
+    }
+
+    return parsed;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(`[aggregator] Scrape error for ${url}: ${message}`);
@@ -340,15 +356,15 @@ export async function scrapeSourceContent(url: string): Promise<ParsedContent> {
  * or falls back to the full <body>.
  */
 function extractMainContent(html: string): string {
-  // Simple extraction: find <article> or <main> content
-  const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+  // Use greedy matching to capture full content between outermost tags
+  const articleMatch = html.match(/<article[^>]*>([\s\S]*)<\/article>/i);
   if (articleMatch) return articleMatch[1]!;
 
-  const mainMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+  const mainMatch = html.match(/<main[^>]*>([\s\S]*)<\/main>/i);
   if (mainMatch) return mainMatch[1]!;
 
   // Fall back to body
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
   if (bodyMatch) return bodyMatch[1]!;
 
   return html;

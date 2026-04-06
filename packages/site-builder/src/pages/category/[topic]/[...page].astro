@@ -15,6 +15,7 @@ import ArticleCard from '../../../../themes/modern/components/ArticleCard.astro'
 import CategoryHeader from '../../../../themes/modern/components/CategoryHeader.astro';
 import Pagination from '../../../../themes/modern/components/Pagination.astro';
 import { getConfig } from '../../../config';
+import { isVisibleArticle } from '../../../utils/article-status';
 
 export const getStaticPaths = (async ({ paginate }) => {
   const config = await (await import('../../../config')).getConfig();
@@ -26,7 +27,7 @@ export const getStaticPaths = (async ({ paginate }) => {
   const topics = config.brief.topics ?? [];
   const articles = await getCollection('articles');
   const published = articles
-    .filter((a) => a.data.status === 'published')
+    .filter((a) => isVisibleArticle(a.data.status))
     .sort(
       (a, b) =>
         new Date(b.data.publishDate).getTime() -

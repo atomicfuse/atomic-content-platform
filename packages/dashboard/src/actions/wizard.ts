@@ -65,6 +65,9 @@ export async function createSiteAndBuildStaging(
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
         : [],
+      vertical: ["Tech", "Travel", "News", "Sport", "Lifestyle", "Entertainment", "Food & Drink", "Animals", "Science"].includes(data.vertical)
+        ? data.vertical
+        : undefined,
       review_percentage: 5,
       schedule: {
         articles_per_week: data.articlesPerWeek,

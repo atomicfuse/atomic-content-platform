@@ -15,6 +15,7 @@ import ArticleCarousel from '../../themes/modern/components/ArticleCarousel.astr
 import NewsletterForm from '../../themes/modern/components/NewsletterForm.astro';
 import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import { getConfig } from '../config';
+import { isVisibleArticle } from '../utils/article-status';
 
 const config = await getConfig();
 const sidebarEnabled = config.sidebar.enabled && config.sidebar.widgets.length > 0;
@@ -22,7 +23,7 @@ const allArticles = await getCollection('articles');
 
 // Filter to published only, sort newest first
 const articles = allArticles
-  .filter((a) => a.data.status === 'published')
+  .filter((a) => isVisibleArticle(a.data.status))
   .sort(
     (a, b) =>
       new Date(b.data.publishDate).getTime() -
