@@ -1,0 +1,20 @@
+name: atomic-content-platform
+
+services:
+  dashboard:
+    type: nextjs
+    path: /
+    env:
+      # In CloudGrid, services talk via internal DNS — not localhost
+      CONTENT_AGENT_URL: http://content-pipeline
+
+  content-pipeline:
+    type: node
+    lang: typescript
+    path: /api
+
+  scheduled-publisher:
+    type: cron
+    schedule: "0 */4 * * *"
+    timezone: EST
+    run: http://content-pipeline/scheduled-publish
