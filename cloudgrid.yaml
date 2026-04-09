@@ -7,6 +7,8 @@ services:
     env:
       CONTENT_AGENT_URL: http://content-pipeline
       NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
+    # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
+    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN
 
   content-pipeline:
     type: node
@@ -15,6 +17,8 @@ services:
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
+    # Secrets: GITHUB_TOKEN, GEMINI_API_KEY
+    # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
 
   scheduled-publisher:
     type: cron
