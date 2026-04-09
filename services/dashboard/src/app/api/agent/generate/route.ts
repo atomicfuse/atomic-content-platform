@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CONTENT_AGENT_URL =
-  process.env.CONTENT_AGENT_URL ?? "http://localhost:8080";
+  process.env.CONTENT_AGENT_URL ?? "http://localhost:3001";
 
 /**
  * Proxy to the content-generation agent.

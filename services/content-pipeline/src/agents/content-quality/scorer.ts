@@ -6,7 +6,7 @@
  * an article is auto-published or flagged for human review.
  */
 
-import type { SiteBrief, QualityWeights, QualityScoreBreakdown } from "@atomic-platform/shared-types";
+import type { SiteBrief, QualityWeights, QualityScoreBreakdown } from "../../types.js";
 import { generateContent } from "../../lib/ai.js";
 
 // ---------------------------------------------------------------------------

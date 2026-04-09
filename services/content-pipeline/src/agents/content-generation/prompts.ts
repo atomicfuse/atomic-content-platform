@@ -2,7 +2,7 @@
  * Prompt builders for content generation from source articles.
  */
 
-import type { SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteBrief } from "../../types.js";
 import type { ParsedContent } from "./rss.js";
 
 export interface GeneratedArticle {
@@ -85,6 +85,21 @@ ${parsed.textBody}
 ${mediaSection}
 
 Rewrite this article for the site. Include all media at appropriate positions in the body.`;
+}
+
+/**
+ * Build a user prompt when scraping failed — generates an original article
+ * inspired by the source title and metadata only.
+ */
+export function buildMetadataOnlyPrompt(source: SourceArticle): string {
+  const media = source.imageUrl ? `\n## Media to Include\nFeatured image: ${source.imageUrl}\n` : "";
+
+  return `## Source Article (metadata only — full content unavailable)
+
+Title: ${source.title}
+URL: ${source.url}
+${media}
+The source article could not be scraped. Using ONLY the title above as inspiration, write an ORIGINAL article on this topic for the site. Do NOT invent fake quotes or attribute statements to the source. Write your own comprehensive take on the subject.${source.imageUrl ? " Include the featured image at an appropriate position." : ""}`;
 }
 
 function buildMediaSection(source: SourceArticle, parsed: ParsedContent): string {

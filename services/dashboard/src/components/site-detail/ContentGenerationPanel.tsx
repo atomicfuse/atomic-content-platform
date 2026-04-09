@@ -233,6 +233,11 @@ export function ContentGenerationPanel({
         }>;
       };
 
+      // Guard against error responses that omit `results`
+      if (!result.results) {
+        throw new Error((result as unknown as { message?: string }).message ?? `Agent error (${res.status})`);
+      }
+
       // Build batch summary
       const created = result.results.filter((r) => r.status === "created");
       const skipped = result.results.filter((r) => r.status === "skipped");

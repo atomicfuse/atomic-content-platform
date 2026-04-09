@@ -6,7 +6,7 @@
  * fetches candidate articles, and applies fallback + relevance filtering.
  */
 
-import type { SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteBrief } from "../../types.js";
 import { parseHtmlContent, type ParsedContent } from "./rss.js";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +48,12 @@ export interface AggregatorQueryParams {
 // Query building
 // ---------------------------------------------------------------------------
 
+/** Valid verticals accepted by the Content Aggregator API. */
+const VALID_VERTICALS = new Set([
+  "Tech", "Travel", "News", "Sport", "Lifestyle",
+  "Entertainment", "Food & Drink", "Animals", "Science",
+]);
+
 /** Topics that suggest news/trending content → prefer "Today" freshness. */
 const NEWS_TOPICS = ["news", "breaking", "trending", "politics", "current events"];
 
@@ -57,8 +63,14 @@ const NEWS_TOPICS = ["news", "breaking", "trending", "politics", "current events
 export function buildQueryParams(brief: SiteBrief, limit?: number): AggregatorQueryParams {
   const params: AggregatorQueryParams = {};
 
-  if (brief.vertical) params.vertical = brief.vertical;
-  if (brief.audience_type) params.audience_type = brief.audience_type;
+  if (brief.vertical && VALID_VERTICALS.has(brief.vertical)) {
+    params.vertical = brief.vertical;
+  } else if (brief.vertical) {
+    console.warn(`[aggregator] Unknown vertical "${brief.vertical}" — omitting from query`);
+  }
+  if (brief.audience_type && brief.audience_type.toLowerCase() !== "any") {
+    params.audience_type = brief.audience_type;
+  }
 
   params.language = brief.language ?? "EN";
   params.limit = limit ?? brief.schedule.articles_per_week;

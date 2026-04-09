@@ -28,7 +28,7 @@ import {
   scrapeSourceContent,
   type AggregatorArticle,
 } from "./aggregator.js";
-import { buildSystemPrompt, buildUserPrompt, type GeneratedArticle, type SourceArticle } from "./prompts.js";
+import { buildSystemPrompt, buildUserPrompt, buildMetadataOnlyPrompt, type GeneratedArticle, type SourceArticle } from "./prompts.js";
 import { generateContent } from "../../lib/ai.js";
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
@@ -37,7 +37,7 @@ import { writeArticle, writeAsset, writeArticleBatch } from "../../lib/writer.js
 import type { PendingArticle, PendingAsset } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "@atomic-platform/shared-types";
+import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
 
 export interface ContentGenerationParams {
   siteDomain: string;
@@ -399,11 +399,7 @@ async function processArticle(
     // Scrape source content
     const parsed = await scrapeSourceContent(article.url);
 
-    if (!parsed.textBody) {
-      return { status: "skipped", reason: "could not scrape source content" };
-    }
-
-    // Build prompts
+    // Build prompts — fall back to metadata-only generation if scraping failed
     const source: SourceArticle = {
       title: article.title,
       url: article.url,
@@ -411,7 +407,14 @@ async function processArticle(
     };
 
     const systemPrompt = buildSystemPrompt(siteName, brief);
-    const userPrompt = buildUserPrompt(source, parsed);
+    let userPrompt: string;
+
+    if (parsed.textBody) {
+      userPrompt = buildUserPrompt(source, parsed);
+    } else {
+      console.log(`[agent] Scrape failed for "${article.title}" — generating from metadata only`);
+      userPrompt = buildMetadataOnlyPrompt(source);
+    }
 
     // Call Claude via CloudGrid AI Gateway
     const rawResponse = await generateContent({ systemPrompt, userPrompt });

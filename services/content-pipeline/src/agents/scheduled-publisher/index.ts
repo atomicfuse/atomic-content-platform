@@ -18,7 +18,7 @@ import { createGitHubClient, listFiles, readFile } from "../../lib/github.js";
 import { listSiteDomains, readSiteBrief } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { PublishSchedule } from "@atomic-platform/shared-types";
+import type { PublishSchedule } from "../../types.js";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 

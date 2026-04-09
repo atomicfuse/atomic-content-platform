@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildSystemPrompt, buildUserPrompt, type SourceArticle } from "../agents/content-generation/prompts.js";
-import type { SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteBrief } from "../types.js";
 import type { ParsedContent } from "../agents/content-generation/rss.js";
 
 const mockBrief: SiteBrief = {

@@ -34,11 +34,18 @@ No Postgres, no Redis, no SQLite. Just YAML files in git.
 The dashboard is **not built yet** — it's Phase 4 in the SOP. Currently just an empty stub (`packages/dashboard/package.json` only).
 
 When built, it will run like any Next.js app:
-
+also run the content-agent :
 ```bash
-cd packages/dashboard
+cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/services/dashboard
 pnpm dev
+
 # Opens at http://localhost:3000
+
+
+cd ~/Documents/ATL-content-network/atomic-content-platform/services/content-pipeline
+pnpm agent:content-generation
+
+
 ```
 
 With a `.env.local`:

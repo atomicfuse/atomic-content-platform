@@ -108,7 +108,7 @@ async function handleRequest(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[server] Agent error:", message);
-    sendJson(res, 502, { status: "error", message });
+    sendJson(res, 502, { status: "error", message, results: [{ status: "error", message }] });
   }
 }
 
@@ -124,7 +124,7 @@ try {
 const server = http.createServer((req, res) => {
   handleRequest(req, res, config).catch((err) => {
     console.error("[server] Unhandled error:", err);
-    sendJson(res, 502, { status: "error", message: "Internal server error" });
+    sendJson(res, 502, { status: "error", message: "Internal server error", results: [{ status: "error", message: "Internal server error" }] });
   });
 });
 

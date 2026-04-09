@@ -39,7 +39,7 @@ export function loadConfig(): AgentConfig {
     localNetworkPath,
     geminiApiKey: process.env.GEMINI_API_KEY,
     contentAggregatorUrl: process.env.CONTENT_AGGREGATOR_URL ?? "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
-    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 8080) : 8080,
+    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,

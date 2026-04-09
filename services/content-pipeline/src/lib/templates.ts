@@ -7,7 +7,7 @@
 
 import { readFile } from "fs/promises";
 import { resolve } from "path";
-import type { ArticleType } from "@atomic-platform/shared-types";
+import type { ArticleType } from "../types.js";
 
 /** Path to templates directory relative to the monorepo root. */
 const TEMPLATES_DIR = resolve(__dirname, "../../../../templates");

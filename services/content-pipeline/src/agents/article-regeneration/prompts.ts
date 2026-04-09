@@ -2,7 +2,7 @@
  * Prompt builders for article regeneration/revision.
  */
 
-import type { SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteBrief } from "../../types.js";
 
 /**
  * Build the system prompt for article revision.

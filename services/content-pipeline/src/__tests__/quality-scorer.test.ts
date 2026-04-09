@@ -8,7 +8,7 @@ import {
   scoreArticle,
   type ArticleToScore,
 } from "../agents/content-quality/scorer.js";
-import type { SiteBrief, QualityScoreBreakdown } from "@atomic-platform/shared-types";
+import type { SiteBrief, QualityScoreBreakdown } from "../types.js";
 
 // Mock AI module
 vi.mock("../lib/ai.js", () => ({

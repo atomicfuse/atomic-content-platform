@@ -8,7 +8,7 @@
 import { parse as parseYaml } from "yaml";
 import { Octokit } from "@octokit/rest";
 import { readFile } from "./github.js";
-import type { SiteConfig, SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteConfig, SiteBrief } from "../types.js";
 
 export interface SiteBriefData {
   domain: string;

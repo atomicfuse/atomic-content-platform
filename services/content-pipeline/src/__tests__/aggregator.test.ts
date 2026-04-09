@@ -4,7 +4,7 @@ import {
   filterByRelevance,
   type AggregatorArticle,
 } from "../agents/content-generation/aggregator.js";
-import type { SiteBrief } from "@atomic-platform/shared-types";
+import type { SiteBrief } from "../types.js";
 
 const baseBrief: SiteBrief = {
   audience: "Tech readers",
