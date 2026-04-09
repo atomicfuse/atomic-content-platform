@@ -5,9 +5,10 @@ export const config = {
     /*
      * Match all paths except:
      * - api/auth (NextAuth routes)
+     * - health (CloudGrid health check)
      * - _next (Next.js internals)
      * - static files (favicon, images, etc.)
      */
-    "/((?!api/auth|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|health|_next/static|_next/image|favicon.ico).*)",
   ],
 };
