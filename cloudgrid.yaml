@@ -5,13 +5,16 @@ services:
     type: nextjs
     path: /
     env:
-      # In CloudGrid, services talk via internal DNS — not localhost
       CONTENT_AGENT_URL: http://content-pipeline
+      NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
 
   content-pipeline:
     type: node
     lang: typescript
     path: /api
+    env:
+      NETWORK_REPO: atomicfuse/atomic-labs-network
+      CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
 
   scheduled-publisher:
     type: cron
