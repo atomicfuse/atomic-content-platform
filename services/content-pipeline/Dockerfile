@@ -1,32 +1,36 @@
-FROM node:20-alpine AS base
+FROM node:20-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-# Copy monorepo root files
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
+# Copy monorepo root files for pnpm workspace resolution
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 
-# Copy only the packages we need
-COPY packages/shared-types/ packages/shared-types/
-COPY packages/content-pipeline/ packages/content-pipeline/
-COPY templates/ templates/
+# Copy the content-pipeline service
+COPY services/content-pipeline/ services/content-pipeline/
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile
+# Install only content-pipeline dependencies
+RUN pnpm install --frozen-lockfile --filter @atomic-platform/content-pipeline
 
-# Build shared-types first, then content-pipeline
-RUN pnpm --filter @atomic-platform/shared-types build && \
-    pnpm --filter @atomic-platform/content-pipeline build
+# Build TypeScript
+RUN pnpm --filter @atomic-platform/content-pipeline build
 
 # --- Production stage ---
 FROM node:20-alpine
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
 WORKDIR /app
 
-COPY --from=base /app/ /app/
+# Copy built application with production dependencies
+COPY --from=builder /app/services/content-pipeline/dist/ services/content-pipeline/dist/
+COPY --from=builder /app/services/content-pipeline/package.json services/content-pipeline/
+COPY --from=builder /app/node_modules/ node_modules/
+COPY --from=builder /app/services/content-pipeline/node_modules/ services/content-pipeline/node_modules/
 
-# Default: run the scheduled publisher (override in K8s manifest)
-CMD ["node", "packages/content-pipeline/dist/agents/scheduled-publisher/index.js"]
+WORKDIR /app/services/content-pipeline
+
+USER node
+EXPOSE 8080
+ENV PORT=8080
+
+CMD ["node", "dist/index.js"]
