@@ -13,7 +13,7 @@ services:
   content-pipeline:
     type: node
     lang: typescript
-    path: /api
+    path: /pipeline
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
