@@ -51,6 +51,10 @@ export default function SharedPageEditorPage(): React.ReactElement {
   const loadPage = useCallback(async (): Promise<void> => {
     try {
       const res = await fetch(`/api/shared-pages/${name}`);
+      if (!res.ok) {
+        toast("Failed to load page", "error");
+        return;
+      }
       const data = (await res.json()) as PageData;
       setPageData(data);
       setGlobalContent(data.content);

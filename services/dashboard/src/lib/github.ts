@@ -382,16 +382,19 @@ export async function addSitesToIndex(
   return index;
 }
 
-/** Read raw file content from the network repo. */
+/** Read raw file content from the network repo (or a specified repo). */
 export async function readFileContent(
   path: string,
   branch?: string,
+  repo?: { owner: string; name: string },
 ): Promise<string | null> {
   const octokit = getOctokit();
+  const repoOwner = repo?.owner ?? NETWORK_REPO_OWNER;
+  const repoName = repo?.name ?? NETWORK_REPO_NAME;
   try {
     const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
+      owner: repoOwner,
+      repo: repoName,
       path,
       ...(branch ? { ref: branch } : {}),
     });
@@ -774,16 +777,19 @@ export async function commitNetworkFiles(
   });
 }
 
-/** List contents of a directory in the network repo. */
+/** List contents of a directory in the network repo (or a specified repo). */
 export async function listNetworkDirectory(
   path: string,
-  branch?: string
+  branch?: string,
+  repo?: { owner: string; name: string },
 ): Promise<Array<{ name: string; type: string; path: string }>> {
   const octokit = getOctokit();
+  const repoOwner = repo?.owner ?? NETWORK_REPO_OWNER;
+  const repoName = repo?.name ?? NETWORK_REPO_NAME;
   try {
     const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
+      owner: repoOwner,
+      repo: repoName,
       path,
       ...(branch ? { ref: branch } : {}),
     });

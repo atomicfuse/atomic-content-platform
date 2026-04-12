@@ -41,20 +41,21 @@ export function resolveSharedPagePlaceholders(
     `contact@${resolvedConfig.domain}`;
 
   const vars: Record<string, string> = {
-    // Top-level fields
+    // Spread legal entries first so custom keys are available, but
+    // explicit mappings below take precedence over any conflicting keys.
+    ...resolvedConfig.legal,
+
+    // Top-level fields (always win over legal spread)
     site_name: resolvedConfig.site_name,
     domain: resolvedConfig.domain,
     support_email: supportEmail,
 
-    // Legal fields (company_name, company_country, effective_date, etc.)
+    // Legal fields with explicit mappings
     company_name: resolvedConfig.legal_entity,
     company_country: resolvedConfig.legal["company_country"] ?? "",
     effective_date: resolvedConfig.legal["effective_date"] ?? "",
     site_description: resolvedConfig.legal["site_description"] ?? "",
     site_email: resolvedConfig.legal["site_email"] ?? supportEmail,
-
-    // Spread remaining legal entries so any custom key is available.
-    ...resolvedConfig.legal,
   };
 
   return template.replace(

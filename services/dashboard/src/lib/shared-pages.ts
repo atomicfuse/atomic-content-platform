@@ -4,6 +4,14 @@ import {
   listNetworkDirectory,
   deleteNetworkFile,
 } from "@/lib/github";
+import { NETWORK_REPO_OWNER } from "@/lib/constants";
+
+/**
+ * Platform code repo — used as fallback for bundled shared page templates
+ * and ads-txt profiles that haven't been committed to the network data repo yet.
+ */
+const PLATFORM_REPO = { owner: NETWORK_REPO_OWNER, name: "atomic-content-platform" };
+const BUNDLED_SHARED_PAGES = "packages/site-builder/shared-pages";
 
 export interface SharedPageInfo {
   name: string;
@@ -21,13 +29,30 @@ export interface AdsTxtAssignments {
   [domain: string]: string;
 }
 
-/** List all shared pages with override info. */
+/**
+ * List all shared pages with override info.
+ * Merges pages from the network data repo with bundled templates from the platform repo.
+ */
 export async function listSharedPages(): Promise<SharedPageInfo[]> {
-  const entries = await listNetworkDirectory("shared-pages");
-  const mdFiles = entries.filter((e) => e.name.endsWith(".md"));
+  // Read from network data repo (user-edited pages)
+  const networkEntries = await listNetworkDirectory("shared-pages");
+  const networkMd = networkEntries.filter((e) => e.name.endsWith(".md"));
+
+  // Read from platform code repo (bundled templates as fallback)
+  const bundledEntries = await listNetworkDirectory(BUNDLED_SHARED_PAGES, undefined, PLATFORM_REPO);
+  const bundledMd = bundledEntries.filter((e) => e.name.endsWith(".md"));
+
+  // Merge: network pages take precedence, add bundled pages not already in network
+  const seen = new Set(networkMd.map((e) => e.name));
+  const allFiles = [...networkMd];
+  for (const file of bundledMd) {
+    if (!seen.has(file.name)) {
+      allFiles.push(file);
+    }
+  }
 
   const pages: SharedPageInfo[] = [];
-  for (const file of mdFiles) {
+  for (const file of allFiles) {
     const name = file.name.replace(".md", "");
     const overrideSites = await getOverrideSites(name);
     pages.push({
@@ -41,7 +66,7 @@ export async function listSharedPages(): Promise<SharedPageInfo[]> {
 }
 
 /** Get site domains that have an override for a given page. */
-async function getOverrideSites(pageName: string): Promise<string[]> {
+export async function getOverrideSites(pageName: string): Promise<string[]> {
   const sites: string[] = [];
   const siteDirs = await listNetworkDirectory("overrides");
   for (const dir of siteDirs) {
@@ -54,11 +79,24 @@ async function getOverrideSites(pageName: string): Promise<string[]> {
   return sites;
 }
 
-/** Read a shared page's content. */
+/**
+ * Read a shared page's content.
+ * Tries network data repo first, falls back to bundled template in platform repo.
+ */
 export async function readSharedPage(name: string): Promise<string> {
+  // Try network data repo first (user-edited)
   const content = await readFileContent(`shared-pages/${name}.md`);
-  if (content === null) throw new Error(`Shared page "${name}" not found`);
-  return content;
+  if (content !== null) return content;
+
+  // Fall back to platform code repo (bundled template)
+  const bundled = await readFileContent(
+    `${BUNDLED_SHARED_PAGES}/${name}.md`,
+    undefined,
+    PLATFORM_REPO,
+  );
+  if (bundled !== null) return bundled;
+
+  throw new Error(`Shared page "${name}" not found`);
 }
 
 /** Update a shared page's content (commits to network data repo). */
@@ -100,23 +138,50 @@ export async function deleteOverride(name: string, siteId: string): Promise<void
 
 // --- ads.txt profiles ---
 
-/** List all ads.txt profiles. */
+/**
+ * List all ads.txt profiles.
+ * Merges from network data repo and bundled templates.
+ */
 export async function listAdsTxtProfiles(): Promise<AdsTxtProfile[]> {
-  const entries = await listNetworkDirectory("shared-pages/ads-txt");
+  const networkEntries = await listNetworkDirectory("shared-pages/ads-txt");
+  const bundledEntries = await listNetworkDirectory(
+    `${BUNDLED_SHARED_PAGES}/ads-txt`,
+    undefined,
+    PLATFORM_REPO,
+  );
+
+  // Merge: network takes precedence
+  const seen = new Set<string>();
   const profiles: AdsTxtProfile[] = [];
-  for (const entry of entries) {
+
+  for (const entry of networkEntries) {
     if (!entry.name.endsWith(".txt")) continue;
     const content = await readFileContent(entry.path);
     if (content !== null) {
-      profiles.push({ name: entry.name.replace(".txt", ""), content });
+      const name = entry.name.replace(".txt", "");
+      seen.add(name);
+      profiles.push({ name, content });
     }
   }
+
+  for (const entry of bundledEntries) {
+    if (!entry.name.endsWith(".txt")) continue;
+    const name = entry.name.replace(".txt", "");
+    if (seen.has(name)) continue;
+    const content = await readFileContent(entry.path, undefined, PLATFORM_REPO);
+    if (content !== null) {
+      profiles.push({ name, content });
+    }
+  }
+
   return profiles;
 }
 
-/** Read a specific ads.txt profile. */
+/** Read a specific ads.txt profile (network first, then bundled). */
 export async function readAdsTxtProfile(name: string): Promise<string | null> {
-  return readFileContent(`shared-pages/ads-txt/${name}.txt`);
+  const content = await readFileContent(`shared-pages/ads-txt/${name}.txt`);
+  if (content !== null) return content;
+  return readFileContent(`${BUNDLED_SHARED_PAGES}/ads-txt/${name}.txt`, undefined, PLATFORM_REPO);
 }
 
 /** Write an ads.txt profile (commits to network data repo). */

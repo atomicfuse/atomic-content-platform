@@ -30,31 +30,19 @@ export default function AdsTxtPage(): React.ReactElement {
     Promise.all([
       fetch("/api/ads-txt/profiles").then((r) => r.json()) as Promise<Profile[]>,
       fetch("/api/ads-txt/assignments").then((r) => r.json()) as Promise<Record<string, string>>,
+      fetch("/api/sites/list").then((r) => (r.ok ? r.json() : [])) as Promise<Array<{ domain: string }>>,
     ])
-      .then(([profilesData, assignmentsData]) => {
+      .then(([profilesData, assignmentsData, sitesData]) => {
         setProfiles(profilesData);
         setAssignments(assignmentsData);
-        const allSites = new Set(Object.keys(assignmentsData));
-        setSites(Array.from(allSites));
+        // Use full sites list; fall back to assignment keys if sites API returned nothing
+        const sitesDomains = sitesData.length > 0
+          ? sitesData.map((s) => s.domain)
+          : Object.keys(assignmentsData);
+        setSites(sitesDomains);
       })
       .catch(() => toast("Failed to load data", "error"));
   }, [toast]);
-
-  const loadSites = async (): Promise<void> => {
-    try {
-      const res = await fetch("/api/sites/list");
-      if (res.ok) {
-        const data = (await res.json()) as Array<{ domain: string }>;
-        setSites(data.map((s) => s.domain));
-      }
-    } catch {
-      // Sites API may not exist, use domains from assignments
-    }
-  };
-
-  useEffect(() => {
-    loadSites();
-  }, []);
 
   const saveProfile = async (): Promise<void> => {
     if (!editingProfile) return;
