@@ -34,6 +34,9 @@ export default defineConfig({
       'import.meta.env.SITE_DOMAIN': JSON.stringify(SITE_DOMAIN),
       'import.meta.env.NETWORK_DATA_PATH': JSON.stringify(NETWORK_DATA_PATH),
       'import.meta.env.IS_STAGING': JSON.stringify(IS_STAGING),
+      'import.meta.env.SUBSCRIBE_API_URL': JSON.stringify(
+        process.env.SUBSCRIBE_API_URL || 'https://atomic-content-platform.apps.cloudgrid.io/api/subscribe'
+      ),
     },
   },
 
