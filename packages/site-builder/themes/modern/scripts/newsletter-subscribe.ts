@@ -42,8 +42,15 @@ document.querySelectorAll<HTMLFormElement>("[data-newsletter-form]").forEach((fo
       const data = await res.json();
 
       if (res.ok) {
-        // Replace form with success message
-        form.innerHTML = '<p class="newsletter-success">Thanks for subscribing!</p>';
+        // Replace form with a visible success message (inline styles to bypass Astro scoping)
+        form.innerHTML = `<p style="
+          color: #10b981;
+          font-size: 1.125rem;
+          font-weight: 600;
+          padding: 0.75rem 0;
+          text-align: center;
+          width: 100%;
+        ">Thank you for subscribing!</p>`;
       } else {
         showMessage(form, data.message || "Something went wrong. Please try again.", true);
         submitBtn.disabled = false;
@@ -60,12 +67,15 @@ document.querySelectorAll<HTMLFormElement>("[data-newsletter-form]").forEach((fo
 function showMessage(form: HTMLFormElement, text: string, isError: boolean): void {
   clearMessage(form);
   const msg = document.createElement("p");
-  msg.className = isError ? "newsletter-error" : "newsletter-success";
+  msg.dataset.newsletterMsg = "";
+  msg.style.fontSize = "0.875rem";
+  msg.style.marginTop = "0.5rem";
+  msg.style.fontWeight = "500";
+  msg.style.color = isError ? "#ef4444" : "#10b981";
   msg.textContent = text;
   form.appendChild(msg);
 }
 
 function clearMessage(form: HTMLFormElement): void {
-  form.querySelector(".newsletter-error")?.remove();
-  form.querySelector(".newsletter-success")?.remove();
+  form.querySelector("[data-newsletter-msg]")?.remove();
 }
