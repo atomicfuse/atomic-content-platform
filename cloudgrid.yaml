@@ -9,7 +9,7 @@ services:
       NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
       GOOGLE_SHEET_ID: "PLACEHOLDER_SHEET_ID"
     # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
-    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN
+    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY
 
   content-pipeline:
     type: node

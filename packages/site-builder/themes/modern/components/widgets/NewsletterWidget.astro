@@ -89,13 +89,13 @@ const { siteName } = Astro.props;
     background: var(--color-accent, #0052cc);
   }
 
-  .newsletter-success {
+  :global(.newsletter-success) {
     color: #10b981;
     font-size: 0.875rem;
     margin-top: 0.5rem;
   }
 
-  .newsletter-error {
+  :global(.newsletter-error) {
     color: #ef4444;
     font-size: 0.8125rem;
     margin-top: 0.5rem;

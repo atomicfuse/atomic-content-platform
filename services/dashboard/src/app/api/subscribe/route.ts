@@ -17,13 +17,17 @@ export function OPTIONS(): NextResponse {
 
 /** Collect a newsletter subscription. */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  let body: { email?: string; domain?: string; source?: string };
   try {
-    const body = (await req.json()) as {
-      email?: string;
-      domain?: string;
-      source?: string;
-    };
+    body = (await req.json()) as typeof body;
+  } catch {
+    return NextResponse.json(
+      { status: "error", message: "Invalid request body" },
+      { status: 400, headers: CORS_HEADERS }
+    );
+  }
 
+  try {
     const email = body.email?.trim();
     const domain = body.domain?.trim();
     const source = body.source?.trim() || "unknown";
