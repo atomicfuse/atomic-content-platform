@@ -5,7 +5,7 @@ services:
     type: nextjs
     path: /
     env:
-      CONTENT_AGENT_URL: http://content-pipeline
+      CONTENT_AGENT_URL: http://content-pipeline-app
       NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
     # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
     #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN
@@ -24,4 +24,4 @@ services:
     type: cron
     schedule: "0 */4 * * *"
     timezone: EST
-    run: http://content-pipeline/scheduled-publish
+    run: http://content-pipeline-app/scheduled-publish
