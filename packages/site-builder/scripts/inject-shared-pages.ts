@@ -6,7 +6,7 @@
  * writes the resulting files to an output directory (typically src/pages/).
  */
 
-import { readFile, writeFile, readdir, mkdir } from "node:fs/promises";
+import { readFile, writeFile, readdir, mkdir, access } from "node:fs/promises";
 import { join, extname } from "node:path";
 
 import type { ResolvedConfig } from "@atomic-platform/shared-types";
@@ -51,6 +51,7 @@ export function resolveSharedPagePlaceholders(
     company_country: resolvedConfig.legal["company_country"] ?? "",
     effective_date: resolvedConfig.legal["effective_date"] ?? "",
     site_description: resolvedConfig.legal["site_description"] ?? "",
+    site_email: resolvedConfig.legal["site_email"] ?? supportEmail,
 
     // Spread remaining legal entries so any custom key is available.
     ...resolvedConfig.legal,
@@ -72,16 +73,22 @@ export function resolveSharedPagePlaceholders(
  * Read every `.md` file from `sharedPagesDir`, resolve placeholders using
  * `resolvedConfig`, and write the results to `outputDir`.
  *
+ * If an `overridesDir` is provided, the function checks for a site-specific
+ * override at `{overridesDir}/{domain}/{fileName}` before falling back to the
+ * global default in `sharedPagesDir`.
+ *
  * The output directory is created if it does not already exist.
  *
  * @param resolvedConfig - Fully-resolved site configuration.
  * @param sharedPagesDir - Path to the directory containing shared .md templates.
  * @param outputDir      - Path where resolved pages will be written.
+ * @param overridesDir   - Optional path to site-specific override directory.
  */
 export async function injectSharedPages(
   resolvedConfig: ResolvedConfig,
   sharedPagesDir: string,
   outputDir: string,
+  overridesDir?: string,
 ): Promise<void> {
   // Ensure the output directory exists.
   await mkdir(outputDir, { recursive: true });
@@ -104,7 +111,22 @@ export async function injectSharedPages(
   const mdFiles = entries.filter((name) => extname(name) === ".md");
 
   for (const fileName of mdFiles) {
-    const srcPath = join(sharedPagesDir, fileName);
+    // Check for a site-specific override first.
+    let srcPath = join(sharedPagesDir, fileName);
+
+    if (overridesDir) {
+      const overridePath = join(overridesDir, resolvedConfig.domain, fileName);
+      try {
+        await access(overridePath);
+        srcPath = overridePath;
+        console.log(
+          `[inject-shared-pages] Using override for ${fileName}: ${overridePath}`,
+        );
+      } catch {
+        // No override found — use the global default.
+      }
+    }
+
     const template = await readFile(srcPath, "utf-8");
     const resolved = resolveSharedPagePlaceholders(template, resolvedConfig);
     const destPath = join(outputDir, fileName);

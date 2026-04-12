@@ -26,6 +26,7 @@ import type { NetworkManifest } from "@atomic-platform/shared-types";
 import { resolveConfig } from "./resolve-config.js";
 import { generateAdsTxt } from "./generate-ads-txt.js";
 import { injectSharedPages } from "./inject-shared-pages.js";
+import { resolveAdsTxtProfile } from "./resolve-ads-txt-profile.js";
 
 // ---------------------------------------------------------------------------
 // ESM __dirname shim
@@ -186,12 +187,24 @@ export async function buildSite(
 
   // ---- 4. Generate ads.txt ----
 
-  const adsTxtContent = generateAdsTxt(resolvedConfig);
+  let adsTxtContent = generateAdsTxt(resolvedConfig);
   const adsTxtPath = join(process.cwd(), "public", "ads.txt");
   await writeFileWithDir(adsTxtPath, adsTxtContent);
   console.log(
     `[build-site] Wrote ads.txt (${resolvedConfig.ads_txt.length} entries)`,
   );
+
+  // Resolve ads.txt profile and append to config-based content
+  const adsTxtDir = join(__dirname, "..", "shared-pages", "ads-txt");
+  const assignmentsPath = join(__dirname, "..", "ads-txt-assignments.json");
+  const profileContent = await resolveAdsTxtProfile(siteDomain, adsTxtDir, assignmentsPath);
+  if (profileContent.trim()) {
+    const combined = adsTxtContent.trim()
+      ? `${adsTxtContent}\n${profileContent}`
+      : profileContent;
+    await writeFileWithDir(adsTxtPath, combined);
+    console.log(`[build-site] Appended ads.txt profile content`);
+  }
 
   // ---- 4a. Link site assets ----
 
@@ -201,8 +214,9 @@ export async function buildSite(
 
   const sharedPagesDir = join(__dirname, "..", "shared-pages");
   const pagesOutputDir = join(process.cwd(), "src", "pages");
+  const overridesDir = join(__dirname, "..", "overrides");
 
-  await injectSharedPages(resolvedConfig, sharedPagesDir, pagesOutputDir);
+  await injectSharedPages(resolvedConfig, sharedPagesDir, pagesOutputDir, overridesDir);
 
   // ---- 6. Summary ----
 
