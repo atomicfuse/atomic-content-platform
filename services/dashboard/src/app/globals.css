@@ -98,3 +98,102 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-gray-500);
 }
+
+/* Guide markdown content */
+.markdown-content h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+}
+
+.markdown-content h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+}
+
+.markdown-content h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+}
+
+.markdown-content p {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  margin-bottom: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-content li {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  margin-bottom: 0.25rem;
+  color: var(--text-secondary);
+}
+
+.markdown-content ul li {
+  list-style-type: disc;
+}
+
+.markdown-content ol li {
+  list-style-type: decimal;
+}
+
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--border-secondary);
+  margin: 1.5rem 0;
+}
+
+.markdown-content a {
+  color: #52BAF2;
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-content strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.markdown-content .inline-code {
+  background: var(--bg-elevated);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: ui-monospace, monospace;
+  color: #52BAF2;
+}
+
+.markdown-content .code-block,
+.markdown-content .mermaid-block {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+}
+
+.markdown-content .code-block code,
+.markdown-content .mermaid-block code {
+  font-size: 0.8125rem;
+  font-family: ui-monospace, monospace;
+  color: var(--text-secondary);
+  white-space: pre;
+}

@@ -1,0 +1,2 @@
+# Default ads.txt profile
+# This is the base ads.txt applied to all sites without a specific assignment

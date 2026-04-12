@@ -53,6 +53,60 @@ cd packages/site-builder
 SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm build
 ```
 
+## CloudGrid Deployment
+
+The platform deploys to CloudGrid as a multi-service app (`atomic-content-platform.apps.cloudgrid.io`).
+
+### Deploy
+
+```bash
+# CLI deploy (current branch)
+cloudgrid deploy
+
+# Or connect GitHub for auto-deploy on push to main
+cloudgrid connect
+```
+
+### Local Dev (two options)
+
+```bash
+# Option A: CloudGrid dev (tunnels MongoDB/Redis, auto-ports)
+cloudgrid dev
+
+# Option B: pnpm dev (manual, each service independently)
+cd services/dashboard && pnpm dev          # localhost:3000
+cd services/content-pipeline && pnpm dev   # localhost:3001
+```
+
+### Secrets & Env
+
+```bash
+# Sensitive values (never in git)
+cloudgrid secrets set atomic-content-platform KEY=value
+
+# Runtime config (no rebuild needed)
+cloudgrid env set atomic-content-platform KEY=value
+```
+
+### Adding a New Agent/Service
+
+Every CloudGrid service must:
+1. Listen on `process.env.PORT` (default 8080 in CloudGrid)
+2. Expose `GET /health` returning HTTP 200
+
+Pattern for a new Node.js/TypeScript agent (like content-pipeline):
+1. Create `services/<name>/` with its own `package.json` (self-contained deps, no workspace refs to `packages/*`)
+2. Entry point: `src/index.ts` — HTTP server on `process.env.PORT` with `/health`
+3. For AI: use `@cloudgrid-io/ai` (zero config in CloudGrid), fall back to `@anthropic-ai/sdk` locally
+4. Add to `cloudgrid.yaml` under `services:`
+5. If dashboard needs to call it: add `<NAME>_URL: http://<service-name>` to dashboard env in cloudgrid.yaml
+
+### Service Communication
+
+- In CloudGrid: services use internal DNS (`http://content-pipeline`, `http://<service-name>`)
+- Locally: services use `http://localhost:<port>` defaults
+- Always read the URL from an env var with a localhost fallback
+
 ## Conventions
 
 - TypeScript strict mode — no `any`, explicit return types

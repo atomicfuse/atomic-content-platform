@@ -20,7 +20,7 @@ const { siteName } = Astro.props;
         Get the latest from {siteName} delivered straight to your inbox. No spam, unsubscribe anytime.
       </p>
     </div>
-    <form class="newsletter-form" action="#" method="post">
+    <form class="newsletter-form" data-newsletter-form data-source="homepage">
       <input
         type="email"
         name="email"
@@ -29,6 +29,7 @@ const { siteName } = Astro.props;
         class="newsletter-input"
       />
       <button type="submit" class="newsletter-btn">Subscribe</button>
+      <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" />
     </form>
   </div>
 </section>
@@ -122,4 +123,18 @@ const { siteName } = Astro.props;
   .newsletter-btn:hover {
     background: var(--color-primary, #0066ff);
   }
+
+  :global(.newsletter-success) {
+    color: #10b981;
+    font-size: 0.9375rem;
+    margin-top: 0.5rem;
+  }
+
+  :global(.newsletter-error) {
+    color: #ef4444;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
 </style>
+
+<script src="../scripts/newsletter-subscribe.ts"></script>

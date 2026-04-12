@@ -23,8 +23,10 @@ const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH || DEFAULT_NETWORK_PATH;
 const cfBranch = process.env.CF_PAGES_BRANCH || '';
 const IS_STAGING = process.env.STAGING === 'true' || cfBranch.startsWith('staging/');
 
+const SITE_URL = process.env.SITE_URL || `https://${SITE_DOMAIN}`;
+
 export default defineConfig({
-  site: `https://${SITE_DOMAIN}`,
+  site: SITE_URL,
   outDir: './dist',
 
   vite: {
@@ -34,6 +36,9 @@ export default defineConfig({
       'import.meta.env.SITE_DOMAIN': JSON.stringify(SITE_DOMAIN),
       'import.meta.env.NETWORK_DATA_PATH': JSON.stringify(NETWORK_DATA_PATH),
       'import.meta.env.IS_STAGING': JSON.stringify(IS_STAGING),
+      'import.meta.env.SUBSCRIBE_API_URL': JSON.stringify(
+        process.env.SUBSCRIBE_API_URL || 'https://atomic-content-platform.apps.cloudgrid.io/api/subscribe'
+      ),
     },
   },
 

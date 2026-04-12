@@ -5,16 +5,24 @@ services:
     type: nextjs
     path: /
     env:
-      # In CloudGrid, services talk via internal DNS — not localhost
-      CONTENT_AGENT_URL: http://content-pipeline
+      CONTENT_AGENT_URL: http://content-pipeline-app
+      NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
+      GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
+    # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
+    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY
 
   content-pipeline:
     type: node
     lang: typescript
-    path: /api
+    path: /pipeline
+    env:
+      NETWORK_REPO: atomicfuse/atomic-labs-network
+      CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
+    # Secrets: GITHUB_TOKEN, GEMINI_API_KEY
+    # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
 
   scheduled-publisher:
     type: cron
     schedule: "0 */4 * * *"
     timezone: EST
-    run: http://content-pipeline/scheduled-publish
+    run: http://content-pipeline-app/scheduled-publish

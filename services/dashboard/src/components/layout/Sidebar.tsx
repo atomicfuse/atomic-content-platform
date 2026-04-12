@@ -30,6 +30,15 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
+    label: "Shared Pages",
+    href: "/shared-pages",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+      </svg>
+    ),
+  },
+  {
     label: "Review Queue",
     href: "/review",
     icon: (
@@ -49,11 +58,44 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
+const BOTTOM_NAV_ITEMS: NavItem[] = [
+  {
+    label: "Guide",
+    href: "/guide",
+    icon: (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
+      </svg>
+    ),
+  },
+];
+
 export function Sidebar(): React.ReactElement {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
 
   const isDark = theme === "dark";
+
+  const renderNavItem = (item: NavItem): React.ReactElement => {
+    const isActive =
+      item.href === "/"
+        ? pathname === "/"
+        : pathname.startsWith(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+          isActive
+            ? "bg-cyan/10 text-cyan border-l-2 border-cyan"
+            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
+        }`}
+      >
+        {item.icon}
+        {item.label}
+      </Link>
+    );
+  };
 
   return (
     <aside className="w-56 flex-shrink-0 border-r border-[var(--border-secondary)] bg-[var(--bg-secondary)] flex flex-col">
@@ -69,27 +111,13 @@ export function Sidebar(): React.ReactElement {
 
       {/* Nav */}
       <nav className="flex-1 px-3 space-y-1">
-        {NAV_ITEMS.map((item) => {
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? "bg-cyan/10 text-cyan border-l-2 border-cyan"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]"
-              }`}
-            >
-              {item.icon}
-              {item.label}
-            </Link>
-          );
-        })}
+        {NAV_ITEMS.map(renderNavItem)}
       </nav>
+
+      {/* Bottom nav items */}
+      <div className="px-3 space-y-1">
+        {BOTTOM_NAV_ITEMS.map(renderNavItem)}
+      </div>
 
       {/* New Site button */}
       <div className="p-3 border-t border-[var(--border-secondary)]">

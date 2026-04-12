@@ -74,6 +74,7 @@ export default async function SiteDetailPage({
     <div className="space-y-6">
       <SiteDetailHeader site={site} />
       <SiteDetailTabs
+        domain={decodedDomain}
         stagingTab={
           site.pages_project ? (
             <StagingTab
@@ -88,7 +89,7 @@ export default async function SiteDetailPage({
           ) : null
         }
         contentTab={
-          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} />
+          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} previewUrl={site.preview_url ?? undefined} />
         }
         identityTab={
           <ContentAgentTab domain={decodedDomain} brief={normalizedBrief} />

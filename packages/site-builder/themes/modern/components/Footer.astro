@@ -54,7 +54,7 @@ const quickLinks = [
       <p class="footer-newsletter-desc">
         Get the latest stories delivered to your inbox.
       </p>
-      <form class="footer-newsletter" action="#" method="post">
+      <form class="footer-newsletter" data-newsletter-form data-source="footer">
         <input
           type="email"
           name="email"
@@ -63,6 +63,7 @@ const quickLinks = [
           class="footer-email-input"
         />
         <button type="submit" class="footer-subscribe-btn">Subscribe</button>
+        <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" />
       </form>
     </div>
   </div>
@@ -71,6 +72,7 @@ const quickLinks = [
   <div class="footer-bottom">
     <p>&copy; {year} {config.site_name}. All rights reserved.</p>
   </div>
+  <script src="../scripts/newsletter-subscribe.ts"></script>
 </footer>
 
 <style>
@@ -208,5 +210,17 @@ const quickLinks = [
     text-align: center;
     font-size: 0.8125rem;
     color: #6b7280;
+  }
+
+  :global(.newsletter-success) {
+    color: #10b981;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+
+  :global(.newsletter-error) {
+    color: #ef4444;
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
   }
 </style>

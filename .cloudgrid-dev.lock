@@ -1,0 +1,8 @@
+{
+  "pid": 6600,
+  "ports": {
+    "dashboard": 3001,
+    "content-pipeline": 5000
+  },
+  "startedAt": "2026-04-12T09:25:20.162Z"
+}

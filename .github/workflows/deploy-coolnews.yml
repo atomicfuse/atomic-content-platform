@@ -26,8 +26,6 @@ jobs:
           node-version: 20
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Install dependencies
         run: pnpm install
@@ -40,8 +38,10 @@ jobs:
         working-directory: packages/site-builder
         run: pnpm build
         env:
-          SITE_DOMAIN: coolnews.dev
+          SITE_DOMAIN: coolnews
+          SITE_URL: https://coolnews.dev
           NETWORK_DATA_PATH: ${{ github.workspace }}/network-data
+          SUBSCRIBE_API_URL: https://atomic-content-platform.apps.cloudgrid.io/api/subscribe
 
       - name: Deploy to Cloudflare Pages
         working-directory: packages/site-builder

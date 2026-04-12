@@ -1,8 +1,10 @@
 "use client";
 
 import { Tabs } from "@/components/ui/Tabs";
+import { EmailRoutingPanel } from "@/components/site-detail/EmailRoutingPanel";
 
 interface SiteDetailTabsProps {
+  domain: string;
   stagingTab: React.ReactNode | null;
   contentTab: React.ReactNode;
   identityTab: React.ReactNode;
@@ -11,6 +13,7 @@ interface SiteDetailTabsProps {
 }
 
 export function SiteDetailTabs({
+  domain,
   stagingTab,
   contentTab,
   identityTab,
@@ -29,5 +32,10 @@ export function SiteDetailTabs({
   if (monetizationTab) {
     tabItems.push({ id: "monetization", label: "Monetization", content: monetizationTab });
   }
+  tabItems.push({
+    id: "email",
+    label: "Email",
+    content: <EmailRoutingPanel domain={domain} />,
+  });
   return <Tabs tabs={tabItems} />;
 }
