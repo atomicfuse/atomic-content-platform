@@ -715,6 +715,134 @@ export async function countFailedBuilds(): Promise<number> {
   }
 }
 
+// --- Generic network repo operations ---
+
+/** Commit multiple files to the network repo atomically (generic, no domain prefix). */
+export async function commitNetworkFiles(
+  files: Array<{ path: string; content: string | Buffer }>,
+  message: string,
+  branch: string = "main"
+): Promise<void> {
+  const octokit = getOctokit();
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  const latestCommitSha = ref.object.sha;
+  const { data: commit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: latestCommitSha,
+  });
+  const treeItems = await Promise.all(
+    files.map(async (file) => {
+      const { data: blob } = await octokit.git.createBlob({
+        owner: NETWORK_REPO_OWNER,
+        repo: NETWORK_REPO_NAME,
+        content: Buffer.isBuffer(file.content)
+          ? file.content.toString("base64")
+          : Buffer.from(file.content).toString("base64"),
+        encoding: "base64",
+      });
+      return {
+        path: file.path,
+        mode: "100644" as const,
+        type: "blob" as const,
+        sha: blob.sha,
+      };
+    })
+  );
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: commit.tree.sha,
+    tree: treeItems,
+  });
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message,
+    tree: newTree.sha,
+    parents: [latestCommitSha],
+  });
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  });
+}
+
+/** List contents of a directory in the network repo. */
+export async function listNetworkDirectory(
+  path: string,
+  branch?: string
+): Promise<Array<{ name: string; type: string; path: string }>> {
+  const octokit = getOctokit();
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      path,
+      ...(branch ? { ref: branch } : {}),
+    });
+    if (!Array.isArray(data)) return [];
+    return data.map((item) => ({
+      name: item.name,
+      type: item.type,
+      path: item.path,
+    }));
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) return [];
+    throw error;
+  }
+}
+
+/** Delete a single file from the network repo with a commit message. */
+export async function deleteNetworkFile(
+  filePath: string,
+  message: string,
+  branch: string = "main"
+): Promise<void> {
+  const octokit = getOctokit();
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  const latestCommitSha = ref.object.sha;
+  const { data: commit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: latestCommitSha,
+  });
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: commit.tree.sha,
+    tree: [{
+      path: filePath,
+      mode: "100644" as const,
+      type: "blob" as const,
+      sha: null as unknown as string,
+    }],
+  });
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message,
+    tree: newTree.sha,
+    parents: [latestCommitSha],
+  });
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  });
+}
+
 // --- Helpers ---
 
 function isNotFoundError(error: unknown): boolean {

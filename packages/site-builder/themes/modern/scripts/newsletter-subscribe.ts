@@ -1,7 +1,7 @@
 // packages/site-builder/themes/modern/scripts/newsletter-subscribe.ts
 
-const SUBSCRIBE_URL = import.meta.env.SUBSCRIBE_API_URL;
-const SITE_DOMAIN = import.meta.env.SITE_DOMAIN;
+const SUBSCRIBE_URL = import.meta.env.SUBSCRIBE_API_URL || "";
+const SITE_DOMAIN = import.meta.env.SITE_DOMAIN || "";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,6 +24,11 @@ document.querySelectorAll<HTMLFormElement>("[data-newsletter-form]").forEach((fo
     const email = emailInput.value.trim();
     if (!email || !EMAIL_RE.test(email)) {
       showMessage(form, "Please enter a valid email address.", true);
+      return;
+    }
+
+    if (!SUBSCRIBE_URL) {
+      showMessage(form, "Subscribe service is not configured.", true);
       return;
     }
 

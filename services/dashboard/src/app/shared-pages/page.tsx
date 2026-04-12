@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/Badge";
 interface SharedPageInfo {
   name: string;
   fileName: string;
-  lastModified: string;
   overrideCount: number;
   overrideSites: string[];
 }
@@ -61,7 +60,7 @@ export default function SharedPagesListPage(): React.ReactElement {
                   Status
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Last Modified
+                  Overridden Sites
                 </th>
               </tr>
             </thead>
@@ -90,7 +89,12 @@ export default function SharedPagesListPage(): React.ReactElement {
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-[var(--text-secondary)]">
-                    {new Date(page.lastModified).toLocaleDateString()}
+                    {page.overrideSites.length > 0
+                      ? page.overrideSites.slice(0, 3).join(", ") +
+                        (page.overrideSites.length > 3
+                          ? ` +${page.overrideSites.length - 3} more`
+                          : "")
+                      : "—"}
                   </td>
                 </tr>
               ))}

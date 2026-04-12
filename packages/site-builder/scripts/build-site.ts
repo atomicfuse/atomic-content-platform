@@ -194,10 +194,16 @@ export async function buildSite(
     `[build-site] Wrote ads.txt (${resolvedConfig.ads_txt.length} entries)`,
   );
 
-  // Resolve ads.txt profile and append to config-based content
-  const adsTxtDir = join(__dirname, "..", "shared-pages", "ads-txt");
-  const assignmentsPath = join(__dirname, "..", "ads-txt-assignments.json");
-  const profileContent = await resolveAdsTxtProfile(siteDomain, adsTxtDir, assignmentsPath);
+  // Resolve ads.txt profile — read from network data repo first, fall back to bundled
+  const networkAdsTxtDir = join(networkDataPath, "shared-pages", "ads-txt");
+  const networkAssignmentsPath = join(networkDataPath, "ads-txt-assignments.json");
+  const bundledAdsTxtDir = join(__dirname, "..", "shared-pages", "ads-txt");
+  const bundledAssignmentsPath = join(__dirname, "..", "ads-txt-assignments.json");
+
+  let profileContent = await resolveAdsTxtProfile(siteDomain, networkAdsTxtDir, networkAssignmentsPath);
+  if (!profileContent.trim()) {
+    profileContent = await resolveAdsTxtProfile(siteDomain, bundledAdsTxtDir, bundledAssignmentsPath);
+  }
   if (profileContent.trim()) {
     const combined = adsTxtContent.trim()
       ? `${adsTxtContent}\n${profileContent}`
@@ -212,11 +218,15 @@ export async function buildSite(
 
   // ---- 5. Inject shared legal pages ----
 
-  const sharedPagesDir = join(__dirname, "..", "shared-pages");
   const pagesOutputDir = join(process.cwd(), "src", "pages");
-  const overridesDir = join(__dirname, "..", "overrides");
+  const networkOverridesDir = join(networkDataPath, "overrides");
+  const bundledSharedPagesDir = join(__dirname, "..", "shared-pages");
+  const networkSharedPagesDir = join(networkDataPath, "shared-pages");
 
-  await injectSharedPages(resolvedConfig, sharedPagesDir, pagesOutputDir, overridesDir);
+  // Inject bundled templates first (fallback), then network repo templates (overwrite).
+  // Both passes check for site-specific overrides from the network data repo.
+  await injectSharedPages(resolvedConfig, bundledSharedPagesDir, pagesOutputDir, networkOverridesDir);
+  await injectSharedPages(resolvedConfig, networkSharedPagesDir, pagesOutputDir, networkOverridesDir);
 
   // ---- 6. Summary ----
 
