@@ -88,7 +88,7 @@ export default async function SiteDetailPage({
           ) : null
         }
         contentTab={
-          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} />
+          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} previewUrl={site.preview_url ?? undefined} />
         }
         identityTab={
           <ContentAgentTab domain={decodedDomain} brief={normalizedBrief} />

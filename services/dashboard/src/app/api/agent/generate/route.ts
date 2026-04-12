@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CONTENT_AGENT_URL =
-  process.env.CONTENT_AGENT_URL ?? "http://localhost:3001";
+  process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
+
+// In local dev, cloudgrid.yaml may inject an internal DNS name (e.g.
+// http://content-pipeline-app) that doesn't resolve on the host machine.
+// Detect this and fall back to the localhost URL from .env.local.
+const LOCAL_FALLBACK = "http://localhost:5000";
+const isLocalDev = process.env.NODE_ENV === "development";
+
+function getAgentUrl(): string {
+  if (isLocalDev && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
+    return LOCAL_FALLBACK;
+  }
+  return CONTENT_AGENT_URL;
+}
 
 /**
  * Proxy to the content-generation agent.
@@ -22,9 +35,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const agentUrl = getAgentUrl();
   try {
     const agentResponse = await fetch(
-      `${CONTENT_AGENT_URL}/content-generate`,
+      `${agentUrl}/content-generate`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

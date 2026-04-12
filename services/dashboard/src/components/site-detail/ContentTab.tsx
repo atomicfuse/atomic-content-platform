@@ -12,6 +12,7 @@ interface ContentTabProps {
   articles: ArticleEntry[];
   domain: string;
   stagingBranch: string | null;
+  previewUrl?: string;
 }
 
 function scoreColor(score: number | undefined): string {
@@ -95,6 +96,7 @@ export function ContentTab({
   articles,
   domain,
   stagingBranch,
+  previewUrl,
 }: ContentTabProps): React.ReactElement {
   const { toast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<{ slug: string; title: string } | null>(null);
@@ -267,7 +269,7 @@ export function ContentTab({
                 </td>
                 <td className="px-4 py-3">
                   <a
-                    href={`https://${domain}/${article.slug}`}
+                    href={previewUrl ? `${previewUrl}/${article.slug}/` : `https://${domain}/${article.slug}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-cyan hover:underline text-xs"
