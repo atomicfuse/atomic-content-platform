@@ -74,6 +74,7 @@ export default async function SiteDetailPage({
     <div className="space-y-6">
       <SiteDetailHeader site={site} />
       <SiteDetailTabs
+        domain={decodedDomain}
         stagingTab={
           site.pages_project ? (
             <StagingTab
