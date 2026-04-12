@@ -42,6 +42,7 @@ jobs:
         env:
           SITE_DOMAIN: coolnews.dev
           NETWORK_DATA_PATH: ${{ github.workspace }}/network-data
+          SUBSCRIBE_API_URL: https://atomic-content-platform.apps.cloudgrid.io/api/subscribe
 
       - name: Deploy to Cloudflare Pages
         working-directory: packages/site-builder
