@@ -13,7 +13,7 @@ const { siteName } = Astro.props;
 <div class="widget widget-newsletter">
   <h3 class="widget-title">Stay Updated</h3>
   <p class="widget-desc">Get the latest from {siteName}</p>
-  <form action="#" method="post" class="newsletter-form">
+  <form data-newsletter-form data-source="sidebar" class="newsletter-form">
     <input
       type="email"
       name="email"
@@ -23,6 +23,7 @@ const { siteName } = Astro.props;
       aria-label="Email address"
     />
     <button type="submit" class="newsletter-btn">Subscribe</button>
+    <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" />
   </form>
 </div>
 
@@ -87,4 +88,18 @@ const { siteName } = Astro.props;
   .newsletter-btn:hover {
     background: var(--color-accent, #0052cc);
   }
+
+  .newsletter-success {
+    color: #10b981;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+
+  .newsletter-error {
+    color: #ef4444;
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+  }
 </style>
+
+<script src="../../scripts/newsletter-subscribe.ts"></script>
