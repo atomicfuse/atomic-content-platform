@@ -38,7 +38,8 @@ jobs:
         working-directory: packages/site-builder
         run: pnpm build
         env:
-          SITE_DOMAIN: coolnews.dev
+          SITE_DOMAIN: coolnews
+          SITE_URL: https://coolnews.dev
           NETWORK_DATA_PATH: ${{ github.workspace }}/network-data
           SUBSCRIBE_API_URL: https://atomic-content-platform.apps.cloudgrid.io/api/subscribe
 
