@@ -74,7 +74,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
 
       const schedule = (brief.schedule ?? {}) as Record<string, unknown>;
-      if (configUpdates.articlesPerWeek !== undefined) schedule.articles_per_week = configUpdates.articlesPerWeek;
+      if (configUpdates.articlesPerDay !== undefined) {
+        schedule.articles_per_day = configUpdates.articlesPerDay;
+        delete schedule.articles_per_week;
+      }
       if (configUpdates.preferredDays !== undefined) schedule.preferred_days = configUpdates.preferredDays;
       brief.schedule = schedule;
       existing.brief = brief;

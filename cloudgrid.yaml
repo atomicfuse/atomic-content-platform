@@ -23,6 +23,6 @@ services:
 
   scheduled-publisher:
     type: cron
-    schedule: "0 */4 * * *"
+    schedule: "0 * * * *"
     timezone: EST
     run: http://content-pipeline-app/scheduled-publish

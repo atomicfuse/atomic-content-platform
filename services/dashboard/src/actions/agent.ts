@@ -13,7 +13,7 @@ interface BriefUpdate {
   audience: string;
   tone: string;
   topics: string[];
-  articles_per_week: number;
+  articles_per_day: number;
   preferred_days: string[];
   content_guidelines: string[];
 }
@@ -54,8 +54,10 @@ export async function updateSiteBrief(
   brief.content_guidelines = updates.content_guidelines;
 
   const schedule = (brief.schedule as Record<string, unknown>) ?? {};
-  schedule.articles_per_week = updates.articles_per_week;
+  schedule.articles_per_day = updates.articles_per_day;
   schedule.preferred_days = updates.preferred_days;
+  // Drop the legacy field if present — dual-read falls back to articles_per_day.
+  delete schedule.articles_per_week;
   brief.schedule = schedule;
   config.brief = brief;
 

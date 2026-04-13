@@ -44,8 +44,8 @@ export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): Re
             <p className="font-medium capitalize">{data.themeBase}</p>
           </div>
           <div>
-            <p className="text-[var(--text-muted)]">Articles/Week</p>
-            <p className="font-medium">{data.articlesPerWeek}</p>
+            <p className="text-[var(--text-muted)]">Articles/Day</p>
+            <p className="font-medium">{data.articlesPerDay}</p>
           </div>
         </div>
       </div>
