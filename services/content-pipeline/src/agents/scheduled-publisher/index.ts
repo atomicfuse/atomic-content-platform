@@ -16,7 +16,7 @@
 
 import { parse as parseYaml } from "yaml";
 import { createGitHubClient, readFile } from "../../lib/github.js";
-import { listSiteDomains, readSiteBrief } from "../../lib/site-brief.js";
+import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
@@ -164,11 +164,11 @@ export async function runScheduledPublish(
     }
   }
 
-  // 2. List all sites
+  // 2. List all active sites (from dashboard-index.yaml, non-deleted)
   const octokit = createGitHubClient(config.github);
-  let domains: string[];
+  let activeSites: Array<{ domain: string; branch: string }>;
   try {
-    domains = await listSiteDomains(octokit, config.networkRepo);
+    activeSites = await listActiveSites(octokit, config.networkRepo);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("[scheduled-publisher] Failed to list sites:", message);
@@ -177,16 +177,23 @@ export async function runScheduledPublish(
   }
 
   console.log(
-    `[scheduled-publisher] Tick firing${force ? " (forced)" : ""}: checking ${domains.length} site(s) in tz=${schedCfg.timezone}`,
+    `[scheduled-publisher] Tick firing${force ? " (forced)" : ""}: checking ${activeSites.length} site(s) in tz=${schedCfg.timezone}`,
   );
 
   // 3. Iterate sites
-  for (const domain of domains) {
+  for (const { domain, branch: preferredBranch } of activeSites) {
     try {
       let brief;
+      let writeBranch: string;
       try {
-        const briefData = await readSiteBrief(octokit, config.networkRepo, domain);
-        brief = briefData.brief;
+        const { data, branch: foundBranch } = await readSiteBriefWithFallback(
+          octokit,
+          config.networkRepo,
+          domain,
+          preferredBranch,
+        );
+        brief = data.brief;
+        writeBranch = foundBranch;
       } catch {
         result.skipped.push({ domain, reason: "no brief configured" });
         continue;
@@ -212,12 +219,16 @@ export async function runScheduledPublish(
         continue;
       }
 
-      // 4. Trigger content generation for N articles
+      // 4. Trigger content generation for N articles on the site's staging
+      //    branch so the writer commits via GitHub API (and Cloudflare Pages
+      //    picks up the change). Passing an explicit branch also disables the
+      //    local-FS write path in dev — otherwise articles land as untracked
+      //    files on whatever branch happens to be checked out.
       console.log(
-        `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain}`,
+        `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
       );
       await runContentGeneration(
-        { siteDomain: domain, count: articlesPerDay },
+        { siteDomain: domain, count: articlesPerDay, branch: writeBranch },
         config,
       );
       result.triggered.push(domain);
