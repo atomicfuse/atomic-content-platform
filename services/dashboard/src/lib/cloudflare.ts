@@ -118,6 +118,14 @@ export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
 export async function getPagesProjectDomains(
   projectName: string
 ): Promise<string[]> {
+  const result = await getPagesProjectDomainsDetailed(projectName);
+  return result.map((d) => d.name);
+}
+
+/** Get custom domains with IDs for a specific Pages project. */
+export async function getPagesProjectDomainsDetailed(
+  projectName: string
+): Promise<Array<{ id: string; name: string; status: string }>> {
   const accountId = getAccountId();
   try {
     const response = await fetch(
@@ -128,7 +136,7 @@ export async function getPagesProjectDomains(
       Array<{ id: string; name: string; status: string }>
     >;
     if (!data.success) return [];
-    return data.result.map((d) => d.name);
+    return data.result;
   } catch {
     return [];
   }

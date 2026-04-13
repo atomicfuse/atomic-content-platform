@@ -44,6 +44,7 @@ export default function SharedPageEditorPage(): React.ReactElement {
   const [overrideContent, setOverrideContent] = useState("");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
   const [overrideViewContent, setOverrideViewContent] = useState("");
+  const [savingOverride, setSavingOverride] = useState(false);
   const [allSites, setAllSites] = useState<SiteInfo[]>([]);
   const [siteFilter, setSiteFilter] = useState("");
   const [variablesOpen, setVariablesOpen] = useState(false);
@@ -117,6 +118,23 @@ export default function SharedPageEditorPage(): React.ReactElement {
     } catch {
       toast("Failed to load override", "error");
     }
+  };
+
+  const saveOverride = async (): Promise<void> => {
+    if (!selectedOverride) return;
+    setSavingOverride(true);
+    try {
+      const res = await fetch(`/api/shared-pages/${name}/override/${selectedOverride}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: overrideViewContent }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      toast("Override saved", "success");
+    } catch {
+      toast("Failed to save override", "error");
+    }
+    setSavingOverride(false);
   };
 
   const deleteOverride = async (siteId: string): Promise<void> => {
@@ -280,9 +298,14 @@ export default function SharedPageEditorPage(): React.ReactElement {
           </h3>
           <textarea
             value={overrideViewContent}
-            readOnly
-            className="w-full h-[300px] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-secondary)] font-mono resize-y"
+            onChange={(e): void => setOverrideViewContent(e.target.value)}
+            className="w-full h-[300px] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-primary)] font-mono focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan resize-y"
           />
+          <div className="flex justify-end">
+            <Button onClick={saveOverride} loading={savingOverride}>
+              Save Override
+            </Button>
+          </div>
         </div>
       )}
     </div>

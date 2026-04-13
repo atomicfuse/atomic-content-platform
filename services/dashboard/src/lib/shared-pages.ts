@@ -3,6 +3,8 @@ import {
   commitNetworkFiles,
   listNetworkDirectory,
   deleteNetworkFile,
+  triggerWorkflowViaPush,
+  listStagingSites,
 } from "@/lib/github";
 import { NETWORK_REPO_OWNER } from "@/lib/constants";
 
@@ -65,18 +67,26 @@ export async function listSharedPages(): Promise<SharedPageInfo[]> {
   return pages;
 }
 
-/** Get site domains that have an override for a given page. */
+/**
+ * Get site domains that have an override for a given page.
+ *
+ * Overrides live on each site's `staging/{site}` branch (see createOverrides).
+ * We enumerate sites from existing `staging/*` branches (the source of truth
+ * for which sites currently exist), then probe each site's staging branch for
+ * the override file. We can't enumerate `sites/` on main because new sites
+ * only land on main after "Publish to Production".
+ */
 export async function getOverrideSites(pageName: string): Promise<string[]> {
-  const sites: string[] = [];
-  const siteDirs = await listNetworkDirectory("overrides");
-  for (const dir of siteDirs) {
-    if (dir.type !== "dir") continue;
-    const files = await listNetworkDirectory(dir.path);
-    if (files.some((f) => f.name === `${pageName}.md`)) {
-      sites.push(dir.name);
-    }
+  const sites = await listStagingSites();
+  const found: string[] = [];
+  for (const site of sites) {
+    const file = await readFileContent(
+      `overrides/${site}/${pageName}.md`,
+      `staging/${site}`,
+    );
+    if (file !== null) found.push(site);
   }
-  return sites;
+  return found;
 }
 
 /**
@@ -107,33 +117,60 @@ export async function writeSharedPage(name: string, content: string): Promise<vo
   );
 }
 
-/** Read a site-specific override. */
+/** Read a site-specific override (from the site's staging branch). */
 export async function readOverride(name: string, siteId: string): Promise<string | null> {
-  return readFileContent(`overrides/${siteId}/${name}.md`);
+  return readFileContent(`overrides/${siteId}/${name}.md`, `staging/${siteId}`);
 }
 
-/** Create overrides for multiple sites (commits to network data repo). */
+/**
+ * Create overrides for multiple sites.
+ *
+ * Each override is committed to that site's `staging/{site}` branch so it
+ * shows up on the staging URL first (mirroring how site config edits flow
+ * via wizard.ts → save/route.ts). After the commit, we push a build-trigger
+ * via the Contents API because Git Data API commits don't fire Actions
+ * (see triggerWorkflowViaPush in github.ts).
+ */
 export async function createOverrides(
   name: string,
   sites: string[],
   content: string,
 ): Promise<void> {
-  const files = sites.map((site) => ({
-    path: `overrides/${site}/${name}.md`,
-    content,
-  }));
-  await commitNetworkFiles(
-    files,
-    `shared-pages: create ${name} override for ${sites.join(", ")}`,
-  );
+  for (const site of sites) {
+    const branch = `staging/${site}`;
+    await commitNetworkFiles(
+      [{ path: `overrides/${site}/${name}.md`, content }],
+      `shared-pages: create ${name} override for ${site}`,
+      branch,
+    );
+    await triggerWorkflowViaPush(branch, site);
+  }
 }
 
-/** Delete a site-specific override. */
+/** Update a single site's override (commits to that site's staging branch). */
+export async function updateOverride(
+  name: string,
+  siteId: string,
+  content: string,
+): Promise<void> {
+  const branch = `staging/${siteId}`;
+  await commitNetworkFiles(
+    [{ path: `overrides/${siteId}/${name}.md`, content }],
+    `shared-pages: update ${name} override for ${siteId}`,
+    branch,
+  );
+  await triggerWorkflowViaPush(branch, siteId);
+}
+
+/** Delete a site-specific override (from the site's staging branch). */
 export async function deleteOverride(name: string, siteId: string): Promise<void> {
+  const branch = `staging/${siteId}`;
   await deleteNetworkFile(
     `overrides/${siteId}/${name}.md`,
     `shared-pages: delete ${name} override for ${siteId}`,
+    branch,
   );
+  await triggerWorkflowViaPush(branch, siteId);
 }
 
 // --- ads.txt profiles ---

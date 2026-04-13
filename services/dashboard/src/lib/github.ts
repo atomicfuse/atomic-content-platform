@@ -637,6 +637,25 @@ export async function deleteBranch(branchName: string): Promise<void> {
   });
 }
 
+/**
+ * List all sites that currently have a `staging/{site}` branch.
+ *
+ * The staging branches are the source of truth for "which sites exist in the
+ * dashboard" — `sites/{site}/` on main only appears after publish-to-prod, so
+ * we can't rely on the main tree for site enumeration.
+ */
+export async function listStagingSites(): Promise<string[]> {
+  const octokit = getOctokit();
+  const { data } = await octokit.git.listMatchingRefs({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: "heads/staging/",
+  });
+  return data
+    .map((r) => r.ref.replace(/^refs\/heads\/staging\//, ""))
+    .filter((s) => s.length > 0);
+}
+
 /** Check if a branch exists in the network repo. */
 export async function branchExists(branchName: string): Promise<boolean> {
   const octokit = getOctokit();

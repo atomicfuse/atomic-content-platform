@@ -48,8 +48,13 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
   const cfDomains = await listDomainsWithPagesInfo();
   const index = await readDashboardIndex();
   const existingDomains = new Map(index.sites.map((s) => [s.domain, s]));
+  const customDomains = new Set(
+    index.sites.map((s) => s.custom_domain).filter(Boolean)
+  );
 
-  const newDomainInfos = cfDomains.filter((d) => !existingDomains.has(d.domain));
+  const newDomainInfos = cfDomains.filter(
+    (d) => !existingDomains.has(d.domain) && !customDomains.has(d.domain)
+  );
   const now = new Date().toISOString();
 
   // Re-check status of existing domains (e.g. files deleted, deployment changed)

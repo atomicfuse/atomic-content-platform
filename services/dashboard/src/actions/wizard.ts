@@ -4,6 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import {
   commitSiteFiles,
   readDashboardIndex,
+  writeDashboardIndex,
   readSiteConfig as readSiteConfigFromGit,
   updateSiteInIndex,
   addSitesToIndex,
@@ -16,7 +17,10 @@ import {
 import {
   createPagesProject,
   addCustomDomainToProject,
+  removeCustomDomainFromProject,
+  getPagesProjectDomainsDetailed,
   listDeployments,
+  listZones,
 } from "@/lib/cloudflare";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
@@ -329,6 +333,25 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   return stagingBranch;
 }
 
+/** Fetch Cloudflare zones not already used as a site domain or custom_domain. */
+export async function getAvailableZones(): Promise<
+  Array<{ domain: string; zoneId: string }>
+> {
+  const [zones, index] = await Promise.all([
+    listZones(),
+    readDashboardIndex(),
+  ]);
+
+  const usedDomains = new Set(index.sites.map((s) => s.domain));
+  const usedCustomDomains = new Set(
+    index.sites.map((s) => s.custom_domain).filter(Boolean)
+  );
+
+  return zones
+    .filter((z) => !usedDomains.has(z.name) && !usedCustomDomains.has(z.name))
+    .map((z) => ({ domain: z.name, zoneId: z.id }));
+}
+
 /** Attach a custom domain to the site's CF Pages project. */
 export async function attachCustomDomain(
   domain: string,
@@ -338,8 +361,50 @@ export async function attachCustomDomain(
   const site = index.sites.find((s) => s.domain === domain);
   if (!site?.pages_project) throw new Error(`No Pages project for ${domain}`);
 
+  // Attach domain on Cloudflare
   await addCustomDomainToProject(site.pages_project, customDomain);
-  await updateSiteInIndex(domain, { custom_domain: customDomain, status: "Live" });
+
+  // Check for a duplicate zone entry and merge its zone_id before removing
+  const dupeIndex = index.sites.findIndex((s) => s.domain === customDomain);
+  if (dupeIndex !== -1) {
+    const dupe = index.sites[dupeIndex]!;
+    if (dupe.zone_id) {
+      site.zone_id = dupe.zone_id;
+    }
+    index.sites.splice(dupeIndex, 1);
+  }
+
+  // Update the real site entry
+  site.custom_domain = customDomain;
+  site.status = "Live";
+  site.last_updated = new Date().toISOString();
+
+  await writeDashboardIndex(index, `dashboard: attach ${customDomain} to ${domain}`);
+
+  revalidatePath("/");
+  revalidatePath(`/sites/${domain}`);
+}
+
+/** Detach (disconnect) a custom domain from the site's CF Pages project. */
+export async function detachCustomDomain(domain: string): Promise<void> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  if (!site?.pages_project || !site.custom_domain)
+    throw new Error(`No custom domain to detach for ${domain}`);
+
+  // Find the CF domain ID by name so we can remove it
+  const cfDomains = await getPagesProjectDomainsDetailed(site.pages_project);
+  const cfDomain = cfDomains.find((d) => d.name === site.custom_domain);
+  if (cfDomain) {
+    await removeCustomDomainFromProject(site.pages_project, cfDomain.id);
+  }
+
+  // Clear custom_domain and revert status
+  site.custom_domain = null;
+  site.status = "Ready";
+  site.last_updated = new Date().toISOString();
+
+  await writeDashboardIndex(index, `dashboard: detach custom domain from ${domain}`);
 
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
