@@ -38,7 +38,10 @@ export interface QualityWeights {
 }
 
 export interface PublishSchedule {
-  articles_per_week: number;
+  /** Articles to publish on each matching day. Takes priority when present. */
+  articles_per_day?: number;
+  /** Legacy: articles per week. Fallback when articles_per_day is absent. */
+  articles_per_week?: number;
   preferred_days: string[];
   preferred_time: string;
 }

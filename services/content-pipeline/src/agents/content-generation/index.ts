@@ -41,10 +41,12 @@ async function handleRequest(
   }
 
   // Scheduled publish — called by CloudGrid cron job
-  if (req.url === "/scheduled-publish") {
-    console.log("[server] Scheduled publish triggered");
+  if (req.url && req.url.startsWith("/scheduled-publish")) {
+    const parsed = new URL(req.url, "http://localhost");
+    const force = parsed.searchParams.get("force") === "true";
+    console.log(`[server] Scheduled publish triggered${force ? " (forced)" : ""}`);
     try {
-      const result = await runScheduledPublish(config);
+      const result = await runScheduledPublish(config, force);
       sendJson(res, 200, result as unknown as Record<string, unknown>);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

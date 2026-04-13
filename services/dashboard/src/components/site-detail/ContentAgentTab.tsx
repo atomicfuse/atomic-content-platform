@@ -13,7 +13,8 @@ interface ContentAgentTabProps {
     audience: string;
     tone: string;
     topics: string[];
-    articles_per_week: number;
+    articles_per_day?: number;
+    articles_per_week?: number;
     preferred_days: string[];
     content_guidelines: string | string[];
     quality_threshold?: number;
@@ -44,8 +45,15 @@ export function ContentAgentTab({
   const [audience, setAudience] = useState(brief?.audience ?? "");
   const [tone, setTone] = useState(brief?.tone ?? "");
   const [topics, setTopics] = useState(brief?.topics.join(", ") ?? "");
-  const [articlesPerWeek, setArticlesPerWeek] = useState(
-    brief?.articles_per_week ?? 5
+  const [articlesPerDay, setArticlesPerDay] = useState(
+    brief?.articles_per_day
+      ?? Math.max(
+        1,
+        Math.ceil(
+          (brief?.articles_per_week ?? 5) /
+            Math.max(1, brief?.preferred_days?.length ?? 7),
+        ),
+      )
   );
   const [preferredDays, setPreferredDays] = useState<string[]>(
     brief?.preferred_days ?? []
@@ -83,7 +91,7 @@ export function ContentAgentTab({
           audience,
           tone,
           topics: topics.split(",").map((t) => t.trim()).filter(Boolean),
-          articles_per_week: articlesPerWeek,
+          articles_per_day: articlesPerDay,
           preferred_days: preferredDays,
           content_guidelines: guidelines.split("\n").filter(Boolean),
         });
@@ -158,12 +166,12 @@ export function ContentAgentTab({
         />
         <div className="grid grid-cols-2 gap-4">
           <Input
-            label="Articles Per Week"
+            label="Articles Per Day"
             type="number"
             min={1}
-            max={14}
-            value={articlesPerWeek}
-            onChange={(e): void => setArticlesPerWeek(parseInt(e.target.value, 10) || 1)}
+            max={10}
+            value={articlesPerDay}
+            onChange={(e): void => setArticlesPerDay(parseInt(e.target.value, 10) || 1)}
           />
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">

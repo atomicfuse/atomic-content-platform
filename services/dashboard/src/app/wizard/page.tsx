@@ -21,7 +21,7 @@ const DEFAULT_FORM: WizardFormData = {
   audience: "",
   tone: "",
   topics: [],
-  articlesPerWeek: 5,
+  articlesPerDay: 1,
   preferredDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   contentGuidelines: "",
 };

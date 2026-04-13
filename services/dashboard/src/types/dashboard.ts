@@ -92,7 +92,7 @@ export interface WizardFormData {
   audience: string;
   tone: string;
   topics: string[];
-  articlesPerWeek: number;
+  articlesPerDay: number;
   preferredDays: string[];
   contentGuidelines: string;
 }

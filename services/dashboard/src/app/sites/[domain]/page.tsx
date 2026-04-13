@@ -37,11 +37,13 @@ export default async function SiteDetailPage({
     audience: string;
     tone: string;
     topics: string[];
-    articles_per_week: number;
+    articles_per_day?: number;
+    articles_per_week?: number;
     preferred_days: string[];
     content_guidelines: string | string[];
     schedule?: {
-      articles_per_week: number;
+      articles_per_day?: number;
+      articles_per_week?: number;
       preferred_days: string[];
     };
     quality_threshold?: number;
@@ -54,14 +56,17 @@ export default async function SiteDetailPage({
     };
   } | null ?? null;
 
-  // Normalize brief to include schedule fields at top level
+  // Normalize brief to include schedule fields at top level.
+  // Dual-read: prefer articles_per_day; fall back to legacy articles_per_week.
   const normalizedBrief = brief
     ? {
         audience: brief.audience,
         tone: brief.tone,
         topics: brief.topics,
+        articles_per_day:
+          brief.schedule?.articles_per_day ?? brief.articles_per_day,
         articles_per_week:
-          brief.schedule?.articles_per_week ?? brief.articles_per_week ?? 5,
+          brief.schedule?.articles_per_week ?? brief.articles_per_week,
         preferred_days:
           brief.schedule?.preferred_days ?? brief.preferred_days ?? [],
         content_guidelines: brief.content_guidelines,

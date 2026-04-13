@@ -74,7 +74,7 @@ export async function createSiteAndBuildStaging(
         : undefined,
       review_percentage: 5,
       schedule: {
-        articles_per_week: data.articlesPerWeek,
+        articles_per_day: data.articlesPerDay,
         preferred_days: data.preferredDays,
         preferred_time: "10:00",
       },
@@ -100,7 +100,7 @@ ${data.topics.map((t) => `- ${t}`).join("\n")}
 ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
 ## Schedule
-- ${data.articlesPerWeek} articles per week
+- ${data.articlesPerDay} article(s) per day
 - Preferred days: ${data.preferredDays.join(", ")}
 `;
 
@@ -455,7 +455,7 @@ export interface StagingSiteConfig {
   tone: string;
   topics: string[];
   contentGuidelines: string;
-  articlesPerWeek: number;
+  articlesPerDay: number;
   preferredDays: string[];
   themeBase: string;
 }
@@ -483,10 +483,21 @@ export async function readStagingConfig(
     contentGuidelines: Array.isArray(brief?.content_guidelines)
       ? (brief.content_guidelines as string[]).join("\n")
       : (brief?.content_guidelines as string) ?? "",
-    articlesPerWeek:
-      (schedule?.articles_per_week as number) ??
-      (brief?.articles_per_week as number) ??
-      5,
+    // Dual-read: prefer articles_per_day; fall back to legacy articles_per_week.
+    articlesPerDay:
+      (schedule?.articles_per_day as number) ??
+      (brief?.articles_per_day as number) ??
+      (() => {
+        const perWeek =
+          (schedule?.articles_per_week as number | undefined) ??
+          (brief?.articles_per_week as number | undefined) ??
+          5;
+        const days =
+          (schedule?.preferred_days as string[] | undefined)?.length ??
+          (brief?.preferred_days as string[] | undefined)?.length ??
+          7;
+        return Math.max(1, Math.ceil(perWeek / Math.max(1, days)));
+      })(),
     preferredDays:
       (schedule?.preferred_days as string[]) ??
       (brief?.preferred_days as string[]) ??
@@ -525,7 +536,10 @@ export async function updateStagingSite(
 
   // Update schedule
   const schedule = (brief.schedule ?? {}) as Record<string, unknown>;
-  if (updates.articlesPerWeek !== undefined) schedule.articles_per_week = updates.articlesPerWeek;
+  if (updates.articlesPerDay !== undefined) {
+    schedule.articles_per_day = updates.articlesPerDay;
+    delete schedule.articles_per_week;
+  }
   if (updates.preferredDays !== undefined) schedule.preferred_days = updates.preferredDays;
   brief.schedule = schedule;
   existing.brief = brief;
@@ -606,7 +620,10 @@ export async function saveAllStagingEdits(
     }
 
     const schedule = (brief.schedule ?? {}) as Record<string, unknown>;
-    if (configUpdates.articlesPerWeek !== undefined) schedule.articles_per_week = configUpdates.articlesPerWeek;
+    if (configUpdates.articlesPerDay !== undefined) {
+      schedule.articles_per_day = configUpdates.articlesPerDay;
+      delete schedule.articles_per_week;
+    }
     if (configUpdates.preferredDays !== undefined) schedule.preferred_days = configUpdates.preferredDays;
     brief.schedule = schedule;
     existing.brief = brief;

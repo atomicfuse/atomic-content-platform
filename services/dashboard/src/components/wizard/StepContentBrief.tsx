@@ -202,13 +202,13 @@ export function StepContentBrief({
 
       <div className="grid grid-cols-2 gap-4">
         <Input
-          label="Articles Per Week"
+          label="Articles Per Day"
           type="number"
           min={1}
-          max={14}
-          value={data.articlesPerWeek}
+          max={10}
+          value={data.articlesPerDay}
           onChange={(e): void =>
-            onChange({ articlesPerWeek: parseInt(e.target.value, 10) || 1 })
+            onChange({ articlesPerDay: parseInt(e.target.value, 10) || 1 })
           }
         />
         <div className="space-y-1.5">

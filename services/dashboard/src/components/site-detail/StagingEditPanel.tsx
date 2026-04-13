@@ -350,15 +350,15 @@ export function StagingEditPanel({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Articles per Week
+            Articles per Day
           </label>
           <input
             type="number"
             min={1}
-            max={50}
-            value={config.articlesPerWeek}
+            max={10}
+            value={config.articlesPerDay}
             onChange={(e): void =>
-              updateConfig({ articlesPerWeek: parseInt(e.target.value) || 5 })
+              updateConfig({ articlesPerDay: parseInt(e.target.value) || 1 })
             }
             className="w-full px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] text-[var(--text-primary)] outline-none focus:border-cyan"
           />

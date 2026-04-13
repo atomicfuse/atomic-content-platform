@@ -25,8 +25,18 @@ export interface QualityWeights {
  * Publishing schedule for a site.
  */
 export interface PublishSchedule {
-  /** Target number of articles to publish per week. */
-  articles_per_week: number;
+  /**
+   * Target number of articles to publish on each matching day. Takes priority
+   * over `articles_per_week` when present.
+   */
+  articles_per_day?: number;
+
+  /**
+   * Legacy field — target number of articles per week. Still read as a
+   * fallback: `articles_per_day ?? ceil(articles_per_week / preferred_days.length)`.
+   * New sites write `articles_per_day` only.
+   */
+  articles_per_week?: number;
 
   /** Preferred days of the week to publish (e.g. ["Monday", "Wednesday"]). */
   preferred_days: string[];
