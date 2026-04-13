@@ -9,6 +9,7 @@ export async function GET(): Promise<NextResponse> {
       status: s.status,
       vertical: s.vertical,
       company: s.company,
+      custom_domain: s.custom_domain,
     }));
     return NextResponse.json(sites);
   } catch (error) {

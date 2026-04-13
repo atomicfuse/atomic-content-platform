@@ -62,6 +62,33 @@ export async function getEmailRoutingStatus(zoneId: string): Promise<boolean> {
   }
 }
 
+/** Enable email routing on a zone. No-op if already enabled. */
+export async function enableEmailRouting(zoneId: string): Promise<void> {
+  const alreadyEnabled = await getEmailRoutingStatus(zoneId);
+  if (alreadyEnabled) return;
+
+  const res = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/email/routing/enable`,
+    { method: "POST", headers: getHeaders() },
+  );
+  const data = (await res.json()) as CloudflareResponse<unknown>;
+  if (!data.success) {
+    // CF returns a distinct code when routing is already active — treat as success.
+    // Known codes: 1004 "already enabled" (varies by zone state).
+    const isAlreadyEnabled = data.errors.some(
+      (e) =>
+        e.code === 1004 ||
+        /already\s+enabled/i.test(e.message),
+    );
+    if (isAlreadyEnabled) return;
+
+    const detail = data.errors
+      .map((e) => `[${e.code}] ${e.message}`)
+      .join(", ");
+    throw new Error(`Failed to enable email routing: ${detail}`);
+  }
+}
+
 /** List email routing rules for a zone. */
 export async function listEmailRoutingRules(
   zoneId: string,

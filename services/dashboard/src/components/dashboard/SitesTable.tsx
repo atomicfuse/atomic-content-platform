@@ -211,7 +211,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   className="border-b border-[var(--border-secondary)] last:border-b-0 hover:bg-[var(--bg-elevated)] cursor-pointer transition-colors group relative"
                 >
                   <td className="px-4 py-3 font-medium text-[var(--text-primary)]">
-                    {site.domain}
+                    {site.custom_domain ?? site.domain}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">
                     {site.company}

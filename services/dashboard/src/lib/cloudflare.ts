@@ -347,14 +347,14 @@ export async function addCustomDomainToProject(
   return data.result;
 }
 
-/** Remove a custom domain from a Pages project. */
+/** Remove a custom domain from a Pages project. CF deletes by domain name. */
 export async function removeCustomDomainFromProject(
   projectName: string,
-  domainId: string
+  domainName: string
 ): Promise<void> {
   const accountId = getAccountId();
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains/${domainId}`,
+    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains/${domainName}`,
     {
       method: "DELETE",
       headers: getHeaders(),

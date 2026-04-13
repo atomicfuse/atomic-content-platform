@@ -25,6 +25,10 @@ import {
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
+import {
+  enableEmailRouting,
+  createEmailRoutingRule,
+} from "@/lib/email-routing";
 
 interface StagingResult {
   stagingUrl: string;
@@ -342,13 +346,17 @@ export async function getAvailableZones(): Promise<
     readDashboardIndex(),
   ]);
 
-  const usedDomains = new Set(index.sites.map((s) => s.domain));
+  const usedByPagesProject = new Set(
+    index.sites.filter((s) => s.pages_project).map((s) => s.domain)
+  );
   const usedCustomDomains = new Set(
     index.sites.map((s) => s.custom_domain).filter(Boolean)
   );
 
   return zones
-    .filter((z) => !usedDomains.has(z.name) && !usedCustomDomains.has(z.name))
+    .filter(
+      (z) => !usedByPagesProject.has(z.name) && !usedCustomDomains.has(z.name)
+    )
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
@@ -361,7 +369,7 @@ export async function attachCustomDomain(
   const site = index.sites.find((s) => s.domain === domain);
   if (!site?.pages_project) throw new Error(`No Pages project for ${domain}`);
 
-  // Attach domain on Cloudflare
+  // Attach domain on Cloudflare Pages
   await addCustomDomainToProject(site.pages_project, customDomain);
 
   // Check for a duplicate zone entry and merge its zone_id before removing
@@ -372,6 +380,17 @@ export async function attachCustomDomain(
       site.zone_id = dupe.zone_id;
     }
     index.sites.splice(dupeIndex, 1);
+  }
+
+  // Best-effort: enable email routing + create contact@ forwarding rule.
+  // Failures here must NOT abort the attach — the Pages domain is already live.
+  if (site.zone_id) {
+    try {
+      await enableEmailRouting(site.zone_id);
+      await createEmailRoutingRule(site.zone_id, customDomain);
+    } catch (err) {
+      console.error("[attachCustomDomain] email routing setup failed", err);
+    }
   }
 
   // Update the real site entry
@@ -392,11 +411,12 @@ export async function detachCustomDomain(domain: string): Promise<void> {
   if (!site?.pages_project || !site.custom_domain)
     throw new Error(`No custom domain to detach for ${domain}`);
 
-  // Find the CF domain ID by name so we can remove it
+  // Remove the custom domain from the Pages project.
+  // The CF Pages API deletes by domain NAME, not ID: DELETE /pages/projects/{project}/domains/{name}
   const cfDomains = await getPagesProjectDomainsDetailed(site.pages_project);
   const cfDomain = cfDomains.find((d) => d.name === site.custom_domain);
   if (cfDomain) {
-    await removeCustomDomainFromProject(site.pages_project, cfDomain.id);
+    await removeCustomDomainFromProject(site.pages_project, cfDomain.name);
   }
 
   // Clear custom_domain and revert status
