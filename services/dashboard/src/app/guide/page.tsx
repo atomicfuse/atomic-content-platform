@@ -19,6 +19,7 @@ const GUIDE_PAGES = [
   { slug: "06-subscribe", title: "Email Subscribe" },
   { slug: "07-email-routing", title: "Email Routing" },
   { slug: "08-cloudgrid", title: "CloudGrid Deployment" },
+  { slug: "09-scheduler", title: "Scheduler Agent" },
 ];
 
 export default function GuidePage(): React.ReactElement {

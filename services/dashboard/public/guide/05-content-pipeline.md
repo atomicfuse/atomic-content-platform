@@ -136,15 +136,16 @@ reviewer_notes: ""
 
 ## Scheduled Publisher
 
-A CloudGrid cron job (`0 */4 * * * EST`) hits the content pipeline's `/scheduled-publish` endpoint every 4 hours.
+A CloudGrid cron job (`0 * * * * EST`) hits the content pipeline's `/scheduled-publish` endpoint every hour. Most ticks return in ~50ms as no-ops — the global `scheduler/config.yaml` in the network repo decides which ticks actually publish.
 
-For each site in the network, the scheduled publisher:
+For each active site in the network, the scheduled publisher:
 
-1. Reads the site brief and publishing schedule
-2. Checks if today is a preferred publishing day
-3. Checks if the current time is within the preferred time window (+-2 hours)
-4. Checks when the last article was published
-5. If the site is due (enough days have passed based on `articles_per_week`), triggers content generation for 1 article
+1. Reads the global scheduler config (skip tick unless enabled and current hour ∈ `run_at_hours`)
+2. Reads the site brief and publishing schedule from the staging branch
+3. Checks if today is a preferred publishing day
+4. Generates `articles_per_day` articles in one batch, committed to the site's staging branch via GitHub API
+
+See **Scheduler Agent** in the guide for the full spec, config shapes, and dashboard controls.
 
 ## Review Queue
 
