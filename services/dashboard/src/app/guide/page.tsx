@@ -30,9 +30,16 @@ export default function GuidePage(): React.ReactElement {
   useEffect(() => {
     setLoading(true);
     fetch(`/api/guide/${selectedSlug}`)
-      .then((r) => r.json())
-      .then((data: { content: string }) => {
-        setContent(data.content);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as { content?: string };
+      })
+      .then((data) => {
+        setContent(
+          typeof data.content === "string"
+            ? data.content
+            : "Failed to load guide content.",
+        );
         setLoading(false);
       })
       .catch(() => {
@@ -90,6 +97,7 @@ function MarkdownRenderer({ content }: { content: string }): React.ReactElement 
 
 /** Basic markdown to HTML converter. Handles headings, paragraphs, code blocks, lists, bold, links, mermaid. */
 function renderMarkdown(md: string): string {
+  if (typeof md !== "string") return "";
   const lines = md.split("\n");
   const result: string[] = [];
   let inCodeBlock = false;

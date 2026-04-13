@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-const GUIDE_DIR = join(process.cwd(), "..", "..", "docs", "guide");
+// Guide markdown lives in public/ so Next.js standalone output bundles it.
+// process.cwd() is services/dashboard/ in dev and the standalone root in prod,
+// both of which contain public/guide/.
+const GUIDE_DIR = join(process.cwd(), "public", "guide");
 
 export async function GET(
   _req: NextRequest,
