@@ -1,136 +1,258 @@
 # CLAUDE.md
 
+Orientation for Claude Code sessions. Read this before touching code.
+
 ## Overview
 
-Atomic Content Network Platform — a multi-tenant content network for managing ad-monetized static websites at scale. Turborepo/pnpm monorepo.
+Atomic Content Network Platform — a multi-tenant content network for managing ad-monetized static websites at scale. Turborepo/pnpm monorepo with two CloudGrid services plus reusable Astro site-builder + shared-types.
 
-## Architecture
+## Two-Repo Architecture
 
-Two-repo architecture:
-- **This repo** (`atomic-content-platform`) — all code: site builder, dashboard, content pipeline, migration tools, shared types
-- **Network data repos** (e.g., `atomic-labs-network`) — pure data: YAML configs, markdown articles, site assets. Zero code.
+| Repo | Contents |
+|------|----------|
+| **atomic-content-platform** (this repo) | All code: dashboard, content-pipeline, site-builder, shared-types, migration. Deployed to CloudGrid. |
+| **atomic-labs-network** (network data) | Pure data: `dashboard-index.yaml`, `sites/<domain>/` configs + articles, `overrides/`, `scheduler/config.yaml`. Zero code. Deployed via Cloudflare Pages per site. |
 
-## Packages
+**Both repos live at `~/Documents/ATL-content-network/`** on the dev machine.
 
-| Package | Description | Status |
-|---------|-------------|--------|
-| `packages/shared-types` | TypeScript interfaces for YAML schemas, articles, ads, tracking | Active |
-| `packages/site-builder` | Astro static site generator — themes, components, build scripts, config resolver | Active |
-| `packages/dashboard` | Next.js management UI (Phase 4) | Placeholder |
-| `packages/content-pipeline` | AI content generation agents (Phase 3) | Placeholder |
-| `packages/migration` | WordPress migration tooling (Phase 5) | Placeholder |
+## Layout — Platform Repo
+
+```
+services/
+  dashboard/                 Next.js 15 App Router UI (the main control surface)
+    src/app/
+      sites/                 Site management, detail pages, wizard
+      shared-pages/          Shared page editor + per-site overrides
+      review/                Article review queue
+      trash/                 Deleted sites
+      scheduler/             Scheduler Agent UI (enable toggle, run_at_hours, Run Now)
+      wizard/                New-site flow
+      guide/                 In-app markdown docs (loads /public/guide/*.md)
+      api/                   Server routes (shared-pages, sites, agent proxy, scheduler, ads-txt, …)
+    src/lib/
+      github.ts              readFileContent, commitNetworkFiles, updateSiteInIndex, dashboard-index helpers
+      scheduler.ts           readSchedulerConfig / writeSchedulerConfig / triggerSchedulerRun
+      shared-pages.ts        Shared-page + override primitives
+    src/actions/             Server actions (wizard, agent, sites)
+    public/guide/            Markdown guide content (must be in public/ so standalone bundle ships it)
+
+  content-pipeline/          Node/TypeScript service (content-generation + scheduler agents)
+    src/agents/
+      content-generation/    agent.ts orchestration + HTTP handler
+      content-quality/       Claude-based scoring
+      article-regeneration/  Low-score rewrite flow
+      scheduled-publisher/   Cron-triggered batch publisher (gated by scheduler/config.yaml)
+    src/lib/
+      github.ts              Octokit wrappers: readFile, listFiles, commitFile, commitBatch
+      writer.ts              shouldWriteLocal(cfg) — local FS iff LOCAL_NETWORK_PATH set AND no branch
+      site-brief.ts          listActiveSites (via dashboard-index.yaml), readSiteBriefWithFallback
+      ai.ts                  @cloudgrid-io/ai → @anthropic-ai/sdk fallback
+      config.ts              loadConfig() — env-driven AgentConfig
+    src/index.ts             HTTP server: /health, /content-generate, /scheduled-publish
+
+packages/
+  shared-types/              TS interfaces: SiteConfig, SiteBrief, PublishSchedule, DashboardIndex, Article, Ads, Tracking
+  site-builder/              Astro 6 static site generator (themes, components, config resolver)
+  migration/                 WordPress migration tooling (placeholder)
+
+cloudgrid.yaml               Service + cron definitions
+```
+
+## Layout — Network Repo
+
+```
+dashboard-index.yaml         Authoritative site list — sites[].domain, status, staging_branch, pages_project, zone_id
+sites/<domain>/              Per-site — ONLY exists on main after publish-to-prod; otherwise on staging/<domain> branch
+  site.yaml                  Full config: domain, group, brief (vertical, topics, schedule, article_types, …)
+  articles/<slug>.md         Markdown articles with YAML frontmatter (quality_score, status, …)
+  theme/ assets/ …           Per-site assets
+  .build-trigger             Touched to force Cloudflare Pages rebuild
+overrides/                   Shared-page per-site overrides (by site_id)
+scheduler/config.yaml        Global scheduler gate: { enabled, run_at_hours, timezone }
+org.yaml / network.yaml      Org- and network-wide defaults (merged with group.yaml → site.yaml)
+groups/<group>.yaml          Group-level defaults
+```
+
+### Branch conventions in the network repo
+
+- `main` — authoritative for `dashboard-index.yaml`, `scheduler/config.yaml`, `overrides/`, and published sites.
+- `staging/<domain>` — where `sites/<domain>/` lives while in development or staging. Cloudflare Pages deploys this branch to the staging URL (e.g. `staging-coolnews-atl.coolnews-atl.pages.dev`).
+- **Do not enumerate `sites/` on main** — it only contains published sites. Use `dashboard-index.yaml` as the source of truth.
+
+## Services
+
+### dashboard
+
+- Next.js 15 App Router, `output: "standalone"`.
+- **Local port:** `3001` (per `cloudgrid dev`). Direct `pnpm dev` default is 3000 but the project uses 3001.
+- Standalone output only bundles traced imports — anything read at runtime must live under `public/`. That's why guide markdown is in `services/dashboard/public/guide/` (not `docs/`).
+- Env: `GITHUB_TOKEN`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `GOOGLE_*`, `CONTENT_AGENT_URL`.
+- Auth: NextAuth with Google. `NETWORK_REPO_OWNER`/`NETWORK_REPO_NAME` pinned in `src/lib/constants.ts`.
+
+### content-pipeline
+
+- Plain Node HTTP server, TypeScript.
+- **Local port:** `5000` (per `cloudgrid dev` and dashboard's `.env.local`). Default inside `config.ts` is 3001 — the dashboard's `CONTENT_AGENT_URL` wins.
+- Endpoints: `GET /health`, `POST /content-generate`, `GET /scheduled-publish` (accepts `?force=true`).
+- Env: `GITHUB_TOKEN`, `NETWORK_REPO`, `LOCAL_NETWORK_PATH` (dev only), `GEMINI_API_KEY`, `CONTENT_AGGREGATOR_URL`.
+- In CloudGrid it uses `@cloudgrid-io/ai` (zero config). Locally it uses `@anthropic-ai/sdk` via `ANTHROPIC_API_KEY`.
+
+## Service Communication — the URL fallback pattern
+
+Inside CloudGrid, the dashboard reaches the pipeline at `http://content-pipeline-app`. That hostname **does not resolve on the host under `cloudgrid dev`**, so every dashboard call site needs the same fallback:
+
+```ts
+const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
+const LOCAL_FALLBACK = "http://localhost:5000";
+const isLocalDev = process.env.NODE_ENV === "development";
+
+function getAgentUrl(): string {
+  if (isLocalDev && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
+    return LOCAL_FALLBACK;
+  }
+  return CONTENT_AGENT_URL;
+}
+```
+
+Used by `src/app/api/agent/generate/route.ts` and `src/lib/scheduler.ts`. **Every new dashboard → pipeline call must use this pattern** or it will fail under `cloudgrid dev`.
+
+## Writer Invariant
+
+`content-pipeline/src/lib/writer.ts` decides between local FS and GitHub:
+
+```ts
+function shouldWriteLocal(config): boolean {
+  return !!config.localNetworkPath && !config.branch;
+}
+```
+
+- If `LOCAL_NETWORK_PATH` is set AND no branch is passed → writes to local disk (useful for manual dev testing).
+- If branch is passed → always commits via GitHub API to that branch.
+
+**Any agent that wants committed output must pass a branch.** Scheduler passes `staging/<domain>`. Dashboard's on-demand generate passes whichever branch the UI is on.
+
+## Scheduler (summary — full spec in `public/guide/09-scheduler.md`)
+
+- CloudGrid cron fires hourly (`0 * * * *`, EST) and hits `/scheduled-publish`. Most ticks are ~50ms no-ops.
+- Global gate: `scheduler/config.yaml` on network main — `{ enabled, run_at_hours: [0–23], timezone }`. Missing file → defaults (`enabled: true, run_at_hours: [14], timezone: EST`).
+- Per-site cadence: `brief.schedule.articles_per_day` + `brief.schedule.preferred_days`. Legacy `articles_per_week` read as `ceil(perWeek / preferred_days.length)` fallback; new saves always write `articles_per_day`.
+- Dashboard `/scheduler` page writes the global config; **Run Now** calls `/scheduled-publish?force=true` (bypasses Layer 1 only, per-site `preferred_days` still applies).
+- Sites listed from `dashboard-index.yaml`; brief read from `staging/<domain>` with fallback to main.
+
+## Shared Pages Overrides
+
+- Shared pages (about, contact, privacy, tos…) live in the network repo.
+- Sites can override content per-site via `overrides/<site_id>/<name>.yaml` (written from dashboard `/shared-pages`).
+- Per-site overrides are on `main` of the network repo; the site-builder resolves overrides at build time.
 
 ## Tech Stack
 
-- **Monorepo:** Turborepo + pnpm
-- **Site builder:** Astro 6 (static output)
-- **Dashboard:** Next.js 15 (App Router)
-- **Language:** TypeScript (strict mode)
-- **Styling:** Tailwind CSS v4
-- **Node.js:** 20+ LTS
+- **Monorepo:** Turborepo + pnpm. Package names: `@atomic-platform/<name>`.
+- **Dashboard:** Next.js 15 (App Router), React 19, next-themes, NextAuth.
+- **Site builder:** Astro 6 (static output).
+- **Content pipeline:** Node 20, raw `http.createServer`, Octokit.
+- **Styling:** Tailwind CSS v4.
+- **Language:** TypeScript strict — no `any`, explicit return types.
+- **Testing:** Vitest (content-pipeline).
 
 ## Common Commands
 
 ```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
+pnpm install              # once per clone / after dep changes
+pnpm typecheck            # all packages (run per-service for clearer errors)
 pnpm build
-
-# Type-check all packages
-pnpm typecheck
-
-# Run tests
 pnpm test
 
-# Run site-builder dev server
+# Per-service typecheck (preferred while iterating)
+cd services/dashboard && pnpm typecheck
+cd services/content-pipeline && pnpm typecheck
+
+# Local dev — preferred: single command, auto-ports, env injection
+cloudgrid dev             # dashboard → :3001, content-pipeline → :5000
+
+# Manual dev (rarely needed)
+cd services/dashboard && pnpm dev
+cd services/content-pipeline && pnpm dev
+
+# Site builder (for debugging static output)
 cd packages/site-builder
 SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm dev
-
-# Build a specific site
-cd packages/site-builder
-SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm build
 ```
 
-## CloudGrid Deployment
+## CloudGrid
 
-The platform deploys to CloudGrid as a multi-service app (`atomic-content-platform.apps.cloudgrid.io`).
-
-### Deploy
+Deploys to `atomic-content-platform.apps.cloudgrid.io`.
 
 ```bash
-# CLI deploy (current branch)
-cloudgrid deploy
-
-# Or connect GitHub for auto-deploy on push to main
-cloudgrid connect
+cloudgrid deploy                                       # deploy current branch
+cloudgrid secrets set atomic-content-platform KEY=val  # sensitive (GITHUB_TOKEN, NEXTAUTH_SECRET, …)
+cloudgrid env set atomic-content-platform KEY=val      # runtime config (no rebuild)
 ```
 
-### Local Dev (two options)
-
-```bash
-# Option A: CloudGrid dev (tunnels MongoDB/Redis, auto-ports)
-cloudgrid dev
-
-# Option B: pnpm dev (manual, each service independently)
-cd services/dashboard && pnpm dev          # localhost:3000
-cd services/content-pipeline && pnpm dev   # localhost:3001
-```
-
-### Secrets & Env
-
-```bash
-# Sensitive values (never in git)
-cloudgrid secrets set atomic-content-platform KEY=value
-
-# Runtime config (no rebuild needed)
-cloudgrid env set atomic-content-platform KEY=value
-```
-
-### Adding a New Agent/Service
-
-Every CloudGrid service must:
-1. Listen on `process.env.PORT` (default 8080 in CloudGrid)
-2. Expose `GET /health` returning HTTP 200
-
-Pattern for a new Node.js/TypeScript agent (like content-pipeline):
-1. Create `services/<name>/` with its own `package.json` (self-contained deps, no workspace refs to `packages/*`)
-2. Entry point: `src/index.ts` — HTTP server on `process.env.PORT` with `/health`
-3. For AI: use `@cloudgrid-io/ai` (zero config in CloudGrid), fall back to `@anthropic-ai/sdk` locally
-4. Add to `cloudgrid.yaml` under `services:`
-5. If dashboard needs to call it: add `<NAME>_URL: http://<service-name>` to dashboard env in cloudgrid.yaml
-
-### Service Communication
-
-- In CloudGrid: services use internal DNS (`http://content-pipeline`, `http://<service-name>`)
-- Locally: services use `http://localhost:<port>` defaults
-- Always read the URL from an env var with a localhost fallback
-
-## Conventions
-
-- TypeScript strict mode — no `any`, explicit return types
-- Shared types in `packages/shared-types/`, referenced via workspace dependency
-- Config inheritance: org.yaml → group.yaml → site.yaml (deep merge)
-- All YAML files use `.yaml` extension (not `.yml`)
-- Article files: kebab-case slug (e.g., `best-thriller-movies-2026.md`)
-- Package names: `@atomic-platform/{package-name}`
-
-## Git Workflow
-
-**Branch rules — follow these on every commit/push without being asked:**
-
-- Asaf works on `asaf-dev`. Michal works on `michal-dev`. **Never commit directly to `main`.**
-- When asked to "commit and push": stage the relevant files, write a clear commit message, commit to the current dev branch, and push to `origin/<branch>`.
-- When work is ready for review: open a PR from the dev branch to `main` using `gh pr create`. Do not merge directly.
-- Never touch the other developer's branch.
-- Always run `git branch --show-current` to confirm you are on the right branch before committing.
+Service contract (both services satisfy):
+1. Listen on `process.env.PORT` (default 8080 in CloudGrid).
+2. Expose `GET /health` returning HTTP 200.
 
 ## Key Environment Variables
 
-| Variable | Used by | Description |
-|----------|---------|-------------|
-| `SITE_DOMAIN` | site-builder | Target domain to build (e.g., `coolnews.dev`) |
-| `NETWORK_DATA_PATH` | site-builder | Path to network data repo root |
-| `GITHUB_TOKEN` | dashboard, content-pipeline | GitHub API access for network repos |
-| `CONTENT_AGGREGATOR_URL` | content-pipeline | Content Aggregator API base URL (default: `https://content-aggregator-cloudgrid.apps.cloudgrid.io`) |
+| Variable | Used by | Notes |
+|----------|---------|-------|
+| `GITHUB_TOKEN` | dashboard, content-pipeline | Needs repo scope. **Does NOT have `pull_requests:write`** in current setup — `gh pr create` fails; open PRs via web. |
+| `NETWORK_REPO` | content-pipeline | `atomicfuse/atomic-labs-network`. |
+| `LOCAL_NETWORK_PATH` | content-pipeline (dev) | Absolute path to local checkout. Enables local-FS write path **only when no branch is passed**. |
+| `CONTENT_AGENT_URL` | dashboard | `http://content-pipeline-app` in CloudGrid / cloudgrid dev; needs NODE_ENV fallback to `http://localhost:5000`. |
+| `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-cloudgrid.apps.cloudgrid.io`. |
+| `GEMINI_API_KEY` | content-pipeline | For image generation. |
+| `SITE_DOMAIN`, `NETWORK_DATA_PATH` | site-builder | For local builds/previews. |
+| `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | dashboard | Auth. |
+| `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard | Google auth + Sheets sync. |
+
+## Conventions
+
+- TypeScript strict, no `any`, explicit return types, functional React components return `React.ReactElement`.
+- Shared types in `packages/shared-types/`.
+- YAML extension `.yaml` (never `.yml`).
+- Article slugs: kebab-case, e.g. `best-thriller-movies-2026.md`.
+- Config inheritance: `org.yaml → group.yaml → site.yaml` (deep merge).
+- Commit messages: conventional (`feat(scope):`, `fix(scope):`, `docs:`). Always include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`.
+- Local vs prod env parity: defaults must match across `.env`, `config.ts`, and CloudGrid; always add local SDK fallbacks.
+
+## Git Workflow (follow without being asked)
+
+- Asaf → `asaf-dev`. Michal → `michal-dev`. **Never commit directly to `main`.**
+- Always run `git branch --show-current` before committing.
+- "Commit and push" = stage relevant files (never `git add -A` — may include secrets), commit with clear message, push to `origin/<dev-branch>`.
+- "Open a PR" = use the compare URL (`gh pr create` fails due to token scope):
+  `https://github.com/atomicfuse/atomic-content-platform/compare/main...<dev-branch>`
+- Never touch the other developer's branch.
+- After merge to main: `cloudgrid deploy` (manual — no auto-deploy hook).
+
+## Known Landmines
+
+1. **Next.js standalone bundle only ships traced imports.** Runtime `readFile` outside `public/` fails in production. Guide docs MUST stay in `services/dashboard/public/guide/`.
+2. **`sites/` on network-repo main is incomplete** — only published sites. Use `dashboard-index.yaml` to enumerate.
+3. **Writer local-FS fallback** — passing no branch with `LOCAL_NETWORK_PATH` set writes to disk, bypassing git. Scheduler/agents must pass `branch`.
+4. **`CONTENT_AGENT_URL` internal DNS** — `http://content-pipeline-app` doesn't resolve on the host; use the fallback pattern above.
+5. **GITHUB_TOKEN scope** — no `pull_requests:write`. Do not call `gh pr create`; print compare URL instead.
+6. **Article count resolution** — scheduler uses `articles_per_day ?? ceil(articles_per_week / preferred_days.length)`. Do not rely on `articles_per_week` being present.
+7. **`.DS_Store` exists on network repo main** — don't add it to gitignore surprise-work; it's been living there.
+
+## Quick Reference — File Ownership
+
+| Concern | Owner |
+|---------|-------|
+| Site config + articles | Network repo, staging branch |
+| Shared page base content | Network repo, main |
+| Per-site shared-page overrides | Network repo, main, `overrides/<site_id>/` |
+| Global scheduler gate | Network repo, main, `scheduler/config.yaml` |
+| Site list / status / cloudflare ids | Network repo, main, `dashboard-index.yaml` |
+| Dashboard UI / APIs | Platform repo, `services/dashboard` |
+| Agents + cron handlers | Platform repo, `services/content-pipeline` |
+| Deploy config (services, cron) | Platform repo, `cloudgrid.yaml` |
+| In-app docs | Platform repo, `services/dashboard/public/guide/*.md` |
+
+## In-App Guide
+
+For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
+
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler.
