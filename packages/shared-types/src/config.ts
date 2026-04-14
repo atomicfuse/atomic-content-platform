@@ -279,6 +279,9 @@ export interface OrgConfig {
   /** Organisation-wide script injection configuration. */
   scripts: ScriptsConfig;
 
+  /** Organisation-wide script variable substitutions. */
+  scripts_vars?: Record<string, string>;
+
   /** Default advertising configuration. */
   ads_config: AdsConfig;
 
@@ -321,6 +324,9 @@ export interface GroupConfig {
   /** Script overrides — only specified positions replace org defaults. */
   scripts?: Partial<ScriptsConfig>;
 
+  /** Group-level script variable substitutions. */
+  scripts_vars?: Record<string, string>;
+
   /** Advertising overrides. */
   ads_config?: Partial<AdsConfig>;
 
@@ -360,8 +366,15 @@ export interface SiteConfig {
   /** Optional tagline shown in headers / meta tags. */
   site_tagline?: string | null;
 
-  /** ID of the group this site belongs to. */
+  /** ID of the group this site belongs to (legacy single-group field). */
   group: string;
+
+  /**
+   * Group references. Array of group IDs, merged left-to-right.
+   * Takes precedence over `group` when present.
+   * Backward compatible: if only `group` is found, treated as `groups: [group]`.
+   */
+  groups?: string[];
 
   /** Whether the site is live and should be built/deployed. */
   active: boolean;
@@ -434,8 +447,14 @@ export interface ResolvedConfig {
   /** Site tagline (null if not set). */
   site_tagline: string | null;
 
-  /** Group ID this site belongs to. */
+  /** Primary group ID (first entry in groups array). */
   group: string;
+
+  /** All group IDs this site belongs to (merged left-to-right). */
+  groups: string[];
+
+  /** Resolved support email (from org support_email_pattern with domain). */
+  support_email: string;
 
   /** Whether the site is active. */
   active: boolean;
@@ -473,3 +492,18 @@ export interface ResolvedConfig {
   /** Fully-resolved search configuration. */
   search: SearchConfig;
 }
+
+// ---------------------------------------------------------------------------
+// Utility types
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively makes all properties of T optional.
+ */
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends (infer U)[]
+    ? DeepPartial<U>[]
+    : T[P] extends Record<string, unknown>
+      ? DeepPartial<T[P]>
+      : T[P];
+};

@@ -90,6 +90,7 @@ export default async function SiteDetailPage({
               savedPreviews={site.saved_previews}
               siteStatus={site.status}
               customDomain={site.custom_domain}
+              currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
             />
           ) : null
         }
@@ -97,7 +98,12 @@ export default async function SiteDetailPage({
           <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} previewUrl={site.preview_url ?? undefined} />
         }
         identityTab={
-          <ContentAgentTab domain={decodedDomain} brief={normalizedBrief} />
+          <ContentAgentTab
+            domain={decodedDomain}
+            brief={normalizedBrief}
+            siteConfig={siteConfig}
+            stagingBranch={site.staging_branch}
+          />
         }
         agentTab={
           <ContentGenerationPanel domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} />

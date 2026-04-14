@@ -56,13 +56,14 @@ export function getChangedFiles(): string[] {
  *  - Changes only in other sites' directories       -> NO
  *
  * @param siteDomain  - The domain slug for the site (e.g. "coolnews.dev").
- * @param siteGroup   - The group ID the site belongs to (e.g. "tech-sites").
+ * @param siteGroups  - The group ID(s) the site belongs to. Accepts a single
+ *                       string (backward compat) or an array of group IDs.
  * @param changedFiles - List of changed file paths from {@link getChangedFiles}.
  * @returns `true` if the site should be rebuilt.
  */
 export function shouldBuildSite(
   siteDomain: string,
-  siteGroup: string,
+  siteGroups: string | string[],
   changedFiles: string[],
 ): boolean {
   // First-commit sentinel: rebuild everything.
@@ -70,8 +71,9 @@ export function shouldBuildSite(
     return true;
   }
 
+  const groups = Array.isArray(siteGroups) ? siteGroups : [siteGroups];
   const sitePrefix = `sites/${siteDomain}/`;
-  const groupFile = `groups/${siteGroup}.yaml`;
+  const groupFiles = groups.map((g) => `groups/${g}.yaml`);
 
   for (const file of changedFiles) {
     // Direct changes to the site's own directory.
@@ -89,8 +91,8 @@ export function shouldBuildSite(
       return true;
     }
 
-    // Group config that this site belongs to.
-    if (file === groupFile) {
+    // Any group config that this site belongs to.
+    if (groupFiles.includes(file)) {
       return true;
     }
   }

@@ -4,15 +4,17 @@
 
 ## How It Works
 
-The `generate-ads-txt.ts` script in the site builder reads the fully-resolved config and outputs the `ads.txt` content. The file is a simple newline-separated list of IAB-format seller entries.
+The `generate-ads-txt.ts` script in the site builder reads the fully-resolved config and outputs the `ads.txt` content. The file includes a header comment, entries sorted alphabetically, and a trailing newline.
 
 ```typescript
 export function generateAdsTxt(resolvedConfig: ResolvedConfig): string {
-  return resolvedConfig.ads_txt.join("\n");
+  const header = `# ads.txt for ${resolvedConfig.domain} — auto-generated`;
+  const sorted = [...resolvedConfig.ads_txt].sort();
+  return [header, ...sorted, ""].join("\n");
 }
 ```
 
-The `ads_txt` array in `ResolvedConfig` is pre-merged from org and group layers by the config resolver.
+The `ads_txt` array in `ResolvedConfig` is assembled by **appending** entries from org, all groups (in order), and site, then **deduplicating** while preserving order. See the **Config Inheritance & Groups** guide for the full merge process.
 
 ## IAB Format
 
@@ -32,7 +34,7 @@ outbrain.com, 00abc123def, DIRECT
 
 ## Config Layers
 
-ads.txt entries are defined at two levels:
+ads.txt entries are defined at three levels and **appended** (not replaced) across layers:
 
 ### Organization Level (`org.yaml`)
 
@@ -59,7 +61,7 @@ ads_txt:
   - "criteo.com, B-XXXXXX, DIRECT"
 ```
 
-A site in the `premium-ads` group would get all org entries plus the group-specific Taboola and Criteo entries.
+A site in the `premium-ads` group would get all org entries plus the group-specific Taboola and Criteo entries. If a site belongs to multiple groups, entries from all groups are appended in order and then deduplicated. Duplicate lines are removed while preserving the order of first appearance.
 
 ## Advertising Configuration
 
@@ -116,4 +118,4 @@ Script entries support `{{variable}}` placeholders that are resolved using `scri
 
 ## Build Output
 
-At build time, the site builder writes `ads.txt` to the Astro public directory so it is served at `https://{domain}/ads.txt`. The file contains all merged entries from org + group layers, one per line.
+At build time, the site builder writes `ads.txt` to the Astro public directory so it is served at `https://{domain}/ads.txt`. The file contains a header comment, all merged entries from org + group(s) + site layers sorted alphabetically, one per line.

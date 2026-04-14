@@ -88,6 +88,8 @@ export interface WizardFormData {
   siteTagline: string;
   company: Company;
   vertical: Vertical;
+  /** Group IDs this site belongs to (merged left-to-right). */
+  groups: string[];
   themeBase: "modern" | "editorial" | "bold" | "classic";
   audience: string;
   tone: string;
@@ -95,4 +97,6 @@ export interface WizardFormData {
   articlesPerDay: number;
   preferredDays: string[];
   contentGuidelines: string;
+  /** Script variable overrides for this site. */
+  scriptsVars: Record<string, string>;
 }

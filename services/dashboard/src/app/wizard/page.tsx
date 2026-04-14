@@ -4,8 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { StepIdentity } from "@/components/wizard/StepIdentity";
+import { StepGroups } from "@/components/wizard/StepGroups";
 import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
+import { StepScriptVars } from "@/components/wizard/StepScriptVars";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
 import type { WizardFormData } from "@/types/dashboard";
@@ -17,6 +19,7 @@ const DEFAULT_FORM: WizardFormData = {
   siteTagline: "",
   company: "ATL",
   vertical: "Other",
+  groups: [],
   themeBase: "modern",
   audience: "",
   tone: "",
@@ -24,6 +27,7 @@ const DEFAULT_FORM: WizardFormData = {
   articlesPerDay: 1,
   preferredDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   contentGuidelines: "",
+  scriptsVars: {},
 };
 
 export default function WizardPage(): React.ReactElement {
@@ -77,7 +81,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 1:
             return (
-              <StepTheme
+              <StepGroups
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -86,7 +90,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 2:
             return (
-              <StepContentBrief
+              <StepTheme
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -94,6 +98,24 @@ export default function WizardPage(): React.ReactElement {
               />
             );
           case 3:
+            return (
+              <StepContentBrief
+                data={formData}
+                onChange={updateForm}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            );
+          case 4:
+            return (
+              <StepScriptVars
+                data={formData}
+                onChange={updateForm}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            );
+          case 5:
             return (
               <StepPreview
                 data={formData}
@@ -103,7 +125,7 @@ export default function WizardPage(): React.ReactElement {
                 existingResult={stagingResult}
               />
             );
-          case 4:
+          case 6:
             return (
               <StepGoLive
                 data={formData}

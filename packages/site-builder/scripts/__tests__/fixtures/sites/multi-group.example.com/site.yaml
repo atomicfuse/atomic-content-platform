@@ -1,0 +1,35 @@
+domain: multi-group.example.com
+site_name: "Multi Group Site"
+site_tagline: "Testing multi-group"
+groups:
+  - group-a
+  - group-b
+active: true
+
+scripts_vars:
+  site_specific_var: "site-value"
+
+brief:
+  audience: "Test multi-group audience"
+  tone: "Casual"
+  article_types:
+    standard: 100
+  topics:
+    - multi-group-testing
+  seo_keywords_focus: []
+  content_guidelines: "Test guidelines"
+  review_percentage: 5
+  schedule:
+    articles_per_day: 1
+    preferred_days:
+      - Monday
+    preferred_time: "10:00"
+
+theme:
+  colors:
+    accent: "#CC3333"
+  logo: /assets/logo.png
+  favicon: /assets/favicon.png
+
+legal:
+  site_description: "a multi-group test site"

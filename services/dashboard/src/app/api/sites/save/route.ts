@@ -87,6 +87,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         theme.base = configUpdates.themeBase;
         existing.theme = theme;
       }
+
+      // Phase 1 config fields
+      if (configUpdates.groups !== undefined) {
+        existing.groups = configUpdates.groups;
+      }
+      if (configUpdates.tracking !== undefined) {
+        const prev = (existing.tracking ?? {}) as Record<string, unknown>;
+        existing.tracking = { ...prev, ...configUpdates.tracking };
+      }
+      if (configUpdates.scripts !== undefined) {
+        existing.scripts = configUpdates.scripts;
+      }
+      if (configUpdates.scripts_vars !== undefined) {
+        const prev = (existing.scripts_vars ?? {}) as Record<string, string>;
+        existing.scripts_vars = { ...prev, ...configUpdates.scripts_vars };
+      }
+      if (configUpdates.ads_config !== undefined) {
+        const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
+        existing.ads_config = { ...prev, ...configUpdates.ads_config };
+      }
+      if (configUpdates.quality_threshold !== undefined) {
+        brief.quality_threshold = configUpdates.quality_threshold;
+      }
+      if (configUpdates.quality_weights !== undefined) {
+        brief.quality_weights = configUpdates.quality_weights;
+      }
     }
 
     // If we have a logo, set theme references

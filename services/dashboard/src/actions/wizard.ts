@@ -58,8 +58,10 @@ export async function createSiteAndBuildStaging(
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
     pages_project: projectName, // placeholder — updated after CF creation
-    group: "premium-ads",
+    group: data.groups.length > 0 ? data.groups[0] : "premium-ads",
+    groups: data.groups.length > 0 ? data.groups : ["premium-ads"],
     active: true,
+    scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
       audience: data.audience,
       tone: data.tone,
@@ -480,6 +482,14 @@ export interface StagingSiteConfig {
   preferredDays: string[];
   themeBase: string;
   logoBase64: string | null;
+  // Phase 1 config fields
+  groups?: string[];
+  tracking?: Record<string, unknown>;
+  scripts?: Record<string, unknown>;
+  scripts_vars?: Record<string, string>;
+  ads_config?: Record<string, unknown>;
+  quality_threshold?: number;
+  quality_weights?: Record<string, number>;
 }
 
 /** Read the current site config from the staging branch. */

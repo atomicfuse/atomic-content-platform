@@ -1,0 +1,191 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { Button } from "@/components/ui/Button";
+import { Tabs } from "@/components/ui/Tabs";
+import { TrackingForm } from "@/components/settings/TrackingForm";
+import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
+import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
+import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
+import { LegalForm } from "@/components/settings/LegalForm";
+import { GeneralForm } from "@/components/settings/GeneralForm";
+
+interface OrgConfig {
+  [key: string]: unknown;
+}
+
+export default function OrgSettingsPage(): React.ReactElement {
+  const [config, setConfig] = useState<OrgConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchConfig = useCallback(async (): Promise<void> => {
+    try {
+      setError(null);
+      const res = await fetch("/api/settings/org");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as OrgConfig;
+      setConfig(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load org config");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchConfig();
+  }, [fetchConfig]);
+
+  function updateField(key: string, value: unknown): void {
+    if (!config) return;
+    setConfig({ ...config, [key]: value });
+  }
+
+  async function save(): Promise<void> {
+    if (!config) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings/org", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <div className="text-sm text-[var(--text-secondary)]">Loading org settings...</div>;
+  }
+
+  if (error && !config) {
+    return (
+      <div className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error">
+        {error}
+      </div>
+    );
+  }
+
+  if (!config) return <div />;
+
+  const tabs = [
+    {
+      id: "general",
+      label: "General",
+      content: (
+        <GeneralForm
+          value={
+            {
+              organization: (config.organization as string) ?? "",
+              legal_entity: (config.legal_entity as string) ?? "",
+              company_address: (config.company_address as string) ?? "",
+              support_email_pattern: (config.support_email_pattern as string) ?? "",
+              default_theme: config.default_theme as string | undefined,
+              default_fonts: config.default_fonts as
+                | { heading: string; body: string }
+                | undefined,
+            } satisfies Parameters<typeof GeneralForm>[0]["value"]
+          }
+          onChange={(v): void => {
+            setConfig({ ...config, ...v });
+          }}
+        />
+      ),
+    },
+    {
+      id: "tracking",
+      label: "Tracking",
+      content: (
+        <TrackingForm
+          value={
+            (config.tracking ?? {
+              ga4: null,
+              gtm: null,
+              google_ads: null,
+              facebook_pixel: null,
+              custom: [],
+            }) as unknown as Parameters<typeof TrackingForm>[0]["value"]
+          }
+          onChange={(v): void => updateField("tracking", v)}
+        />
+      ),
+    },
+    {
+      id: "scripts",
+      label: "Scripts",
+      content: (
+        <ScriptsEditor
+          value={
+            (config.scripts ?? {
+              head: [],
+              body_start: [],
+              body_end: [],
+            }) as unknown as Parameters<typeof ScriptsEditor>[0]["value"]
+          }
+          onChange={(v): void => updateField("scripts", v)}
+        />
+      ),
+    },
+    {
+      id: "script-variables",
+      label: "Script Variables",
+      content: (
+        <ScriptVariablesEditor
+          value={(config.script_variables ?? {}) as Record<string, string>}
+          onChange={(v: Record<string, string>): void => updateField("script_variables", v)}
+        />
+      ),
+    },
+    {
+      id: "ads",
+      label: "Ads Config",
+      content: (
+        <AdsConfigForm
+          value={
+            (config.ads ?? {
+              interstitial: false,
+              layout: "standard",
+              ad_placements: [],
+            }) as unknown as Parameters<typeof AdsConfigForm>[0]["value"]
+          }
+          onChange={(v): void => updateField("ads", v)}
+        />
+      ),
+    },
+    {
+      id: "legal",
+      label: "Legal",
+      content: (
+        <LegalForm
+          value={(config.legal ?? {}) as Record<string, string>}
+          onChange={(v: Record<string, string>): void => updateField("legal", v)}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      {error && (
+        <div className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error">
+          {error}
+        </div>
+      )}
+
+      <Tabs tabs={tabs} defaultTab="general" />
+
+      <div className="flex gap-3">
+        <Button onClick={save} loading={saving}>
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
