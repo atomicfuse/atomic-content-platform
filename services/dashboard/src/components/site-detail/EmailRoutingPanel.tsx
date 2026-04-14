@@ -86,7 +86,7 @@ export function EmailRoutingPanel({ domain }: EmailRoutingPanelProps): React.Rea
         <div className="flex items-center justify-between">
           <span className="text-xs text-[var(--text-secondary)]">Forwards to</span>
           <span className="text-sm font-mono text-[var(--text-primary)]">
-            {config?.destination ?? "sites.newsletter@ngcdigital.io"}
+            {config?.destination ?? "michal@atomiclabs.io"}
           </span>
         </div>
       </div>

@@ -6,42 +6,50 @@ The Scheduler Agent decides **when** the network's autonomous content generation
 
 | Concern | Answer |
 |---------|--------|
-| **What fires the tick?** | CloudGrid cron, `0 * * * *` EST, one shared cron for the whole network |
+| **What fires the tick?** | CloudGrid cron (`0 * * * *` = every hour at :00, EST). One shared cron for the whole network — most ticks are ~50ms no-ops |
 | **What decides if a tick publishes?** | `scheduler/config.yaml` on the `main` branch of the network repo |
 | **What decides per-site cadence?** | `brief.schedule.articles_per_day` + `brief.schedule.preferred_days` on the site's staging branch |
 | **Where is it configured from the UI?** | Dashboard → **Scheduler** (sidebar) |
 | **Where do generated articles land?** | The site's staging branch (`staging/<domain>`), committed via GitHub API, which triggers Cloudflare Pages |
 
-## Architecture
+## End-to-End Flow
+
+Every tick — whether from the hourly cron or from a manual **Run Now** — follows the same pipeline:
 
 ```
-   CloudGrid cron (hourly)                       Dashboard
+CloudGrid Cron (hourly, 0 * * * *)          Dashboard "Run Now" button
          |                                           |
          v                                           v
-  GET /scheduled-publish                 PUT /api/scheduler        (write config.yaml on main)
-         |                               POST /api/scheduler/run-now
+GET /scheduled-publish                    POST /api/scheduler/run-now
+                                            → proxies to GET /scheduled-publish?force=true
          |                                           |
-         v                                           v
-  content-pipeline::runScheduledPublish(config, force)
-         |
-         +-- read scheduler/config.yaml (network repo, main)
-         |        |
-         |        +-- enabled=false?            -> skip (skippedGlobal=disabled)
-         |        +-- current_hour not in       -> skip (skippedGlobal=hour_not_matched)
-         |            run_at_hours?
-         |
-         +-- list sites from dashboard-index.yaml (main)
-         |
-         +-- for each active site:
-         |     read brief from staging/<domain> (fallback: main)
-         |     today in preferred_days? --no--> skipped
-         |     resolve articles_per_day (dual-read)
-         |     runContentGeneration({ siteDomain, count, branch: staging/<domain> })
-         |          -> writer commits each article via GitHub API
-         |          -> Cloudflare Pages builds + deploys staging site
+         +-------------------------------------------+
          |
          v
-  response: { configStatus, skippedGlobal?, triggered[], skipped[], errors[] }
+LAYER 1 — Global Gate (scheduler/config.yaml on network repo main)
+         |
+         |-- enabled: false?              → STOP  (skippedGlobal: "disabled")
+         |-- hour not in run_at_hours?    → STOP  (skippedGlobal: "hour_not_matched")
+         |-- force=true?                  → BYPASS both checks above
+         |
+         v
+LAYER 2 — Per-Site Gate (for each site in dashboard-index.yaml)
+         |
+         |-- Read brief from staging/<domain> branch (fallback: main)
+         |-- No brief or schedule?        → skip site
+         |-- Today not in preferred_days? → skip site
+         |-- articles_per_day = 0?        → skip site
+         |
+         v
+Trigger ContentGenerationAgent
+         |-- count = articles_per_day
+         |-- branch = staging/<domain>    (forces GitHub API commit)
+         |
+         v
+GitHub commit to staging/<domain>
+         |
+         v
+Cloudflare Pages detects commit → rebuilds staging site
 ```
 
 ## Two Layers of Control
@@ -64,7 +72,20 @@ timezone: EST
 
 This file is **not shipped in the platform repo**. It lives in the network repo so schedule changes do not require a CloudGrid redeploy — the dashboard writes to it via the standard `commitNetworkFiles` helper.
 
-If the file does not exist, defaults apply (`enabled: true`, `run_at_hours: [14]`, `timezone: EST`).
+If the file does not exist, defaults apply (`enabled: true`, `run_at_hours: [14]`, `timezone: EST`). The file is created on the network repo the first time you click **Save** on the Scheduler page.
+
+### What Happens When You Switch Off the Scheduler
+
+When you flip the **Scheduler enabled** toggle OFF and click **Save**:
+
+1. The dashboard writes `enabled: false` to `scheduler/config.yaml` on the network repo's `main` branch (committed via the GitHub API).
+2. CloudGrid's hourly cron **still fires every hour** — it always sends `GET /scheduled-publish` to the content-pipeline.
+3. The scheduled-publisher agent reads `scheduler/config.yaml`, sees `enabled: false`, and **returns immediately** (~50ms) with `skippedGlobal: "disabled"`.
+4. **No sites publish. No articles are generated.** The entire pipeline is short-circuited at Layer 1.
+
+The **Run Now** button still works when disabled — it sends `force=true`, which bypasses the enabled check. This is intentional: "Run Now" means "run the schedule right now regardless of global settings", while the toggle controls only unattended/automated runs.
+
+To resume: flip the toggle back ON, click **Save**. The next hourly tick whose hour matches `run_at_hours` will publish normally. No CloudGrid redeploy needed — the change is immediate.
 
 ### Layer 2 — Per-Site (which sites publish today?)
 
@@ -113,6 +134,54 @@ The dashboard's **Run Now** button bypasses Layer 1 (the global enabled/hour gat
 - Dashboard `POST /api/scheduler/run-now` → proxies to `GET /scheduled-publish?force=true` on the content-pipeline.
 - `force=true` skips the `enabled` check and the `run_at_hours` check. The rest of the flow is identical to a normal tick.
 - Sites whose `preferred_days` does not include today are still skipped. This is intentional — Run Now is for "run the schedule as if the hour matched", not for "publish everything now".
+
+## How Each Action Syncs with CloudGrid
+
+CloudGrid hosts both the **dashboard** (Next.js) and the **content-pipeline** (Node HTTP server), plus the **scheduled-publisher** cron job. Here is exactly what happens for each user action:
+
+### Save (change schedule)
+
+1. User edits settings on the Scheduler page (toggle, hours, timezone) and clicks **Save**.
+2. Dashboard sends `PUT /api/scheduler` with `{ enabled, run_at_hours, timezone }`.
+3. The API route calls `writeSchedulerConfig()`, which commits the new `scheduler/config.yaml` to the network repo's `main` branch via the GitHub API.
+4. **No CloudGrid redeploy happens.** The cron entry in `cloudgrid.yaml` stays the same (`0 * * * *`). On the next hourly tick, the content-pipeline reads the updated `config.yaml` from the network repo and acts on the new values.
+
+### Toggle Off
+
+Same flow as Save — the dashboard writes `enabled: false` to `scheduler/config.yaml`. CloudGrid's cron keeps firing hourly but the content-pipeline sees `enabled: false` and returns immediately. Nothing is generated. See "What Happens When You Switch Off the Scheduler" above.
+
+### Toggle On
+
+Same flow — writes `enabled: true`. The next hourly tick that matches `run_at_hours` will proceed to Layer 2 and generate content for eligible sites.
+
+### Run Now
+
+1. User clicks **Run Now** on the Scheduler page.
+2. Dashboard sends `POST /api/scheduler/run-now`.
+3. The API route calls `triggerSchedulerRun()`, which sends `GET /scheduled-publish?force=true` to the content-pipeline. In CloudGrid, this uses the internal DNS name `http://content-pipeline-app`. Locally under `cloudgrid dev`, it falls back to `http://localhost:5000`.
+4. The content-pipeline runs the full `runScheduledPublish(config, force=true)` flow:
+   - **Skips Layer 1** entirely (no enabled check, no hour check).
+   - **Layer 2 still applies** — per-site `preferred_days` is still checked. If today is not in a site's preferred days, that site is skipped even on a forced run.
+5. For each eligible site, `ContentGenerationAgent` generates `articles_per_day` articles, commits them to `staging/<domain>` via the GitHub API, and Cloudflare Pages rebuilds the staging site.
+6. The response (`ScheduledPublishResult`) is returned to the dashboard and displayed in a results panel showing triggered sites, skipped sites (with reasons), and any errors.
+
+### Hourly Cron Tick (automated)
+
+1. CloudGrid fires `GET http://content-pipeline-app/scheduled-publish` at the top of every hour (EST).
+2. The content-pipeline runs `runScheduledPublish(config, force=false)`:
+   - **Layer 1:** Reads `scheduler/config.yaml` from the network repo. If `enabled: false` → returns `skippedGlobal: "disabled"`. If current hour is not in `run_at_hours` → returns `skippedGlobal: "hour_not_matched"`. Both are ~50ms no-ops.
+   - **Layer 2:** If Layer 1 passes, lists all active sites from `dashboard-index.yaml`, reads each site's brief, checks `preferred_days`, and triggers content generation for matching sites.
+3. Generated articles are committed to each site's `staging/<domain>` branch, triggering Cloudflare Pages builds.
+
+### CloudGrid's role
+
+| Responsibility | How |
+|----------------|-----|
+| **Hosting** | Runs dashboard (Next.js) and content-pipeline (Node) as managed services |
+| **Cron execution** | `scheduled-publisher` entry in `cloudgrid.yaml` fires hourly |
+| **Internal DNS** | `http://content-pipeline-app` resolves inside CloudGrid, allowing dashboard → pipeline communication without public URLs |
+| **AI Gateway** | `@cloudgrid-io/ai` provides Claude access in production without API keys |
+| **Secrets** | `GITHUB_TOKEN`, `GEMINI_API_KEY`, etc. managed via `cloudgrid secrets set` |
 
 ## Write Path Invariant
 
