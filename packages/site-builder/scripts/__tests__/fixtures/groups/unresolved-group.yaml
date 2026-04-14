@@ -1,0 +1,16 @@
+group_id: unresolved-group
+name: "Unresolved Group"
+
+ads_txt: []
+
+scripts:
+  head:
+    - id: bad-script
+      inline: "window.init('{{undefined_var}}');"
+  body_start: []
+  body_end: []
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements: []

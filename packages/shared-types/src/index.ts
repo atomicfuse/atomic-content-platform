@@ -34,4 +34,5 @@ export type {
   GroupConfig,
   SiteConfig,
   ResolvedConfig,
+  DeepPartial,
 } from "./config.js";

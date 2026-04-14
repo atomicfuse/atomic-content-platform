@@ -24,7 +24,7 @@ import type {
   SearchConfig,
 } from "@atomic-platform/shared-types";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
-import type { ScriptEntry, AdsConfig } from "@atomic-platform/shared-types";
+import type { ScriptEntry, AdsConfig, AdPlacement } from "@atomic-platform/shared-types";
 import type { TrackingConfig } from "@atomic-platform/shared-types";
 
 // ---------------------------------------------------------------------------
@@ -229,6 +229,62 @@ function normaliseScriptsConfig(raw: Record<string, unknown>): ScriptsConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Ad placement normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalize ad placements from YAML-friendly format to typed format.
+ * Handles:
+ *  - `devices` → `device` (field rename)
+ *  - `sizes: ["728x90"]` (string array) → `sizes: { desktop: [[728, 90]], mobile: [] }`
+ *  - Already-normalized tuple format passes through unchanged (idempotent)
+ */
+function normaliseAdPlacements(placements: unknown[]): AdPlacement[] {
+  return placements.map((raw) => {
+    const p = raw as Record<string, unknown>;
+    const id = p["id"] as string;
+    const position = p["position"] as string;
+
+    // Normalize device/devices field
+    const device = (p["device"] ?? p["devices"] ?? "all") as "all" | "desktop" | "mobile";
+
+    // Normalize sizes
+    let sizes: { desktop?: number[][]; mobile?: number[][] };
+    const rawSizes = p["sizes"];
+
+    if (rawSizes && typeof rawSizes === "object" && !Array.isArray(rawSizes)) {
+      // Already in { desktop: [...], mobile: [...] } format
+      sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
+    } else if (Array.isArray(rawSizes)) {
+      // String array like ["728x90", "970x250"] or tuple array like [[728, 90]]
+      const parsed: number[][] = rawSizes.map((s: unknown) => {
+        if (typeof s === "string") {
+          return s.split("x").map(Number);
+        }
+        if (Array.isArray(s)) {
+          return s as number[];
+        }
+        return [0, 0];
+      });
+
+      // Assign to desktop/mobile based on device targeting
+      if (device === "mobile") {
+        sizes = { desktop: [], mobile: parsed };
+      } else if (device === "desktop") {
+        sizes = { desktop: parsed, mobile: [] };
+      } else {
+        // "all" — put all sizes in both buckets
+        sizes = { desktop: parsed, mobile: parsed };
+      }
+    } else {
+      sizes = { desktop: [], mobile: [] };
+    }
+
+    return { id, position, sizes, device };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Theme resolution
 // ---------------------------------------------------------------------------
 
@@ -317,24 +373,39 @@ export async function resolveConfig(
   if (!site.domain) {
     throw new Error(`site.yaml for ${siteDomain} is missing required field: domain`);
   }
-  if (!site.group) {
-    throw new Error(`site.yaml for ${siteDomain} is missing required field: group`);
+
+  // Normalize groups: support both `groups: [...]` (new) and `group: string` (legacy)
+  const siteGroups: string[] = site.groups
+    ?? (site.group ? [site.group] : []);
+  if (siteGroups.length === 0) {
+    throw new Error(`site.yaml for ${siteDomain} has neither "group" nor "groups"`);
   }
 
-  // ---- 2. Read group config ----
+  // ---- 2. Read and merge group configs (left-to-right) ----
 
-  const groupPath = join(networkRepoPath, "groups", `${site.group}.yaml`);
-  let groupRaw: Record<string, unknown>;
-  try {
-    groupRaw = await readYaml<Record<string, unknown>>(groupPath);
-  } catch (err: unknown) {
-    if (err instanceof Error && err.message.startsWith("Config file not found")) {
-      throw new Error(
-        `Site "${siteDomain}" references group "${site.group}", but group file not found: ${groupPath}`,
-      );
+  const groupRaws: Record<string, unknown>[] = [];
+  for (const groupId of siteGroups) {
+    const groupPath = join(networkRepoPath, "groups", `${groupId}.yaml`);
+    let raw: Record<string, unknown>;
+    try {
+      raw = await readYaml<Record<string, unknown>>(groupPath);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.startsWith("Config file not found")) {
+        throw new Error(
+          `Site "${siteDomain}" references group "${groupId}", but group file not found: ${groupPath}`,
+        );
+      }
+      throw err;
     }
-    throw err;
+    groupRaws.push(raw);
   }
+
+  // Merge multiple groups into one effective group (left-to-right: later groups override earlier)
+  let mergedGroupRaw: Record<string, unknown> = groupRaws[0];
+  for (let i = 1; i < groupRaws.length; i++) {
+    mergedGroupRaw = deepMerge(mergedGroupRaw, groupRaws[i]);
+  }
+  const groupRaw = mergedGroupRaw;
   const group = groupRaw as unknown as GroupConfig;
 
   // ---- 3. Merge tracking: org -> group -> site ----
@@ -355,18 +426,27 @@ export async function resolveConfig(
 
   let mergedScripts: ScriptsConfig = orgScripts;
 
-  if (groupRaw["scripts"]) {
-    const groupScripts = normaliseScriptsConfig(
-      groupRaw["scripts"] as Record<string, unknown>,
-    );
-    mergedScripts = mergeScriptsConfigs(mergedScripts, groupScripts);
+  // Merge scripts from each group by id (not using deep-merged groupRaw,
+  // because deepMerge replaces arrays — we need per-id merging)
+  for (const gRaw of groupRaws) {
+    if (gRaw["scripts"]) {
+      const groupScripts = normaliseScriptsConfig(
+        gRaw["scripts"] as Record<string, unknown>,
+      );
+      mergedScripts = mergeScriptsConfigs(mergedScripts, groupScripts);
+    }
   }
 
   // ---- 5. Merge scripts_vars from all levels, then resolve placeholders ----
 
-  // scripts_vars can appear at org, group, or site level
+  // scripts_vars can appear at org, each group, or site level
   const orgVars = (orgRaw["scripts_vars"] as Record<string, string>) ?? {};
-  const groupVars = (groupRaw["scripts_vars"] as Record<string, string>) ?? {};
+  // Merge scripts_vars from all groups left-to-right
+  let groupVars: Record<string, string> = {};
+  for (const gRaw of groupRaws) {
+    const gVars = (gRaw["scripts_vars"] as Record<string, string>) ?? {};
+    groupVars = { ...groupVars, ...gVars };
+  }
   const siteVars = (site.scripts_vars as Record<string, string>) ?? {};
 
   const allVars: Record<string, string> = {
@@ -378,6 +458,17 @@ export async function resolveConfig(
 
   // Resolve placeholders in the scripts tree
   mergedScripts = resolveTemplates(mergedScripts, allVars) as ScriptsConfig;
+
+  // Strict check: fail if any {{placeholder}} remains unresolved
+  const unresolvedCheck = JSON.stringify(mergedScripts);
+  const remaining = unresolvedCheck.match(/\{\{(\w+)\}\}/g);
+  if (remaining && remaining.length > 0) {
+    const unique = [...new Set(remaining)];
+    throw new Error(
+      `Unresolved placeholders in scripts: ${unique.join(", ")}. ` +
+      `Define these in scripts_vars at org, group, or site level.`,
+    );
+  }
 
   // ---- 6. Merge ads_config: org -> group -> site ----
 
@@ -395,27 +486,44 @@ export async function resolveConfig(
     ) as unknown as AdsConfig;
   }
 
-  // ---- 7. Merge ads_txt: group replaces org if present ----
-
-  // Parse ads_txt - it can be a multiline string or an array
-  let adsTxt: string[] = [];
-  const orgAdsTxt = (orgRaw["ads_config"] as Record<string, unknown> | undefined)?.["ads_txt"];
-  if (Array.isArray(orgAdsTxt)) {
-    adsTxt = orgAdsTxt as string[];
+  // Normalize ad placements (handles YAML-friendly string sizes and devices→device rename)
+  if (adsConfig.ad_placements && adsConfig.ad_placements.length > 0) {
+    adsConfig = {
+      ...adsConfig,
+      ad_placements: normaliseAdPlacements(adsConfig.ad_placements),
+    };
   }
 
-  // Group ads_txt replaces entirely (it's a top-level field, not in ads_config)
-  const groupAdsTxt = groupRaw["ads_txt"];
-  if (groupAdsTxt !== undefined) {
-    if (typeof groupAdsTxt === "string") {
-      adsTxt = groupAdsTxt
-        .split("\n")
-        .map((line: string) => line.trim())
-        .filter((line: string) => line.length > 0);
-    } else if (Array.isArray(groupAdsTxt)) {
-      adsTxt = groupAdsTxt as string[];
+  // ---- 7. Merge ads_txt: APPEND from org + each group + site, then deduplicate ----
+
+  const adsTxtEntries: string[] = [];
+
+  // Helper to parse ads_txt from a raw value (string or array)
+  function parseAdsTxt(raw: unknown): string[] {
+    if (typeof raw === "string") {
+      return raw.split("\n").map((l: string) => l.trim()).filter((l: string) => l.length > 0);
     }
+    if (Array.isArray(raw)) {
+      return raw as string[];
+    }
+    return [];
   }
+
+  // Collect from org (ads_config.ads_txt)
+  const orgAdsTxt = (orgRaw["ads_config"] as Record<string, unknown> | undefined)?.["ads_txt"];
+  adsTxtEntries.push(...parseAdsTxt(orgAdsTxt));
+
+  // Collect from each group (top-level ads_txt field)
+  for (const gRaw of groupRaws) {
+    adsTxtEntries.push(...parseAdsTxt(gRaw["ads_txt"]));
+  }
+
+  // Collect from site (ads_config.ads_txt if present)
+  const siteAdsTxt = (siteRaw["ads_config"] as Record<string, unknown> | undefined)?.["ads_txt"];
+  adsTxtEntries.push(...parseAdsTxt(siteAdsTxt));
+
+  // Deduplicate preserving order
+  const adsTxt = [...new Set(adsTxtEntries)];
 
   // ---- 8. Merge theme: org defaults -> group -> site ----
 
@@ -497,7 +605,9 @@ export async function resolveConfig(
     domain: site.domain,
     site_name: site.site_name,
     site_tagline: site.site_tagline ?? null,
-    group: site.group,
+    group: siteGroups[0],
+    groups: siteGroups,
+    support_email: supportEmail,
     active: site.active,
     tracking,
     scripts: mergedScripts,

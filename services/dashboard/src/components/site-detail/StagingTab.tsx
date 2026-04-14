@@ -21,6 +21,7 @@ interface StagingTabProps {
   savedPreviews: Array<{ url: string; label: string; saved_at: string }> | null;
   siteStatus: SiteStatus;
   customDomain: string | null;
+  currentLogoPath: string | null;
 }
 
 export function StagingTab({
@@ -31,6 +32,7 @@ export function StagingTab({
   savedPreviews,
   siteStatus,
   customDomain,
+  currentLogoPath,
 }: StagingTabProps): React.ReactElement {
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState(previewUrl);
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
@@ -220,7 +222,7 @@ export function StagingTab({
           </div>
 
           {/* Edit Site Settings */}
-          <StagingEditPanel domain={domain} previewUrl={currentPreviewUrl} />
+          <StagingEditPanel domain={domain} previewUrl={currentPreviewUrl} currentLogoPath={currentLogoPath} />
 
           {/* Inline save form */}
           {showSaveForm && (

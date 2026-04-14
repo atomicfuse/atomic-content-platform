@@ -20,6 +20,7 @@ const GUIDE_PAGES = [
   { slug: "07-email-routing", title: "Email Routing" },
   { slug: "08-cloudgrid", title: "CloudGrid Deployment" },
   { slug: "09-scheduler", title: "Scheduler Agent" },
+  { slug: "10-config-inheritance", title: "Config Inheritance & Groups" },
 ];
 
 export default function GuidePage(): React.ReactElement {
