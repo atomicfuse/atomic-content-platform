@@ -13,6 +13,7 @@ import {
   deleteBranch,
   branchExists,
   triggerWorkflowViaPush,
+  readFileBase64,
 } from "@/lib/github";
 import {
   createPagesProject,
@@ -478,6 +479,7 @@ export interface StagingSiteConfig {
   articlesPerDay: number;
   preferredDays: string[];
   themeBase: string;
+  logoBase64: string | null;
 }
 
 /** Read the current site config from the staging branch. */
@@ -523,6 +525,9 @@ export async function readStagingConfig(
       (brief?.preferred_days as string[]) ??
       [],
     themeBase: ((config.theme as Record<string, unknown>)?.base as string) ?? "modern",
+    logoBase64: (config.theme as Record<string, unknown>)?.logo
+      ? await readFileBase64(`sites/${domain}/assets/logo.png`, site.staging_branch)
+      : null,
   };
 }
 

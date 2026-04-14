@@ -406,7 +406,7 @@ export function StagingEditPanel({
         </div>
 
         {/* Logo preview */}
-        {pendingLogo && (
+        {pendingLogo ? (
           <div className="flex items-start gap-4 p-3 rounded-lg border border-cyan/20 bg-cyan/5">
             <img
               src={`data:image/png;base64,${pendingLogo}`}
@@ -435,7 +435,23 @@ export function StagingEditPanel({
               </svg>
             </button>
           </div>
-        )}
+        ) : config?.logoBase64 ? (
+          <div className="flex items-start gap-4 p-3 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)]">
+            <img
+              src={`data:image/png;base64,${config.logoBase64}`}
+              alt="Current logo"
+              className="w-16 h-16 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
+            />
+            <div className="flex-1 space-y-1">
+              <p className="text-sm font-medium text-[var(--text-primary)]">
+                Current logo
+              </p>
+              <p className="text-xs text-[var(--text-muted)]">
+                Upload or generate a new one to replace it.
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-3">
           <Button
