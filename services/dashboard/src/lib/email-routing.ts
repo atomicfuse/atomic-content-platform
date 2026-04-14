@@ -1,8 +1,13 @@
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { readFileContent, commitNetworkFiles } from "@/lib/github";
+import { getAccountId } from "@/lib/cloudflare";
+
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
-const DEFAULT_DESTINATION = "sites.newsletter@ngcdigital.io";
+const DEFAULT_DESTINATION = "michal@atomiclabs.io";
 const DEFAULT_LOCAL_PART = "contact";
 const FALLBACK_EMAIL = "hello@atomiclabs.io";
+const EMAIL_CONFIG_PATH = "email-config.yaml";
 
 interface EmailRoutingRule {
   id: string;
@@ -25,6 +30,19 @@ export interface SiteEmailConfig {
   ruleId?: string;
 }
 
+export interface EmailConfig {
+  default_destination: string;
+  overrides: Record<string, string>;
+}
+
+export interface DestinationAddress {
+  id: string;
+  email: string;
+  verified?: string | null;
+  created?: string;
+  modified?: string;
+}
+
 function getHeaders(): HeadersInit {
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set");
@@ -33,6 +51,82 @@ function getHeaders(): HeadersInit {
     "Content-Type": "application/json",
   };
 }
+
+// ---------------------------------------------------------------------------
+// Email config (stored in network repo)
+// ---------------------------------------------------------------------------
+
+/** Read the email forwarding config from the network repo. */
+export async function readEmailConfig(): Promise<EmailConfig> {
+  try {
+    const content = await readFileContent(EMAIL_CONFIG_PATH);
+    if (!content) {
+      return { default_destination: DEFAULT_DESTINATION, overrides: {} };
+    }
+    const parsed = parseYaml(content) as Partial<EmailConfig>;
+    return {
+      default_destination: parsed.default_destination ?? DEFAULT_DESTINATION,
+      overrides: parsed.overrides ?? {},
+    };
+  } catch {
+    return { default_destination: DEFAULT_DESTINATION, overrides: {} };
+  }
+}
+
+/** Write the email forwarding config to the network repo. */
+export async function writeEmailConfig(config: EmailConfig): Promise<void> {
+  const content = stringifyYaml(config, { lineWidth: 0 });
+  await commitNetworkFiles(
+    [{ path: EMAIL_CONFIG_PATH, content }],
+    "email: update forwarding config",
+  );
+}
+
+/** Get the destination email for a specific domain, checking overrides first. */
+export async function getDestinationForDomain(domain: string): Promise<string> {
+  const config = await readEmailConfig();
+  return config.overrides[domain] ?? config.default_destination;
+}
+
+// ---------------------------------------------------------------------------
+// Cloudflare destination addresses
+// ---------------------------------------------------------------------------
+
+/** Add a destination address to the Cloudflare account (triggers verification email). */
+export async function addDestinationAddress(email: string): Promise<DestinationAddress> {
+  const accountId = getAccountId();
+  const res = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/email/routing/addresses`,
+    {
+      method: "POST",
+      headers: getHeaders(),
+      body: JSON.stringify({ email }),
+    },
+  );
+  const data = (await res.json()) as CloudflareResponse<DestinationAddress>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to add destination address: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+  return data.result;
+}
+
+/** List all destination addresses on the Cloudflare account. */
+export async function listDestinationAddresses(): Promise<DestinationAddress[]> {
+  const accountId = getAccountId();
+  const res = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/email/routing/addresses`,
+    { headers: getHeaders() },
+  );
+  const data = (await res.json()) as CloudflareResponse<DestinationAddress[]>;
+  if (!data.success) return [];
+  return data.result;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 /** Build the contact email address for a site domain. */
 export function buildContactEmail(domain: string): string {
@@ -44,10 +138,14 @@ export function getFallbackEmail(): string {
   return FALLBACK_EMAIL;
 }
 
-/** Get the destination email all site emails forward to. */
+/** Get the default destination email (sync, returns hardcoded fallback). */
 export function getDestinationEmail(): string {
   return DEFAULT_DESTINATION;
 }
+
+// ---------------------------------------------------------------------------
+// Cloudflare Email Routing zone APIs
+// ---------------------------------------------------------------------------
 
 /** Check if email routing is enabled for a zone. */
 export async function getEmailRoutingStatus(zoneId: string): Promise<boolean> {
@@ -81,6 +179,16 @@ export async function enableEmailRouting(zoneId: string): Promise<void> {
         /already\s+enabled/i.test(e.message),
     );
     if (isAlreadyEnabled) return;
+
+    // Auth error — routing may already be enabled but token lacks the enable permission.
+    // Log warning and allow rule creation to proceed.
+    const isAuthError = data.errors.some((e) => e.code === 10000);
+    if (isAuthError) {
+      console.warn(
+        `[enableEmailRouting] Auth error for zone ${zoneId} — email routing may already be enabled. Continuing.`,
+      );
+      return;
+    }
 
     const detail = data.errors
       .map((e) => `[${e.code}] ${e.message}`)
@@ -123,8 +231,10 @@ export async function findEmailRule(
 export async function createEmailRoutingRule(
   zoneId: string,
   domain: string,
+  destination?: string,
 ): Promise<EmailRoutingRule> {
   const email = buildContactEmail(domain);
+  const dest = destination ?? (await getDestinationForDomain(domain));
 
   // Check if rule already exists
   const existing = await findEmailRule(zoneId, email);
@@ -136,10 +246,10 @@ export async function createEmailRoutingRule(
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
-        name: `Forward ${email} to ${DEFAULT_DESTINATION}`,
+        name: `Forward ${email} to ${dest}`,
         enabled: true,
         matchers: [{ type: "literal", field: "to", value: email }],
-        actions: [{ type: "forward", value: [DEFAULT_DESTINATION] }],
+        actions: [{ type: "forward", value: [dest] }],
       }),
     },
   );
@@ -177,7 +287,7 @@ export async function getSiteEmailConfig(
   customDomain: string | null,
 ): Promise<SiteEmailConfig> {
   const address = buildContactEmail(domain);
-  const destination = DEFAULT_DESTINATION;
+  const destination = await getDestinationForDomain(domain);
 
   // No zone ID or no custom domain = not active
   if (!zoneId || !customDomain) {

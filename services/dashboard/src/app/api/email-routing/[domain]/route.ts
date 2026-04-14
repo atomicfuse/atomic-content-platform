@@ -6,6 +6,7 @@ import {
   deleteEmailRoutingRule,
   buildContactEmail,
   findEmailRule,
+  getDestinationForDomain,
 } from "@/lib/email-routing";
 
 export async function GET(
@@ -59,10 +60,11 @@ export async function POST(
       );
     }
 
-    const rule = await createEmailRoutingRule(site.zone_id, domain);
+    const destination = await getDestinationForDomain(domain);
+    const rule = await createEmailRoutingRule(site.zone_id, domain, destination);
     return NextResponse.json({
       address: buildContactEmail(domain),
-      destination: "sites.newsletter@ngcdigital.io",
+      destination,
       active: true,
       ruleId: rule.id,
     });

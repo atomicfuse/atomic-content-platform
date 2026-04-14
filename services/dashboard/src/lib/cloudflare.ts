@@ -62,7 +62,7 @@ function getHeaders(): HeadersInit {
   };
 }
 
-function getAccountId(): string {
+export function getAccountId(): string {
   const id = process.env.CLOUDFLARE_ACCOUNT_ID;
   if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
   return id;
