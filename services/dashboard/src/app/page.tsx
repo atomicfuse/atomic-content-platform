@@ -2,7 +2,6 @@ import { readDashboardIndex, fetchRecentActivity, countArticlesThisWeek, countFa
 import { StatsPanel } from "@/components/layout/StatsPanel";
 import { ActivityFeed } from "@/components/layout/ActivityFeed";
 import { SitesTable } from "@/components/dashboard/SitesTable";
-import { SyncDomainsButton } from "@/components/dashboard/SyncDomainsButton";
 import type { DashboardStats } from "@/types/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +14,11 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
     countFailedBuilds(),
   ]);
 
-  const pendingReview = index.sites.filter((s) => s.status === "Preview").length;
+  const sites = index.sites.filter((s) => s.pages_project !== null);
+  const pendingReview = sites.filter((s) => s.status === "Preview").length;
 
   const stats: DashboardStats = {
-    totalSites: index.sites.length,
+    totalSites: sites.length,
     articlesThisWeek,
     pendingReview,
     failedBuilds,
@@ -29,9 +29,6 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <div className="flex items-center gap-3">
-          <SyncDomainsButton />
-        </div>
       </div>
 
       {/* Stats */}
@@ -40,7 +37,7 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       {/* Main content: table + activity feed */}
       <div className="grid grid-cols-[1fr_320px] gap-6">
         <div>
-          <SitesTable sites={index.sites} />
+          <SitesTable sites={sites} />
         </div>
         <ActivityFeed events={activity} />
       </div>
