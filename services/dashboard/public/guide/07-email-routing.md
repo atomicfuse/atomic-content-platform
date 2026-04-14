@@ -6,7 +6,7 @@ Each site in the network gets a contact email address in the format `contact@{do
 
 1. **Cloudflare Email Routing** is enabled on each site's DNS zone
 2. A catch-all or specific route forwards `contact@{domain}` to a shared inbox
-3. The forwarding destination is `sites.newsletter@ngcdigital.io`
+3. The forwarding destination is `michal@atomiclabs.io`
 4. No mail server is needed -- Cloudflare handles routing at the DNS level
 
 ## When It Activates
@@ -27,7 +27,7 @@ For sites still on `*.pages.dev`, operators should set an explicit `support_emai
 ```yaml
 # site.yaml
 legal:
-  support_email: "sites.newsletter@ngcdigital.io"
+  support_email: "michal@atomiclabs.io"
 ```
 
 Once the custom domain is connected and email routing is configured, the override can be removed to use the auto-generated `contact@{domain}`.
@@ -55,7 +55,7 @@ When a custom domain is attached to a site:
 
 1. The domain's DNS zone must be active in Cloudflare
 2. Enable Email Routing in the Cloudflare dashboard for that zone
-3. Add a routing rule: `contact@{domain}` -> `sites.newsletter@ngcdigital.io`
+3. Add a routing rule: `contact@{domain}` -> `michal@atomiclabs.io`
 4. Cloudflare automatically adds the required MX and TXT DNS records
 
 This is currently a manual step performed after the site goes live with a custom domain.
