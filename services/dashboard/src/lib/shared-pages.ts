@@ -53,17 +53,18 @@ export async function listSharedPages(): Promise<SharedPageInfo[]> {
     }
   }
 
-  const pages: SharedPageInfo[] = [];
-  for (const file of allFiles) {
-    const name = file.name.replace(".md", "");
-    const overrideSites = await getOverrideSites(name);
-    pages.push({
-      name,
-      fileName: file.name,
-      overrideCount: overrideSites.length,
-      overrideSites,
-    });
-  }
+  const pages = await Promise.all(
+    allFiles.map(async (file) => {
+      const name = file.name.replace(".md", "");
+      const overrideSites = await getOverrideSites(name);
+      return {
+        name,
+        fileName: file.name,
+        overrideCount: overrideSites.length,
+        overrideSites,
+      };
+    }),
+  );
   return pages;
 }
 
@@ -78,15 +79,22 @@ export async function listSharedPages(): Promise<SharedPageInfo[]> {
  */
 export async function getOverrideSites(pageName: string): Promise<string[]> {
   const sites = await listStagingSites();
-  const found: string[] = [];
-  for (const site of sites) {
-    const file = await readFileContent(
-      `overrides/${site}/${pageName}.md`,
-      `staging/${site}`,
-    );
-    if (file !== null) found.push(site);
-  }
-  return found;
+  const results = await Promise.allSettled(
+    sites.map(async (site) => {
+      const file = await readFileContent(
+        `overrides/${site}/${pageName}.md`,
+        `staging/${site}`,
+      );
+      return file !== null ? site : null;
+    }),
+  );
+  return results
+    .filter(
+      (r): r is PromiseFulfilledResult<string | null> =>
+        r.status === "fulfilled",
+    )
+    .map((r) => r.value)
+    .filter((v): v is string => v !== null);
 }
 
 /**
@@ -136,15 +144,17 @@ export async function createOverrides(
   sites: string[],
   content: string,
 ): Promise<void> {
-  for (const site of sites) {
-    const branch = `staging/${site}`;
-    await commitNetworkFiles(
-      [{ path: `overrides/${site}/${name}.md`, content }],
-      `shared-pages: create ${name} override for ${site}`,
-      branch,
-    );
-    await triggerWorkflowViaPush(branch, site);
-  }
+  await Promise.allSettled(
+    sites.map(async (site) => {
+      const branch = `staging/${site}`;
+      await commitNetworkFiles(
+        [{ path: `overrides/${site}/${name}.md`, content }],
+        `shared-pages: create ${name} override for ${site}`,
+        branch,
+      );
+      await triggerWorkflowViaPush(branch, site);
+    }),
+  );
 }
 
 /** Update a single site's override (commits to that site's staging branch). */
@@ -187,27 +197,39 @@ export async function listAdsTxtProfiles(): Promise<AdsTxtProfile[]> {
     PLATFORM_REPO,
   );
 
-  // Merge: network takes precedence
+  // Merge: network takes precedence — fetch all files in parallel
+  const networkResults = await Promise.allSettled(
+    networkEntries
+      .filter((e) => e.name.endsWith(".txt"))
+      .map(async (entry) => {
+        const content = await readFileContent(entry.path);
+        if (content === null) return null;
+        return { name: entry.name.replace(".txt", ""), content };
+      }),
+  );
+
   const seen = new Set<string>();
   const profiles: AdsTxtProfile[] = [];
-
-  for (const entry of networkEntries) {
-    if (!entry.name.endsWith(".txt")) continue;
-    const content = await readFileContent(entry.path);
-    if (content !== null) {
-      const name = entry.name.replace(".txt", "");
-      seen.add(name);
-      profiles.push({ name, content });
+  for (const r of networkResults) {
+    if (r.status === "fulfilled" && r.value) {
+      seen.add(r.value.name);
+      profiles.push(r.value);
     }
   }
 
-  for (const entry of bundledEntries) {
-    if (!entry.name.endsWith(".txt")) continue;
-    const name = entry.name.replace(".txt", "");
-    if (seen.has(name)) continue;
-    const content = await readFileContent(entry.path, undefined, PLATFORM_REPO);
-    if (content !== null) {
-      profiles.push({ name, content });
+  const bundledResults = await Promise.allSettled(
+    bundledEntries
+      .filter((e) => e.name.endsWith(".txt") && !seen.has(e.name.replace(".txt", "")))
+      .map(async (entry) => {
+        const content = await readFileContent(entry.path, undefined, PLATFORM_REPO);
+        if (content === null) return null;
+        return { name: entry.name.replace(".txt", ""), content };
+      }),
+  );
+
+  for (const r of bundledResults) {
+    if (r.status === "fulfilled" && r.value) {
+      profiles.push(r.value);
     }
   }
 

@@ -11,7 +11,9 @@ export async function GET(): Promise<NextResponse> {
       company: s.company,
       custom_domain: s.custom_domain,
     }));
-    return NextResponse.json(sites);
+    return NextResponse.json(sites, {
+      headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" },
+    });
   } catch (error) {
     console.error("[sites/list] error:", error);
     return NextResponse.json({ error: "Failed to list sites" }, { status: 500 });
