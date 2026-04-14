@@ -13,14 +13,55 @@ import {
   DASHBOARD_INDEX_PATH,
 } from "@/lib/constants";
 
+// ---------------------------------------------------------------------------
+// TTL cache utility (no external dependencies)
+// ---------------------------------------------------------------------------
+interface CacheEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+function createTtlCache<T>(ttlMs: number): {
+  get(): T | null;
+  set(data: T): void;
+  invalidate(): void;
+} {
+  let entry: CacheEntry<T> | null = null;
+  return {
+    get(): T | null {
+      if (entry && Date.now() < entry.expiresAt) return entry.data;
+      entry = null;
+      return null;
+    },
+    set(data: T): void {
+      entry = { data, expiresAt: Date.now() + ttlMs };
+    },
+    invalidate(): void {
+      entry = null;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Octokit singleton
+// ---------------------------------------------------------------------------
+let _octokit: Octokit | null = null;
+
 function getOctokit(): Octokit {
+  if (_octokit) return _octokit;
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN is not set");
-  return new Octokit({ auth: token });
+  _octokit = new Octokit({ auth: token });
+  return _octokit;
 }
+
+const dashboardIndexCache = createTtlCache<DashboardIndex>(30_000);
 
 /** Read and parse dashboard-index.yaml from the network repo. */
 export async function readDashboardIndex(): Promise<DashboardIndex> {
+  const cached = dashboardIndexCache.get();
+  if (cached) return cached;
+
   const octokit = getOctokit();
   try {
     const { data } = await octokit.repos.getContent({
@@ -43,12 +84,17 @@ export async function readDashboardIndex(): Promise<DashboardIndex> {
         custom_domain: (s as Partial<DashboardSiteEntry>).custom_domain ?? null,
       }));
       parsed.deleted = parsed.deleted ?? [];
+      dashboardIndexCache.set(parsed);
       return parsed;
     }
-    return { sites: [], deleted: [] };
+    const empty: DashboardIndex = { sites: [], deleted: [] };
+    dashboardIndexCache.set(empty);
+    return empty;
   } catch (error: unknown) {
     if (isNotFoundError(error)) {
-      return { sites: [], deleted: [] };
+      const empty: DashboardIndex = { sites: [], deleted: [] };
+      dashboardIndexCache.set(empty);
+      return empty;
     }
     throw error;
   }
@@ -59,6 +105,7 @@ export async function writeDashboardIndex(
   index: DashboardIndex,
   message: string
 ): Promise<void> {
+  dashboardIndexCache.invalidate();
   const octokit = getOctokit();
   const yamlContent = stringifyYaml(index, { lineWidth: 0 });
 
@@ -467,10 +514,12 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
     });
     if (!Array.isArray(data)) return [];
 
-    const articles: ArticleEntry[] = [];
-    for (const file of data) {
-      if (!file.name.endsWith(".md") || file.name === ".gitkeep") continue;
-      try {
+    const mdFiles = data.filter(
+      (file) => file.name.endsWith(".md") && file.name !== ".gitkeep",
+    );
+
+    const results = await Promise.allSettled(
+      mdFiles.map(async (file) => {
         const { data: fileData } = await octokit.repos.getContent({
           owner: NETWORK_REPO_OWNER,
           repo: NETWORK_REPO_NAME,
@@ -480,7 +529,7 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
         if ("content" in fileData && fileData.content) {
           const content = Buffer.from(fileData.content, "base64").toString("utf-8");
           const frontmatter = extractFrontmatter(content);
-          articles.push({
+          return {
             slug: file.name.replace(".md", ""),
             title: (frontmatter.title as string) ?? file.name,
             type: (frontmatter.type as string) ?? "standard",
@@ -490,10 +539,16 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
             scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
             qualityNote: frontmatter.quality_note as string | undefined,
             reviewerNotes: frontmatter.reviewer_notes as string | undefined,
-          });
+          } as ArticleEntry;
         }
-      } catch {
-        // Skip files that fail to read
+        return null;
+      }),
+    );
+
+    const articles: ArticleEntry[] = [];
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) {
+        articles.push(r.value);
       }
     }
     return articles;
@@ -667,16 +722,23 @@ export async function deleteBranch(branchName: string): Promise<void> {
  * dashboard" — `sites/{site}/` on main only appears after publish-to-prod, so
  * we can't rely on the main tree for site enumeration.
  */
+const stagingSitesCache = createTtlCache<string[]>(60_000);
+
 export async function listStagingSites(): Promise<string[]> {
+  const cached = stagingSitesCache.get();
+  if (cached) return cached;
+
   const octokit = getOctokit();
   const { data } = await octokit.git.listMatchingRefs({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
     ref: "heads/staging/",
   });
-  return data
+  const result = data
     .map((r) => r.ref.replace(/^refs\/heads\/staging\//, ""))
     .filter((s) => s.length > 0);
+  stagingSitesCache.set(result);
+  return result;
 }
 
 /** Check if a branch exists in the network repo. */
