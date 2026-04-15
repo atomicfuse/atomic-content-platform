@@ -60,6 +60,7 @@ export async function createSiteAndBuildStaging(
     pages_project: projectName, // placeholder — updated after CF creation
     group: data.groups.length > 0 ? data.groups[0] : "premium-ads",
     groups: data.groups.length > 0 ? data.groups : ["premium-ads"],
+    monetization: data.monetization || undefined,
     active: true,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
