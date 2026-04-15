@@ -60,6 +60,7 @@ export async function createSiteAndBuildStaging(
     pages_project: projectName, // placeholder — updated after CF creation
     group: data.groups.length > 0 ? data.groups[0] : "premium-ads",
     groups: data.groups.length > 0 ? data.groups : ["premium-ads"],
+    monetization: data.monetization || undefined,
     active: true,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
@@ -484,6 +485,11 @@ export interface StagingSiteConfig {
   logoBase64: string | null;
   // Phase 1 config fields
   groups?: string[];
+  /**
+   * Monetization profile id. Empty string clears the field (so the site falls
+   * back to org.default_monetization). Undefined means "no change".
+   */
+  monetization?: string;
   tracking?: Record<string, unknown>;
   scripts?: Record<string, unknown>;
   scripts_vars?: Record<string, string>;

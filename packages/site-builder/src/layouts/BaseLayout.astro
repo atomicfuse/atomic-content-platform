@@ -4,12 +4,14 @@
  *
  * - Loads Google Fonts for the resolved heading + body fonts
  * - Sets CSS custom properties from the theme colour map
- * - Injects tracking / ad scripts in the correct positions
+ * - Injects build-time inline tracking (GA4/GTM only) for first-paint events
+ * - Loads the runtime ad-loader.js which fetches the per-domain
+ *   monetization JSON from the platform CDN and injects ad slots,
+ *   ad network SDKs, and the interstitial overlay
+ *
+ * No ad-specific divs or ad-network scripts are baked into the static HTML.
  */
-import HeadScripts from '../components/HeadScripts.astro';
-import BodyStartScripts from '../components/BodyStartScripts.astro';
-import BodyEndScripts from '../components/BodyEndScripts.astro';
-import Interstitial from '../components/Interstitial.astro';
+import InlineTracking from '../components/InlineTracking.astro';
 import { getConfig } from '../config';
 import '../../themes/modern/styles/theme.css';
 
@@ -20,7 +22,11 @@ interface Props {
 
 const { title, description } = Astro.props;
 const config = await getConfig();
-const { theme, ads_config } = config;
+const { theme } = config;
+
+const adLoaderUrl =
+  import.meta.env.AD_LOADER_URL ?? 'https://cdn.atomicnetwork.com/ad-loader.js';
+const cdnBase = import.meta.env.AD_CDN_BASE ?? 'https://cdn.atomicnetwork.com';
 
 // Build Google Fonts URL
 const fontFamilies = [theme.fonts.heading, theme.fonts.body]
@@ -40,7 +46,7 @@ const cssVars = Object.entries(theme.colors)
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-atl-cdn={cdnBase}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -58,7 +64,7 @@ const cssVars = Object.entries(theme.colors)
       </>
     )}
 
-    <HeadScripts config={config} />
+    <InlineTracking config={config} />
 
     <slot name="head" />
 
@@ -74,6 +80,13 @@ const cssVars = Object.entries(theme.colors)
       h1, h2, h3, h4, h5, h6 {
         font-family: var(--fontHeading), sans-serif;
       }
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+      [data-ad-placeholder] { transition: min-height 0.2s ease; }
     </style>
 
     {/* Inject theme colour custom properties */}
@@ -81,11 +94,8 @@ const cssVars = Object.entries(theme.colors)
   </head>
 
   <body>
-    <BodyStartScripts config={config} />
-
     <slot />
 
-    <Interstitial enabled={ads_config.interstitial} />
-    <BodyEndScripts config={config} />
+    <script is:inline async src={adLoaderUrl}></script>
   </body>
 </html>

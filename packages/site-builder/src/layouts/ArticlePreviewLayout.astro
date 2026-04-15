@@ -3,13 +3,17 @@
  * Layout for article preview/intermediate pages.
  *
  * Shows a featured image, title, author/date, excerpt, "Continue Reading"
- * CTA, ad slots, and related posts. Matches the WordPress preview-page.php
- * pattern for doubling pageviews and ad impressions.
+ * CTA, structural ad-slot anchors, and related posts. Matches the
+ * WordPress preview-page.php pattern for doubling pageviews and
+ * ad impressions.
+ *
+ * Like ArticleLayout, all ad-network specifics are loaded at runtime by
+ * /ad-loader.js — this layout only emits generic `data-slot` anchors with
+ * reserved heights for CLS prevention.
  */
 import { getCollection } from 'astro:content';
 import BaseLayout from './BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
-import AdSlot from '../components/AdSlot.astro';
 import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
@@ -49,22 +53,7 @@ const canonicalUrl = `https://${config.domain}/${slug}`;
 const fullArticleUrl = `/${slug}/full`;
 const ctaText = config.preview_page.cta_text;
 const showAds = config.preview_page.show_ads;
-
-// Separate ad placements by position type
-const aboveContent = showAds
-  ? config.ads_config.ad_placements.filter((p) => p.position === 'above-content')
-  : [];
-const belowCta = showAds
-  ? config.ads_config.ad_placements.filter((p) =>
-      p.position === 'after-paragraph-1' || p.position === 'after-paragraph-2',
-    )
-  : [];
-const sidebar = showAds
-  ? config.ads_config.ad_placements.filter((p) => p.position === 'sidebar')
-  : [];
-const stickyBottom = showAds
-  ? config.ads_config.ad_placements.filter((p) => p.position === 'sticky-bottom')
-  : [];
+const heights = config.ad_placeholder_heights;
 
 // Gather related posts
 const allArticles = await getCollection('articles');
@@ -108,8 +97,13 @@ const categoryBadge = tags[0] ?? null;
   <Header config={config} currentPath={`/${slug}`} />
 
   <main class="preview-page">
-    {/* Above-content ads */}
-    {aboveContent.map((p) => <AdSlot placement={p} />)}
+    {showAds && (
+      <div
+        data-slot="above-content"
+        class="ad-anchor"
+        style={`min-height:${heights['above-content']}px;display:none;`}
+      ></div>
+    )}
 
     {/* Hero image */}
     {featuredImage && (
@@ -136,36 +130,43 @@ const categoryBadge = tags[0] ?? null;
           {excerptIsHtml ? (
             <Fragment set:html={excerpt} />
           ) : (
-            <p>{excerpt}</p>
+            <p data-p-index="1">{excerpt}</p>
           )}
         </div>
 
         {/* Continue Reading CTA */}
         <ContinueReadingCTA href={fullArticleUrl} text={ctaText} />
 
-        {/* Below-CTA ads */}
-        {belowCta.map((p) => <AdSlot placement={p} />)}
+        {showAds && (
+          <div data-slot="below-content" class="ad-anchor"></div>
+        )}
 
         {/* Related Posts */}
         <RelatedPosts articles={related} heading="You Might Also Like" />
       </article>
 
-      {/* Sidebar ads (desktop only) */}
-      {sidebar.length > 0 && (
-        <aside class="preview-sidebar">
-          {sidebar.map((p) => <AdSlot placement={p} />)}
-        </aside>
+      {showAds && (
+        <aside
+          class="preview-sidebar"
+          data-slot="sidebar"
+          style={`min-height:${heights.sidebar}px;`}
+        ></aside>
       )}
     </div>
 
     {/* Newsletter */}
     <NewsletterForm siteName={config.site_name} />
-
-    {/* Sticky bottom ads (mobile only) */}
-    {stickyBottom.map((p) => <AdSlot placement={p} />)}
   </main>
 
   <Footer config={config} />
+
+  {showAds && (
+    <div
+      data-slot="sticky-bottom"
+      class="ad-sticky-bottom"
+      style={`min-height:${heights['sticky-bottom']}px;display:none;`}
+    ></div>
+  )}
 </BaseLayout>
 
 <style>
@@ -258,6 +259,7 @@ const categoryBadge = tags[0] ?? null;
   /* Sidebar */
   .preview-sidebar {
     display: none;
+    width: 300px;
   }
 
   @media (min-width: 960px) {
@@ -281,5 +283,19 @@ const categoryBadge = tags[0] ?? null;
       margin-left: -1rem;
       margin-right: -1rem;
     }
+  }
+
+  .ad-anchor {
+    margin: 1.5rem 0;
+  }
+
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
   }
 </style>

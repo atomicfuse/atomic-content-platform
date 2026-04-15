@@ -1,0 +1,53 @@
+---
+/**
+ * Build-time inline tracking script.
+ *
+ * Renders a minimal inline `<script>` in `<head>` for GA4 and GTM only.
+ * This is the ONE monetization element that's build-time, so tracking
+ * starts firing from first paint instead of waiting for ad-loader.js
+ * to fetch the CDN monetization JSON.
+ *
+ * Other monetization concerns (ad SDKs, ad slots, interstitials, custom
+ * tracking pixels) are loaded at runtime via /ad-loader.js.
+ */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+
+interface Props {
+  config: ResolvedConfig;
+}
+
+const { tracking } = Astro.props.config;
+---
+
+{tracking.gtm && (
+  <script is:inline define:vars={{ gtmId: tracking.gtm }}>
+    (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer',gtmId);
+  </script>
+)}
+
+{tracking.ga4 && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${tracking.ga4}`}></script>
+    <script is:inline define:vars={{ ga4Id: tracking.ga4 }}>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', ga4Id);
+    </script>
+  </>
+)}
+
+{tracking.gtm && (
+  <noscript>
+    <iframe
+      src={`https://www.googletagmanager.com/ns.html?id=${tracking.gtm}`}
+      height="0"
+      width="0"
+      style="display:none;visibility:hidden"
+    ></iframe>
+  </noscript>
+)}

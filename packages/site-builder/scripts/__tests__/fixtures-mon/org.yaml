@@ -1,0 +1,42 @@
+organization: "Mon Org"
+legal_entity: "Mon Org Ltd"
+company_address: "42 Mon St"
+support_email_pattern: "contact@{{domain}}"
+default_theme: modern
+default_fonts:
+  heading: "Inter"
+  body: "Inter"
+
+default_monetization: standard-ads
+
+tracking:
+  ga4: null
+  gtm: null
+  google_ads: null
+  facebook_pixel: "ORG-FB-PIXEL"
+  custom: []
+
+scripts:
+  head: []
+  body_start: []
+  body_end: []
+
+scripts_vars: {}
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements: []
+
+ad_placeholder_heights:
+  above-content: 90
+  after-paragraph: 280
+  sidebar: 600
+  sticky-bottom: 50
+
+ads_txt:
+  - "google.com, pub-ORG-DEFAULT, DIRECT, f08c47fec0942fa0"
+
+legal:
+  company_name: "Mon Org Ltd"
+  company_country: "Testland"

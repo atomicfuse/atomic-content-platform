@@ -1,0 +1,51 @@
+monetization_id: premium-ads
+name: "Premium Ads"
+provider: "network-alpha"
+
+tracking:
+  ga4: "G-PREMIUM-XXX"
+  gtm: "GTM-PREMIUM"
+  google_ads: "AW-PREMIUM-XXX"
+  facebook_pixel: "123456789"
+
+scripts:
+  head:
+    - id: ad-network
+      inline: |
+        window.adInit({siteId: '{{ad_site_id}}', zone: '{{ad_zone}}'});
+    - id: premium-analytics
+      src: "https://analytics.premium.example.com/v1.js"
+      async: true
+  body_start: []
+  body_end: []
+
+scripts_vars:
+  ad_zone: "default-zone"
+
+ads_config:
+  interstitial: true
+  in_content_slots: 2
+  sidebar: true
+  layout: high-density
+  ad_placements:
+    - id: top-banner
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all
+    - id: in-content-1
+      position: after-paragraph-3
+      sizes:
+        desktop: [[336, 280]]
+        mobile: [[300, 250]]
+      device: all
+    - id: sidebar-sticky
+      position: sidebar
+      sizes:
+        desktop: [[300, 600]]
+      device: desktop
+
+ads_txt:
+  - "premium-network.com, 999, DIRECT"
+  - "google.com, pub-monetization, DIRECT"

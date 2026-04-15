@@ -24,7 +24,7 @@ import { parse } from "yaml";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
 
 import { resolveConfig } from "./resolve-config.js";
-import { generateAdsTxt } from "./generate-ads-txt.js";
+import { buildAdsTxtForSite } from "./generate-ads-txt.js";
 import { injectSharedPages } from "./inject-shared-pages.js";
 import { resolveAdsTxtProfile } from "./resolve-ads-txt-profile.js";
 
@@ -187,7 +187,11 @@ export async function buildSite(
 
   // ---- 4. Generate ads.txt ----
 
-  let adsTxtContent = generateAdsTxt(resolvedConfig);
+  let adsTxtContent = await buildAdsTxtForSite({
+    networkRepoPath: networkDataPath,
+    siteDomain,
+    resolvedConfig,
+  });
   const adsTxtPath = join(process.cwd(), "public", "ads.txt");
   await writeFileWithDir(adsTxtPath, adsTxtContent);
   console.log(

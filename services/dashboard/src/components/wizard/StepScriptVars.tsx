@@ -24,31 +24,52 @@ export function StepScriptVars({
   const [requiredKeys, setRequiredKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch group scripts and detect required placeholders
+  // Fetch group + monetization scripts and detect required placeholders
   useEffect(() => {
-    if (data.groups.length === 0) {
-      setRequiredKeys([]);
-      return;
-    }
-
     async function detectVars(): Promise<void> {
       setLoading(true);
       const allPlaceholders = new Set<string>();
 
-      for (const groupId of data.groups) {
+      // Resolve effective monetization (explicit or org default)
+      let monetizationId = data.monetization;
+      if (!monetizationId) {
         try {
-          const res = await fetch(`/api/groups/${groupId}`);
-          if (!res.ok) continue;
-          const group = await res.json();
-
-          // Scan scripts for {{placeholder}} patterns
-          const scriptsJson = JSON.stringify(group.scripts ?? {});
-          const matches = scriptsJson.matchAll(/\{\{(\w+)\}\}/g);
-          for (const match of matches) {
-            allPlaceholders.add(match[1]);
+          const orgRes = await fetch("/api/settings/org");
+          if (orgRes.ok) {
+            const org = (await orgRes.json()) as { default_monetization?: string };
+            monetizationId = org.default_monetization;
           }
         } catch {
-          // Skip group if fetch fails
+          // ignore
+        }
+      }
+
+      const fetches: Promise<unknown>[] = [];
+      for (const groupId of data.groups) {
+        fetches.push(
+          fetch(`/api/groups/${groupId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+        );
+      }
+      if (monetizationId) {
+        fetches.push(
+          fetch(`/api/monetization/${monetizationId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+        );
+      }
+
+      const results = await Promise.all(fetches);
+      for (const result of results) {
+        if (!result) continue;
+        const cfg = result as {
+          scripts?: unknown;
+          scripts_vars?: Record<string, string>;
+        };
+        const scriptsJson = JSON.stringify(cfg.scripts ?? {});
+        for (const match of scriptsJson.matchAll(/\{\{(\w+)\}\}/g)) {
+          allPlaceholders.add(match[1]);
         }
       }
 
@@ -59,7 +80,7 @@ export function StepScriptVars({
     }
 
     void detectVars();
-  }, [data.groups]);
+  }, [data.groups, data.monetization]);
 
   function updateVar(key: string, value: string): void {
     onChange({ scriptsVars: { ...data.scriptsVars, [key]: value } });
@@ -69,36 +90,17 @@ export function StepScriptVars({
     (k) => !data.scriptsVars[k]?.trim(),
   );
 
-  if (data.groups.length === 0) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold">Script Variables</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            No groups selected — no script variables required.
-          </p>
-        </div>
-        <div className="flex justify-between pt-4">
-          <Button variant="secondary" onClick={onBack}>
-            Back
-          </Button>
-          <Button onClick={onNext}>Next</Button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">Script Variables</h2>
         <p className="mt-1 text-sm text-gray-500">
-          These variables are used as{" "}
+          These variables fill{" "}
           <code className="rounded bg-gray-100 px-1 text-xs dark:bg-gray-800">
             {"{{key}}"}
           </code>{" "}
-          placeholders in the selected groups&apos; scripts. Fill in the
-          site-specific values.
+          placeholders found in the selected monetization profile&apos;s and
+          group(s)&apos; scripts.
         </p>
       </div>
 

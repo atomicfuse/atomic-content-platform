@@ -1,5 +1,6 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
+import type { AdPlaceholderHeights } from "./monetization.js";
 
 // ---------------------------------------------------------------------------
 // Quality scoring
@@ -273,6 +274,12 @@ export interface OrgConfig {
     body: string;
   };
 
+  /**
+   * Default monetization profile id applied to sites that don't specify their
+   * own `monetization:` field. Must reference a file at `monetization/<id>.yaml`.
+   */
+  default_monetization?: string;
+
   /** Organisation-wide tracking configuration. */
   tracking: TrackingConfig;
 
@@ -284,6 +291,19 @@ export interface OrgConfig {
 
   /** Default advertising configuration. */
   ads_config: AdsConfig;
+
+  /**
+   * Placeholder heights used at build time for CLS prevention. Required so
+   * the static HTML can reserve vertical space before runtime ad injection.
+   */
+  ad_placeholder_heights?: AdPlaceholderHeights;
+
+  /**
+   * Organisation-wide ads.txt entries. Top-level (not inside ads_config).
+   * Merged additively across all layers (org + monetization + group + site).
+   * Older configs may still store ads_txt inside `ads_config.ads_txt`.
+   */
+  ads_txt?: string[];
 
   /** Legal page templates keyed by slug (e.g. "privacy-policy", "terms"). */
   legal: Record<string, string>;
@@ -316,7 +336,7 @@ export interface GroupConfig {
   name: string;
 
   /** Group-specific ads.txt lines (merged with org-level entries). */
-  ads_txt: string[];
+  ads_txt?: string[];
 
   /** Tracking overrides — only specified fields replace org defaults. */
   tracking?: Partial<TrackingConfig>;
@@ -376,6 +396,12 @@ export interface SiteConfig {
    */
   groups?: string[];
 
+  /**
+   * Monetization profile id this site uses. References `monetization/<id>.yaml`.
+   * Falls back to `org.default_monetization` when omitted.
+   */
+  monetization?: string;
+
   /** Whether the site is live and should be built/deployed. */
   active: boolean;
 
@@ -399,6 +425,12 @@ export interface SiteConfig {
 
   /** Site-level advertising overrides. */
   ads_config?: Partial<AdsConfig>;
+
+  /**
+   * Site-level ads.txt entries. Top-level (not inside ads_config).
+   * Additively merged with org/monetization/group entries.
+   */
+  ads_txt?: string[];
 
   /** Site-level preview page overrides. */
   preview_page?: Partial<PreviewPageConfig>;
@@ -453,6 +485,12 @@ export interface ResolvedConfig {
   /** All group IDs this site belongs to (merged left-to-right). */
   groups: string[];
 
+  /**
+   * Resolved monetization profile id (from site.monetization ??
+   * org.default_monetization). Empty string when no profile applies.
+   */
+  monetization: string;
+
   /** Resolved support email (from org support_email_pattern with domain). */
   support_email: string;
 
@@ -479,6 +517,9 @@ export interface ResolvedConfig {
 
   /** Merged legal pages. */
   legal: Record<string, string>;
+
+  /** Placeholder heights used at build time for CLS prevention. */
+  ad_placeholder_heights: AdPlaceholderHeights;
 
   /** Fully-resolved preview page configuration. */
   preview_page: PreviewPageConfig;

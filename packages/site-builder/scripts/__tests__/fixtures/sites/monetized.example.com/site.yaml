@@ -1,0 +1,34 @@
+domain: monetized.example.com
+site_name: "Monetized Site"
+group: test-group
+monetization: premium-ads
+active: true
+
+tracking:
+  ga4: "G-SITE-OVERRIDE"
+
+scripts_vars:
+  ad_site_id: "monetized-001"
+  ad_zone: "site-zone"
+
+brief:
+  audience: "Test"
+  tone: "Pro"
+  article_types:
+    standard: 100
+  topics: [test]
+  seo_keywords_focus: [test]
+  content_guidelines: "..."
+  review_percentage: 5
+  schedule:
+    articles_per_week: 3
+    preferred_days: [Monday]
+    preferred_time: "09:00"
+
+theme:
+  base: modern
+  logo: /assets/logo.svg
+  favicon: /assets/favicon.png
+
+ads_txt:
+  - "site-specific.com, 42, DIRECT"

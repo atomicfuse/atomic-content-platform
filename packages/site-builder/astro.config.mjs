@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
+import { paragraphIndexPlugin } from './src/utils/index-paragraphs.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,4 +44,8 @@ export default defineConfig({
   },
 
   integrations: [sitemap()],
+
+  markdown: {
+    rehypePlugins: [paragraphIndexPlugin],
+  },
 });

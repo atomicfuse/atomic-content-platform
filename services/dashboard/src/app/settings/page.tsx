@@ -3,12 +3,17 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
+import { useToast } from "@/components/ui/Toast";
 import { TrackingForm } from "@/components/settings/TrackingForm";
 import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
 import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
 import { LegalForm } from "@/components/settings/LegalForm";
-import { GeneralForm } from "@/components/settings/GeneralForm";
+import {
+  GeneralForm,
+  type MonetizationOption,
+} from "@/components/settings/GeneralForm";
+import { AdsTxtEditor } from "@/components/monetization/AdsTxtEditor";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -16,17 +21,28 @@ interface OrgConfig {
 
 export default function OrgSettingsPage(): React.ReactElement {
   const [config, setConfig] = useState<OrgConfig | null>(null);
+  const [monetizationProfiles, setMonetizationProfiles] = useState<
+    MonetizationOption[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
       setError(null);
-      const res = await fetch("/api/settings/org");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as OrgConfig;
+      const [orgRes, monRes] = await Promise.all([
+        fetch("/api/settings/org"),
+        fetch("/api/monetization"),
+      ]);
+      if (!orgRes.ok) throw new Error(`HTTP ${orgRes.status}`);
+      const data = (await orgRes.json()) as OrgConfig;
       setConfig(data);
+      if (monRes.ok) {
+        const profiles = (await monRes.json()) as MonetizationOption[];
+        setMonetizationProfiles(profiles);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load org config");
     } finally {
@@ -54,6 +70,7 @@ export default function OrgSettingsPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast("Org settings saved", "success");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -91,8 +108,12 @@ export default function OrgSettingsPage(): React.ReactElement {
               default_fonts: config.default_fonts as
                 | { heading: string; body: string }
                 | undefined,
+              default_monetization: config.default_monetization as
+                | string
+                | undefined,
             } satisfies Parameters<typeof GeneralForm>[0]["value"]
           }
+          monetizationOptions={monetizationProfiles}
           onChange={(v): void => {
             setConfig({ ...config, ...v });
           }}
@@ -103,34 +124,46 @@ export default function OrgSettingsPage(): React.ReactElement {
       id: "tracking",
       label: "Tracking",
       content: (
-        <TrackingForm
-          value={
-            (config.tracking ?? {
-              ga4: null,
-              gtm: null,
-              google_ads: null,
-              facebook_pixel: null,
-              custom: [],
-            }) as unknown as Parameters<typeof TrackingForm>[0]["value"]
-          }
-          onChange={(v): void => updateField("tracking", v)}
-        />
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--text-muted)]">
+            These are org-wide defaults. Monetization profiles, groups and sites
+            can override.
+          </p>
+          <TrackingForm
+            value={
+              (config.tracking ?? {
+                ga4: null,
+                gtm: null,
+                google_ads: null,
+                facebook_pixel: null,
+                custom: [],
+              }) as unknown as Parameters<typeof TrackingForm>[0]["value"]
+            }
+            onChange={(v): void => updateField("tracking", v)}
+          />
+        </div>
       ),
     },
     {
       id: "scripts",
       label: "Scripts",
       content: (
-        <ScriptsEditor
-          value={
-            (config.scripts ?? {
-              head: [],
-              body_start: [],
-              body_end: [],
-            }) as unknown as Parameters<typeof ScriptsEditor>[0]["value"]
-          }
-          onChange={(v): void => updateField("scripts", v)}
-        />
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--text-muted)]">
+            These scripts load on EVERY site unless overridden by a monetization
+            profile, group, or site.
+          </p>
+          <ScriptsEditor
+            value={
+              (config.scripts ?? {
+                head: [],
+                body_start: [],
+                body_end: [],
+              }) as unknown as Parameters<typeof ScriptsEditor>[0]["value"]
+            }
+            onChange={(v): void => updateField("scripts", v)}
+          />
+        </div>
       ),
     },
     {
@@ -138,8 +171,15 @@ export default function OrgSettingsPage(): React.ReactElement {
       label: "Script Variables",
       content: (
         <ScriptVariablesEditor
-          value={(config.script_variables ?? {}) as Record<string, string>}
-          onChange={(v: Record<string, string>): void => updateField("script_variables", v)}
+          value={
+            (config.scripts_vars ?? config.script_variables ?? {}) as Record<
+              string,
+              string
+            >
+          }
+          onChange={(v: Record<string, string>): void =>
+            updateField("scripts_vars", v)
+          }
         />
       ),
     },
@@ -149,14 +189,31 @@ export default function OrgSettingsPage(): React.ReactElement {
       content: (
         <AdsConfigForm
           value={
-            (config.ads ?? {
+            (config.ads_config ?? config.ads ?? {
               interstitial: false,
               layout: "standard",
               ad_placements: [],
             }) as unknown as Parameters<typeof AdsConfigForm>[0]["value"]
           }
-          onChange={(v): void => updateField("ads", v)}
+          onChange={(v): void => updateField("ads_config", v)}
         />
+      ),
+    },
+    {
+      id: "ads-txt",
+      label: "ads.txt",
+      content: (
+        <div className="space-y-3">
+          <p className="text-xs text-[var(--text-muted)]">
+            These entries appear in EVERY site&apos;s ads.txt. Monetization,
+            group and site entries are added on top.
+          </p>
+          <AdsTxtEditor
+            value={(config.ads_txt ?? []) as string[]}
+            onChange={(v): void => updateField("ads_txt", v)}
+            scopeLabel="organization"
+          />
+        </div>
       ),
     },
     {
