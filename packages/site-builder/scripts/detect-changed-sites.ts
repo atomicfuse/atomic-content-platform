@@ -2,11 +2,22 @@
  * Changed-site detection for CI/CD pipelines.
  *
  * Determines whether a given site needs to be rebuilt based on which files
- * changed in the most recent commit.  This allows the build matrix to skip
+ * changed in the most recent commit. This allows the build matrix to skip
  * sites whose configuration has not been touched.
+ *
+ * NOTE on the monetization layer: changes inside `monetization/<id>.yaml`
+ * intentionally do NOT trigger any Astro site rebuilds. They only trigger
+ * the CDN JSON pipeline (see `generate-monetization-json.ts`) because the
+ * static HTML carries no monetization-specific elements — `ad-loader.js`
+ * picks up the new config from the regenerated CDN JSON within the cache
+ * window. Use {@link affectedSitesForMonetizationChange} to enumerate
+ * which sites need their CDN JSON regenerated.
  */
 
 import { execSync } from "node:child_process";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 // ---------------------------------------------------------------------------
 // Git helpers
@@ -44,6 +55,8 @@ export function getChangedFiles(): string[] {
 // Decision logic
 // ---------------------------------------------------------------------------
 
+const MONETIZATION_FILE_REGEX = /^monetization\/[^/]+\.yaml$/;
+
 /**
  * Decide whether a site needs rebuilding based on which files changed.
  *
@@ -53,6 +66,8 @@ export function getChangedFiles(): string[] {
  *  - `network.yaml` changed                         -> YES (platform version)
  *  - `groups/{siteGroup}.yaml` changed              -> YES
  *  - The sentinel value `"*"` is in the list        -> YES (first commit)
+ *  - `monetization/*.yaml` changed                  -> NO (CDN JSON only,
+ *                                                      no static HTML rebuild)
  *  - Changes only in other sites' directories       -> NO
  *
  * @param siteDomain  - The domain slug for the site (e.g. "coolnews.dev").
@@ -76,6 +91,12 @@ export function shouldBuildSite(
   const groupFiles = groups.map((g) => `groups/${g}.yaml`);
 
   for (const file of changedFiles) {
+    // Monetization changes never trigger a site rebuild — they're handled
+    // by the runtime ad-loader fetching the updated CDN JSON.
+    if (MONETIZATION_FILE_REGEX.test(file)) {
+      continue;
+    }
+
     // Direct changes to the site's own directory.
     if (file.startsWith(sitePrefix)) {
       return true;
@@ -98,4 +119,133 @@ export function shouldBuildSite(
   }
 
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Monetization JSON regeneration detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract the monetization profile ids touched by the changed file list.
+ * Returns `["*"]` when `org.yaml` changed, since `default_monetization`
+ * may have been updated and every site that inherited it now needs a
+ * fresh CDN JSON.
+ */
+export function changedMonetizationProfiles(
+  changedFiles: string[],
+): string[] {
+  const ids = new Set<string>();
+  let orgChanged = false;
+
+  for (const file of changedFiles) {
+    if (file === "org.yaml") {
+      orgChanged = true;
+      continue;
+    }
+    const match = MONETIZATION_FILE_REGEX.exec(file);
+    if (match) {
+      const filename = file.split("/").pop()!;
+      ids.add(filename.replace(/\.yaml$/, ""));
+    }
+  }
+
+  if (orgChanged) return ["*"];
+  return [...ids];
+}
+
+/**
+ * Enumerate which site domains need their CDN monetization JSON regenerated
+ * given a set of changed files. Reads each site's `site.yaml` to determine
+ * the resolved monetization profile.
+ *
+ * - `monetization/<id>.yaml` change: every site whose effective profile
+ *   resolves to `<id>` (either explicitly or via org default).
+ * - `org.yaml` change: every site (default_monetization may have shifted).
+ * - `sites/<domain>/site.yaml` change: just that site (its `monetization`
+ *   field may have been added/removed/changed).
+ *
+ * @param networkRepoPath - Absolute path to the network data repo root.
+ * @param changedFiles    - List of changed paths from {@link getChangedFiles}.
+ */
+export async function affectedSitesForMonetizationChange(
+  networkRepoPath: string,
+  changedFiles: string[],
+): Promise<string[]> {
+  const profiles = changedMonetizationProfiles(changedFiles);
+  const orgChanged = profiles.includes("*");
+
+  // Track which sites had their own site.yaml touched.
+  const directlyChangedSites = new Set<string>();
+  for (const file of changedFiles) {
+    const match = /^sites\/([^/]+)\/site\.yaml$/.exec(file);
+    if (match) directlyChangedSites.add(match[1]!);
+  }
+
+  // Quick exit: nothing monetization-relevant changed.
+  if (
+    profiles.length === 0 &&
+    directlyChangedSites.size === 0
+  ) {
+    return [];
+  }
+
+  // Read org default_monetization once so we can attribute inherited sites.
+  let orgDefault = "";
+  try {
+    const orgRaw = await readFile(
+      join(networkRepoPath, "org.yaml"),
+      "utf-8",
+    );
+    const orgParsed = parseYaml(orgRaw) as { default_monetization?: string } | null;
+    orgDefault = orgParsed?.default_monetization ?? "";
+  } catch {
+    // org.yaml missing — leave default empty
+  }
+
+  const sitesDir = join(networkRepoPath, "sites");
+  let entries: string[];
+  try {
+    entries = await readdir(sitesDir);
+  } catch {
+    return [];
+  }
+
+  const affected = new Set<string>();
+  for (const entry of entries) {
+    const sitePath = join(sitesDir, entry);
+    let isDir = false;
+    try {
+      isDir = (await stat(sitePath)).isDirectory();
+    } catch {
+      continue;
+    }
+    if (!isDir) continue;
+
+    if (directlyChangedSites.has(entry) || orgChanged) {
+      affected.add(entry);
+      continue;
+    }
+
+    // Did one of the touched profiles match this site?
+    if (profiles.length === 0) continue;
+
+    let siteMonetization = "";
+    try {
+      const siteRaw = await readFile(
+        join(sitePath, "site.yaml"),
+        "utf-8",
+      );
+      const siteParsed = parseYaml(siteRaw) as { monetization?: string } | null;
+      siteMonetization = siteParsed?.monetization ?? "";
+    } catch {
+      continue;
+    }
+
+    const effective = siteMonetization || orgDefault;
+    if (effective && profiles.includes(effective)) {
+      affected.add(entry);
+    }
+  }
+
+  return [...affected].sort();
 }
