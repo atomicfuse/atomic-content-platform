@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { useToast } from "@/components/ui/Toast";
 
 interface NetworkConfig {
   platform_version: string;
@@ -13,6 +14,7 @@ interface NetworkConfig {
 }
 
 export default function NetworkSettingsPage(): React.ReactElement {
+  const { toast } = useToast();
   const [config, setConfig] = useState<NetworkConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,8 +49,11 @@ export default function NetworkSettingsPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast("Network settings saved", "success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setSaving(false);
     }
