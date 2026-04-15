@@ -92,6 +92,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.groups !== undefined) {
         existing.groups = configUpdates.groups;
       }
+      if (configUpdates.monetization !== undefined) {
+        if (configUpdates.monetization === "") {
+          delete existing.monetization;
+        } else {
+          existing.monetization = configUpdates.monetization;
+        }
+      }
       if (configUpdates.tracking !== undefined) {
         const prev = (existing.tracking ?? {}) as Record<string, unknown>;
         existing.tracking = { ...prev, ...configUpdates.tracking };

@@ -485,6 +485,11 @@ export interface StagingSiteConfig {
   logoBase64: string | null;
   // Phase 1 config fields
   groups?: string[];
+  /**
+   * Monetization profile id. Empty string clears the field (so the site falls
+   * back to org.default_monetization). Undefined means "no change".
+   */
+  monetization?: string;
   tracking?: Record<string, unknown>;
   scripts?: Record<string, unknown>;
   scripts_vars?: Record<string, string>;
