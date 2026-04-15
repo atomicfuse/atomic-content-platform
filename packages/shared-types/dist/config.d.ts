@@ -1,6 +1,6 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
-import type { AdPlaceholderHeights } from "./monetization.js";
+import type { AdPlaceholderHeights, MonetizationJson } from "./monetization.js";
 /**
  * Per-criterion weight configuration for the content quality agent.
  * Values should sum to 100. Defaults to 20 each when not configured.
@@ -367,6 +367,14 @@ export interface ResolvedConfig {
     sidebar: SidebarConfig;
     /** Fully-resolved search configuration. */
     search: SearchConfig;
+    /**
+     * Runtime-shaped monetization JSON. Embedded inline into the HTML head at
+     * build time (as `window.__ATL_MONETIZATION__`) so that ad-loader.js can
+     * render ads without a CDN round-trip.
+     *
+     * Undefined when the site has no resolved monetization profile.
+     */
+    monetizationJson?: MonetizationJson;
 }
 /**
  * Recursively makes all properties of T optional.
