@@ -2,17 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Tabs } from "@/components/ui/Tabs";
+import { useToast } from "@/components/ui/Toast";
+
 import { TrackingForm } from "@/components/settings/TrackingForm";
 import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
 import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
-import { AdsTxtEditor } from "@/components/groups/AdsTxtEditor";
+import { LegalForm } from "@/components/settings/LegalForm";
+
 import { ThemeForm } from "@/components/groups/ThemeForm";
-import { useToast } from "@/components/ui/Toast";
-import Link from "next/link";
+import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
+
+import { AdsTxtEditor } from "@/components/monetization/AdsTxtEditor";
 
 interface GroupConfig {
   name?: string;
@@ -25,6 +30,8 @@ interface GroupConfig {
   ads_config?: Record<string, unknown>;
   ads?: Record<string, unknown>;
   theme?: Record<string, unknown>;
+  legal?: Record<string, string>;
+  legal_pages_override?: Record<string, string>;
   [key: string]: unknown;
 }
 
@@ -38,13 +45,27 @@ interface TrackingConfig {
   gtm: string | null;
   google_ads: string | null;
   facebook_pixel: string | null;
-  custom: Array<{ name: string; src: string; position: "head" | "body_start" | "body_end" }>;
+  custom: Array<{
+    name: string;
+    src: string;
+    position: "head" | "body_start" | "body_end";
+  }>;
 }
 
 interface ScriptsConfig {
   head: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-  body_start: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-  body_end: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
+  body_start: Array<{
+    id: string;
+    src?: string;
+    inline?: string;
+    async?: boolean;
+  }>;
+  body_end: Array<{
+    id: string;
+    src?: string;
+    inline?: string;
+    async?: boolean;
+  }>;
 }
 
 interface AdsConfigFormValue {
@@ -60,15 +81,20 @@ interface AdsConfigFormValue {
   }>;
 }
 
-/** Normalize ads_txt from YAML — could be a multiline string or string array. */
 function normalizeAdsTxt(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw as string[];
-  if (typeof raw === "string") return raw.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (typeof raw === "string") {
+    return raw
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  }
   return [];
 }
 
-/** Normalize tracking from YAML to what TrackingForm expects. */
-function normalizeTracking(raw: Record<string, unknown> | undefined): TrackingConfig {
+function normalizeTracking(
+  raw: Record<string, unknown> | undefined,
+): TrackingConfig {
   return {
     ga4: (raw?.ga4 as string) ?? null,
     gtm: (raw?.gtm as string) ?? null,
@@ -78,8 +104,9 @@ function normalizeTracking(raw: Record<string, unknown> | undefined): TrackingCo
   };
 }
 
-/** Normalize scripts — the YAML may have `content` instead of `inline`, and `type` field. */
-function normalizeScripts(raw: Record<string, unknown> | undefined): ScriptsConfig {
+function normalizeScripts(
+  raw: Record<string, unknown> | undefined,
+): ScriptsConfig {
   function normalizeEntries(entries: unknown): ScriptsConfig["head"] {
     if (!Array.isArray(entries)) return [];
     return entries.map((e: Record<string, unknown>) => ({
@@ -96,8 +123,9 @@ function normalizeScripts(raw: Record<string, unknown> | undefined): ScriptsConf
   };
 }
 
-/** Normalize ads config — YAML uses string sizes like "728x90", form expects number[][] tuples. */
-function normalizeAdsConfig(raw: Record<string, unknown> | undefined): AdsConfigFormValue {
+function normalizeAdsConfig(
+  raw: Record<string, unknown> | undefined,
+): AdsConfigFormValue {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
@@ -108,8 +136,7 @@ function normalizeAdsConfig(raw: Record<string, unknown> | undefined): AdsConfig
       const rawSizes = p.sizes;
       let sizes: { desktop?: number[][]; mobile?: number[][] } = {};
       if (Array.isArray(rawSizes)) {
-        // String sizes like ["728x90", "970x250"] → desktop tuples
-        const tuples = (rawSizes as string[])
+        const tuples = (rawSizes as unknown[])
           .map((s) => {
             if (typeof s === "string" && s.includes("x")) {
               const [w, h] = s.split("x").map(Number);
@@ -126,11 +153,19 @@ function normalizeAdsConfig(raw: Record<string, unknown> | undefined): AdsConfig
       return {
         id: (p.id as string) ?? "",
         position: (p.position as string) ?? "",
-        device: ((p.devices ?? p.device ?? "all") as "all" | "desktop" | "mobile"),
+        device: (p.devices ?? p.device ?? "all") as
+          | "all"
+          | "desktop"
+          | "mobile",
         sizes,
       };
     }),
   };
+}
+
+/** Returns true if any of the given fields exists on the config object. */
+function hasAny(config: GroupConfig, keys: readonly string[]): boolean {
+  return keys.some((k) => k in config && config[k] != null);
 }
 
 export default function GroupDetailPage(): React.ReactElement {
@@ -143,9 +178,11 @@ export default function GroupDetailPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Track which sites belong to this group
-  const [groupSites, setGroupSites] = useState<Array<{ domain: string; site_name?: string }>>([]);
+  const [groupSites, setGroupSites] = useState<
+    Array<{ domain: string; site_name?: string }>
+  >([]);
 
   const fetchData = useCallback(async (): Promise<void> => {
     try {
@@ -155,7 +192,9 @@ export default function GroupDetailPage(): React.ReactElement {
         fetch("/api/settings/org"),
         fetch(`/api/groups/${groupId}/sites`),
       ]);
-      if (!groupRes.ok) throw new Error(`Failed to load group: HTTP ${groupRes.status}`);
+      if (!groupRes.ok) {
+        throw new Error(`Failed to load group: HTTP ${groupRes.status}`);
+      }
       const groupData = (await groupRes.json()) as GroupConfig;
       setConfig(groupData);
 
@@ -165,8 +204,26 @@ export default function GroupDetailPage(): React.ReactElement {
       }
 
       if (sitesRes.ok) {
-        const sitesData = (await sitesRes.json()) as Array<{ domain: string; site_name?: string }>;
+        const sitesData = (await sitesRes.json()) as Array<{
+          domain: string;
+          site_name?: string;
+        }>;
         setGroupSites(sitesData);
+      }
+
+      // Auto-expand advanced if any of those fields are set.
+      if (
+        hasAny(groupData, [
+          "tracking",
+          "scripts",
+          "scripts_vars",
+          "script_variables",
+          "ads_config",
+          "ads",
+          "ads_txt",
+        ])
+      ) {
+        setAdvancedOpen(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load group config");
@@ -204,7 +261,9 @@ export default function GroupDetailPage(): React.ReactElement {
   }
 
   if (loading) {
-    return <div className="text-sm text-[var(--text-secondary)]">Loading group...</div>;
+    return (
+      <div className="text-sm text-[var(--text-secondary)]">Loading group...</div>
+    );
   }
 
   if (error && !config) {
@@ -217,20 +276,25 @@ export default function GroupDetailPage(): React.ReactElement {
 
   if (!config) return <div />;
 
-  // Normalize data from YAML to what components expect
   const adsTxtEntries = normalizeAdsTxt(config.ads_txt);
-  const trackingValue = normalizeTracking(config.tracking as Record<string, unknown> | undefined);
-  const scriptsValue = normalizeScripts(config.scripts as Record<string, unknown> | undefined);
-  const scriptVarsValue = (config.scripts_vars ?? config.script_variables ?? {}) as Record<string, string>;
-  const adsConfigValue = normalizeAdsConfig((config.ads_config ?? config.ads) as Record<string, unknown> | undefined);
+  const trackingValue = normalizeTracking(config.tracking);
+  const scriptsValue = normalizeScripts(config.scripts);
+  const scriptVarsValue = (config.scripts_vars ??
+    config.script_variables ??
+    {}) as Record<string, string>;
+  const adsConfigValue = normalizeAdsConfig(
+    (config.ads_config ?? config.ads) as Record<string, unknown> | undefined,
+  );
 
-  const orgTracking = orgConfig?.tracking as Record<string, unknown> | undefined;
-  const inheritedTracking = orgTracking ? normalizeTracking(orgTracking) : undefined;
+  const orgTracking = orgConfig?.tracking;
+  const inheritedTracking = orgTracking
+    ? normalizeTracking(orgTracking)
+    : undefined;
 
   const tabs = [
     {
-      id: "identity",
-      label: "Identity",
+      id: "general",
+      label: "General",
       content: (
         <div className="space-y-4 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
           <Input
@@ -244,81 +308,7 @@ export default function GroupDetailPage(): React.ReactElement {
             value={config.name ?? ""}
             onChange={(e): void => updateField("name", e.target.value)}
           />
-          {/* Sites in this group */}
-          <div className="space-y-2 pt-2">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Sites Using This Group
-            </label>
-            {groupSites.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">No sites assigned to this group.</p>
-            ) : (
-              <div className="space-y-1">
-                {groupSites.map((site) => (
-                  <Link
-                    key={site.domain}
-                    href={`/sites/${encodeURIComponent(site.domain)}`}
-                    className="flex items-center gap-2 p-2 rounded-lg bg-[var(--bg-surface)] hover:bg-[var(--bg-primary)] transition-colors text-sm"
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan" />
-                    <span className="font-medium">{site.site_name ?? site.domain}</span>
-                    <span className="text-[var(--text-muted)] text-xs ml-auto">{site.domain}</span>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
-      ),
-    },
-    {
-      id: "ads-txt",
-      label: "Ads.txt",
-      content: (
-        <AdsTxtEditor
-          value={adsTxtEntries}
-          onChange={(v: string[]): void => updateField("ads_txt", v)}
-        />
-      ),
-    },
-    {
-      id: "tracking",
-      label: "Tracking",
-      content: (
-        <TrackingForm
-          value={trackingValue}
-          onChange={(v): void => updateField("tracking", v)}
-          inheritedValues={inheritedTracking}
-        />
-      ),
-    },
-    {
-      id: "scripts",
-      label: "Scripts",
-      content: (
-        <ScriptsEditor
-          value={scriptsValue}
-          onChange={(v): void => updateField("scripts", v)}
-        />
-      ),
-    },
-    {
-      id: "script-variables",
-      label: "Script Variables",
-      content: (
-        <ScriptVariablesEditor
-          value={scriptVarsValue}
-          onChange={(v: Record<string, string>): void => updateField("scripts_vars", v)}
-        />
-      ),
-    },
-    {
-      id: "ads",
-      label: "Ads Config",
-      content: (
-        <AdsConfigForm
-          value={adsConfigValue}
-          onChange={(v): void => updateField("ads_config", v)}
-        />
       ),
     },
     {
@@ -327,8 +317,163 @@ export default function GroupDetailPage(): React.ReactElement {
       content: (
         <ThemeForm
           value={(config.theme ?? {}) as Record<string, unknown>}
-          onChange={(v: Record<string, unknown>): void => updateField("theme", v)}
+          onChange={(v: Record<string, unknown>): void =>
+            updateField("theme", v)
+          }
         />
+      ),
+    },
+    {
+      id: "legal",
+      label: "Legal",
+      content: (
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              Legal variables
+            </h3>
+            <LegalForm
+              value={(config.legal ?? {}) as Record<string, string>}
+              onChange={(v: Record<string, string>): void =>
+                updateField("legal", v)
+              }
+            />
+          </div>
+          <div className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+              Legal page overrides
+            </h3>
+            <LegalPagesOverrideEditor
+              value={(config.legal_pages_override ?? {}) as Record<string, string>}
+              onChange={(v: Record<string, string>): void =>
+                updateField("legal_pages_override", v)
+              }
+            />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "sites",
+      label: `Sites (${groupSites.length})`,
+      content: (
+        <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
+          {groupSites.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">
+              No sites assigned to this group.
+            </p>
+          ) : (
+            <ul className="divide-y divide-[var(--border-secondary)]">
+              {groupSites.map((site) => (
+                <li key={site.domain} className="py-3">
+                  <Link
+                    href={`/sites/${encodeURIComponent(site.domain)}`}
+                    className="flex items-center justify-between gap-2 text-sm hover:text-cyan transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan" />
+                      <span className="font-medium">
+                        {site.site_name ?? site.domain}
+                      </span>
+                    </span>
+                    <span className="text-[var(--text-muted)] text-xs">
+                      {site.domain}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "advanced",
+      label: "Advanced",
+      content: (
+        <div className="space-y-4">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
+            <span className="font-semibold text-amber-500">
+              These fields are typically managed in Monetization Profiles.
+            </span>{" "}
+            Only use them here when this content group needs specific overrides.{" "}
+            <Link
+              href="/monetization"
+              className="text-cyan hover:underline"
+            >
+              Open Monetization →
+            </Link>
+          </div>
+
+          <button
+            type="button"
+            onClick={(): void => setAdvancedOpen((o) => !o)}
+            className="w-full text-left text-sm font-semibold text-[var(--text-primary)] flex items-center justify-between rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 hover:bg-[var(--bg-surface)] transition-colors"
+          >
+            <span>{advancedOpen ? "Hide" : "Show"} group-level overrides</span>
+            <span className="text-lg text-[var(--text-muted)]">
+              {advancedOpen ? "−" : "+"}
+            </span>
+          </button>
+
+          {advancedOpen && (
+            <div className="space-y-6 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
+              <section className="space-y-2">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Tracking overrides
+                </h3>
+                <TrackingForm
+                  value={trackingValue}
+                  onChange={(v): void => updateField("tracking", v)}
+                  inheritedValues={inheritedTracking}
+                />
+              </section>
+
+              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Scripts
+                </h3>
+                <ScriptsEditor
+                  value={scriptsValue}
+                  onChange={(v): void => updateField("scripts", v)}
+                />
+              </section>
+
+              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Script variables
+                </h3>
+                <ScriptVariablesEditor
+                  value={scriptVarsValue}
+                  onChange={(v: Record<string, string>): void =>
+                    updateField("scripts_vars", v)
+                  }
+                />
+              </section>
+
+              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  Ads config
+                </h3>
+                <AdsConfigForm
+                  value={adsConfigValue}
+                  onChange={(v): void => updateField("ads_config", v)}
+                />
+              </section>
+
+              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                  ads.txt
+                </h3>
+                <AdsTxtEditor
+                  value={adsTxtEntries}
+                  onChange={(v: string[]): void => updateField("ads_txt", v)}
+                  scopeLabel="group"
+                />
+              </section>
+            </div>
+          )}
+        </div>
       ),
     },
   ];
@@ -350,7 +495,7 @@ export default function GroupDetailPage(): React.ReactElement {
         </div>
       )}
 
-      <Tabs tabs={tabs} defaultTab="identity" />
+      <Tabs tabs={tabs} defaultTab="general" />
 
       <div className="flex gap-3">
         <Button onClick={save} loading={saving}>
