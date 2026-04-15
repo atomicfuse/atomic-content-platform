@@ -2,11 +2,67 @@ import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import {
   readFileContent,
+  readDashboardIndex,
+  readSiteConfig,
   commitNetworkFiles,
   deleteNetworkFile,
+  triggerWorkflowViaPush,
 } from "@/lib/github";
 
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Rebuild all Live sites that reference the given monetization profile
+ * (explicitly via `site.monetization` or implicitly via
+ * `org.default_monetization`). Touches `sites/<domain>/.build-trigger` on
+ * `main` to fire the Cloudflare Pages production deploy workflow.
+ *
+ * Failures per site are logged but do not abort the overall update — the YAML
+ * has already been committed at this point, and the user-visible response
+ * should not fail on a downstream rebuild hiccup.
+ */
+async function rebuildSitesUsingMonetization(id: string): Promise<void> {
+  try {
+    const [index, orgRaw] = await Promise.all([
+      readDashboardIndex(),
+      readFileContent("org.yaml"),
+    ]);
+
+    let orgDefault = "";
+    if (orgRaw) {
+      const orgParsed = (parseYaml(orgRaw) ?? {}) as {
+        default_monetization?: string;
+      };
+      orgDefault = orgParsed.default_monetization ?? "";
+    }
+
+    await Promise.all(
+      index.sites
+        .filter((site) => site.status === "Live")
+        .map(async (site) => {
+          try {
+            // Live sites: their authoritative site.yaml lives on main.
+            const config = await readSiteConfig(site.domain, "main");
+            if (!config) return;
+            const explicit = config["monetization"] as string | undefined;
+            const effective = explicit || orgDefault;
+            if (effective !== id) return;
+            await triggerWorkflowViaPush("main", site.domain);
+          } catch (err) {
+            console.error(
+              `[monetization rebuild] ${site.domain} failed:`,
+              err,
+            );
+          }
+        }),
+    );
+  } catch (err) {
+    console.error(
+      `[monetization rebuild] failed to enumerate sites for ${id}:`,
+      err,
+    );
+  }
+}
 
 /**
  * GET /api/monetization/:id
@@ -63,6 +119,11 @@ export async function PUT(
       [{ path: `monetization/${id}.yaml`, content: yamlContent }],
       `config(monetization): update ${id}`,
     );
+
+    // Trigger production rebuild of every Live site using this profile so the
+    // new tracking / ad placements / scripts go out without a manual touch.
+    await rebuildSitesUsingMonetization(id);
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(`[api/monetization/${id}] write error:`, error);

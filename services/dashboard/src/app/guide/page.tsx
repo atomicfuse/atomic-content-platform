@@ -21,6 +21,8 @@ const GUIDE_PAGES = [
   { slug: "08-cloudgrid", title: "CloudGrid Deployment" },
   { slug: "09-scheduler", title: "Scheduler Agent" },
   { slug: "10-config-inheritance", title: "Config Inheritance & Groups" },
+  { slug: "11-monetization", title: "Monetization Flow" },
+  { slug: "12-site-builder", title: "Site Builder Flow" },
 ];
 
 export default function GuidePage(): React.ReactElement {

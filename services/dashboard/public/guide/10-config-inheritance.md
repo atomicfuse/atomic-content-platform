@@ -1,46 +1,84 @@
 # Config Inheritance & Groups
 
-The platform uses a **three-layer config hierarchy** to manage settings across all sites in the network. Each layer can override the one above it, so you define defaults once and only customize what's different per group or site.
+The platform uses a **four-layer config cascade** to manage settings across every site in the network. Each layer only specifies what it owns; everything else is inherited from the layer above. You define defaults once and customize the minimum needed per profile, group, or site.
 
-## The Three Layers
+## The Cascade at a Glance
 
 ```
-org.yaml          Network-wide defaults (one file)
-    |
-groups/*.yaml     Group-level overrides (one per group)
-    |
-sites/*/site.yaml Site-level overrides (one per site)
+                        network.yaml
+                 (Platform version pin — one file)
+                             │
+      ┌──────────┬───────────┼───────────┬──────────┐
+      ▼          ▼                       ▼          ▼
+  org.yaml  monetization/*.yaml   groups/*.yaml   sites/*/site.yaml
+  Identity  Tracking, scripts,    Theme colors,   Domain, name, brief,
+  Default   ad placements,        fonts, legal    any per-site override
+  tracking  ads.txt entries       overrides
+  Default
+  theme
+
+         Merge order  →  org  →  monetization  →  group  →  site   (last wins)
+                                         │
+                                         ▼
+                               resolve-config.ts
+                                         │
+                                         ▼
+                               ResolvedConfig (single JSON)
 ```
 
-**org.yaml** sets the baseline for the entire network: organization name, legal entity, default theme, tracking IDs, scripts, ads config, and legal variables.
+Two rules to remember:
 
-**Group configs** override org defaults for a cluster of sites. A group like `premium-ads` might add ad network scripts, tracking pixels, and ad placements. Another group like `entertainment` might set theme colors for entertainment-vertical sites.
+1. **Order matters — monetization comes before group.** Editorial groups can override a monetization profile in rare cases (e.g. a kids-vertical group killing interstitial ads), not the other way round.
+2. **Site always wins.** If you set something in `site.yaml`, nothing above can overturn it.
 
-**Site configs** are the final layer. A site inherits everything from its group(s) and only specifies what's unique: domain, site name, editorial brief, and any per-site overrides.
+## What Each Layer Owns
 
-## Multi-Group Support
+| Layer | File(s) | Typical contents | Who edits it |
+|-------|---------|------------------|--------------|
+| **Network** | `network.yaml` | Platform version, network id, network name | Platform team (rarely) |
+| **Org** | `org.yaml` | Company identity, legal entity, support email pattern, **default** theme and tracking, **default_monetization** pointer | Network admin |
+| **Monetization** | `monetization/<id>.yaml` | Tracking IDs, scripts, ad placements, ads.txt entries | Revenue / ops |
+| **Group** | `groups/<id>.yaml` | Editorial theme (colors, fonts), category defaults, legal overrides | Editors |
+| **Site** | `sites/<domain>/site.yaml` | Domain, site name, content brief, schedule, any override | Per-site owner |
 
-A site can belong to **multiple groups**. Groups are listed in order and merged left-to-right — later groups override earlier ones:
+Groups used to carry the ad stack. That moved out into monetization profiles so the same ad setup can be re-used across unrelated editorial groups without duplication.
+
+## Selecting a Monetization Profile
+
+Every site ends up with exactly one monetization profile. Resolution order:
+
+```
+site.monetization  →  org.default_monetization  →  (no monetization)
+```
 
 ```yaml
-# sites/muvizz.com/site.yaml
-domain: muvizz.com
-site_name: Muvizz
-groups:
-  - premium-ads      # ad config, scripts, placements
-  - entertainment    # theme colors, category defaults
+# sites/coolnews-atl/site.yaml
+domain: coolnews-atl
+site_name: Cool News ATL
+group: news            # editorial group
+monetization: test-ads # explicit profile override
 active: true
 ```
 
-In this example, `muvizz.com` gets ad config from `premium-ads` and theme colors from `entertainment`. If both groups define `theme.colors.primary`, the `entertainment` value wins because it comes later in the list.
+If `site.monetization` is omitted, the site picks up `org.default_monetization` automatically. A site with no profile resolved renders with no ads and no third-party tracking — useful for staging / preview.
 
-The legacy `group: "single-group"` field still works and is treated as `groups: ["single-group"]`.
+## Multi-Group Support
+
+A site can still belong to multiple editorial groups. They are listed in order and merged left-to-right; later groups win:
+
+```yaml
+groups:
+  - news              # tone, content defaults
+  - entertainment     # overrides theme colors
+```
+
+The legacy `group: "single-group"` shorthand is still accepted and is treated as `groups: ["single-group"]`.
 
 ## How Merging Works
 
-Different types of config are merged differently:
+Different config shapes merge with different rules. The resolver applies them automatically.
 
-### Deep Merge (objects)
+### Deep merge (objects)
 
 Objects like `tracking`, `ads_config`, and `theme` use **deep merge** — only the keys you specify at a lower layer override the parent. Unspecified keys are inherited.
 
@@ -50,65 +88,59 @@ tracking:
   ga4: "G-ORG123"
   gtm: null
 
-# groups/premium-ads.yaml
+# monetization/premium-ads.yaml
 tracking:
-  google_ads: "AW-GROUP456"
+  google_ads: "AW-MON456"
 
-# Result for a site in premium-ads:
-# tracking:
-#   ga4: "G-ORG123"        (from org)
-#   gtm: null               (from org)
-#   google_ads: "AW-GROUP456" (from group)
+# sites/muvizz.com/site.yaml
+tracking:
+  ga4: "G-MUVIZZ-OVERRIDE"
+
+# Resolved for muvizz.com:
+#   ga4: "G-MUVIZZ-OVERRIDE"  (site)
+#   gtm: null                  (org — kept explicit disable)
+#   google_ads: "AW-MON456"    (monetization)
 ```
 
-### Merge by ID (scripts)
+**`null` vs. omitted is significant.** Setting a key to `null` means "disable — do not inherit". Omitting the key means "inherit whatever the parent says". Both feel similar but behave oppositely.
 
-Scripts are merged **by their `id` field**, not replaced as arrays. This means a group can override a specific org script without removing the others:
+### Merge by id (scripts)
+
+Scripts are merged **by their `id` field** rather than replaced as arrays. A child can override a single script while keeping everything else the parent provided:
 
 ```yaml
-# org.yaml
-scripts:
-  head:
-    - id: analytics
-      src: "https://example.com/analytics.js"
-
-# groups/premium-ads.yaml
+# monetization/premium-ads.yaml
 scripts:
   head:
     - id: gpt-script
       src: "https://securepubads.g.doubleclick.net/tag/js/gpt.js"
       async: true
+    - id: alpha-init
+      inline: "window.alphaAds.push({ siteId: '{{alpha_site_id}}' })"
 
-# Result: head has BOTH analytics (from org) and gpt-script (from group)
+# sites/some-site/site.yaml
+scripts:
+  head:
+    - id: alpha-init         # same id — replaces the monetization entry
+      inline: "window.alphaAds.push({ siteId: 'custom-override' })"
+
+# Resolved scripts.head: [gpt-script (unchanged), alpha-init (site version)]
 ```
 
-If a child defines a script with the **same id** as a parent, it replaces that script entirely.
+### Append + deduplicate (ads.txt)
 
-### Append + Deduplicate (ads.txt)
+`ads.txt` entries are the one array type that **accumulates** across layers — org, monetization, group, then site — and are deduplicated as a final step. Child layers can add but cannot remove.
 
-ads.txt entries are **appended** from all layers — org, then each group (in order), then site — and deduplicated:
+### Spread merge (feature configs)
 
-```yaml
-# org.yaml → ads_config.ads_txt
-- "google.com, pub-123, DIRECT, f08c47fec0942fa0"
-
-# groups/premium-ads.yaml → ads_txt
-- "appnexus.com, 10239, RESELLER, f5ab79cb980f11d1"
-- "google.com, pub-123, DIRECT, f08c47fec0942fa0"   # duplicate
-
-# Result: 2 lines (duplicate removed)
-```
-
-### Spread Merge (feature configs)
-
-Feature configs like `preview_page`, `categories`, `sidebar`, and `search` use a flat spread: defaults first, then org, group, site. All fields are guaranteed present in the resolved config.
+Feature configs like `preview_page`, `categories`, `sidebar`, and `search` use a flat spread: defaults first, then org, monetization, group, site. All fields are guaranteed present in the resolved config.
 
 ## Script Variables & Placeholders
 
-Scripts can contain `{{placeholder}}` variables that are resolved at build time:
+Scripts can contain `{{placeholder}}` variables that are resolved at build time. Variables come from `scripts_vars` at any layer and cascade the same way as regular config:
 
 ```yaml
-# groups/premium-ads.yaml
+# monetization/premium-ads.yaml
 scripts:
   head:
     - id: alpha-init
@@ -117,119 +149,39 @@ scripts:
           siteId: '{{alpha_site_id}}',
           zone: '{{alpha_zone}}'
         });
-```
 
-Variables are defined in `scripts_vars` at any layer and cascade org → group → site:
-
-```yaml
-# sites/muvizz.com/site.yaml
+# sites/coolnews-atl/site.yaml
 scripts_vars:
-  alpha_site_id: "muvizz-001"
-  alpha_zone: "entertainment"
-  interstitial_enabled: "true"
+  alpha_site_id: "coolnews-atl-001"
+  alpha_zone: "news"
 ```
 
-The special variable `{{domain}}` is always available and resolves to the site's domain.
+The special variable `{{domain}}` is always available.
 
-**Strict mode:** If any `{{placeholder}}` remains unresolved after merging all layers, the build fails with an error listing the missing variables. This prevents silent bugs from undefined ad IDs or tracking codes.
+**Strict mode:** if any `{{placeholder}}` remains unresolved after merging, the build fails with an error listing missing variables — no silent bugs from undefined ad ids or tracking codes.
 
-## Ads Configuration
+## Dashboard Surfaces
 
-The `ads_config` object controls how ads appear on a site:
+| Where | What you edit | Writes to |
+|-------|---------------|-----------|
+| **Settings → General / Tracking / Theme / Legal** | `org.yaml` | `main` |
+| **Settings → Network** | `network.yaml` | `main` |
+| **Monetization → [profile]** | `monetization/<id>.yaml` | `main` |
+| **Groups → [group]** | `groups/<id>.yaml` | `main` |
+| **Sites → [domain] → Config / Theme / Brief / Monetization** | `sites/<domain>/site.yaml` | staging branch or `main` |
 
-```yaml
-ads_config:
-  interstitial: true          # full-page interstitial ads
-  layout: "standard"          # or "high-density"
-  in_content_slots: 3         # ad units between paragraphs
-  sidebar: true               # sidebar ad placement
-  ad_placements:
-    - id: "top-banner"
-      position: "above-content"
-      device: "all"
-      sizes:
-        desktop: [[728, 90], [970, 250]]
-        mobile: [[320, 50], [300, 250]]
-    - id: "sidebar-sticky"
-      position: "sidebar"
-      device: "desktop"
-      sizes:
-        desktop: [[300, 600], [160, 600]]
-```
-
-Ad placements support device targeting (`all`, `desktop`, `mobile`) and multiple size options per device. The site builder renders the appropriate `AdSlot` components based on these placements.
-
-**YAML shorthand:** In group YAML files, you can write sizes as strings (`"728x90"`) instead of tuple arrays. The resolver normalizes them automatically:
-
-```yaml
-# This YAML shorthand:
-sizes: ["728x90", "970x250"]
-# Becomes:
-sizes: { desktop: [[728, 90], [970, 250]] }
-```
-
-## Tracking
-
-The `tracking` config supports built-in vendor IDs and custom scripts:
-
-| Field | Example | Purpose |
-|-------|---------|---------|
-| `ga4` | `G-XXXXXXXXXX` | Google Analytics 4 |
-| `gtm` | `GTM-XXXXXXX` | Google Tag Manager |
-| `google_ads` | `AW-XXXXXXXXXX` | Google Ads conversions |
-| `facebook_pixel` | `1234567890` | Facebook/Meta Pixel |
-| `custom` | Array of scripts | Any other tracking |
-
-Set a field to `null` at any layer to explicitly disable it (different from omitting it, which inherits the parent value).
-
-## Managing from the Dashboard
-
-### Settings Page
-
-The **Settings** page in the sidebar lets you edit `org.yaml` directly. It has tabs for:
-
-- **General** — organization name, legal entity, address, support email pattern, default theme and fonts
-- **Network** — platform version, network ID, network name (from `network.yaml`)
-- **Tracking** — vendor IDs and custom tracking scripts
-- **Scripts** — head, body start, and body end script entries
-- **Script Variables** — org-level placeholder values
-- **Ads Config** — interstitial toggle, layout, in-content slots, ad placements
-- **Legal** — template variables for legal pages (privacy policy, terms, etc.)
-
-### Groups Page
-
-The **Groups** page lists all groups with their ID, layout, and interstitial status. Click a group to edit it, or click **Create New Group** to add one.
-
-Each group editor has tabs matching the org settings (tracking, scripts, script variables, ads config, theme), plus:
-
-- **Identity** — group ID (read-only) and display name
-- **Ads.txt** — multiline editor for IAB-format ads.txt entries
-
-Fields inherited from the org level are indicated so you can see what you're overriding.
-
-### Site Wizard
-
-When creating a new site, the wizard includes:
-
-1. **Create Site** — project name, site name, domain, company, vertical
-2. **Groups** — select which groups this site belongs to (click to toggle, drag to reorder)
-3. **Theme** — choose a base theme
-4. **Content Brief** — audience, tone, topics, schedule
-5. **Script Vars** — auto-detected `{{placeholder}}` variables from the selected groups' scripts
-6. **Preview** — deploy to staging
-7. **Review** — go live
+Every inherited field in the dashboard shows a small **source badge** — `From org`, `From monetization: test-ads`, `From group: news`, or `Custom` — so you can always tell where a value comes from without reading YAML.
 
 ## Resolved Config
 
-The final resolved config is what the site builder consumes. Every field is guaranteed present — no `undefined`, no unresolved placeholders. The resolver:
+`resolve-config.ts` is the single place that runs all the merge rules. The output `ResolvedConfig` is a flat JSON object the site builder consumes. Every field is guaranteed present — no `undefined`, no unresolved placeholders. The resolver:
 
-1. Reads `org.yaml`, all group YAMLs (in order), and `site.yaml`
-2. Merges groups left-to-right with deep merge
-3. Merges org → effective group → site for each config section
-4. Resolves all `{{placeholders}}` in scripts
-5. Appends and deduplicates ads.txt entries
-6. Normalizes ad placements (string sizes to tuples)
-7. Fills defaults for feature configs
-8. Validates: no unresolved placeholders, all required fields present
+1. Reads `network.yaml`, `org.yaml`, the selected `monetization/<id>.yaml`, each `groups/<id>.yaml` (in order), and `sites/<domain>/site.yaml`.
+2. Merges in order: org → monetization → groups (left-to-right) → site.
+3. Resolves all `{{placeholders}}` in scripts using merged `scripts_vars`.
+4. Appends and deduplicates ads.txt entries.
+5. Normalizes ad placements (string sizes like `"728x90"` to tuple arrays).
+6. Fills defaults for feature configs.
+7. Validates: no unresolved placeholders, all required fields present.
 
-The output `ResolvedConfig` includes computed fields like `support_email` (resolved from the org pattern) and `groups` (the full array of group IDs).
+The resolved config is what gets baked into the static HTML at build time and the inline monetization JSON at runtime. See **Site Builder Flow** and **Monetization Flow** for the next stages of the pipeline.
