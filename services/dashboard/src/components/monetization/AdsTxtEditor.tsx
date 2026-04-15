@@ -6,11 +6,17 @@ import { Textarea } from "@/components/ui/Textarea";
 interface AdsTxtEditorProps {
   value: string[];
   onChange: (value: string[]) => void;
+  /**
+   * What scope the entries apply to in the helper text. Defaults to
+   * "monetization profile". Use "org" / "group" / "site" elsewhere.
+   */
+  scopeLabel?: string;
 }
 
 export function AdsTxtEditor({
   value,
   onChange,
+  scopeLabel = "monetization profile",
 }: AdsTxtEditorProps): React.ReactElement {
   const textValue = value.join("\n");
 
@@ -47,8 +53,12 @@ export function AdsTxtEditor({
       />
 
       <p className="text-xs text-[var(--text-muted)]">
-        These entries are <strong>added</strong> to the final ads.txt for every
-        site using this monetization profile. Format: <code className="rounded bg-[var(--bg-surface)] px-1">domain.com, publisher-id, relationship, cert-authority</code>.
+        These entries are <strong>added</strong> to the final ads.txt from this{" "}
+        {scopeLabel}. Format:{" "}
+        <code className="rounded bg-[var(--bg-surface)] px-1">
+          domain.com, publisher-id, relationship, cert-authority
+        </code>
+        .
       </p>
     </div>
   );
