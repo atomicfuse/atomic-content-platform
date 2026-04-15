@@ -5,9 +5,12 @@
  * - Loads Google Fonts for the resolved heading + body fonts
  * - Sets CSS custom properties from the theme colour map
  * - Injects build-time inline tracking (GA4/GTM only) for first-paint events
- * - Loads the runtime ad-loader.js which fetches the per-domain
- *   monetization JSON from the platform CDN and injects ad slots,
- *   ad network SDKs, and the interstitial overlay
+ * - Embeds the resolved monetization JSON inline as window.__ATL_MONETIZATION__
+ *   so the runtime ad-loader has an immediate, zero-network-cost source of
+ *   truth. Also emits a CDN URL + domain hint so ad-loader can fall back to
+ *   /m/<domain>.json served either from the same origin or the network CDN.
+ * - Loads the local /ad-loader.js which renders ads, ad network SDKs, and
+ *   the interstitial overlay at runtime.
  *
  * No ad-specific divs or ad-network scripts are baked into the static HTML.
  */
@@ -22,11 +25,19 @@ interface Props {
 
 const { title, description } = Astro.props;
 const config = await getConfig();
-const { theme } = config;
+const { theme, monetizationJson } = config;
 
-const adLoaderUrl =
-  import.meta.env.AD_LOADER_URL ?? 'https://cdn.atomicnetwork.com/ad-loader.js';
+// The ad-loader is shipped from the site's own /public directory. External
+// CDN delivery is still supported as a fallback but not the default.
+const adLoaderUrl = import.meta.env.AD_LOADER_URL ?? '/ad-loader.js';
 const cdnBase = import.meta.env.AD_CDN_BASE ?? 'https://cdn.atomicnetwork.com';
+
+// Serialise the inline monetization JSON. Use JSON.stringify with a replacer
+// that escapes `</` so the `</script>` close-tag cannot appear inside the
+// string (XSS-safe inline JSON pattern).
+const inlineMonetizationHtml = monetizationJson
+  ? JSON.stringify(monetizationJson).replace(/</g, '\\u003c')
+  : null;
 
 // Build Google Fonts URL
 const fontFamilies = [theme.fonts.heading, theme.fonts.body]
@@ -65,6 +76,13 @@ const cssVars = Object.entries(theme.colors)
     )}
 
     <InlineTracking config={config} />
+
+    {inlineMonetizationHtml && (
+      <script
+        is:inline
+        set:html={`window.__ATL_MONETIZATION__=${inlineMonetizationHtml};`}
+      />
+    )}
 
     <slot name="head" />
 

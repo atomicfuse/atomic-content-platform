@@ -1,14 +1,23 @@
 /**
  * Atomic Network — runtime ad loader.
  *
- * Fetches the per-domain monetization JSON from the platform CDN and
- * dynamically injects ad slot containers, head/body scripts, and the
- * interstitial overlay. Build-time HTML stays generic — only this script
- * knows about ad placements, sizes, and provider SDKs.
+ * Resolves the per-domain monetization JSON and dynamically injects ad slot
+ * containers, head/body scripts, and the interstitial overlay. Build-time
+ * HTML stays generic — only this script knows about ad placements, sizes,
+ * and provider SDKs.
  *
- * Cache strategy: the latest CDN response is mirrored to localStorage so
- * a CDN failure on a subsequent navigation falls back to the previous
- * configuration instead of breaking monetization entirely.
+ * Config source fallback order (first hit wins):
+ *   1. window.__ATL_MONETIZATION__   — inlined into <head> by BaseLayout.astro
+ *                                      at build time. Zero network cost.
+ *   2. /m/<domain>.json              — same-origin JSON shipped with the site
+ *                                      (site-builder copies this to public/m/).
+ *   3. <cdnBase>/m/<domain>.json     — network CDN (for centralised config
+ *                                      updates without a site rebuild).
+ *   4. localStorage._atl_m           — last-known-good copy from a previous
+ *                                      successful load.
+ *
+ * Any successful remote fetch (steps 2 or 3) is mirrored to localStorage so
+ * a later failure degrades gracefully instead of breaking monetization.
  */
 (async function () {
   var d = location.hostname;
@@ -16,24 +25,49 @@
     (window.__ATL_CDN_BASE__ ||
       document.documentElement.getAttribute('data-atl-cdn') ||
       'https://cdn.atomicnetwork.com');
+
   var c = null;
 
-  try {
-    var r = await fetch(cdnBase + '/m/' + d + '.json', { credentials: 'omit' });
-    if (r.ok) {
-      c = await r.json();
-      try {
-        localStorage.setItem('_atl_m', JSON.stringify(c));
-      } catch (e) {}
-    }
-  } catch (e) {}
+  // Tier 1 — inline monetization injected by the site build
+  if (window.__ATL_MONETIZATION__ && typeof window.__ATL_MONETIZATION__ === 'object') {
+    c = window.__ATL_MONETIZATION__;
+  }
 
+  // Tier 2 — same-origin /m/<domain>.json shipped with the site
   if (!c) {
     try {
-      c = JSON.parse(localStorage.getItem('_atl_m'));
+      var r2 = await fetch('/m/' + d + '.json', { credentials: 'omit' });
+      if (r2.ok) {
+        c = await r2.json();
+        try { localStorage.setItem('_atl_m', JSON.stringify(c)); } catch (e) {}
+      }
     } catch (e) {}
   }
+
+  // Tier 3 — network CDN
+  if (!c) {
+    try {
+      var r3 = await fetch(cdnBase + '/m/' + d + '.json', { credentials: 'omit' });
+      if (r3.ok) {
+        c = await r3.json();
+        try { localStorage.setItem('_atl_m', JSON.stringify(c)); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+
+  // Tier 4 — localStorage last-known-good
+  if (!c) {
+    try {
+      var cached = localStorage.getItem('_atl_m');
+      if (cached) c = JSON.parse(cached);
+    } catch (e) {}
+  }
+
   if (!c) return;
+
+  // Cache the resolved config for diagnostics (mock-ad-fill.js reads this to
+  // build the debug panel).
+  try { localStorage.setItem('_atl_m', JSON.stringify(c)); } catch (e) {}
 
   var scripts = c.scripts || {};
   var ads = c.ads_config || {};

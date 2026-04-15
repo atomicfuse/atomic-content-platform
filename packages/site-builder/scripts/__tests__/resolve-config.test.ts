@@ -284,15 +284,14 @@ describe("resolveConfig", () => {
 
 describe("resolveConfig — integration with real seed data", () => {
   it("resolves coolnews-atl from the actual atomic-labs-network repo", async () => {
-    // coolnews-atl has no scripts_vars, so group scripts with {{placeholders}}
-    // will fail strict placeholder resolution. Skip if that's the case.
+    // coolnews-atl may not declare all scripts_vars required by its selected
+    // monetization profile. Skip with a clear message in that case.
     let config;
     try {
       config = await resolveConfig(REAL_NETWORK, "coolnews-atl");
     } catch (err: unknown) {
-      // If coolnews-atl lacks required scripts_vars for premium-ads group, skip test
       if (err instanceof Error && err.message.includes("Unresolved placeholders")) {
-        return; // Expected — coolnews-atl doesn't define alpha_site_id etc.
+        return;
       }
       throw err;
     }
@@ -306,36 +305,35 @@ describe("resolveConfig — integration with real seed data", () => {
     expect(config.legal_entity).toBe("Atomic Labs Ltd");
     expect(config.company_address).toBe("Tel Aviv, Israel");
 
-    // Site-level
+    // Site-level — coolnews-atl belongs to the "news" editorial group in the
+    // new monetization-layer architecture. Its monetization profile is picked
+    // separately (see below).
     expect(config.domain).toBe("coolnews-atl");
     expect(config.site_name).toBe("Cool News ATL");
-    expect(config.group).toBe("premium-ads");
-    expect(config.groups).toEqual(["premium-ads"]);
+    expect(config.group).toBe("news");
+    expect(config.groups).toEqual(["news"]);
     expect(config.active).toBe(true);
 
-    // New fields
+    // A monetization profile must be resolved (site level or org default).
+    expect(config.monetization.length).toBeGreaterThan(0);
+
+    // Inline monetization JSON is produced when a profile is resolved.
+    expect(config.monetizationJson).toBeDefined();
+    expect(config.monetizationJson?.domain).toBe("coolnews-atl");
+    expect(config.monetizationJson?.monetization_id).toBe(config.monetization);
+
+    // Support email pattern resolves against the site domain.
     expect(config.support_email).toBe("contact@coolnews-atl");
 
-    // Tracking: group overrides google_ads
-    expect(config.tracking.google_ads).toBe("AW-XXXXXXXXX");
-
-    // Ads: group overrides
-    expect(config.ads_config.interstitial).toBe(true);
-    expect(config.ads_config.in_content_slots).toBe(3);
-
-    // ads_txt from group (multiline string parsed)
-    expect(config.ads_txt.length).toBeGreaterThan(0);
-    expect(config.ads_txt.some((l: string) => l.includes("google.com"))).toBe(true);
-
-    // Theme: group provides colors, site sets base=modern
+    // Theme colours come from the "news" group.
     expect(config.theme.base).toBe("modern");
     expect(config.theme.colors.secondary).toBe("#16213E");
     expect(config.theme.fonts.body).toBe("Inter");
 
-    // Brief from site
+    // Brief topics from site.yaml.
     expect(config.brief.topics).toContain("Current Events");
 
-    // Legal merged
+    // Legal merged from org.
     expect(config.legal.company_name).toBe("Atomic Labs Ltd");
   });
 });

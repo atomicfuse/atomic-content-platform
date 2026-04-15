@@ -1,36 +1,17 @@
 {
   "domain": "coolnews-atl",
-  "monetization_id": "premium-ads",
+  "monetization_id": "test-ads",
   "tracking": {
     "ga4": "G-COOLNEWS-XXX",
     "gtm": null,
-    "google_ads": "AW-XXXXXXXXX",
+    "google_ads": null,
     "facebook_pixel": null,
     "custom": []
   },
   "scripts": {
-    "head": [
-      {
-        "id": "gpt-script",
-        "src": "https://securepubads.g.doubleclick.net/tag/js/gpt.js",
-        "async": true
-      },
-      {
-        "id": "network-alpha-init",
-        "inline": "window.alphaAds = window.alphaAds || [];\nwindow.alphaAds.push({\n  siteId: 'coolnews-atl-001',\n  zone: 'news',\n  autoRender: true\n});\n"
-      },
-      {
-        "id": "network-alpha-loader",
-        "src": "https://cdn.alpha-adnetwork.com/sdk/v3/loader.js",
-        "async": true
-      }
-    ],
+    "head": [],
     "body_start": [],
     "body_end": [
-      {
-        "id": "interstitial-trigger",
-        "inline": "if ('false' === 'true') {\n  window.alphaAds.push({ type: 'interstitial', delay: 30000 });\n}\n"
-      },
       {
         "id": "mock-ad-fill",
         "src": "/mock-ad-fill.js"
@@ -38,10 +19,10 @@
     ]
   },
   "ads_config": {
-    "interstitial": true,
+    "interstitial": false,
     "in_content_slots": 2,
     "sidebar": false,
-    "layout": "high-density",
+    "layout": "standard",
     "ad_placements": [
       {
         "id": "top-banner",
@@ -54,13 +35,17 @@
             ],
             [
               970,
-              250
+              90
             ]
           ],
           "mobile": [
             [
               320,
               50
+            ],
+            [
+              320,
+              100
             ]
           ]
         },
@@ -72,22 +57,18 @@
         "sizes": {
           "desktop": [
             [
-              300,
-              250
-            ],
-            [
               336,
               280
+            ],
+            [
+              300,
+              250
             ]
           ],
           "mobile": [
             [
               300,
               250
-            ],
-            [
-              336,
-              280
             ]
           ]
         },
@@ -99,49 +80,18 @@
         "sizes": {
           "desktop": [
             [
-              300,
-              250
-            ],
-            [
               336,
               280
+            ],
+            [
+              300,
+              250
             ]
           ],
           "mobile": [
             [
               300,
               250
-            ],
-            [
-              336,
-              280
-            ]
-          ]
-        },
-        "device": "all"
-      },
-      {
-        "id": "in-content-3",
-        "position": "after-paragraph-12",
-        "sizes": {
-          "desktop": [
-            [
-              300,
-              250
-            ],
-            [
-              336,
-              280
-            ]
-          ],
-          "mobile": [
-            [
-              300,
-              250
-            ],
-            [
-              336,
-              280
             ]
           ]
         },
@@ -159,6 +109,10 @@
             [
               160,
               600
+            ],
+            [
+              300,
+              250
             ]
           ]
         },
@@ -172,17 +126,12 @@
             [
               320,
               50
-            ],
-            [
-              320,
-              100
             ]
           ]
         },
         "device": "mobile"
       }
-    ],
-    "primary_advertiser": "alpha-adnetwork"
+    ]
   },
-  "generated_at": "2026-04-15T12:00:48.694Z"
+  "generated_at": "2026-04-15T12:55:37.709Z"
 }

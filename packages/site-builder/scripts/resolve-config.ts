@@ -29,6 +29,7 @@ import type {
   SidebarConfig,
   SearchConfig,
   MonetizationConfig,
+  MonetizationJson,
   AdPlaceholderHeights,
 } from "@atomic-platform/shared-types";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
@@ -682,7 +683,25 @@ export async function resolveConfig(
     ...(org.ad_placeholder_heights ?? {}),
   };
 
-  // ---- 14. Assemble ResolvedConfig ----
+  // ---- 14. Build inline monetization JSON for runtime ad-loader ----
+  //
+  // This is the same shape the CDN serves at /m/<domain>.json, but we also
+  // embed it inline in the HTML head so ad-loader.js can render without a
+  // network round-trip. Only produced when the site has a monetization id.
+
+  let monetizationJson: MonetizationJson | undefined;
+  if (monetizationId) {
+    monetizationJson = {
+      domain: site.domain,
+      monetization_id: monetizationId,
+      tracking,
+      scripts: mergedScripts,
+      ads_config: adsConfig,
+      generated_at: new Date().toISOString(),
+    };
+  }
+
+  // ---- 15. Assemble ResolvedConfig ----
 
   const resolved: ResolvedConfig = {
     network_id: network.network_id,
@@ -710,6 +729,7 @@ export async function resolveConfig(
     categories,
     sidebar: sidebarMerged,
     search,
+    monetizationJson,
   };
 
   return resolved;
