@@ -36,3 +36,9 @@ export type {
   ResolvedConfig,
   DeepPartial,
 } from "./config.js";
+
+export type {
+  AdPlaceholderHeights,
+  MonetizationConfig,
+  MonetizationJson,
+} from "./monetization.js";

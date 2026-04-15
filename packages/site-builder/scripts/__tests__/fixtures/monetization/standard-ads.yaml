@@ -1,0 +1,26 @@
+monetization_id: standard-ads
+name: "Standard AdSense"
+provider: "adsense"
+
+tracking:
+  ga4: "G-STANDARD-XXX"
+
+scripts:
+  head:
+    - id: adsense
+      src: "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"
+      async: true
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: adsense-top
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all
+
+ads_txt:
+  - "google.com, pub-ADSENSE12345678, DIRECT, f08c47fec0942fa0"

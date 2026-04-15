@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { resolveConfig } from "../resolve-config.js";
+import { resolveMonetization } from "../resolve-monetization.js";
 
 const FIXTURES = join(import.meta.dirname, "fixtures");
+const FIXTURES_MON = join(import.meta.dirname, "fixtures-mon");
 const REAL_NETWORK = join(import.meta.dirname, "..", "..", "..", "..", "..", "atomic-labs-network");
 
 // ---------------------------------------------------------------------------
@@ -335,5 +337,168 @@ describe("resolveConfig — integration with real seed data", () => {
 
     // Legal merged
     expect(config.legal.company_name).toBe("Atomic Labs Ltd");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Monetization layer tests (Phase 2)
+// ---------------------------------------------------------------------------
+
+describe("resolveConfig — monetization layer", () => {
+  it("falls back to org.default_monetization when site has no monetization field", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "default-site.example.com");
+    expect(config.monetization).toBe("standard-ads");
+    // standard-ads sets ga4, org had null → resolved should be from monetization
+    expect(config.tracking.ga4).toBe("G-STANDARD-XXX");
+    // ad_placements come from standard-ads
+    const top = config.ads_config.ad_placements.find((p) => p.id === "adsense-top");
+    expect(top).toBeDefined();
+  });
+
+  it("applies monetization tracking over org", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    // premium-ads sets ga4, then site overrides
+    expect(config.tracking.ga4).toBe("G-SITE-OVERRIDE");
+    // premium-ads sets gtm (org was null, no group override, no site override)
+    expect(config.tracking.gtm).toBe("GTM-PREMIUM");
+    // premium-ads sets facebook_pixel, no group/site override
+    expect(config.tracking.facebook_pixel).toBe("MON-FB-PIXEL");
+    // google_ads: premium-ads sets it, nothing else overrides
+    expect(config.tracking.google_ads).toBe("AW-PREMIUM-XXX");
+  });
+
+  it("site tracking override wins over monetization", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    expect(config.tracking.ga4).toBe("G-SITE-OVERRIDE");
+  });
+
+  it("resolves monetization id on the output", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    expect(config.monetization).toBe("premium-ads");
+  });
+
+  it("site-level null clears monetization's pixel value (not falls through)", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "null-clear.example.com");
+    expect(config.tracking.facebook_pixel).toBeNull();
+  });
+
+  it("monetization ad_placements flow through to resolved config", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    const topBanner = config.ads_config.ad_placements.find((p) => p.id === "top-banner");
+    expect(topBanner).toBeDefined();
+    expect(topBanner!.position).toBe("above-content");
+    const inContent = config.ads_config.ad_placements.find((p) => p.id === "in-content-1");
+    expect(inContent).toBeDefined();
+    expect(inContent!.position).toBe("after-paragraph-3");
+  });
+
+  it("monetization ads_config merges with org (interstitial from monetization)", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    expect(config.ads_config.interstitial).toBe(true);
+    expect(config.ads_config.layout).toBe("high-density");
+    expect(config.ads_config.in_content_slots).toBe(3);
+  });
+
+  it("monetization scripts merge into final scripts list", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    const alphaInit = config.scripts.head.find((s) => s.id === "network-alpha-init");
+    expect(alphaInit).toBeDefined();
+    expect(alphaInit!.inline).toContain("override-001");
+    expect(alphaInit!.inline).not.toContain("{{alpha_site_id}}");
+
+    const premiumAnalytics = config.scripts.head.find((s) => s.id === "premium-analytics");
+    expect(premiumAnalytics).toBeDefined();
+  });
+
+  it("placeholder in monetization script resolved from site scripts_vars", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    const alphaInit = config.scripts.head.find((s) => s.id === "network-alpha-init");
+    expect(alphaInit!.inline).toContain("override-001");
+  });
+
+  it("throws descriptive error for missing monetization profile", async () => {
+    await expect(
+      resolveConfig(FIXTURES_MON, "bad-profile.example.com"),
+    ).rejects.toThrow(/Monetization profile "nonexistent-profile" not found/);
+  });
+
+  it("ads_txt accumulates from org + monetization + site, deduplicated", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    expect(config.ads_txt).toContain("google.com, pub-ORG-DEFAULT, DIRECT, f08c47fec0942fa0"); // from org
+    expect(config.ads_txt).toContain("premium-network.com, 999, DIRECT"); // from monetization
+    expect(config.ads_txt).toContain("google.com, pub-MON-PREMIUM, DIRECT"); // from monetization
+    expect(config.ads_txt).toContain("site-specific.com, 42, DIRECT"); // from site top-level
+  });
+
+  it("populates ad_placeholder_heights from org with defaults", async () => {
+    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
+    expect(config.ad_placeholder_heights["above-content"]).toBe(90);
+    expect(config.ad_placeholder_heights["after-paragraph"]).toBe(280);
+    expect(config.ad_placeholder_heights.sidebar).toBe(600);
+    expect(config.ad_placeholder_heights["sticky-bottom"]).toBe(50);
+  });
+
+  it("existing networks with no monetization field continue to work (backward compat)", async () => {
+    // The base fixtures have no monetization anywhere — should resolve cleanly
+    const config = await resolveConfig(FIXTURES, "test-site.example.com");
+    expect(config.monetization).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveMonetization (CDN JSON) tests
+// ---------------------------------------------------------------------------
+
+describe("resolveMonetization", () => {
+  it("produces a valid MonetizationJson", async () => {
+    const json = await resolveMonetization({
+      networkRepoPath: FIXTURES_MON,
+      siteDomain: "override-site.example.com",
+    });
+    expect(json.domain).toBe("override-site.example.com");
+    expect(json.monetization_id).toBe("premium-ads");
+    expect(json.tracking.ga4).toBe("G-SITE-OVERRIDE");
+    expect(json.ads_config.ad_placements.length).toBeGreaterThan(0);
+    expect(new Date(json.generated_at).toString()).not.toBe("Invalid Date");
+  });
+
+  it("uses org.default_monetization when site has no monetization field", async () => {
+    const json = await resolveMonetization({
+      networkRepoPath: FIXTURES_MON,
+      siteDomain: "default-site.example.com",
+    });
+    expect(json.monetization_id).toBe("standard-ads");
+  });
+
+  it("throws for missing monetization profile", async () => {
+    await expect(
+      resolveMonetization({
+        networkRepoPath: FIXTURES_MON,
+        siteDomain: "bad-profile.example.com",
+      }),
+    ).rejects.toThrow(/Monetization profile "nonexistent-profile" not found/);
+  });
+
+  it("resolves scripts placeholders using site scripts_vars", async () => {
+    const json = await resolveMonetization({
+      networkRepoPath: FIXTURES_MON,
+      siteDomain: "override-site.example.com",
+    });
+    const alphaInit = json.scripts.head.find((s) => s.id === "network-alpha-init");
+    expect(alphaInit).toBeDefined();
+    expect(alphaInit!.inline).toContain("override-001");
+  });
+
+  it("skips the group layer (monetization-only merge)", async () => {
+    // mon-group sets theme but does not touch tracking; resolver should still
+    // complete cleanly without needing the group's content.
+    const json = await resolveMonetization({
+      networkRepoPath: FIXTURES_MON,
+      siteDomain: "override-site.example.com",
+    });
+    // Should be a valid JSON regardless of group content
+    expect(json.tracking).toBeDefined();
+    expect(json.scripts).toBeDefined();
+    expect(json.ads_config).toBeDefined();
   });
 });
