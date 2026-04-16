@@ -140,6 +140,8 @@ export default function OverrideDetailPage(): React.ReactElement {
 
   const [allGroups, setAllGroups] = useState<GroupSummary[]>([]);
   const [allSites, setAllSites] = useState<SiteSummary[]>([]);
+  // Track the saved-in-git targets so we can union old + new for rebuild
+  const [savedTargets, setSavedTargets] = useState<{ groups: string[]; sites: string[] }>({ groups: [], sites: [] });
 
   const fetchData = useCallback(async (): Promise<void> => {
     try {
@@ -150,7 +152,13 @@ export default function OverrideDetailPage(): React.ReactElement {
         fetch("/api/sites/list"),
       ]);
       if (!overrideRes.ok) throw new Error(`HTTP ${overrideRes.status}`);
-      setConfig((await overrideRes.json()) as OverrideConfig);
+      const overrideData = (await overrideRes.json()) as OverrideConfig;
+      setConfig(overrideData);
+      // Snapshot the targets as they exist in git
+      setSavedTargets({
+        groups: overrideData.targets?.groups ?? [],
+        sites: overrideData.targets?.sites ?? [],
+      });
       if (groupsRes.ok) setAllGroups((await groupsRes.json()) as GroupSummary[]);
       if (sitesRes.ok) setAllSites((await sitesRes.json()) as SiteSummary[]);
     } catch (err) {
@@ -202,19 +210,24 @@ export default function OverrideDetailPage(): React.ReactElement {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Override saved", "success");
 
-      // Resolve affected sites: union of target groups' sites + direct target sites
-      const tGroups = config.targets?.groups ?? [];
-      const tSites = config.targets?.sites ?? [];
+      // Affected sites = UNION of old targets + new targets.
+      // Old-target sites need rebuild to REMOVE the override.
+      // New-target sites need rebuild to APPLY the override.
+      const newGroups = config.targets?.groups ?? [];
+      const newSites = config.targets?.sites ?? [];
+      const allGroupIds = [...new Set([...savedTargets.groups, ...newGroups])];
+      const allDirectSites = [...new Set([...savedTargets.sites, ...newSites])];
+
       const affected = new Map<string, { domain: string; site_name?: string }>();
 
-      // Add directly targeted sites
-      for (const domain of tSites) {
+      // Add all directly targeted sites (old + new)
+      for (const domain of allDirectSites) {
         affected.set(domain, { domain });
       }
 
-      // Add sites from targeted groups (fetch each group's sites)
+      // Add sites from all targeted groups (old + new)
       await Promise.all(
-        tGroups.map(async (gid) => {
+        allGroupIds.map(async (gid) => {
           try {
             const gRes = await fetch(`/api/groups/${gid}/sites`);
             if (!gRes.ok) return;
@@ -230,6 +243,9 @@ export default function OverrideDetailPage(): React.ReactElement {
           }
         }),
       );
+
+      // Update saved snapshot so next save compares against current state
+      setSavedTargets({ groups: newGroups, sites: newSites });
 
       setRebuildSites(Array.from(affected.values()));
       setShowRebuildModal(true);

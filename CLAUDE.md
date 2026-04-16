@@ -256,3 +256,88 @@ Service contract (both services satisfy):
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
 Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler.
+
+## Revised Architecture: Unified Groups + Overrides (Active)
+
+> **Full spec:** `docs/specs/revised-architecture-groups-overrides-spec.md`
+> Read the FULL spec before writing any code for this feature.
+> **This REPLACES the previous monetization-layer-spec.md.** The monetization/ concept no longer exists.
+
+### Execution Mode
+
+Autonomous execution. Do not ask for permission. Do not ask "should I proceed?". Just build.
+
+### What Changed
+
+The separate `monetization/` layer is removed. Instead:
+- **Groups are the universal config layer** — a group can hold theme, ads, tracking, scripts, legal — any combination
+- **Sites list multiple groups:** `groups: [entertainment, taboola]` — merged left-to-right
+- **Overrides replace monetization** as the exception mechanism — same YAML schema but with REPLACE semantics and flexible targeting (groups + sites)
+- **One form component** for org, group, override, and site — same fields everywhere
+
+### Phase Order
+
+```
+Phase 1:  shared-types — remove MonetizationConfig, add OverrideConfig, update SiteConfig
+Phase 2:  resolve-config.ts — multi-group merge + override REPLACE logic + unit tests
+Phase 3:  Network repo restructure (monetization/ → groups/ + overrides/config/)
+Phase 4:  Dashboard — remove monetization section, update groups, add overrides
+Phase 5:  Build pipeline — update detect-changed-sites, rename inline config var
+Phase 6:  ad-loader.js — rename __ATL_MONETIZATION__ to __ATL_CONFIG__
+Phase 7:  Cleanup — remove all monetization references
+Phase 8:  Commit, deploy, verify
+```
+
+### Critical Rules
+
+**1. Merge chain:** `org → groups[0] → groups[1] → ... → overrides (by priority) → site`
+
+**2. Group merge = standard merge rules** (deep merge objects, scripts merge by id, ads_txt additive, null = disable)
+
+**3. Override merge = REPLACE semantics.** If override defines `ads_config`, it COMPLETELY REPLACES the group chain's `ads_config`. Fields not in the override pass through untouched.
+
+**4. Override targeting:** An override targets the UNION of its `targets.groups` (all sites in those groups) + `targets.sites` (individual sites). Both are optional.
+
+**5. Backward compat:**
+- `group: string` → treat as `groups: [string]`
+- `monetization: string` → find file, append to groups array
+
+**6. DO NOT BREAK coolnews-atl.** The mock ads must keep working. The test-ads profile becomes an override (overrides/config/test-ads-mock.yaml) targeting coolnews-atl.
+
+**7. Unified YAML schema.** org, group, override, site ALL support the same config fields. The dashboard form component is ONE component used four times with different mode prop.
+
+### Network Repo Structure After Refactor
+
+```
+org.yaml
+network.yaml
+groups/
+  entertainment.yaml       ← Vertical: theme, fonts
+  taboola.yaml             ← Ad partner: ads_config, scripts, ads.txt (was monetization/premium-ads)
+  adsense-default.yaml     ← Basic ads (was monetization/standard-ads)
+  mock-minimal.yaml        ← QA group with different ad layout
+overrides/
+  config/                  ← Config overrides (NEW)
+    test-ads-mock.yaml     ← Mock ads demo (was monetization/test-ads)
+  <site_id>/               ← Shared-page overrides (UNCHANGED)
+sites/
+  coolnews-atl/
+    site.yaml              ← groups: [entertainment, taboola]
+```
+
+### Dashboard Routes After Refactor
+
+```
+REMOVED:
+  /[org]/monetization (all sub-routes)
+
+UPDATED:
+  /[org]/groups/[id]           ← Full config form (was slimmed)
+  /[org]/sites/[domain]        ← No Monetization tab, groups in Config tab
+  /[org]/sites/new             ← Multi-group selector instead of group + monetization
+
+ADDED:
+  /[org]/overrides             ← Override list
+  /[org]/overrides/[id]        ← Override detail with targeting UI
+  /[org]/overrides/new         ← Create override
+```
