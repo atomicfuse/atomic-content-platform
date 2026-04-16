@@ -14,6 +14,7 @@ import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
 import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
 import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
 import { PlacementPreview } from "@/components/shared/PlacementPreview";
+import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 
 interface OverrideConfig {
   override_id?: string;
@@ -131,6 +132,10 @@ export default function OverrideDetailPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showRebuildModal, setShowRebuildModal] = useState(false);
+  const [rebuildSites, setRebuildSites] = useState<
+    Array<{ domain: string; site_name?: string }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const [allGroups, setAllGroups] = useState<GroupSummary[]>([]);
@@ -196,6 +201,38 @@ export default function OverrideDetailPage(): React.ReactElement {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Override saved", "success");
+
+      // Resolve affected sites: union of target groups' sites + direct target sites
+      const tGroups = config.targets?.groups ?? [];
+      const tSites = config.targets?.sites ?? [];
+      const affected = new Map<string, { domain: string; site_name?: string }>();
+
+      // Add directly targeted sites
+      for (const domain of tSites) {
+        affected.set(domain, { domain });
+      }
+
+      // Add sites from targeted groups (fetch each group's sites)
+      await Promise.all(
+        tGroups.map(async (gid) => {
+          try {
+            const gRes = await fetch(`/api/groups/${gid}/sites`);
+            if (!gRes.ok) return;
+            const sites = (await gRes.json()) as Array<{
+              domain: string;
+              site_name?: string;
+            }>;
+            for (const s of sites) {
+              if (!affected.has(s.domain)) affected.set(s.domain, s);
+            }
+          } catch {
+            // skip — non-blocking
+          }
+        }),
+      );
+
+      setRebuildSites(Array.from(affected.values()));
+      setShowRebuildModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -404,6 +441,13 @@ export default function OverrideDetailPage(): React.ReactElement {
           Delete
         </Button>
       </div>
+
+      <RebuildConfirmModal
+        open={showRebuildModal}
+        onClose={(): void => setShowRebuildModal(false)}
+        affectedSites={rebuildSites}
+        changeLabel={`override '${config?.name ?? overrideId}'`}
+      />
     </div>
   );
 }

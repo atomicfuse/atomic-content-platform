@@ -12,6 +12,7 @@ interface SaveRequestBody {
   domain: string;
   configUpdates: Partial<StagingSiteConfig> | null;
   logoBase64: string | null;
+  faviconBase64: string | null;
 }
 
 /**
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { domain, configUpdates, logoBase64 } = body;
+  const { domain, configUpdates, logoBase64, faviconBase64 } = body;
 
   if (!domain) {
     return NextResponse.json(
@@ -115,11 +116,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // If we have a logo, set theme references
-    if (logoBase64) {
+    // Set theme references for logo/favicon
+    if (logoBase64 || faviconBase64) {
       const theme = (existing.theme ?? {}) as Record<string, unknown>;
-      theme.logo = "/assets/logo.png";
-      theme.favicon = "/assets/logo.png";
+      if (logoBase64) {
+        theme.logo = "/assets/logo.png";
+        // Only default favicon to logo if no separate favicon provided
+        if (!faviconBase64) theme.favicon = "/assets/logo.png";
+      }
+      if (faviconBase64) {
+        theme.favicon = "/assets/favicon.png";
+      }
       existing.theme = theme;
     }
 
@@ -137,11 +144,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         content: Buffer.from(logoBase64, "base64"),
       });
     }
+    if (faviconBase64) {
+      files.push({
+        path: `sites/${domain}/assets/favicon.png`,
+        content: Buffer.from(faviconBase64, "base64"),
+      });
+    }
 
-    const commitMsg = logoBase64 && configUpdates
-      ? "update site config and logo"
+    const hasAssets = logoBase64 || faviconBase64;
+    const assetLabel = logoBase64 && faviconBase64
+      ? "logo and favicon"
       : logoBase64
-        ? "update logo"
+        ? "logo"
+        : "favicon";
+    const commitMsg = hasAssets && configUpdates
+      ? `update site config and ${assetLabel}`
+      : hasAssets
+        ? `update ${assetLabel}`
         : "update site config";
 
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);

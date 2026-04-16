@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Tabs } from "@/components/ui/Tabs";
+import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
+import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 
 import { TrackingForm } from "@/components/settings/TrackingForm";
 import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
@@ -172,12 +174,16 @@ function hasAny(config: GroupConfig, keys: readonly string[]): boolean {
 export default function GroupDetailPage(): React.ReactElement {
   const params = useParams<{ groupId: string }>();
   const groupId = params.groupId;
+  const router = useRouter();
   const { toast } = useToast();
 
   const [config, setConfig] = useState<GroupConfig | null>(null);
   const [orgConfig, setOrgConfig] = useState<OrgConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRebuildModal, setShowRebuildModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -254,10 +260,26 @@ export default function GroupDetailPage(): React.ReactElement {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Group saved", "success");
+      setShowRebuildModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(): Promise<void> {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/groups/${groupId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast(`Group '${config?.name ?? groupId}' deleted`, "success");
+      router.push("/groups");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete");
+      setShowDeleteModal(false);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -488,11 +510,83 @@ export default function GroupDetailPage(): React.ReactElement {
 
       <Tabs tabs={tabs} defaultTab="general" />
 
-      <div className="flex gap-3">
+      <div className="flex items-center justify-between">
         <Button onClick={save} loading={saving}>
           Save
         </Button>
+        <Button
+          variant="danger"
+          onClick={(): void => setShowDeleteModal(true)}
+        >
+          Delete Group
+        </Button>
       </div>
+
+      {/* Rebuild confirmation modal */}
+      <RebuildConfirmModal
+        open={showRebuildModal}
+        onClose={(): void => setShowRebuildModal(false)}
+        affectedSites={groupSites}
+        changeLabel={`group '${config?.name ?? groupId}'`}
+      />
+
+      {/* Delete confirmation modal */}
+      <Modal
+        open={showDeleteModal}
+        onClose={(): void => setShowDeleteModal(false)}
+        title="Delete group?"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-[var(--text-secondary)]">
+            This will permanently delete the group{" "}
+            <span className="font-semibold text-[var(--text-primary)]">
+              &lsquo;{config?.name ?? groupId}&rsquo;
+            </span>.{" "}
+            {groupSites.length > 0
+              ? `${groupSites.length} site(s) currently reference this group.`
+              : "No sites currently reference this group."}
+          </p>
+
+          {groupSites.length > 0 && (
+            <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
+              <p className="text-xs font-medium text-yellow-400">
+                These sites will lose this group from their configuration. You should reassign them first.
+              </p>
+              <ul className="text-xs text-[var(--text-secondary)] space-y-1">
+                {groupSites.slice(0, 10).map((site) => (
+                  <li key={site.domain} className="flex items-center gap-1.5">
+                    <span className="w-1 h-1 rounded-full bg-yellow-400" />
+                    {site.site_name ?? site.domain}
+                    <span className="text-[var(--text-muted)]">({site.domain})</span>
+                  </li>
+                ))}
+                {groupSites.length > 10 && (
+                  <li className="text-[var(--text-muted)]">
+                    + {groupSites.length - 10} more
+                  </li>
+                )}
+              </ul>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button
+              variant="secondary"
+              onClick={(): void => setShowDeleteModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={deleting}
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

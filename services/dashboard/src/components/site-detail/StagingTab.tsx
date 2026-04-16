@@ -22,6 +22,7 @@ interface StagingTabProps {
   siteStatus: SiteStatus;
   customDomain: string | null;
   currentLogoPath: string | null;
+  currentFaviconPath: string | null;
 }
 
 export function StagingTab({
@@ -33,6 +34,7 @@ export function StagingTab({
   siteStatus,
   customDomain,
   currentLogoPath,
+  currentFaviconPath,
 }: StagingTabProps): React.ReactElement {
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState(previewUrl);
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
@@ -222,7 +224,7 @@ export function StagingTab({
           </div>
 
           {/* Edit Site Settings */}
-          <StagingEditPanel domain={domain} previewUrl={currentPreviewUrl} currentLogoPath={currentLogoPath} />
+          <StagingEditPanel domain={domain} previewUrl={currentPreviewUrl} currentLogoPath={currentLogoPath} currentFaviconPath={currentFaviconPath} />
 
           {/* Inline save form */}
           {showSaveForm && (

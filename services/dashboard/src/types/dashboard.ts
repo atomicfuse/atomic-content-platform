@@ -99,4 +99,8 @@ export interface WizardFormData {
   contentGuidelines: string;
   /** Script variable overrides for this site. */
   scriptsVars: Record<string, string>;
+  /** Base64-encoded logo uploaded by user (skips AI generation). */
+  logoBase64?: string;
+  /** Base64-encoded favicon uploaded by user. */
+  faviconBase64?: string;
 }
