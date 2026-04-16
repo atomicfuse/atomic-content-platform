@@ -72,6 +72,21 @@
       bg: '#eceff1',
       mockBrand: '',
       mockCta: ''
+    },
+    // mock-minimal group placements (purple/magenta palette)
+    'mini-top': {
+      label: 'GROUP: MINI TOP',
+      color: '#7B1FA2',
+      bg: '#F3E5F5',
+      mockBrand: 'GroupAd Demo',
+      mockCta: 'Learn More'
+    },
+    'mini-mid': {
+      label: 'GROUP: MINI MID',
+      color: '#AD1457',
+      bg: '#FCE4EC',
+      mockBrand: 'GroupAd Content',
+      mockCta: 'Read More'
     }
   };
 
@@ -319,7 +334,12 @@
     lines.push('<div style="font-weight:700;font-size:12px;margin-bottom:6px;color:#ffd54f;">🟡 Mock Ads Active</div>');
     
     if (config) {
-      lines.push('<div style="color:#81c784;">Profile: ' + (config.monetization_id || 'unknown') + '</div>');
+      lines.push('<div style="color:#81c784;">Groups: ' + (config.groups ? config.groups.join(', ') : 'unknown') + '</div>');
+      if (config.applied_overrides && config.applied_overrides.length > 0) {
+        lines.push('<div style="color:#ffd54f;font-weight:700;">Override active: ' + config.applied_overrides.join(', ') + '</div>');
+      } else {
+        lines.push('<div style="color:#ce93d8;font-weight:700;">Group config only (no override)</div>');
+      }
       lines.push('<div style="color:#90caf9;">Placements: ' + (config.ads_config?.ad_placements?.length || 0) + '</div>');
       lines.push('<div style="color:#ce93d8;">Scripts: ' + ((config.scripts?.head?.length || 0) + (config.scripts?.body_end?.length || 0)) + '</div>');
       if (config.tracking?.ga4) lines.push('<div style="color:#a5d6a7;">GA4: ' + config.tracking.ga4 + '</div>');

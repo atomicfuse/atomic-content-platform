@@ -4,7 +4,7 @@
  * ads.txt is a standard IAB Tech Lab initiative that lets publishers declare
  * authorised digital sellers. Each line in the file represents one seller
  * entry. Entries accumulate additively from all four config layers
- * (org → monetization → group → site) and are deduplicated and sorted.
+ * (org → groups → overrides → site) and are deduplicated and sorted.
  */
 
 import { readFile } from "node:fs/promises";
@@ -17,15 +17,13 @@ import type { ResolvedConfig } from "@atomic-platform/shared-types";
 // Layer source tracking
 // ---------------------------------------------------------------------------
 
-export type AdsTxtSourceLayer = "org" | "monetization" | "group" | "site";
+export type AdsTxtSourceLayer = "org" | "group" | "site";
 
 export interface AdsTxtBuildOptions {
   /** Optional source breakdown — used to render per-layer comment headers. */
   sources?: Partial<Record<AdsTxtSourceLayer, string[]>>;
   /** ISO date string for the auto-generated header (default: today). */
   generatedAt?: string;
-  /** Profile id for monetization layer header annotation. */
-  monetizationLabel?: string;
   /** Group label for group layer header annotation. */
   groupLabel?: string;
   /** Org label for org layer header annotation. */
@@ -50,11 +48,6 @@ export function generateAdsTxt(
   if (options.sources) {
     if (options.sources.org && options.sources.org.length > 0) {
       lines.push(`# Source: org${options.orgLabel ? ` (${options.orgLabel})` : ""}`);
-    }
-    if (options.sources.monetization && options.sources.monetization.length > 0) {
-      lines.push(
-        `# Source: monetization${options.monetizationLabel ? ` (${options.monetizationLabel})` : ""}`,
-      );
     }
     if (options.sources.group && options.sources.group.length > 0) {
       lines.push(`# Source: group${options.groupLabel ? ` (${options.groupLabel})` : ""}`);
@@ -133,30 +126,22 @@ export async function buildAdsTxtForSite(
     join(networkRepoPath, "sites", siteDomain, "site.yaml"),
   );
 
-  // Determine monetization id and group from the resolved config so the
-  // header attribution stays consistent with what was actually merged.
-  const monetizationId = resolvedConfig.monetization;
+  // Collect ads_txt from all groups
   const groupId = resolvedConfig.group;
-
-  const monetizationLayer = monetizationId
-    ? await readLayer(
-        join(networkRepoPath, "monetization", `${monetizationId}.yaml`),
-      )
-    : null;
-  const groupLayer = groupId
-    ? await readLayer(join(networkRepoPath, "groups", `${groupId}.yaml`))
-    : null;
+  const groupEntries: string[] = [];
+  for (const gId of resolvedConfig.groups) {
+    const gLayer = await readLayer(join(networkRepoPath, "groups", `${gId}.yaml`));
+    groupEntries.push(...collectFromLayer(gLayer));
+  }
 
   const sources: Record<AdsTxtSourceLayer, string[]> = {
     org: collectFromLayer(orgLayer),
-    monetization: collectFromLayer(monetizationLayer),
-    group: collectFromLayer(groupLayer),
+    group: groupEntries,
     site: collectFromLayer(siteLayer),
   };
 
   return generateAdsTxt(resolvedConfig, {
     sources,
-    monetizationLabel: monetizationId || undefined,
     groupLabel: groupId || undefined,
   });
 }

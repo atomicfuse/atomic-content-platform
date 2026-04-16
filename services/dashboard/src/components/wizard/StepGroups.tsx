@@ -10,19 +10,6 @@ interface GroupSummary {
   ads_config?: { primary_advertiser?: string; layout?: string };
 }
 
-interface MonetizationSummary {
-  monetization_id: string;
-  name?: string;
-  provider?: string;
-  ads_config?: { layout?: string; ad_placements?: unknown[] };
-  tracking?: Record<string, unknown>;
-}
-
-interface OrgConfig {
-  default_monetization?: string;
-  [key: string]: unknown;
-}
-
 interface StepGroupsProps {
   data: WizardFormData;
   onChange: (updates: Partial<WizardFormData>) => void;
@@ -37,33 +24,14 @@ export function StepGroups({
   onBack,
 }: StepGroupsProps): React.ReactElement {
   const [availableGroups, setAvailableGroups] = useState<GroupSummary[]>([]);
-  const [availableMonetization, setAvailableMonetization] = useState<
-    MonetizationSummary[]
-  >([]);
-  const [orgDefaultMonetization, setOrgDefaultMonetization] = useState<
-    string | undefined
-  >(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchAll(): Promise<void> {
       try {
-        const [groupsRes, monRes, orgRes] = await Promise.all([
-          fetch("/api/groups"),
-          fetch("/api/monetization"),
-          fetch("/api/settings/org"),
-        ]);
+        const groupsRes = await fetch("/api/groups");
         if (groupsRes.ok) {
           setAvailableGroups((await groupsRes.json()) as GroupSummary[]);
-        }
-        if (monRes.ok) {
-          setAvailableMonetization(
-            (await monRes.json()) as MonetizationSummary[],
-          );
-        }
-        if (orgRes.ok) {
-          const org = (await orgRes.json()) as OrgConfig;
-          setOrgDefaultMonetization(org.default_monetization);
         }
       } catch {
         // Best effort — allow manual entry if APIs unavailable
@@ -73,17 +41,6 @@ export function StepGroups({
     }
     void fetchAll();
   }, []);
-
-  const selectedMonetization = data.monetization
-    ? availableMonetization.find(
-        (m) => m.monetization_id === data.monetization,
-      )
-    : orgDefaultMonetization
-      ? availableMonetization.find(
-          (m) => m.monetization_id === orgDefaultMonetization,
-        )
-      : undefined;
-  const monetizationIsInherited = !data.monetization && !!orgDefaultMonetization;
 
   function toggleGroup(groupId: string): void {
     const current = data.groups;
@@ -108,11 +65,11 @@ export function StepGroups({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold">Group &amp; Monetization</h2>
+        <h2 className="text-xl font-semibold">Select Groups</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Pick the editorial group(s) for theme + legal defaults, and the
-          monetization profile that supplies tracking, ad placements, and
-          ads.txt.
+          Pick the config groups for this site. Groups supply theme, tracking,
+          ad placements, scripts, and legal defaults. Merged left-to-right
+          (last group wins conflicts).
         </p>
       </div>
 
@@ -197,68 +154,6 @@ export function StepGroups({
           ))}
         </div>
       )}
-
-      <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-            Monetization Profile
-          </h3>
-          {monetizationIsInherited && (
-            <span className="text-xs text-gray-400">
-              Inherited from org default
-            </span>
-          )}
-        </div>
-        {loading ? (
-          <p className="text-sm text-gray-400">Loading monetization profiles...</p>
-        ) : availableMonetization.length === 0 ? (
-          <p className="text-sm text-gray-400">
-            No monetization profiles found. Create one in /monetization first.
-          </p>
-        ) : (
-          <select
-            value={data.monetization ?? ""}
-            onChange={(e): void =>
-              onChange({ monetization: e.target.value || undefined })
-            }
-            className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-900"
-          >
-            <option value="">
-              {orgDefaultMonetization
-                ? `— Use org default (${orgDefaultMonetization}) —`
-                : "— No monetization —"}
-            </option>
-            {availableMonetization.map((m) => (
-              <option key={m.monetization_id} value={m.monetization_id}>
-                {m.name ?? m.monetization_id}
-                {m.provider ? ` · ${m.provider}` : ""}
-              </option>
-            ))}
-          </select>
-        )}
-
-        {selectedMonetization && (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400">
-            <div className="font-semibold text-gray-700 dark:text-gray-200">
-              What this site inherits:
-            </div>
-            <ul className="mt-1 space-y-0.5">
-              {selectedMonetization.provider && (
-                <li>Provider: {selectedMonetization.provider}</li>
-              )}
-              {selectedMonetization.ads_config?.layout && (
-                <li>Layout: {selectedMonetization.ads_config.layout}</li>
-              )}
-              <li>
-                Placements:{" "}
-                {Array.isArray(selectedMonetization.ads_config?.ad_placements)
-                  ? selectedMonetization.ads_config!.ad_placements!.length
-                  : 0}
-              </li>
-            </ul>
-          </div>
-        )}
-      </div>
 
       <div className="flex justify-between pt-4">
         <Button variant="secondary" onClick={onBack}>

@@ -1,5 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
+interface GroupOption {
+  group_id: string;
+  name?: string;
+}
+
 interface GeneralFormValue {
   organization: string;
   legal_entity: string;
@@ -7,27 +14,45 @@ interface GeneralFormValue {
   support_email_pattern: string;
   default_theme?: string;
   default_fonts?: { heading: string; body: string };
-  default_monetization?: string;
-}
-
-export interface MonetizationOption {
-  monetization_id: string;
-  name?: string;
+  default_groups?: string[];
 }
 
 interface GeneralFormProps {
   value: GeneralFormValue;
   onChange: (value: GeneralFormValue) => void;
-  monetizationOptions?: MonetizationOption[];
 }
 
 export function GeneralForm({
   value,
   onChange,
-  monetizationOptions = [],
 }: GeneralFormProps): React.ReactElement {
+  const [availableGroups, setAvailableGroups] = useState<GroupOption[]>([]);
+
+  useEffect(() => {
+    async function fetchGroups(): Promise<void> {
+      try {
+        const res = await fetch("/api/groups");
+        if (res.ok) {
+          setAvailableGroups((await res.json()) as GroupOption[]);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void fetchGroups();
+  }, []);
+
   function updateField<K extends keyof GeneralFormValue>(key: K, val: GeneralFormValue[K]): void {
     onChange({ ...value, [key]: val });
+  }
+
+  function toggleDefaultGroup(groupId: string): void {
+    const current = value.default_groups ?? [];
+    if (current.includes(groupId)) {
+      updateField("default_groups", current.filter((g) => g !== groupId));
+    } else {
+      updateField("default_groups", [...current, groupId]);
+    }
   }
 
   return (
@@ -100,25 +125,31 @@ export function GeneralForm({
 
       <div className="space-y-1.5">
         <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-          Default Monetization Profile
+          Default Groups
         </label>
-        <select
-          value={value.default_monetization ?? ""}
-          onChange={(e): void =>
-            updateField("default_monetization", e.target.value || undefined)
-          }
-          className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
-        >
-          <option value="">— No default —</option>
-          {monetizationOptions.map((o) => (
-            <option key={o.monetization_id} value={o.monetization_id}>
-              {o.name ? `${o.name} (${o.monetization_id})` : o.monetization_id}
-            </option>
-          ))}
-        </select>
+        <div className="space-y-1">
+          {availableGroups.map((g) => {
+            const selected = (value.default_groups ?? []).includes(g.group_id);
+            return (
+              <button
+                key={g.group_id}
+                type="button"
+                onClick={(): void => toggleDefaultGroup(g.group_id)}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                  selected
+                    ? "border-cyan bg-cyan/10"
+                    : "border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
+                }`}
+              >
+                <span className="font-medium">{g.name ?? g.group_id}</span>
+                <span className="ml-2 text-xs text-[var(--text-muted)]">{g.group_id}</span>
+              </button>
+            );
+          })}
+        </div>
         <p className="text-xs text-[var(--text-muted)]">
-          Sites without their own <code className="rounded bg-[var(--bg-elevated)] px-1">monetization:</code>{" "}
-          field inherit this profile.
+          Sites without their own <code className="rounded bg-[var(--bg-elevated)] px-1">groups:</code>{" "}
+          field inherit these default groups.
         </p>
       </div>
 

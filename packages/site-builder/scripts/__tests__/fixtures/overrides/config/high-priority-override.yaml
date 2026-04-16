@@ -1,0 +1,10 @@
+override_id: high-priority-override
+name: "High Priority Override"
+priority: 50
+
+targets:
+  sites:
+    - multi-group.example.com
+
+tracking:
+  ga4: "G-HIGHPRI-001"

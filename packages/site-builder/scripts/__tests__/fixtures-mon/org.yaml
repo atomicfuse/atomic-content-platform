@@ -7,7 +7,8 @@ default_fonts:
   heading: "Inter"
   body: "Inter"
 
-default_monetization: standard-ads
+default_groups:
+  - standard-ads
 
 tracking:
   ga4: null

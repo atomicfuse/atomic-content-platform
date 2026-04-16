@@ -983,7 +983,7 @@ function inferActivityType(
   if (lower.includes("publish") || lower.includes("article")) return "article_published";
   if (lower.includes("flag") || lower.includes("review")) return "article_flagged";
   if (lower.includes("create site") || lower.includes("site(")) return "site_created";
-  if (lower.includes("monetiz") || lower.includes("ads")) return "monetization_activated";
+  if (lower.includes("override") || lower.includes("ads")) return "override_activated";
   if (lower.includes("fail") || lower.includes("error")) return "build_failed";
   return "article_published";
 }

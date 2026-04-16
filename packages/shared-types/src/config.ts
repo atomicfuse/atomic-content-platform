@@ -1,6 +1,6 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
-import type { AdPlaceholderHeights, MonetizationJson } from "./monetization.js";
+import type { AdPlaceholderHeights, InlineAdConfig } from "./monetization.js";
 
 // ---------------------------------------------------------------------------
 // Quality scoring
@@ -275,10 +275,10 @@ export interface OrgConfig {
   };
 
   /**
-   * Default monetization profile id applied to sites that don't specify their
-   * own `monetization:` field. Must reference a file at `monetization/<id>.yaml`.
+   * Default group IDs applied to sites that don't specify their own `groups:`.
+   * References files at `groups/<id>.yaml`.
    */
-  default_monetization?: string;
+  default_groups?: string[];
 
   /** Organisation-wide tracking configuration. */
   tracking: TrackingConfig;
@@ -300,8 +300,8 @@ export interface OrgConfig {
 
   /**
    * Organisation-wide ads.txt entries. Top-level (not inside ads_config).
-   * Merged additively across all layers (org + monetization + group + site).
-   * Older configs may still store ads_txt inside `ads_config.ads_txt`.
+   * Merged additively across all layers (org + groups + site).
+   * Overrides use REPLACE semantics for ads_txt.
    */
   ads_txt?: string[];
 
@@ -386,19 +386,22 @@ export interface SiteConfig {
   /** Optional tagline shown in headers / meta tags. */
   site_tagline?: string | null;
 
-  /** ID of the group this site belongs to (legacy single-group field). */
-  group: string;
+  /**
+   * @deprecated Legacy single-group field. Use `groups` array instead.
+   * If only `group` is present, treated as `groups: [group]`.
+   */
+  group?: string;
 
   /**
    * Group references. Array of group IDs, merged left-to-right.
-   * Takes precedence over `group` when present.
-   * Backward compatible: if only `group` is found, treated as `groups: [group]`.
+   * Each ID references `groups/<id>.yaml` in the network repo.
    */
-  groups?: string[];
+  groups: string[];
 
   /**
-   * Monetization profile id this site uses. References `monetization/<id>.yaml`.
-   * Falls back to `org.default_monetization` when omitted.
+   * @deprecated Legacy monetization profile reference. The monetization layer
+   * has been replaced by the unified groups + overrides architecture.
+   * If present, the id is appended to the groups array for backward compat.
    */
   monetization?: string;
 
@@ -428,7 +431,7 @@ export interface SiteConfig {
 
   /**
    * Site-level ads.txt entries. Top-level (not inside ads_config).
-   * Additively merged with org/monetization/group entries.
+   * Additively merged with org/group entries.
    */
   ads_txt?: string[];
 
@@ -479,17 +482,14 @@ export interface ResolvedConfig {
   /** Site tagline (null if not set). */
   site_tagline: string | null;
 
-  /** Primary group ID (first entry in groups array). */
+  /** Primary group ID (first entry in groups array, empty string if none). */
   group: string;
 
   /** All group IDs this site belongs to (merged left-to-right). */
   groups: string[];
 
-  /**
-   * Resolved monetization profile id (from site.monetization ??
-   * org.default_monetization). Empty string when no profile applies.
-   */
-  monetization: string;
+  /** Override IDs that were applied during config resolution (by priority order). */
+  applied_overrides: string[];
 
   /** Resolved support email (from org support_email_pattern with domain). */
   support_email: string;
@@ -503,7 +503,7 @@ export interface ResolvedConfig {
   /** Fully-resolved scripts with all placeholders replaced. */
   scripts: ScriptsConfig;
 
-  /** Merged ads.txt lines from org + group. */
+  /** Merged ads.txt lines from org + groups (additive) or override (replace). */
   ads_txt: string[];
 
   /** Fully-resolved advertising configuration. */
@@ -534,13 +534,11 @@ export interface ResolvedConfig {
   search: SearchConfig;
 
   /**
-   * Runtime-shaped monetization JSON. Embedded inline into the HTML head at
-   * build time (as `window.__ATL_MONETIZATION__`) so that ad-loader.js can
-   * render ads without a CDN round-trip.
-   *
-   * Undefined when the site has no resolved monetization profile.
+   * Runtime-shaped inline config JSON. Embedded into the HTML head at build
+   * time (as `window.__ATL_CONFIG__`) so that ad-loader.js can render ads
+   * without a CDN round-trip.
    */
-  monetizationJson?: MonetizationJson;
+  inlineAdConfig?: InlineAdConfig;
 }
 
 // ---------------------------------------------------------------------------

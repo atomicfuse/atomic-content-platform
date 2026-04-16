@@ -5,7 +5,7 @@ const EVENT_COLORS: Record<ActivityEvent["type"], string> = {
   build_failed: "bg-red-400",
   article_flagged: "bg-yellow-400",
   site_created: "bg-cyan",
-  monetization_activated: "bg-magenta",
+  override_activated: "bg-magenta",
 };
 
 function formatRelativeTime(timestamp: string): string {

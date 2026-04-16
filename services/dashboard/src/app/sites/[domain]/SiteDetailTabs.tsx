@@ -9,7 +9,6 @@ interface SiteDetailTabsProps {
   contentTab: React.ReactNode;
   identityTab: React.ReactNode;
   agentTab: React.ReactNode;
-  monetizationTab: React.ReactNode | null;
 }
 
 export function SiteDetailTabs({
@@ -18,7 +17,6 @@ export function SiteDetailTabs({
   contentTab,
   identityTab,
   agentTab,
-  monetizationTab,
 }: SiteDetailTabsProps): React.ReactElement {
   const tabItems = [];
   if (stagingTab) {
@@ -29,9 +27,6 @@ export function SiteDetailTabs({
     { id: "identity", label: "Site Identity", content: identityTab },
     { id: "agent", label: "Content Agent", content: agentTab },
   );
-  if (monetizationTab) {
-    tabItems.push({ id: "monetization", label: "Monetization", content: monetizationTab });
-  }
   tabItems.push({
     id: "email",
     label: "Email",

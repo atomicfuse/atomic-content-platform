@@ -3,12 +3,12 @@
  * Build-time inline tracking script.
  *
  * Renders a minimal inline `<script>` in `<head>` for GA4 and GTM only.
- * This is the ONE monetization element that's build-time, so tracking
+ * This is the ONE ad-config element that's build-time, so tracking
  * starts firing from first paint instead of waiting for ad-loader.js
- * to fetch the CDN monetization JSON.
+ * to fetch the CDN config JSON.
  *
- * Other monetization concerns (ad SDKs, ad slots, interstitials, custom
- * tracking pixels) are loaded at runtime via /ad-loader.js.
+ * Other ad concerns (ad SDKs, ad slots, interstitials, custom tracking
+ * pixels) are loaded at runtime via /ad-loader.js.
  */
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 

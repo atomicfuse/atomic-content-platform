@@ -17,7 +17,7 @@ import { LegalForm } from "@/components/settings/LegalForm";
 import { ThemeForm } from "@/components/groups/ThemeForm";
 import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
 
-import { AdsTxtEditor } from "@/components/monetization/AdsTxtEditor";
+import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
 
 interface GroupConfig {
   name?: string;
@@ -392,19 +392,6 @@ export default function GroupDetailPage(): React.ReactElement {
       label: "Advanced",
       content: (
         <div className="space-y-4">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            <span className="font-semibold text-amber-500">
-              These fields are typically managed in Monetization Profiles.
-            </span>{" "}
-            Only use them here when this content group needs specific overrides.{" "}
-            <Link
-              href="/monetization"
-              className="text-cyan hover:underline"
-            >
-              Open Monetization →
-            </Link>
-          </div>
-
           <button
             type="button"
             onClick={(): void => setAdvancedOpen((o) => !o)}

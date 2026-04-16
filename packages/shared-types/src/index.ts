@@ -39,6 +39,6 @@ export type {
 
 export type {
   AdPlaceholderHeights,
-  MonetizationConfig,
-  MonetizationJson,
+  OverrideConfig,
+  InlineAdConfig,
 } from "./monetization.js";

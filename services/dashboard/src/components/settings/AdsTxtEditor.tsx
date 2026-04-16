@@ -7,8 +7,8 @@ interface AdsTxtEditorProps {
   value: string[];
   onChange: (value: string[]) => void;
   /**
-   * What scope the entries apply to in the helper text. Defaults to
-   * "monetization profile". Use "org" / "group" / "site" elsewhere.
+   * What scope the entries apply to in the helper text. Defaults to "group".
+   * Use "org" / "override" / "site" elsewhere.
    */
   scopeLabel?: string;
 }
@@ -16,7 +16,7 @@ interface AdsTxtEditorProps {
 export function AdsTxtEditor({
   value,
   onChange,
-  scopeLabel = "monetization profile",
+  scopeLabel = "group",
 }: AdsTxtEditorProps): React.ReactElement {
   const textValue = value.join("\n");
 

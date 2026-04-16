@@ -2,17 +2,20 @@
  * Config Resolver for the Atomic Content Network Platform.
  *
  * Reads YAML config files from a network data repo, deep-merges them
- * following the inheritance chain (org -> monetization -> group -> site),
- * resolves all {{placeholder}} variables, and returns a fully-typed
+ * following the inheritance chain:
+ *
+ *   org → groups[0] → groups[1] → … → overrides (by priority) → site
+ *
+ * Resolves all {{placeholder}} variables and returns a fully-typed
  * ResolvedConfig.
  *
- * The monetization layer is new: sites reference `monetization/<id>.yaml`
- * either explicitly via `monetization:` in site.yaml or via
- * `org.default_monetization`. When neither is set, the monetization layer
- * is skipped (for backward compatibility with older networks).
+ * Groups use standard merge semantics (deep merge, scripts merge by id,
+ * ads_txt additive). Overrides use REPLACE semantics — if an override
+ * defines a field, it completely replaces the group chain's value for
+ * that field.
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 
@@ -28,8 +31,8 @@ import type {
   CategoryConfig,
   SidebarConfig,
   SearchConfig,
-  MonetizationConfig,
-  MonetizationJson,
+  OverrideConfig,
+  InlineAdConfig,
   AdPlaceholderHeights,
 } from "@atomic-platform/shared-types";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
@@ -321,7 +324,7 @@ function normaliseAdPlacements(placements: unknown[]): AdPlacement[] {
 
 function resolveTheme(
   orgDefaults: { default_theme?: string; default_fonts?: { heading: string; body: string } },
-  groupTheme: Partial<ThemeConfig> | undefined,
+  groupThemes: (Partial<ThemeConfig> | undefined)[],
   siteTheme: Partial<ThemeConfig> | undefined,
 ): ResolvedThemeConfig {
   const base: ResolvedThemeConfig = {
@@ -335,29 +338,24 @@ function resolveTheme(
     },
   };
 
-  // Merge group theme
-  if (groupTheme) {
-    if (groupTheme.base) base.base = groupTheme.base;
-    if (groupTheme.colors) base.colors = { ...base.colors, ...groupTheme.colors };
-    if (groupTheme.logo) base.logo = groupTheme.logo;
-    if (groupTheme.favicon) base.favicon = groupTheme.favicon;
-    if (groupTheme.fonts) {
-      if (groupTheme.fonts.heading) base.fonts.heading = groupTheme.fonts.heading;
-      if (groupTheme.fonts.body) base.fonts.body = groupTheme.fonts.body;
+  function applyTheme(t: Partial<ThemeConfig>): void {
+    if (t.base) base.base = t.base;
+    if (t.colors) base.colors = { ...base.colors, ...t.colors };
+    if (t.logo) base.logo = t.logo;
+    if (t.favicon) base.favicon = t.favicon;
+    if (t.fonts) {
+      if (t.fonts.heading) base.fonts.heading = t.fonts.heading;
+      if (t.fonts.body) base.fonts.body = t.fonts.body;
     }
   }
 
-  // Merge site theme
-  if (siteTheme) {
-    if (siteTheme.base) base.base = siteTheme.base;
-    if (siteTheme.colors) base.colors = { ...base.colors, ...siteTheme.colors };
-    if (siteTheme.logo) base.logo = siteTheme.logo;
-    if (siteTheme.favicon) base.favicon = siteTheme.favicon;
-    if (siteTheme.fonts) {
-      if (siteTheme.fonts.heading) base.fonts.heading = siteTheme.fonts.heading;
-      if (siteTheme.fonts.body) base.fonts.body = siteTheme.fonts.body;
-    }
+  // Apply each group's theme in order (left to right)
+  for (const gt of groupThemes) {
+    if (gt) applyTheme(gt);
   }
+
+  // Site theme wins
+  if (siteTheme) applyTheme(siteTheme);
 
   return base;
 }
@@ -390,12 +388,139 @@ function collectAdsTxt(raw: Record<string, unknown> | null | undefined): string[
 }
 
 // ---------------------------------------------------------------------------
+// Override loading
+// ---------------------------------------------------------------------------
+
+/**
+ * Load all override config files from overrides/config/*.yaml.
+ */
+async function loadOverrides(
+  networkRepoPath: string,
+): Promise<OverrideConfig[]> {
+  const overridesDir = join(networkRepoPath, "overrides", "config");
+  let files: string[];
+  try {
+    files = await readdir(overridesDir);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw err;
+  }
+
+  const overrides: OverrideConfig[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".yaml")) continue;
+    const raw = await readYaml<OverrideConfig>(join(overridesDir, file));
+    overrides.push(raw);
+  }
+  return overrides;
+}
+
+/**
+ * Check if a site is targeted by an override.
+ */
+function isOverrideTargetingSite(
+  override: OverrideConfig,
+  siteDomain: string,
+  siteGroups: string[],
+): boolean {
+  const targetSites = override.targets?.sites ?? [];
+  const targetGroups = override.targets?.groups ?? [];
+
+  // Direct site targeting
+  if (targetSites.includes(siteDomain)) return true;
+
+  // Group targeting — site is in a targeted group
+  for (const g of siteGroups) {
+    if (targetGroups.includes(g)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Apply override fields with REPLACE semantics onto the current merged config.
+ * Fields defined in the override REPLACE the corresponding field from the
+ * group chain entirely. Fields not in the override pass through.
+ */
+function applyOverride(
+  tracking: TrackingConfig,
+  scripts: ScriptsConfig,
+  adsConfig: AdsConfig,
+  adsTxt: string[],
+  override: OverrideConfig,
+): {
+  tracking: TrackingConfig;
+  scripts: ScriptsConfig;
+  adsConfig: AdsConfig;
+  adsTxt: string[];
+} {
+  let newTracking = tracking;
+  let newScripts = scripts;
+  let newAdsConfig = adsConfig;
+  let newAdsTxt = adsTxt;
+
+  // Override tracking: field-level replace within the tracking object
+  if (override.tracking) {
+    newTracking = { ...newTracking };
+    for (const [key, value] of Object.entries(override.tracking)) {
+      (newTracking as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+
+  // Override scripts: replace entire arrays
+  if (override.scripts) {
+    newScripts = {
+      head: override.scripts.head !== undefined
+        ? normaliseScriptArray(override.scripts.head as unknown as unknown[])
+        : scripts.head,
+      body_start: override.scripts.body_start !== undefined
+        ? normaliseScriptArray(override.scripts.body_start as unknown as unknown[])
+        : scripts.body_start,
+      body_end: override.scripts.body_end !== undefined
+        ? normaliseScriptArray(override.scripts.body_end as unknown as unknown[])
+        : scripts.body_end,
+    };
+  }
+
+  // Override ads_config: replace entirely
+  if (override.ads_config) {
+    const overrideAds = override.ads_config as Record<string, unknown>;
+    newAdsConfig = {
+      ...adsConfig,
+      ...overrideAds,
+    } as AdsConfig;
+
+    // Normalize placements if present
+    if (overrideAds["ad_placements"] && Array.isArray(overrideAds["ad_placements"])) {
+      newAdsConfig = {
+        ...newAdsConfig,
+        ad_placements: normaliseAdPlacements(overrideAds["ad_placements"] as unknown[]),
+      };
+    }
+  }
+
+  // Override ads_txt: replace (not additive)
+  if (override.ads_txt !== undefined) {
+    newAdsTxt = [...override.ads_txt];
+  }
+
+  return {
+    tracking: newTracking,
+    scripts: newScripts,
+    adsConfig: newAdsConfig,
+    adsTxt: newAdsTxt,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Main resolver
 // ---------------------------------------------------------------------------
 
 /**
  * Resolve a site's full configuration by reading YAML files from the network
- * data repository and deep-merging them: org -> monetization -> group -> site.
+ * data repository and deep-merging them:
+ *
+ *   org → groups[0..N] → overrides (by priority, REPLACE) → site
  *
  * @param networkRepoPath - Absolute path to the network data repository root.
  * @param siteDomain - Domain name of the site to resolve (e.g. "coolnews.dev").
@@ -430,97 +555,74 @@ export async function resolveConfig(
     throw new Error(`site.yaml for ${siteDomain} is missing required field: domain`);
   }
 
-  // Normalize groups: support both `groups: [...]` (new) and `group: string` (legacy)
-  const siteGroups: string[] = site.groups
-    ?? (site.group ? [site.group] : []);
-  if (siteGroups.length === 0) {
-    throw new Error(`site.yaml for ${siteDomain} has neither "group" nor "groups"`);
+  // ---- 2. Resolve groups array ----
+  //
+  // Priority: site.groups > site.group (legacy) > org.default_groups > org.default_monetization (legacy)
+  // If site.monetization exists, append it to the groups array (backward compat).
+
+  let siteGroups: string[];
+  if (Array.isArray(siteRaw["groups"]) && (siteRaw["groups"] as string[]).length > 0) {
+    siteGroups = siteRaw["groups"] as string[];
+  } else if (typeof siteRaw["group"] === "string" && (siteRaw["group"] as string).length > 0) {
+    siteGroups = [siteRaw["group"] as string];
+  } else if (Array.isArray(orgRaw["default_groups"]) && (orgRaw["default_groups"] as string[]).length > 0) {
+    siteGroups = orgRaw["default_groups"] as string[];
+  } else if (typeof orgRaw["default_monetization"] === "string" && (orgRaw["default_monetization"] as string).length > 0) {
+    // Legacy: org.default_monetization treated as a default group
+    siteGroups = [orgRaw["default_monetization"] as string];
+  } else {
+    siteGroups = [];
   }
 
-  // ---- 2. Resolve monetization profile ----
-  //
-  // Precedence: site.monetization -> org.default_monetization -> none.
-  // When an id is specified, the corresponding file MUST exist (error if not).
-
-  const monetizationId =
-    (typeof siteRaw["monetization"] === "string" ? (siteRaw["monetization"] as string) : undefined)
-    ?? (typeof orgRaw["default_monetization"] === "string" ? (orgRaw["default_monetization"] as string) : undefined)
-    ?? "";
-
-  let monetizationRaw: Record<string, unknown> | null = null;
-  if (monetizationId) {
-    const monetizationPath = join(networkRepoPath, "monetization", `${monetizationId}.yaml`);
-    monetizationRaw = await readYamlOptional<Record<string, unknown>>(monetizationPath);
-    if (!monetizationRaw) {
-      throw new Error(
-        `Monetization profile "${monetizationId}" not found. Expected file at monetization/${monetizationId}.yaml`,
-      );
+  // Legacy: if site has monetization: field, append it to groups (backward compat)
+  if (typeof siteRaw["monetization"] === "string" && (siteRaw["monetization"] as string).length > 0) {
+    const monId = siteRaw["monetization"] as string;
+    if (!siteGroups.includes(monId)) {
+      siteGroups.push(monId);
     }
   }
-  const monetization = (monetizationRaw ?? {}) as Partial<MonetizationConfig> & Record<string, unknown>;
 
   // ---- 3. Read groups (left-to-right merge) ----
 
   const groupRaws: Record<string, unknown>[] = [];
   for (const groupId of siteGroups) {
     const groupPath = join(networkRepoPath, "groups", `${groupId}.yaml`);
-    let raw: Record<string, unknown>;
-    try {
-      raw = await readYaml<Record<string, unknown>>(groupPath);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.startsWith("Config file not found")) {
-        throw new Error(
-          `Site "${siteDomain}" references group "${groupId}", but group file not found: ${groupPath}`,
-        );
-      }
-      throw err;
+    let raw = await readYamlOptional<Record<string, unknown>>(groupPath);
+
+    // Backward compat: if group file not found, try monetization/ directory
+    if (!raw) {
+      const monetizationPath = join(networkRepoPath, "monetization", `${groupId}.yaml`);
+      raw = await readYamlOptional<Record<string, unknown>>(monetizationPath);
+    }
+
+    if (!raw) {
+      throw new Error(
+        `Group "${groupId}" not found for site "${siteDomain}". Looked for groups/${groupId}.yaml`,
+      );
     }
     groupRaws.push(raw);
   }
 
-  // Merge multiple groups into one effective group (left-to-right: later groups override earlier)
-  let mergedGroupRaw: Record<string, unknown> = groupRaws[0];
-  for (let i = 1; i < groupRaws.length; i++) {
-    mergedGroupRaw = deepMerge(mergedGroupRaw, groupRaws[i]);
-  }
-  const group = mergedGroupRaw as unknown as GroupConfig;
-
-  // ---- 4. Merge tracking: org -> monetization -> group -> site ----
+  // ---- 4. Merge tracking: org → groups (left to right) ----
 
   let tracking: TrackingConfig = { ...org.tracking };
-  if (monetization.tracking) {
-    tracking = deepMerge(
-      tracking as unknown as Record<string, unknown>,
-      monetization.tracking as unknown as Record<string, unknown>,
-    ) as unknown as TrackingConfig;
-  }
-  if (group.tracking) {
-    tracking = deepMerge(
-      tracking as unknown as Record<string, unknown>,
-      group.tracking as unknown as Record<string, unknown>,
-    ) as unknown as TrackingConfig;
-  }
-  if (site.tracking) {
-    tracking = deepMerge(
-      tracking as unknown as Record<string, unknown>,
-      site.tracking as unknown as Record<string, unknown>,
-    ) as unknown as TrackingConfig;
+  for (const gRaw of groupRaws) {
+    const gTracking = gRaw["tracking"] as Partial<TrackingConfig> | undefined;
+    if (gTracking) {
+      tracking = deepMerge(
+        tracking as unknown as Record<string, unknown>,
+        gTracking as unknown as Record<string, unknown>,
+      ) as unknown as TrackingConfig;
+    }
   }
 
-  // ---- 5. Merge scripts by id: org -> monetization -> each group ----
+  // ---- 5. Merge scripts by id: org → each group ----
 
   const orgScripts: ScriptsConfig = orgRaw["scripts"]
     ? normaliseScriptsConfig(orgRaw["scripts"] as Record<string, unknown>)
     : { head: [], body_start: [], body_end: [] };
 
   let mergedScripts: ScriptsConfig = orgScripts;
-
-  if (monetizationRaw && monetizationRaw["scripts"]) {
-    const monScripts = normaliseScriptsConfig(
-      monetizationRaw["scripts"] as Record<string, unknown>,
-    );
-    mergedScripts = mergeScriptsConfigs(mergedScripts, monScripts);
-  }
 
   for (const gRaw of groupRaws) {
     if (gRaw["scripts"]) {
@@ -531,22 +633,114 @@ export async function resolveConfig(
     }
   }
 
-  // ---- 6. Merge scripts_vars from all levels, then resolve placeholders ----
+  // ---- 6. Merge ads_config: org → groups ----
+
+  let adsConfig: AdsConfig = { ...org.ads_config };
+  for (const gRaw of groupRaws) {
+    const gAds = gRaw["ads_config"] as Partial<AdsConfig> | undefined;
+    if (gAds) {
+      adsConfig = deepMerge(
+        adsConfig as unknown as Record<string, unknown>,
+        gAds as unknown as Record<string, unknown>,
+      ) as unknown as AdsConfig;
+    }
+  }
+
+  // Ad placements: full replacement (no merge). The latest layer that
+  // defines ad_placements wins (last group with placements wins).
+  let lastPlacementSource: unknown[] | undefined;
+  for (const gRaw of groupRaws) {
+    const gAds = gRaw["ads_config"] as Record<string, unknown> | undefined;
+    if (gAds?.["ad_placements"] && Array.isArray(gAds["ad_placements"]) && (gAds["ad_placements"] as unknown[]).length > 0) {
+      lastPlacementSource = gAds["ad_placements"] as unknown[];
+    }
+  }
+  if (!lastPlacementSource) {
+    // Fall back to org placements
+    lastPlacementSource = org.ads_config?.ad_placements as unknown[] | undefined;
+  }
+  if (lastPlacementSource && lastPlacementSource.length > 0) {
+    adsConfig = { ...adsConfig, ad_placements: normaliseAdPlacements(lastPlacementSource) };
+  }
+
+  // ---- 7. Merge ads_txt: APPEND from org + all groups, dedupe ----
+
+  const adsTxtEntries: string[] = [];
+  adsTxtEntries.push(...collectAdsTxt(orgRaw));
+  for (const gRaw of groupRaws) {
+    adsTxtEntries.push(...collectAdsTxt(gRaw));
+  }
+
+  // ---- 8. Load and apply overrides (REPLACE semantics) ----
+
+  const allOverrides = await loadOverrides(networkRepoPath);
+  const matchingOverrides = allOverrides
+    .filter((o) => isOverrideTargetingSite(o, siteDomain, siteGroups))
+    .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+
+  const appliedOverrideIds: string[] = [];
+  let currentAdsTxt = [...new Set(adsTxtEntries)];
+
+  for (const override of matchingOverrides) {
+    const result = applyOverride(tracking, mergedScripts, adsConfig, currentAdsTxt, override);
+    tracking = result.tracking;
+    mergedScripts = result.scripts;
+    adsConfig = result.adsConfig;
+    currentAdsTxt = result.adsTxt;
+    appliedOverrideIds.push(override.override_id);
+
+    // Override scripts_vars merge into the var pool
+    // (handled below when we collect all vars)
+  }
+
+  // ---- 9. Apply site-level overrides (standard merge, site wins) ----
+
+  if (site.tracking) {
+    tracking = deepMerge(
+      tracking as unknown as Record<string, unknown>,
+      site.tracking as unknown as Record<string, unknown>,
+    ) as unknown as TrackingConfig;
+  }
+
+  // Site ad_placements: if site defines them, they win
+  if (site.ads_config) {
+    adsConfig = deepMerge(
+      adsConfig as unknown as Record<string, unknown>,
+      site.ads_config as unknown as Record<string, unknown>,
+    ) as unknown as AdsConfig;
+
+    if (site.ads_config.ad_placements && (site.ads_config.ad_placements as unknown[]).length > 0) {
+      adsConfig = {
+        ...adsConfig,
+        ad_placements: normaliseAdPlacements(site.ads_config.ad_placements as unknown as unknown[]),
+      };
+    }
+  }
+
+  // Site ads_txt (additive with existing)
+  currentAdsTxt.push(...collectAdsTxt(siteRaw));
+  const adsTxt = [...new Set(currentAdsTxt)];
+
+  // ---- 10. Merge scripts_vars from all levels, then resolve placeholders ----
 
   const orgVars = (orgRaw["scripts_vars"] as Record<string, string>) ?? {};
-  const monetizationVars =
-    (monetizationRaw?.["scripts_vars"] as Record<string, string> | undefined) ?? {};
   let groupVars: Record<string, string> = {};
   for (const gRaw of groupRaws) {
     const gVars = (gRaw["scripts_vars"] as Record<string, string>) ?? {};
     groupVars = { ...groupVars, ...gVars };
   }
+  let overrideVars: Record<string, string> = {};
+  for (const override of matchingOverrides) {
+    if (override.scripts_vars) {
+      overrideVars = { ...overrideVars, ...override.scripts_vars };
+    }
+  }
   const siteVars = (site.scripts_vars as Record<string, string>) ?? {};
 
   const allVars: Record<string, string> = {
     ...orgVars,
-    ...monetizationVars,
     ...groupVars,
+    ...overrideVars,
     ...siteVars,
     domain: siteDomain,
   };
@@ -559,77 +753,50 @@ export async function resolveConfig(
     const unique = [...new Set(remaining)];
     throw new Error(
       `Unresolved placeholders in scripts: ${unique.join(", ")}. ` +
-      `Define these in scripts_vars at org, monetization, group, or site level.`,
+      `Define these in scripts_vars at org, group, override, or site level.`,
     );
   }
 
-  // ---- 7. Merge ads_config: org -> monetization -> group -> site ----
+  // ---- 11. Merge theme: org defaults → each group → override themes → site ----
 
-  let adsConfig: AdsConfig = { ...org.ads_config };
-  if (monetization.ads_config) {
-    adsConfig = deepMerge(
-      adsConfig as unknown as Record<string, unknown>,
-      monetization.ads_config as unknown as Record<string, unknown>,
-    ) as unknown as AdsConfig;
-  }
-  if (group.ads_config) {
-    adsConfig = deepMerge(
-      adsConfig as unknown as Record<string, unknown>,
-      group.ads_config as unknown as Record<string, unknown>,
-    ) as unknown as AdsConfig;
-  }
-  if (site.ads_config) {
-    adsConfig = deepMerge(
-      adsConfig as unknown as Record<string, unknown>,
-      site.ads_config as unknown as Record<string, unknown>,
-    ) as unknown as AdsConfig;
-  }
+  const groupThemes = groupRaws.map((g) => (g as Record<string, unknown>)["theme"] as Partial<ThemeConfig> | undefined);
 
-  // Ad placements: full replacement (no merge). The latest layer that
-  // defines ad_placements wins. Precedence: site > group > monetization > org.
-  const placementSources: unknown[] | undefined =
-    (site.ads_config?.ad_placements as unknown[] | undefined)
-    ?? (group.ads_config?.ad_placements as unknown[] | undefined)
-    ?? (monetization.ads_config?.ad_placements as unknown[] | undefined)
-    ?? (org.ads_config?.ad_placements as unknown[] | undefined);
+  // Apply override themes (REPLACE semantics for theme)
+  const overrideThemes: (Partial<ThemeConfig> | undefined)[] = matchingOverrides
+    .map((o) => o.theme as Partial<ThemeConfig> | undefined);
 
-  if (placementSources && placementSources.length > 0) {
-    adsConfig = { ...adsConfig, ad_placements: normaliseAdPlacements(placementSources) };
-  }
+  const allThemes = [...groupThemes, ...overrideThemes];
+  const theme = resolveTheme(org, allThemes, site.theme);
 
-  // ---- 8. Merge ads_txt: APPEND from all 4 layers, dedupe ----
-
-  const adsTxtEntries: string[] = [];
-  adsTxtEntries.push(...collectAdsTxt(orgRaw));
-  adsTxtEntries.push(...collectAdsTxt(monetizationRaw));
-  for (const gRaw of groupRaws) {
-    adsTxtEntries.push(...collectAdsTxt(gRaw));
-  }
-  adsTxtEntries.push(...collectAdsTxt(siteRaw));
-  const adsTxt = [...new Set(adsTxtEntries)];
-
-  // ---- 9. Merge theme: org defaults -> group -> site ----
-
-  const theme = resolveTheme(org, group.theme, site.theme);
-
-  // ---- 10. Merge legal: org -> group -> site ----
+  // ---- 12. Merge legal: org → groups → overrides → site ----
 
   let legal: Record<string, string> = { ...(org.legal ?? {}) };
-  if (group.legal_pages_override) {
-    legal = { ...legal, ...group.legal_pages_override };
+  for (const gRaw of groupRaws) {
+    const g = gRaw as unknown as GroupConfig;
+    if (g.legal_pages_override) {
+      legal = { ...legal, ...g.legal_pages_override };
+    }
+  }
+  for (const override of matchingOverrides) {
+    if (override.legal) legal = { ...legal, ...override.legal };
+    if (override.legal_pages_override) legal = { ...legal, ...override.legal_pages_override };
   }
   if (site.legal) {
     legal = { ...legal, ...site.legal };
   }
 
-  // ---- 11. Resolve support email ----
+  // ---- 13. Resolve support email ----
 
   const supportEmail = resolveString(
     org.support_email_pattern ?? "",
     { domain: siteDomain },
   );
 
-  // ---- 12. Merge feature configs: org -> group -> site with defaults ----
+  // ---- 14. Merge feature configs: org → groups → site with defaults ----
+
+  const mergedGroup = groupRaws.length > 0
+    ? groupRaws.reduce((acc, g) => deepMerge(acc, g)) as unknown as GroupConfig
+    : {} as Partial<GroupConfig>;
 
   const previewPageDefaults: PreviewPageConfig = {
     enabled: false,
@@ -640,7 +807,7 @@ export async function resolveConfig(
   const previewPage: PreviewPageConfig = {
     ...previewPageDefaults,
     ...(org.preview_page ?? {}),
-    ...(group.preview_page ?? {}),
+    ...((mergedGroup as GroupConfig).preview_page ?? {}),
     ...(site.preview_page ?? {}),
   };
 
@@ -651,7 +818,7 @@ export async function resolveConfig(
   const categories: CategoryConfig = {
     ...categoriesDefaults,
     ...(org.categories ?? {}),
-    ...(group.categories ?? {}),
+    ...((mergedGroup as GroupConfig).categories ?? {}),
     ...(site.categories ?? {}),
   };
 
@@ -662,7 +829,7 @@ export async function resolveConfig(
   const sidebarMerged: SidebarConfig = {
     ...sidebarDefaults,
     ...(org.sidebar ?? {}),
-    ...(group.sidebar ?? {}),
+    ...((mergedGroup as GroupConfig).sidebar ?? {}),
     ...(site.sidebar ?? {}),
   };
 
@@ -672,36 +839,30 @@ export async function resolveConfig(
   const search: SearchConfig = {
     ...searchDefaults,
     ...(org.search ?? {}),
-    ...(group.search ?? {}),
+    ...((mergedGroup as GroupConfig).search ?? {}),
     ...(site.search ?? {}),
   };
 
-  // ---- 13. Placeholder heights ----
+  // ---- 15. Placeholder heights ----
 
   const adPlaceholderHeights: AdPlaceholderHeights = {
     ...DEFAULT_AD_PLACEHOLDER_HEIGHTS,
     ...(org.ad_placeholder_heights ?? {}),
   };
 
-  // ---- 14. Build inline monetization JSON for runtime ad-loader ----
-  //
-  // This is the same shape the CDN serves at /m/<domain>.json, but we also
-  // embed it inline in the HTML head so ad-loader.js can render without a
-  // network round-trip. Only produced when the site has a monetization id.
+  // ---- 16. Build inline ad config JSON for runtime ad-loader ----
 
-  let monetizationJson: MonetizationJson | undefined;
-  if (monetizationId) {
-    monetizationJson = {
-      domain: site.domain,
-      monetization_id: monetizationId,
-      tracking,
-      scripts: mergedScripts,
-      ads_config: adsConfig,
-      generated_at: new Date().toISOString(),
-    };
-  }
+  const inlineAdConfig: InlineAdConfig = {
+    domain: site.domain,
+    groups: siteGroups,
+    applied_overrides: appliedOverrideIds,
+    tracking,
+    scripts: mergedScripts,
+    ads_config: adsConfig,
+    generated_at: new Date().toISOString(),
+  };
 
-  // ---- 15. Assemble ResolvedConfig ----
+  // ---- 17. Assemble ResolvedConfig ----
 
   const resolved: ResolvedConfig = {
     network_id: network.network_id,
@@ -712,9 +873,9 @@ export async function resolveConfig(
     domain: site.domain,
     site_name: site.site_name,
     site_tagline: site.site_tagline ?? null,
-    group: siteGroups[0],
+    group: siteGroups[0] ?? "",
     groups: siteGroups,
-    monetization: monetizationId,
+    applied_overrides: appliedOverrideIds,
     support_email: supportEmail,
     active: site.active,
     tracking,
@@ -729,7 +890,7 @@ export async function resolveConfig(
     categories,
     sidebar: sidebarMerged,
     search,
-    monetizationJson,
+    inlineAdConfig,
   };
 
   return resolved;

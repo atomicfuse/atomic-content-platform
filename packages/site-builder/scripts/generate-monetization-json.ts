@@ -1,15 +1,13 @@
 /**
- * CDN JSON generation pipeline.
+ * Inline config JSON generation pipeline.
  *
- * For each site that uses (directly or by org default) a monetization
- * profile, write `<outputDir>/<domain>.json` containing the resolved
- * MonetizationJson. The platform serves these files at
- * `https://cdn.atomicnetwork.com/m/<domain>.json` and the runtime
- * `ad-loader.js` fetches them on every page load.
+ * For each site, writes `<outputDir>/<domain>.json` containing the resolved
+ * InlineAdConfig. The platform serves these files at the CDN endpoint and
+ * the runtime `ad-loader.js` fetches them as a fallback when the inline
+ * config is not available.
  *
- * This pipeline is decoupled from site builds: editing
- * `monetization/<id>.yaml` only re-runs this script, never a full
- * Astro rebuild. See `detect-changed-sites.ts` for the build filter.
+ * This pipeline uses resolveConfig() from the unified groups + overrides
+ * architecture.
  *
  * Usage as CLI:
  *   tsx generate-monetization-json.ts \
@@ -22,9 +20,9 @@ import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { MonetizationJson } from "@atomic-platform/shared-types";
+import type { InlineAdConfig } from "@atomic-platform/shared-types";
 
-import { resolveMonetization } from "./resolve-monetization.js";
+import { resolveConfig } from "./resolve-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -44,25 +42,22 @@ export interface GenerateMonetizationJsonOptions {
 export interface GenerateMonetizationJsonResult {
   /** Absolute path to the written JSON file. */
   outputPath: string;
-  /** The resolved monetization JSON content. */
-  json: MonetizationJson;
+  /** The resolved inline ad config JSON content. */
+  json: InlineAdConfig;
 }
 
 /**
- * Generate the monetization JSON file for a single site.
- *
- * Throws if the site has no monetization profile (no per-site value AND
- * no org `default_monetization`) — the CDN must always serve a usable
- * config or `ad-loader.js` will fall back to its localStorage cache.
+ * Generate the inline config JSON file for a single site.
  */
 export async function generateMonetizationJson(
   options: GenerateMonetizationJsonOptions,
 ): Promise<GenerateMonetizationJsonResult> {
-  const json = await resolveMonetization({
-    networkRepoPath: options.networkRepoPath,
-    siteDomain: options.siteDomain,
-  });
+  const resolved = await resolveConfig(
+    options.networkRepoPath,
+    options.siteDomain,
+  );
 
+  const json = resolved.inlineAdConfig!;
   const outputPath = join(options.outputDir, `${options.siteDomain}.json`);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, JSON.stringify(json, null, 2), "utf-8");
@@ -72,10 +67,6 @@ export async function generateMonetizationJson(
 
 /**
  * Generate JSON files for every site directory under `<network>/sites/`.
- *
- * Sites that don't resolve to a monetization profile are skipped and
- * reported in `errors`. The pipeline never aborts on a single site
- * failure — one bad site config shouldn't block the rest of the network.
  */
 export async function generateAllMonetizationJson(
   networkRepoPath: string,
@@ -156,7 +147,6 @@ function parseArgs(argv: string[]): CliArgs {
         result.all = true;
         break;
       default:
-        // ignore unknown flags
         break;
     }
   }
@@ -177,10 +167,10 @@ async function main(): Promise<void> {
       args.out,
     );
     for (const r of succeeded) {
-      console.log(`[mon-json] ✓ ${r.outputPath}`);
+      console.log(`[config-json] ${r.outputPath}`);
     }
     for (const e of errors) {
-      console.warn(`[mon-json] ✗ ${e.siteDomain}: ${e.error}`);
+      console.warn(`[config-json] ${e.siteDomain}: ${e.error}`);
     }
     if (errors.length > 0 && succeeded.length === 0) process.exit(1);
     return;
@@ -191,13 +181,13 @@ async function main(): Promise<void> {
     siteDomain: args.site!,
     outputDir: args.out,
   });
-  console.log(`[mon-json] ✓ ${result.outputPath}`);
+  console.log(`[config-json] ${result.outputPath}`);
 }
 
 if (process.argv[1] === __filename) {
   main().catch((err: unknown) => {
     console.error(
-      "[mon-json] failed:",
+      "[config-json] failed:",
       err instanceof Error ? err.message : err,
     );
     process.exit(1);

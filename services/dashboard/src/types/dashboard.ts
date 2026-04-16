@@ -50,7 +50,7 @@ export interface DashboardIndex {
 
 export interface ActivityEvent {
   id: string;
-  type: "article_published" | "build_failed" | "article_flagged" | "site_created" | "monetization_activated";
+  type: "article_published" | "build_failed" | "article_flagged" | "site_created" | "override_activated";
   description: string;
   timestamp: string;
   domain?: string;
@@ -90,11 +90,6 @@ export interface WizardFormData {
   vertical: Vertical;
   /** Group IDs this site belongs to (merged left-to-right). */
   groups: string[];
-  /**
-   * Monetization profile id this site uses. When omitted, the site falls back
-   * to the org-level `default_monetization`.
-   */
-  monetization?: string;
   themeBase: "modern" | "editorial" | "bold" | "classic";
   audience: string;
   tone: string;

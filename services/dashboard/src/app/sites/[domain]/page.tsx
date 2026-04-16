@@ -4,7 +4,6 @@ import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
-import { MonetizationTab } from "@/components/site-detail/MonetizationTab";
 import { StagingTab } from "@/components/site-detail/StagingTab";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import { SiteDetailTabs } from "./SiteDetailTabs";
@@ -107,11 +106,6 @@ export default async function SiteDetailPage({
         }
         agentTab={
           <ContentGenerationPanel domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} />
-        }
-        monetizationTab={
-          site.status === "Ready" || site.status === "Live"
-            ? <MonetizationTab site={site} />
-            : null
         }
       />
       {site.pages_project && (

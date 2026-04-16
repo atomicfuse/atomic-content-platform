@@ -5,8 +5,8 @@
  * The runtime ad-loader.js queries `[data-p-index="N"]` to position
  * `after-paragraph-N` ad placements without any build-time knowledge of the
  * configured placements. Build-time HTML stays generic and reusable across
- * monetization profile changes (which only require regenerating the CDN
- * monetization JSON, not rebuilding the site).
+ * ad config changes (which only require regenerating the CDN config
+ * JSON, not rebuilding the site).
  *
  * Only top-level paragraphs in the markdown body are indexed. Nested
  * paragraphs (e.g. inside blockquotes) are ignored to keep the numbering

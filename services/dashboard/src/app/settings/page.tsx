@@ -9,11 +9,8 @@ import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
 import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
 import { LegalForm } from "@/components/settings/LegalForm";
-import {
-  GeneralForm,
-  type MonetizationOption,
-} from "@/components/settings/GeneralForm";
-import { AdsTxtEditor } from "@/components/monetization/AdsTxtEditor";
+import { GeneralForm } from "@/components/settings/GeneralForm";
+import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -21,9 +18,6 @@ interface OrgConfig {
 
 export default function OrgSettingsPage(): React.ReactElement {
   const [config, setConfig] = useState<OrgConfig | null>(null);
-  const [monetizationProfiles, setMonetizationProfiles] = useState<
-    MonetizationOption[]
-  >([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,17 +26,10 @@ export default function OrgSettingsPage(): React.ReactElement {
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
       setError(null);
-      const [orgRes, monRes] = await Promise.all([
-        fetch("/api/settings/org"),
-        fetch("/api/monetization"),
-      ]);
+      const orgRes = await fetch("/api/settings/org");
       if (!orgRes.ok) throw new Error(`HTTP ${orgRes.status}`);
       const data = (await orgRes.json()) as OrgConfig;
       setConfig(data);
-      if (monRes.ok) {
-        const profiles = (await monRes.json()) as MonetizationOption[];
-        setMonetizationProfiles(profiles);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load org config");
     } finally {
@@ -108,12 +95,9 @@ export default function OrgSettingsPage(): React.ReactElement {
               default_fonts: config.default_fonts as
                 | { heading: string; body: string }
                 | undefined,
-              default_monetization: config.default_monetization as
-                | string
-                | undefined,
+              default_groups: (config.default_groups as string[]) ?? undefined,
             } satisfies Parameters<typeof GeneralForm>[0]["value"]
           }
-          monetizationOptions={monetizationProfiles}
           onChange={(v): void => {
             setConfig({ ...config, ...v });
           }}
@@ -126,8 +110,7 @@ export default function OrgSettingsPage(): React.ReactElement {
       content: (
         <div className="space-y-3">
           <p className="text-xs text-[var(--text-muted)]">
-            These are org-wide defaults. Monetization profiles, groups and sites
-            can override.
+            These are org-wide defaults. Groups, overrides, and sites can override.
           </p>
           <TrackingForm
             value={
@@ -150,8 +133,8 @@ export default function OrgSettingsPage(): React.ReactElement {
       content: (
         <div className="space-y-3">
           <p className="text-xs text-[var(--text-muted)]">
-            These scripts load on EVERY site unless overridden by a monetization
-            profile, group, or site.
+            These scripts load on EVERY site unless overridden by a group,
+            override, or site.
           </p>
           <ScriptsEditor
             value={
@@ -205,8 +188,8 @@ export default function OrgSettingsPage(): React.ReactElement {
       content: (
         <div className="space-y-3">
           <p className="text-xs text-[var(--text-muted)]">
-            These entries appear in EVERY site&apos;s ads.txt. Monetization,
-            group and site entries are added on top.
+            These entries appear in EVERY site&apos;s ads.txt. Group, override,
+            and site entries are added on top.
           </p>
           <AdsTxtEditor
             value={(config.ads_txt ?? []) as string[]}
