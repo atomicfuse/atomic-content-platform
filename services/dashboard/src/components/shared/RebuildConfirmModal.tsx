@@ -51,6 +51,11 @@ export function RebuildConfirmModal({
   const count = affectedSites.length;
 
   async function handleRebuild(): Promise<void> {
+    if (count === 0) {
+      toast("No sites to rebuild", "info");
+      onClose();
+      return;
+    }
     setRebuilding(true);
     try {
       const res = await fetch("/api/sites/rebuild", {

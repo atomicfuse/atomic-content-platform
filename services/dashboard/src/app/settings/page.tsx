@@ -32,10 +32,17 @@ export default function OrgSettingsPage(): React.ReactElement {
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
       setError(null);
-      const orgRes = await fetch("/api/settings/org");
+      const [orgRes, sitesRes] = await Promise.all([
+        fetch("/api/settings/org"),
+        fetch("/api/sites/list"),
+      ]);
       if (!orgRes.ok) throw new Error(`HTTP ${orgRes.status}`);
       const data = (await orgRes.json()) as OrgConfig;
       setConfig(data);
+      if (sitesRes.ok) {
+        const sites = (await sitesRes.json()) as Array<{ domain: string }>;
+        setAllSites(sites);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load org config");
     } finally {
@@ -64,17 +71,6 @@ export default function OrgSettingsPage(): React.ReactElement {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Org settings saved", "success");
-
-      // Fetch all sites for rebuild prompt
-      try {
-        const sitesRes = await fetch("/api/sites/list");
-        if (sitesRes.ok) {
-          const sites = (await sitesRes.json()) as Array<{ domain: string }>;
-          setAllSites(sites);
-        }
-      } catch {
-        // non-blocking
-      }
       setShowRebuildModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
