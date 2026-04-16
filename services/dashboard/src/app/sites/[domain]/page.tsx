@@ -90,6 +90,7 @@ export default async function SiteDetailPage({
               siteStatus={site.status}
               customDomain={site.custom_domain}
               currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
+              currentFaviconPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null}
             />
           ) : null
         }

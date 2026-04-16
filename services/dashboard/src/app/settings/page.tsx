@@ -12,6 +12,7 @@ import { LegalForm } from "@/components/settings/LegalForm";
 import { GeneralForm } from "@/components/settings/GeneralForm";
 import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
 import { PlacementPreview } from "@/components/shared/PlacementPreview";
+import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -21,6 +22,10 @@ export default function OrgSettingsPage(): React.ReactElement {
   const [config, setConfig] = useState<OrgConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showRebuildModal, setShowRebuildModal] = useState(false);
+  const [allSites, setAllSites] = useState<
+    Array<{ domain: string }>
+  >([]);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
 
@@ -59,6 +64,18 @@ export default function OrgSettingsPage(): React.ReactElement {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Org settings saved", "success");
+
+      // Fetch all sites for rebuild prompt
+      try {
+        const sitesRes = await fetch("/api/sites/list");
+        if (sitesRes.ok) {
+          const sites = (await sitesRes.json()) as Array<{ domain: string }>;
+          setAllSites(sites);
+        }
+      } catch {
+        // non-blocking
+      }
+      setShowRebuildModal(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -230,6 +247,13 @@ export default function OrgSettingsPage(): React.ReactElement {
           Save
         </Button>
       </div>
+
+      <RebuildConfirmModal
+        open={showRebuildModal}
+        onClose={(): void => setShowRebuildModal(false)}
+        affectedSites={allSites}
+        changeLabel="org settings"
+      />
     </div>
   );
 }

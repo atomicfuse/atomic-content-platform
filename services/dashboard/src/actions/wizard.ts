@@ -110,20 +110,30 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 - Preferred days: ${data.preferredDays.join(", ")}
 `;
 
-  // 3. Generate logo with Gemini (non-blocking — site still works without it)
+  // 3. Use uploaded logo or generate with Gemini
   let logoBuffer: Buffer | null = null;
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    try {
-      logoBuffer = await generateLogoWithGemini(
-        geminiKey,
-        data.siteName,
-        data.vertical,
-        data.audience
-      );
-    } catch (err) {
-      console.warn("[wizard] Logo generation failed, continuing without:", err);
+  let faviconBuffer: Buffer | null = null;
+
+  if (data.logoBase64) {
+    logoBuffer = Buffer.from(data.logoBase64, "base64");
+  } else {
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        logoBuffer = await generateLogoWithGemini(
+          geminiKey,
+          data.siteName,
+          data.vertical,
+          data.audience
+        );
+      } catch (err) {
+        console.warn("[wizard] Logo generation failed, continuing without:", err);
+      }
     }
+  }
+
+  if (data.faviconBase64) {
+    faviconBuffer = Buffer.from(data.faviconBase64, "base64");
   }
 
   // 4. Prepare files — all under sites/{projectName}/
@@ -146,15 +156,26 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     },
   ];
 
-  // Add logo if generated and update site config to reference it
+  // Add logo if generated/uploaded and update site config to reference it
   if (logoBuffer) {
     files.push({
       path: `sites/${siteFolder}/assets/logo.png`,
       content: logoBuffer,
     });
-    // Update theme config to reference the logo
     siteConfig.theme.logo = "/assets/logo.png";
-    siteConfig.theme.favicon = "/assets/logo.png";
+    // Default favicon to logo unless a separate favicon was uploaded
+    if (!faviconBuffer) {
+      siteConfig.theme.favicon = "/assets/logo.png";
+    }
+  }
+
+  // Add separate favicon if uploaded
+  if (faviconBuffer) {
+    files.push({
+      path: `sites/${siteFolder}/assets/favicon.png`,
+      content: faviconBuffer,
+    });
+    siteConfig.theme.favicon = "/assets/favicon.png";
   }
 
   // 5. Create CF Pages project on Cloudflare
@@ -669,11 +690,13 @@ export async function saveAllStagingEdits(
     }
   }
 
-  // If we have a logo, set theme references
+  // If we have a logo, set theme references (preserve separate favicon if set)
   if (logoBase64) {
     const theme = (existing.theme ?? {}) as Record<string, unknown>;
     theme.logo = "/assets/logo.png";
-    theme.favicon = "/assets/logo.png";
+    if (theme.favicon !== "/assets/favicon.png") {
+      theme.favicon = "/assets/logo.png";
+    }
     existing.theme = theme;
   }
 
@@ -729,7 +752,9 @@ export async function uploadStagingLogo(
   if (config) {
     const theme = (config.theme ?? {}) as Record<string, unknown>;
     theme.logo = "/assets/logo.png";
-    theme.favicon = "/assets/logo.png";
+    if (theme.favicon !== "/assets/favicon.png") {
+      theme.favicon = "/assets/logo.png";
+    }
     config.theme = theme;
     files.push({
       path: `sites/${domain}/site.yaml`,
