@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 const TABS = [
-  { label: "General", href: "/settings" },
+  { label: "Org", href: "/settings" },
   { label: "Network", href: "/settings/network" },
 ] as const;
 

@@ -14,7 +14,7 @@ export function generateAdsTxt(resolvedConfig: ResolvedConfig): string {
 }
 ```
 
-The `ads_txt` array in `ResolvedConfig` is assembled by **appending** entries from org, all groups (in order), and site, then **deduplicating** while preserving order. See the **Config Inheritance & Groups** guide for the full merge process.
+The `ads_txt` array in `ResolvedConfig` is assembled by **appending** entries from org, all groups (in order), overrides, and site, then **deduplicating** while preserving order. See the **Config Inheritance & Groups** guide for the full merge process.
 
 ## IAB Format
 
@@ -34,7 +34,7 @@ outbrain.com, 00abc123def, DIRECT
 
 ## Config Layers
 
-ads.txt entries are defined at three levels and **appended** (not replaced) across layers:
+ads.txt entries are defined at four levels and **appended** (not replaced) across layers:
 
 ### Organization Level (`org.yaml`)
 
@@ -62,6 +62,18 @@ ads_txt:
 ```
 
 A site in the `premium-ads` group would get all org entries plus the group-specific Taboola and Criteo entries. If a site belongs to multiple groups, entries from all groups are appended in order and then deduplicated. Duplicate lines are removed while preserving the order of first appearance.
+
+### Override Level (`overrides/config/<id>.yaml`)
+
+Overrides use REPLACE semantics. If an override defines `ads_txt`, it completely replaces the group chain's ads_txt for targeted sites:
+
+```yaml
+# overrides/config/test-ads-mock.yaml
+override_id: test-ads-mock
+targets:
+  sites: ["coolnews-atl"]
+ads_txt: []    # empty — removes all inherited ads.txt entries for this site
+```
 
 ## Advertising Configuration
 
@@ -94,7 +106,7 @@ ads_config:
         mobile: [[320, 50]]
 ```
 
-These settings follow the same org -> group -> site merge hierarchy.
+These settings follow the same org -> groups -> overrides -> site merge hierarchy.
 
 ## Script Injection for Ads
 
@@ -118,4 +130,4 @@ Script entries support `{{variable}}` placeholders that are resolved using `scri
 
 ## Build Output
 
-At build time, the site builder writes `ads.txt` to the Astro public directory so it is served at `https://{domain}/ads.txt`. The file contains a header comment, all merged entries from org + group(s) + site layers sorted alphabetically, one per line.
+At build time, the site builder writes `ads.txt` to the Astro public directory so it is served at `https://{domain}/ads.txt`. The file contains a header comment, all merged entries from org + group(s) + overrides + site layers sorted alphabetically, one per line.

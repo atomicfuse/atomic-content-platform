@@ -7,7 +7,7 @@ interface AdPlacementSizes {
   mobile?: number[][];
 }
 
-interface AdPlacement {
+export interface AdPlacement {
   id: string;
   position: string;
   sizes: AdPlacementSizes;
@@ -36,6 +36,21 @@ const DEVICE_OPTIONS: Array<{ value: AdPlacement["device"]; label: string }> = [
   { value: "all", label: "All Devices" },
   { value: "desktop", label: "Desktop" },
   { value: "mobile", label: "Mobile" },
+];
+
+const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "above-content", label: "Above Content" },
+  { value: "after-paragraph-1", label: "After Paragraph 1" },
+  { value: "after-paragraph-2", label: "After Paragraph 2" },
+  { value: "after-paragraph-3", label: "After Paragraph 3" },
+  { value: "after-paragraph-4", label: "After Paragraph 4" },
+  { value: "after-paragraph-5", label: "After Paragraph 5" },
+  { value: "after-paragraph-6", label: "After Paragraph 6" },
+  { value: "after-paragraph-7", label: "After Paragraph 7" },
+  { value: "after-paragraph-8", label: "After Paragraph 8" },
+  { value: "below-content", label: "Below Content" },
+  { value: "sidebar", label: "Sidebar" },
+  { value: "sticky-bottom", label: "Sticky Bottom" },
 ];
 
 export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.ReactElement {
@@ -72,6 +87,17 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
         ...value,
         ad_placements: value.ad_placements.filter((_, i) => i !== index),
       });
+    },
+    [value, onChange],
+  );
+
+  const movePlacement = useCallback(
+    (index: number, direction: -1 | 1): void => {
+      const target = index + direction;
+      if (target < 0 || target >= value.ad_placements.length) return;
+      const updated = [...value.ad_placements];
+      [updated[index], updated[target]] = [updated[target], updated[index]];
+      onChange({ ...value, ad_placements: updated });
     },
     [value, onChange],
   );
@@ -180,16 +206,36 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
               <span className="text-xs font-semibold text-[var(--text-secondary)]">
                 Placement #{index + 1}
               </span>
-              <button
-                type="button"
-                onClick={(): void => {
-                  removePlacement(index);
-                }}
-                className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                aria-label="Remove placement"
-              >
-                &times;
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(): void => movePlacement(index, -1)}
+                  disabled={index === 0}
+                  className="rounded-lg px-1.5 py-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label="Move up"
+                >
+                  &#x25B2;
+                </button>
+                <button
+                  type="button"
+                  onClick={(): void => movePlacement(index, 1)}
+                  disabled={index === value.ad_placements.length - 1}
+                  className="rounded-lg px-1.5 py-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  aria-label="Move down"
+                >
+                  &#x25BC;
+                </button>
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    removePlacement(index);
+                  }}
+                  className="rounded-lg px-2 py-1 text-sm text-[var(--text-muted)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  aria-label="Remove placement"
+                >
+                  &times;
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
@@ -211,15 +257,19 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Position
                 </label>
-                <input
-                  type="text"
+                <select
                   value={placement.position}
-                  placeholder="above-content"
                   onChange={(e): void => {
                     updatePlacement(index, { position: e.target.value });
                   }}
-                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-                />
+                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none"
+                >
+                  {POSITION_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">

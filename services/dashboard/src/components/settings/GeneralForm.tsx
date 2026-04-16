@@ -1,12 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
-interface GroupOption {
-  group_id: string;
-  name?: string;
-}
-
 interface GeneralFormValue {
   organization: string;
   legal_entity: string;
@@ -14,7 +7,6 @@ interface GeneralFormValue {
   support_email_pattern: string;
   default_theme?: string;
   default_fonts?: { heading: string; body: string };
-  default_groups?: string[];
 }
 
 interface GeneralFormProps {
@@ -26,33 +18,9 @@ export function GeneralForm({
   value,
   onChange,
 }: GeneralFormProps): React.ReactElement {
-  const [availableGroups, setAvailableGroups] = useState<GroupOption[]>([]);
-
-  useEffect(() => {
-    async function fetchGroups(): Promise<void> {
-      try {
-        const res = await fetch("/api/groups");
-        if (res.ok) {
-          setAvailableGroups((await res.json()) as GroupOption[]);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    void fetchGroups();
-  }, []);
 
   function updateField<K extends keyof GeneralFormValue>(key: K, val: GeneralFormValue[K]): void {
     onChange({ ...value, [key]: val });
-  }
-
-  function toggleDefaultGroup(groupId: string): void {
-    const current = value.default_groups ?? [];
-    if (current.includes(groupId)) {
-      updateField("default_groups", current.filter((g) => g !== groupId));
-    } else {
-      updateField("default_groups", [...current, groupId]);
-    }
   }
 
   return (
@@ -121,36 +89,6 @@ export function GeneralForm({
           <option value="modern">Modern</option>
           <option value="editorial">Editorial</option>
         </select>
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-          Default Groups
-        </label>
-        <div className="space-y-1">
-          {availableGroups.map((g) => {
-            const selected = (value.default_groups ?? []).includes(g.group_id);
-            return (
-              <button
-                key={g.group_id}
-                type="button"
-                onClick={(): void => toggleDefaultGroup(g.group_id)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                  selected
-                    ? "border-cyan bg-cyan/10"
-                    : "border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
-                }`}
-              >
-                <span className="font-medium">{g.name ?? g.group_id}</span>
-                <span className="ml-2 text-xs text-[var(--text-muted)]">{g.group_id}</span>
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-xs text-[var(--text-muted)]">
-          Sites without their own <code className="rounded bg-[var(--bg-elevated)] px-1">groups:</code>{" "}
-          field inherit these default groups.
-        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">

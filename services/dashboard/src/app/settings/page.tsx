@@ -11,6 +11,7 @@ import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
 import { LegalForm } from "@/components/settings/LegalForm";
 import { GeneralForm } from "@/components/settings/GeneralForm";
 import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
+import { PlacementPreview } from "@/components/shared/PlacementPreview";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -95,7 +96,6 @@ export default function OrgSettingsPage(): React.ReactElement {
               default_fonts: config.default_fonts as
                 | { heading: string; body: string }
                 | undefined,
-              default_groups: (config.default_groups as string[]) ?? undefined,
             } satisfies Parameters<typeof GeneralForm>[0]["value"]
           }
           onChange={(v): void => {
@@ -169,18 +169,22 @@ export default function OrgSettingsPage(): React.ReactElement {
     {
       id: "ads",
       label: "Ads Config",
-      content: (
-        <AdsConfigForm
-          value={
-            (config.ads_config ?? config.ads ?? {
-              interstitial: false,
-              layout: "standard",
-              ad_placements: [],
-            }) as unknown as Parameters<typeof AdsConfigForm>[0]["value"]
-          }
-          onChange={(v): void => updateField("ads_config", v)}
-        />
-      ),
+      content: (() => {
+        const adsVal = (config.ads_config ?? config.ads ?? {
+          interstitial: false,
+          layout: "standard",
+          ad_placements: [],
+        }) as unknown as Parameters<typeof AdsConfigForm>[0]["value"];
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AdsConfigForm
+              value={adsVal}
+              onChange={(v): void => updateField("ads_config", v)}
+            />
+            <PlacementPreview placements={adsVal.ad_placements ?? []} />
+          </div>
+        );
+      })(),
     },
     {
       id: "ads-txt",
@@ -212,7 +216,7 @@ export default function OrgSettingsPage(): React.ReactElement {
   ];
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-6xl space-y-6">
       {error && (
         <div className="rounded-lg border border-error bg-error/10 p-4 text-sm text-error">
           {error}

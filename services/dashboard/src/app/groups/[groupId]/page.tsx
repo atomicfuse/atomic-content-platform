@@ -18,6 +18,7 @@ import { ThemeForm } from "@/components/groups/ThemeForm";
 import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
 
 import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
+import { PlacementPreview } from "@/components/shared/PlacementPreview";
 
 interface GroupConfig {
   name?: string;
@@ -442,10 +443,13 @@ export default function GroupDetailPage(): React.ReactElement {
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                   Ads config
                 </h3>
-                <AdsConfigForm
-                  value={adsConfigValue}
-                  onChange={(v): void => updateField("ads_config", v)}
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <AdsConfigForm
+                    value={adsConfigValue}
+                    onChange={(v): void => updateField("ads_config", v)}
+                  />
+                  <PlacementPreview placements={adsConfigValue.ad_placements} />
+                </div>
               </section>
 
               <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">

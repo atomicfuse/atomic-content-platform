@@ -12,6 +12,8 @@ import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
 import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
 import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
+import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
+import { PlacementPreview } from "@/components/shared/PlacementPreview";
 
 interface OverrideConfig {
   override_id?: string;
@@ -282,50 +284,29 @@ export default function OverrideDetailPage(): React.ReactElement {
 
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">Target Groups</h3>
-            <div className="space-y-1">
-              {allGroups.map((g) => {
-                const gId = g.group_id ?? g.id;
-                const selected = targetGroups.includes(gId);
-                return (
-                  <button
-                    key={gId}
-                    type="button"
-                    onClick={(): void => toggleTargetGroup(gId)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      selected
-                        ? "border-amber-500 bg-amber-500/10"
-                        : "border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
-                    }`}
-                  >
-                    <span className="font-medium">{g.name ?? gId}</span>
-                    <span className="ml-2 text-xs text-[var(--text-muted)]">{gId}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <SearchableToggleList
+              items={allGroups.map((g) => ({
+                id: g.group_id ?? g.id,
+                label: g.name ?? (g.group_id ?? g.id),
+                sublabel: g.group_id ?? g.id,
+              }))}
+              selected={targetGroups}
+              onToggle={toggleTargetGroup}
+              searchPlaceholder="Search groups..."
+            />
           </div>
 
           <div className="space-y-2">
             <h3 className="text-sm font-semibold text-[var(--text-primary)]">Target Sites</h3>
-            <div className="space-y-1 max-h-60 overflow-y-auto">
-              {allSites.map((s) => {
-                const selected = targetSites.includes(s.domain);
-                return (
-                  <button
-                    key={s.domain}
-                    type="button"
-                    onClick={(): void => toggleTargetSite(s.domain)}
-                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      selected
-                        ? "border-amber-500 bg-amber-500/10"
-                        : "border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
-                    }`}
-                  >
-                    {s.domain}
-                  </button>
-                );
-              })}
-            </div>
+            <SearchableToggleList
+              items={allSites.map((s) => ({
+                id: s.domain,
+                label: s.domain,
+              }))}
+              selected={targetSites}
+              onToggle={toggleTargetSite}
+              searchPlaceholder="Search sites..."
+            />
           </div>
         </div>
       ),
@@ -375,7 +356,10 @@ export default function OverrideDetailPage(): React.ReactElement {
             ads_config here <strong>completely REPLACES</strong> the group
             chain&apos;s ads_config for targeted sites.
           </div>
-          <AdsConfigForm value={adsConfigValue} onChange={(v): void => updateField("ads_config", v)} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AdsConfigForm value={adsConfigValue} onChange={(v): void => updateField("ads_config", v)} />
+            <PlacementPreview placements={adsConfigValue.ad_placements} />
+          </div>
         </div>
       ),
     },

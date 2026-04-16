@@ -72,7 +72,9 @@ domain: my-travel-site
 site_name: "Wanderlust Weekly"
 site_tagline: "Your guide to the world"
 pages_project: my-travel-site
-group: premium-ads
+groups:
+  - travel          # editorial vertical
+  - premium-ads     # ad partner config
 active: true
 brief:
   audience: "Adventure travelers aged 25-45"
