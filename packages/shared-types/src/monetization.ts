@@ -1,15 +1,15 @@
 /**
- * Monetization layer types — separates ad operations from editorial/content
- * concerns. A monetization profile defines tracking, scripts, ad placements,
- * and ads.txt entries. Sites reference a profile via `monetization: <id>` in
- * their site.yaml.
+ * Override and ad-placeholder types.
  *
- * Merge order: org → monetization → group → site.
+ * The former MonetizationConfig / MonetizationJson interfaces have been
+ * replaced by the unified groups + overrides architecture. Groups now carry
+ * all config (tracking, scripts, ads, theme, legal) and overrides provide
+ * targeted exceptions with REPLACE semantics.
  */
 
 import type { TrackingConfig } from "./tracking.js";
 import type { AdsConfig } from "./ads.js";
-import type { ScriptsConfig } from "./config.js";
+import type { ScriptsConfig, ThemeConfig, DeepPartial } from "./config.js";
 
 /**
  * Placeholder heights used for CLS (Cumulative Layout Shift) prevention at
@@ -24,51 +24,76 @@ export interface AdPlaceholderHeights {
 }
 
 /**
- * A standalone monetization profile, stored at `monetization/<id>.yaml` in the
- * network repo. Multiple sites can share one profile. Profiles hold everything
- * related to making money (ads, tracking, scripts) but nothing about the
- * site's identity, theme, or editorial brief.
+ * A targeted config override with REPLACE semantics.
+ * Stored at `overrides/config/<id>.yaml` in the network repo.
+ *
+ * Override resolution:
+ * - If an override defines a field (e.g. ads_config), it COMPLETELY REPLACES
+ *   that field from the group merge chain.
+ * - Fields NOT defined in the override pass through from the group chain.
+ * - When multiple overrides target a site, they apply in priority order
+ *   (lowest first, highest last = highest wins).
+ *
+ * Targeting: a site is affected if it appears in `targets.sites` OR belongs
+ * to any group listed in `targets.groups` (union, not intersection).
  */
-export interface MonetizationConfig {
+export interface OverrideConfig {
   /** Unique identifier, matches the filename (kebab-case). */
-  monetization_id: string;
+  override_id: string;
 
   /** Human-readable name shown in the dashboard. */
   name: string;
 
-  /** Ad provider identifier (e.g. "network-alpha", "taboola", "adsense"). */
-  provider: string;
+  /** Priority for ordering — higher number = applied later = wins conflicts. */
+  priority: number;
 
-  /** Profile-level tracking overrides — layer between org and group. */
+  /** Which sites/groups this override targets. */
+  targets: {
+    /** All sites in these groups receive this override. */
+    groups?: string[];
+    /** These specific sites receive this override. */
+    sites?: string[];
+  };
+
+  /** Override tracking fields (REPLACE semantics at field level within tracking). */
   tracking?: Partial<TrackingConfig>;
 
-  /** Profile-level scripts — merged by `id` into the resolved script list. */
+  /** Override scripts (REPLACE semantics — replaces entire head/body_start/body_end arrays). */
   scripts?: Partial<ScriptsConfig>;
 
-  /** Profile-level script variable substitutions. */
+  /** Override script variable substitutions. */
   scripts_vars?: Record<string, string>;
 
-  /** Profile-level ad configuration (placements, interstitial, layout). */
+  /** Override ad configuration (REPLACE semantics — replaces entire ads_config). */
   ads_config?: Partial<AdsConfig>;
 
-  /** Profile-level ads.txt entries. Accumulated with other layers. */
+  /** Override ads.txt entries (REPLACE semantics — replaces, not additive). */
   ads_txt?: string[];
+
+  /** Override theme fields. */
+  theme?: DeepPartial<ThemeConfig>;
+
+  /** Override legal page content. */
+  legal?: Record<string, string>;
+
+  /** Override legal page paths. */
+  legal_pages_override?: Record<string, string>;
 }
 
 /**
- * The JSON document served from CDN at `https://cdn.<network>/m/<domain>.json`.
- * Consumed by `ad-loader.js` at runtime to inject ad containers dynamically
- * without rebuilding the site.
- *
- * Produced by resolving: org → monetization → site (the group layer is skipped
- * because groups don't typically touch monetization fields).
+ * The inline config JSON embedded in the HTML at build time as
+ * `window.__ATL_CONFIG__`. Read by ad-loader.js at runtime to inject
+ * ad containers without a CDN round-trip.
  */
-export interface MonetizationJson {
-  /** Site domain this JSON belongs to. */
+export interface InlineAdConfig {
+  /** Site domain this config belongs to. */
   domain: string;
 
-  /** Monetization profile id used for this site. */
-  monetization_id: string;
+  /** Group IDs this site uses. */
+  groups: string[];
+
+  /** Override IDs that were applied during resolution. */
+  applied_overrides: string[];
 
   /** Fully-resolved tracking config. */
   tracking: TrackingConfig;
@@ -76,9 +101,9 @@ export interface MonetizationJson {
   /** Fully-resolved scripts config. */
   scripts: ScriptsConfig;
 
-  /** Fully-resolved ads config (contains ad_placements for runtime injection). */
+  /** Fully-resolved ads config. */
   ads_config: AdsConfig;
 
-  /** ISO-8601 timestamp of when this JSON was generated. */
+  /** ISO-8601 timestamp of when this config was generated. */
   generated_at: string;
 }

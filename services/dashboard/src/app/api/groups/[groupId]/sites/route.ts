@@ -19,12 +19,23 @@ export async function GET(
       index.sites.map(async (site) => {
         try {
           const branch = site.staging_branch ?? undefined;
-          const config = await readSiteConfig(site.domain, branch);
+          let config = await readSiteConfig(site.domain, branch);
+
+          // Fallback: if staging branch returned nothing, try main
+          if (!config && branch) {
+            config = await readSiteConfig(site.domain, undefined);
+          }
           if (!config) return;
 
           const groups = config.groups as string[] | undefined;
           const group = config.group as string | undefined;
+          const monetization = config.monetization as string | undefined;
           const siteGroups = groups ?? (group ? [group] : []);
+
+          // Backward compat: monetization field acts as an additional group
+          if (monetization && !siteGroups.includes(monetization)) {
+            siteGroups.push(monetization);
+          }
 
           if (siteGroups.includes(groupId)) {
             results.push({
@@ -32,8 +43,11 @@ export async function GET(
               site_name: (config.site_name as string) ?? undefined,
             });
           }
-        } catch {
-          // Skip sites that fail to read
+        } catch (err) {
+          console.error(
+            `[api/groups/${groupId}/sites] failed to read site ${site.domain}:`,
+            err,
+          );
         }
       }),
     );

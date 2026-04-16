@@ -58,7 +58,7 @@ graph TB
 
 2. **Content Pipeline** -- An autonomous agent service. It queries the Content Aggregator for source material, uses Claude to rewrite original articles, scores quality, and commits markdown files to the data repo. A cron job (`scheduled-publisher`) runs every 4 hours to keep sites fed with content.
 
-3. **Site Builder** -- An Astro static site generator. GitHub Actions triggers it when the data repo changes. It reads the site's YAML config and markdown articles, resolves the config hierarchy (org -> group -> site), injects shared pages (about, privacy, etc.), generates `ads.txt`, and outputs a static site.
+3. **Site Builder** -- An Astro static site generator. GitHub Actions triggers it when the data repo changes. It reads the site's YAML config and markdown articles, resolves the config hierarchy (org -> groups -> overrides -> site), injects shared pages (about, privacy, etc.), generates `ads.txt`, and outputs a static site.
 
 4. **Cloudflare** -- Hosts the built sites via Pages. Each site gets a `*.pages.dev` subdomain immediately, and a custom domain can be attached later. Cloudflare CDN serves everything at the edge.
 
@@ -67,9 +67,10 @@ graph TB
 Configuration merges three layers using deep merge:
 
 ```
-org.yaml          -- network-wide defaults (tracking, scripts, legal, ads)
-  group.yaml      -- group overrides (e.g., "premium-ads" group)
-    site.yaml     -- per-site overrides (domain, brief, theme)
+org.yaml          -- network-wide defaults (identity, legal, default theme)
+  groups/*.yaml   -- shared config bundles (ad partners, verticals, themes)
+    overrides     -- exception rules with REPLACE semantics (by priority)
+      site.yaml   -- per-site overrides (domain, brief, schedule)
 ```
 
 The result is a `ResolvedConfig` with every field guaranteed present.

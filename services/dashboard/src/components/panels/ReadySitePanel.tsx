@@ -59,7 +59,7 @@ export function ReadySitePanel({
           {/* Actions */}
           <div className="space-y-3 pt-4 border-t border-[var(--border-secondary)]">
             <Button className="w-full" disabled>
-              Start Monetization (Coming Soon)
+              Configure Ads (Coming Soon)
             </Button>
             <Button
               variant="secondary"

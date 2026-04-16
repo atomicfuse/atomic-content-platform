@@ -5,13 +5,10 @@
  * changed in the most recent commit. This allows the build matrix to skip
  * sites whose configuration has not been touched.
  *
- * NOTE on the monetization layer: changes inside `monetization/<id>.yaml`
- * intentionally do NOT trigger any Astro site rebuilds. They only trigger
- * the CDN JSON pipeline (see `generate-monetization-json.ts`) because the
- * static HTML carries no monetization-specific elements — `ad-loader.js`
- * picks up the new config from the regenerated CDN JSON within the cache
- * window. Use {@link affectedSitesForMonetizationChange} to enumerate
- * which sites need their CDN JSON regenerated.
+ * With the unified groups + overrides architecture:
+ * - `groups/<id>.yaml` changes trigger rebuilds for sites using that group
+ * - `overrides/config/<id>.yaml` changes trigger rebuilds for targeted sites
+ * - `org.yaml` changes trigger rebuilds for all sites
  */
 
 import { execSync } from "node:child_process";
@@ -45,8 +42,6 @@ export function getChangedFiles(): string[] {
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
   } catch {
-    // Most likely there is no HEAD~1 (first commit).  Signal that everything
-    // should be rebuilt.
     return ["*"];
   }
 }
@@ -55,7 +50,7 @@ export function getChangedFiles(): string[] {
 // Decision logic
 // ---------------------------------------------------------------------------
 
-const MONETIZATION_FILE_REGEX = /^monetization\/[^/]+\.yaml$/;
+const OVERRIDE_CONFIG_REGEX = /^overrides\/config\/([^/]+)\.yaml$/;
 
 /**
  * Decide whether a site needs rebuilding based on which files changed.
@@ -65,21 +60,24 @@ const MONETIZATION_FILE_REGEX = /^monetization\/[^/]+\.yaml$/;
  *  - `org.yaml` changed                             -> YES (affects all sites)
  *  - `network.yaml` changed                         -> YES (platform version)
  *  - `groups/{siteGroup}.yaml` changed              -> YES
+ *  - `overrides/config/*.yaml` changed              -> YES (if override targets this site)
  *  - The sentinel value `"*"` is in the list        -> YES (first commit)
- *  - `monetization/*.yaml` changed                  -> NO (CDN JSON only,
- *                                                      no static HTML rebuild)
  *  - Changes only in other sites' directories       -> NO
  *
  * @param siteDomain  - The domain slug for the site (e.g. "coolnews.dev").
  * @param siteGroups  - The group ID(s) the site belongs to. Accepts a single
  *                       string (backward compat) or an array of group IDs.
  * @param changedFiles - List of changed file paths from {@link getChangedFiles}.
+ * @param overrideTargets - Optional map of override IDs to their target site/group lists.
+ *                          When provided, override changes only trigger rebuilds for
+ *                          sites actually targeted by the override.
  * @returns `true` if the site should be rebuilt.
  */
 export function shouldBuildSite(
   siteDomain: string,
   siteGroups: string | string[],
   changedFiles: string[],
+  overrideTargets?: Map<string, { groups: string[]; sites: string[] }>,
 ): boolean {
   // First-commit sentinel: rebuild everything.
   if (changedFiles.includes("*")) {
@@ -91,12 +89,6 @@ export function shouldBuildSite(
   const groupFiles = groups.map((g) => `groups/${g}.yaml`);
 
   for (const file of changedFiles) {
-    // Monetization changes never trigger a site rebuild — they're handled
-    // by the runtime ad-loader fetching the updated CDN JSON.
-    if (MONETIZATION_FILE_REGEX.test(file)) {
-      continue;
-    }
-
     // Direct changes to the site's own directory.
     if (file.startsWith(sitePrefix)) {
       return true;
@@ -116,63 +108,56 @@ export function shouldBuildSite(
     if (groupFiles.includes(file)) {
       return true;
     }
+
+    // Override config changes — rebuild if override targets this site
+    const overrideMatch = OVERRIDE_CONFIG_REGEX.exec(file);
+    if (overrideMatch) {
+      if (!overrideTargets) {
+        // No target info available — conservative: rebuild
+        return true;
+      }
+      const overrideId = overrideMatch[1];
+      const targets = overrideTargets.get(overrideId);
+      if (targets) {
+        if (targets.sites.includes(siteDomain)) return true;
+        for (const g of groups) {
+          if (targets.groups.includes(g)) return true;
+        }
+      }
+    }
   }
 
   return false;
 }
 
 // ---------------------------------------------------------------------------
-// Monetization JSON regeneration detection
+// Override-aware rebuild detection (replaces monetization detection)
 // ---------------------------------------------------------------------------
 
 /**
- * Extract the monetization profile ids touched by the changed file list.
- * Returns `["*"]` when `org.yaml` changed, since `default_monetization`
- * may have been updated and every site that inherited it now needs a
- * fresh CDN JSON.
+ * Extract override IDs from changed files.
  */
-export function changedMonetizationProfiles(
-  changedFiles: string[],
-): string[] {
-  const ids = new Set<string>();
-  let orgChanged = false;
-
+export function changedOverrideIds(changedFiles: string[]): string[] {
+  const ids: string[] = [];
   for (const file of changedFiles) {
-    if (file === "org.yaml") {
-      orgChanged = true;
-      continue;
-    }
-    const match = MONETIZATION_FILE_REGEX.exec(file);
+    const match = OVERRIDE_CONFIG_REGEX.exec(file);
     if (match) {
-      const filename = file.split("/").pop()!;
-      ids.add(filename.replace(/\.yaml$/, ""));
+      ids.push(match[1]);
     }
   }
-
-  if (orgChanged) return ["*"];
-  return [...ids];
+  return ids;
 }
 
 /**
- * Enumerate which site domains need their CDN monetization JSON regenerated
- * given a set of changed files. Reads each site's `site.yaml` to determine
- * the resolved monetization profile.
- *
- * - `monetization/<id>.yaml` change: every site whose effective profile
- *   resolves to `<id>` (either explicitly or via org default).
- * - `org.yaml` change: every site (default_monetization may have shifted).
- * - `sites/<domain>/site.yaml` change: just that site (its `monetization`
- *   field may have been added/removed/changed).
- *
- * @param networkRepoPath - Absolute path to the network data repo root.
- * @param changedFiles    - List of changed paths from {@link getChangedFiles}.
+ * Enumerate which site domains need rebuilding given override config changes.
+ * Reads each override's targets and each site's groups to determine affected sites.
  */
-export async function affectedSitesForMonetizationChange(
+export async function affectedSitesForOverrideChange(
   networkRepoPath: string,
   changedFiles: string[],
 ): Promise<string[]> {
-  const profiles = changedMonetizationProfiles(changedFiles);
-  const orgChanged = profiles.includes("*");
+  const overrideIds = changedOverrideIds(changedFiles);
+  const orgChanged = changedFiles.includes("org.yaml");
 
   // Track which sites had their own site.yaml touched.
   const directlyChangedSites = new Set<string>();
@@ -181,25 +166,28 @@ export async function affectedSitesForMonetizationChange(
     if (match) directlyChangedSites.add(match[1]!);
   }
 
-  // Quick exit: nothing monetization-relevant changed.
-  if (
-    profiles.length === 0 &&
-    directlyChangedSites.size === 0
-  ) {
+  if (overrideIds.length === 0 && directlyChangedSites.size === 0 && !orgChanged) {
     return [];
   }
 
-  // Read org default_monetization once so we can attribute inherited sites.
-  let orgDefault = "";
-  try {
-    const orgRaw = await readFile(
-      join(networkRepoPath, "org.yaml"),
-      "utf-8",
-    );
-    const orgParsed = parseYaml(orgRaw) as { default_monetization?: string } | null;
-    orgDefault = orgParsed?.default_monetization ?? "";
-  } catch {
-    // org.yaml missing — leave default empty
+  // Read override target info
+  const overrideTargetGroups = new Set<string>();
+  const overrideTargetSites = new Set<string>();
+
+  for (const id of overrideIds) {
+    try {
+      const raw = await readFile(
+        join(networkRepoPath, "overrides", "config", `${id}.yaml`),
+        "utf-8",
+      );
+      const parsed = parseYaml(raw) as {
+        targets?: { groups?: string[]; sites?: string[] };
+      } | null;
+      for (const g of parsed?.targets?.groups ?? []) overrideTargetGroups.add(g);
+      for (const s of parsed?.targets?.sites ?? []) overrideTargetSites.add(s);
+    } catch {
+      // Override file may have been deleted — skip
+    }
   }
 
   const sitesDir = join(networkRepoPath, "sites");
@@ -226,26 +214,36 @@ export async function affectedSitesForMonetizationChange(
       continue;
     }
 
-    // Did one of the touched profiles match this site?
-    if (profiles.length === 0) continue;
-
-    let siteMonetization = "";
-    try {
-      const siteRaw = await readFile(
-        join(sitePath, "site.yaml"),
-        "utf-8",
-      );
-      const siteParsed = parseYaml(siteRaw) as { monetization?: string } | null;
-      siteMonetization = siteParsed?.monetization ?? "";
-    } catch {
+    // Check if override targets this site directly
+    if (overrideTargetSites.has(entry)) {
+      affected.add(entry);
       continue;
     }
 
-    const effective = siteMonetization || orgDefault;
-    if (effective && profiles.includes(effective)) {
-      affected.add(entry);
+    // Check if site is in a targeted group
+    if (overrideTargetGroups.size > 0) {
+      try {
+        const siteRaw = await readFile(join(sitePath, "site.yaml"), "utf-8");
+        const siteParsed = parseYaml(siteRaw) as {
+          groups?: string[];
+          group?: string;
+        } | null;
+        const siteGroupList = siteParsed?.groups ?? (siteParsed?.group ? [siteParsed.group] : []);
+        for (const g of siteGroupList) {
+          if (overrideTargetGroups.has(g)) {
+            affected.add(entry);
+            break;
+          }
+        }
+      } catch {
+        continue;
+      }
     }
   }
 
   return [...affected].sort();
 }
+
+// Legacy compatibility exports
+export const changedMonetizationProfiles = changedOverrideIds;
+export const affectedSitesForMonetizationChange = affectedSitesForOverrideChange;

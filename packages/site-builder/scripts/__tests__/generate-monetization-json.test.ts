@@ -40,24 +40,27 @@ describe("generateMonetizationJson", () => {
 
     const written = JSON.parse(await readFile(result.outputPath, "utf-8"));
     expect(written.domain).toBe("default-site.example.com");
-    expect(written.monetization_id).toBe("standard-ads");
+    expect(written.groups).toBeDefined();
     expect(written.tracking).toBeDefined();
     expect(written.scripts).toBeDefined();
     expect(written.ads_config).toBeDefined();
     expect(typeof written.generated_at).toBe("string");
   });
 
-  it("uses the site-specified profile when provided", async () => {
+  it("uses the site-specified groups when provided", async () => {
     const result = await generateMonetizationJson({
       networkRepoPath: FIXTURES_MON,
       siteDomain: "override-site.example.com",
       outputDir: outDir,
     });
 
-    expect(result.json.monetization_id).toBe("premium-ads");
+    // override-site has group: mon-group and monetization: premium-ads
+    // groups should include both (backward compat)
+    expect(result.json.groups).toContain("mon-group");
+    expect(result.json.groups).toContain("premium-ads");
   });
 
-  it("propagates errors when profile is missing", async () => {
+  it("propagates errors when group is missing", async () => {
     await expect(
       generateMonetizationJson({
         networkRepoPath: FIXTURES_MON,
@@ -118,23 +121,6 @@ describe("generateAdsTxt", () => {
     expect(bodyLines).toEqual(sortedCopy);
     expect(new Set(bodyLines).size).toBe(bodyLines.length);
   });
-
-  it("renders per-source comment lines when sources provided", async () => {
-    const config = await resolveConfig(FIXTURES_MON, "override-site.example.com");
-    const txt = generateAdsTxt(config, {
-      generatedAt: "2026-04-15",
-      sources: {
-        org: ["org-entry.com, 1, DIRECT"],
-        monetization: ["mon-entry.com, 2, DIRECT"],
-        site: ["site-entry.com, 3, DIRECT"],
-      },
-      monetizationLabel: "premium-ads",
-    });
-
-    expect(txt).toContain("# Source: org");
-    expect(txt).toContain("# Source: monetization (premium-ads)");
-    expect(txt).toContain("# Source: site");
-  });
 });
 
 describe("buildAdsTxtForSite", () => {
@@ -150,7 +136,7 @@ describe("buildAdsTxtForSite", () => {
     expect(txt).toContain("site-specific.com, 42, DIRECT");
   });
 
-  it("works on networks without a monetization layer", async () => {
+  it("works on networks without overrides", async () => {
     const config = await resolveConfig(FIXTURES, "test-site.example.com");
     const txt = await buildAdsTxtForSite({
       networkRepoPath: FIXTURES,

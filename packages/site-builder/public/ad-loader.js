@@ -1,13 +1,13 @@
 /**
  * Atomic Network — runtime ad loader.
  *
- * Resolves the per-domain monetization JSON and dynamically injects ad slot
+ * Resolves the per-domain ad config JSON and dynamically injects ad slot
  * containers, head/body scripts, and the interstitial overlay. Build-time
  * HTML stays generic — only this script knows about ad placements, sizes,
  * and provider SDKs.
  *
  * Config source fallback order (first hit wins):
- *   1. window.__ATL_MONETIZATION__   — inlined into <head> by BaseLayout.astro
+ *   1. window.__ATL_CONFIG__         — inlined into <head> by BaseLayout.astro
  *                                      at build time. Zero network cost.
  *   2. /m/<domain>.json              — same-origin JSON shipped with the site
  *                                      (site-builder copies this to public/m/).
@@ -17,7 +17,7 @@
  *                                      successful load.
  *
  * Any successful remote fetch (steps 2 or 3) is mirrored to localStorage so
- * a later failure degrades gracefully instead of breaking monetization.
+ * a later failure degrades gracefully instead of breaking ad delivery.
  */
 (async function () {
   var d = location.hostname;
@@ -28,9 +28,9 @@
 
   var c = null;
 
-  // Tier 1 — inline monetization injected by the site build
-  if (window.__ATL_MONETIZATION__ && typeof window.__ATL_MONETIZATION__ === 'object') {
-    c = window.__ATL_MONETIZATION__;
+  // Tier 1 — inline config injected by the site build
+  if (window.__ATL_CONFIG__ && typeof window.__ATL_CONFIG__ === 'object') {
+    c = window.__ATL_CONFIG__;
   }
 
   // Tier 2 — same-origin /m/<domain>.json shipped with the site

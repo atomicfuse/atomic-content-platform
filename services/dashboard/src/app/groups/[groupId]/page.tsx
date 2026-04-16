@@ -17,7 +17,8 @@ import { LegalForm } from "@/components/settings/LegalForm";
 import { ThemeForm } from "@/components/groups/ThemeForm";
 import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
 
-import { AdsTxtEditor } from "@/components/monetization/AdsTxtEditor";
+import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
+import { PlacementPreview } from "@/components/shared/PlacementPreview";
 
 interface GroupConfig {
   name?: string;
@@ -392,19 +393,6 @@ export default function GroupDetailPage(): React.ReactElement {
       label: "Advanced",
       content: (
         <div className="space-y-4">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            <span className="font-semibold text-amber-500">
-              These fields are typically managed in Monetization Profiles.
-            </span>{" "}
-            Only use them here when this content group needs specific overrides.{" "}
-            <Link
-              href="/monetization"
-              className="text-cyan hover:underline"
-            >
-              Open Monetization →
-            </Link>
-          </div>
-
           <button
             type="button"
             onClick={(): void => setAdvancedOpen((o) => !o)}
@@ -455,10 +443,13 @@ export default function GroupDetailPage(): React.ReactElement {
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                   Ads config
                 </h3>
-                <AdsConfigForm
-                  value={adsConfigValue}
-                  onChange={(v): void => updateField("ads_config", v)}
-                />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <AdsConfigForm
+                    value={adsConfigValue}
+                    onChange={(v): void => updateField("ads_config", v)}
+                  />
+                  <PlacementPreview placements={adsConfigValue.ad_placements} />
+                </div>
               </section>
 
               <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">

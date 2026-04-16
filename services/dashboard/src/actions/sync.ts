@@ -27,7 +27,7 @@ async function detectSiteStatus(
 
   // Has a Pages deployment on production
   if (cfInfo.hasDeployment) {
-    // Check if it has tracking/monetization → Live
+    // Check if it has tracking/ads config → Live
     if (siteConfig) {
       const tracking = siteConfig.tracking as Record<string, unknown> | undefined;
       const hasGA = tracking?.ga4 && tracking.ga4 !== null;

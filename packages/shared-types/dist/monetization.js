@@ -1,11 +1,11 @@
 "use strict";
 /**
- * Monetization layer types — separates ad operations from editorial/content
- * concerns. A monetization profile defines tracking, scripts, ad placements,
- * and ads.txt entries. Sites reference a profile via `monetization: <id>` in
- * their site.yaml.
+ * Override and ad-placeholder types.
  *
- * Merge order: org → monetization → group → site.
+ * The former MonetizationConfig / MonetizationJson interfaces have been
+ * replaced by the unified groups + overrides architecture. Groups now carry
+ * all config (tracking, scripts, ads, theme, legal) and overrides provide
+ * targeted exceptions with REPLACE semantics.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 //# sourceMappingURL=monetization.js.map

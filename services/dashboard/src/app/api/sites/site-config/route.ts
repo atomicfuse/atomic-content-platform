@@ -6,7 +6,7 @@ import { readDashboardIndex, readSiteConfig } from "@/lib/github";
  *
  * Returns the raw site.yaml config from the site's staging branch (or main if
  * no staging branch). Used by tabs in the site detail page that need to
- * inspect inheritance-relevant fields like `monetization`, `tracking`,
+ * inspect inheritance-relevant fields like `groups`, `tracking`,
  * `groups`, etc.
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {

@@ -24,37 +24,16 @@ export function StepScriptVars({
   const [requiredKeys, setRequiredKeys] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Fetch group + monetization scripts and detect required placeholders
+  // Fetch group scripts and detect required placeholders
   useEffect(() => {
     async function detectVars(): Promise<void> {
       setLoading(true);
       const allPlaceholders = new Set<string>();
 
-      // Resolve effective monetization (explicit or org default)
-      let monetizationId = data.monetization;
-      if (!monetizationId) {
-        try {
-          const orgRes = await fetch("/api/settings/org");
-          if (orgRes.ok) {
-            const org = (await orgRes.json()) as { default_monetization?: string };
-            monetizationId = org.default_monetization;
-          }
-        } catch {
-          // ignore
-        }
-      }
-
       const fetches: Promise<unknown>[] = [];
       for (const groupId of data.groups) {
         fetches.push(
           fetch(`/api/groups/${groupId}`)
-            .then((r) => (r.ok ? r.json() : null))
-            .catch(() => null),
-        );
-      }
-      if (monetizationId) {
-        fetches.push(
-          fetch(`/api/monetization/${monetizationId}`)
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
         );
@@ -80,7 +59,7 @@ export function StepScriptVars({
     }
 
     void detectVars();
-  }, [data.groups, data.monetization]);
+  }, [data.groups]);
 
   function updateVar(key: string, value: string): void {
     onChange({ scriptsVars: { ...data.scriptsVars, [key]: value } });
@@ -99,8 +78,7 @@ export function StepScriptVars({
           <code className="rounded bg-gray-100 px-1 text-xs dark:bg-gray-800">
             {"{{key}}"}
           </code>{" "}
-          placeholders found in the selected monetization profile&apos;s and
-          group(s)&apos; scripts.
+          placeholders found in the selected group(s)&apos; scripts.
         </p>
       </div>
 

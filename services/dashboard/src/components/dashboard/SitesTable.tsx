@@ -124,7 +124,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         router.push(`/sites/${encodeURIComponent(site.domain)}?tab=preview`);
         break;
       case "Ready":
-        router.push(`/sites/${encodeURIComponent(site.domain)}?panel=monetization`);
+        router.push(`/sites/${encodeURIComponent(site.domain)}`);
         break;
       case "Live":
         router.push(`/sites/${encodeURIComponent(site.domain)}`);
@@ -169,10 +169,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in monetization setup." />
+                  <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in ad config setup." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="OB EPID" tooltip="Outbrain EPID value configured for the site as part of monetization setup." />
+                  <ColumnHeader label="OB EPID" tooltip="Outbrain EPID value configured for the site as part of ad config setup." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="GA Info" tooltip="Google Analytics configuration data associated with the site (e.g., property or measurement identifiers)." />
@@ -184,7 +184,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="CF APO" tooltip="Cloudflare APO (Automatic Platform Optimization) enablement status for the site." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Fixed Ad" tooltip="Fixed ad placement configuration and status for the site as defined in monetization setup." />
+                  <ColumnHeader label="Fixed Ad" tooltip="Fixed ad placement configuration and status for the site as defined in ad config setup." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Actions

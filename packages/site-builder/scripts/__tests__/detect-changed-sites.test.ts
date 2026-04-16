@@ -3,39 +3,28 @@ import { join } from "node:path";
 
 import {
   shouldBuildSite,
-  changedMonetizationProfiles,
-  affectedSitesForMonetizationChange,
+  changedOverrideIds,
+  affectedSitesForOverrideChange,
 } from "../detect-changed-sites.js";
 
 const FIXTURES_MON = join(import.meta.dirname, "fixtures-mon");
 
 // ---------------------------------------------------------------------------
-// shouldBuildSite — monetization rule
+// shouldBuildSite — basic rules
 // ---------------------------------------------------------------------------
 
-describe("shouldBuildSite — monetization layer", () => {
-  it("returns false when only monetization profiles changed", () => {
+describe("shouldBuildSite — basic rules", () => {
+  it("triggers rebuild when site's own files changed", () => {
     expect(
       shouldBuildSite("muvizz.com", "entertainment", [
-        "monetization/premium-ads.yaml",
-        "monetization/standard-ads.yaml",
-      ]),
-    ).toBe(false);
-  });
-
-  it("still triggers a rebuild when a real site file also changed", () => {
-    expect(
-      shouldBuildSite("muvizz.com", "entertainment", [
-        "monetization/premium-ads.yaml",
         "sites/muvizz.com/site.yaml",
       ]),
     ).toBe(true);
   });
 
-  it("treats org.yaml as a full rebuild trigger (independent of monetization)", () => {
+  it("triggers rebuild when org.yaml changed", () => {
     expect(
       shouldBuildSite("muvizz.com", "entertainment", [
-        "monetization/premium-ads.yaml",
         "org.yaml",
       ]),
     ).toBe(true);
@@ -56,70 +45,113 @@ describe("shouldBuildSite — monetization layer", () => {
       ]),
     ).toBe(false);
   });
+
+  it("does not rebuild when only unrelated sites changed", () => {
+    expect(
+      shouldBuildSite("muvizz.com", "entertainment", [
+        "sites/other.com/site.yaml",
+      ]),
+    ).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
-// changedMonetizationProfiles
+// shouldBuildSite — overrides
 // ---------------------------------------------------------------------------
 
-describe("changedMonetizationProfiles", () => {
-  it("extracts profile ids from monetization/<id>.yaml", () => {
+describe("shouldBuildSite — override changes", () => {
+  it("triggers rebuild when an override config changed (no target info)", () => {
+    // Without overrideTargets, any override change triggers rebuild (conservative)
     expect(
-      changedMonetizationProfiles([
-        "monetization/premium-ads.yaml",
-        "monetization/standard-ads.yaml",
+      shouldBuildSite("muvizz.com", "entertainment", [
+        "overrides/config/test-override.yaml",
+      ]),
+    ).toBe(true);
+  });
+
+  it("triggers rebuild when override targets this site", () => {
+    const targets = new Map([
+      ["test-override", { groups: [], sites: ["muvizz.com"] }],
+    ]);
+    expect(
+      shouldBuildSite("muvizz.com", "entertainment", [
+        "overrides/config/test-override.yaml",
+      ], targets),
+    ).toBe(true);
+  });
+
+  it("triggers rebuild when override targets this site's group", () => {
+    const targets = new Map([
+      ["test-override", { groups: ["entertainment"], sites: [] }],
+    ]);
+    expect(
+      shouldBuildSite("muvizz.com", "entertainment", [
+        "overrides/config/test-override.yaml",
+      ], targets),
+    ).toBe(true);
+  });
+
+  it("does not rebuild when override targets different site/group", () => {
+    const targets = new Map([
+      ["test-override", { groups: ["sports"], sites: ["other.com"] }],
+    ]);
+    expect(
+      shouldBuildSite("muvizz.com", "entertainment", [
+        "overrides/config/test-override.yaml",
+      ], targets),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// changedOverrideIds
+// ---------------------------------------------------------------------------
+
+describe("changedOverrideIds", () => {
+  it("extracts override ids from overrides/config/<id>.yaml", () => {
+    expect(
+      changedOverrideIds([
+        "overrides/config/test-ads-mock.yaml",
+        "overrides/config/newsletter-popup.yaml",
         "sites/foo.com/site.yaml",
       ]),
-    ).toEqual(["premium-ads", "standard-ads"]);
+    ).toEqual(["test-ads-mock", "newsletter-popup"]);
   });
 
-  it("returns ['*'] when org.yaml changed (default_monetization shift)", () => {
+  it("returns empty array when no override configs changed", () => {
     expect(
-      changedMonetizationProfiles([
-        "org.yaml",
-        "monetization/premium-ads.yaml",
-      ]),
-    ).toEqual(["*"]);
-  });
-
-  it("returns empty array when nothing monetization-related changed", () => {
-    expect(
-      changedMonetizationProfiles([
+      changedOverrideIds([
         "sites/foo.com/articles/post.md",
         "groups/travel.yaml",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("ignores shared-page overrides (overrides/<site_id>/)", () => {
+    expect(
+      changedOverrideIds([
+        "overrides/coolnews-atl/about.yaml",
       ]),
     ).toEqual([]);
   });
 });
 
 // ---------------------------------------------------------------------------
-// affectedSitesForMonetizationChange
+// affectedSitesForOverrideChange
 // ---------------------------------------------------------------------------
 
-describe("affectedSitesForMonetizationChange", () => {
-  it("includes sites whose explicit profile matches a touched id", async () => {
-    const affected = await affectedSitesForMonetizationChange(FIXTURES_MON, [
-      "monetization/premium-ads.yaml",
+describe("affectedSitesForOverrideChange", () => {
+  it("includes sites targeted by a changed override", async () => {
+    const affected = await affectedSitesForOverrideChange(FIXTURES_MON, [
+      "overrides/config/test-ads-mock.yaml",
     ]);
 
-    // override-site.example.com has `monetization: premium-ads`
+    // test-ads-mock targets override-site.example.com directly
     expect(affected).toContain("override-site.example.com");
-    // null-clear.example.com also picks premium-ads
-    expect(affected).toContain("null-clear.example.com");
-  });
-
-  it("includes sites that inherit the touched profile from org default", async () => {
-    // standard-ads is the org default in fixtures-mon/org.yaml
-    const affected = await affectedSitesForMonetizationChange(FIXTURES_MON, [
-      "monetization/standard-ads.yaml",
-    ]);
-
-    // default-site.example.com has no `monetization` field → inherits standard-ads
-    expect(affected).toContain("default-site.example.com");
   });
 
   it("treats org.yaml change as affecting every site directory", async () => {
-    const affected = await affectedSitesForMonetizationChange(FIXTURES_MON, [
+    const affected = await affectedSitesForOverrideChange(FIXTURES_MON, [
       "org.yaml",
     ]);
 
@@ -133,16 +165,16 @@ describe("affectedSitesForMonetizationChange", () => {
     );
   });
 
-  it("includes sites whose own site.yaml changed (monetization may have shifted)", async () => {
-    const affected = await affectedSitesForMonetizationChange(FIXTURES_MON, [
+  it("includes sites whose own site.yaml changed", async () => {
+    const affected = await affectedSitesForOverrideChange(FIXTURES_MON, [
       "sites/default-site.example.com/site.yaml",
     ]);
 
     expect(affected).toEqual(["default-site.example.com"]);
   });
 
-  it("returns empty when nothing monetization-relevant changed", async () => {
-    const affected = await affectedSitesForMonetizationChange(FIXTURES_MON, [
+  it("returns empty when nothing relevant changed", async () => {
+    const affected = await affectedSitesForOverrideChange(FIXTURES_MON, [
       "groups/mon-group.yaml",
       "shared-pages/about.yaml",
     ]);
