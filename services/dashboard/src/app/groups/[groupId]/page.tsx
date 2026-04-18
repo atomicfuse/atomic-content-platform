@@ -9,7 +9,6 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
-import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 
@@ -253,23 +252,6 @@ export default function GroupDetailPage(): React.ReactElement {
           }}
           mode="group"
         />
-      ),
-    },
-    {
-      id: "legal-overrides",
-      label: "Legal Page Overrides",
-      content: (
-        <div className="space-y-2">
-          <p className="text-xs text-[var(--text-muted)]">
-            Override shared legal page content for sites in this group.
-          </p>
-          <LegalPagesOverrideEditor
-            value={(config.legal_pages_override ?? {}) as Record<string, string>}
-            onChange={(v: Record<string, string>): void =>
-              updateField("legal_pages_override", v)
-            }
-          />
-        </div>
       ),
     },
     {
