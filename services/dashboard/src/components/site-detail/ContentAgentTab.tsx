@@ -66,7 +66,7 @@ const DEFAULT_SCRIPTS: ScriptsConfig = {
 };
 
 const DEFAULT_ADS: AdsConfigFormValue = {
-  interstitial: false, layout: "standard", in_content_slots: 3, sidebar: true, ad_placements: [],
+  interstitial: false, layout: "standard", ad_placements: [],
 };
 
 export function ContentAgentTab({
@@ -137,8 +137,6 @@ export function ContentAgentTab({
   const [adsConfig, setAdsConfig] = useState<AdsConfigFormValue>({
     interstitial: (rawAds?.interstitial as boolean) ?? false,
     layout: (rawAds?.layout as string) ?? "standard",
-    in_content_slots: (rawAds?.in_content_slots as number) ?? 3,
-    sidebar: (rawAds?.sidebar as boolean) ?? true,
     ad_placements: (rawAds?.ad_placements as AdsConfigFormValue["ad_placements"]) ?? [],
   });
 

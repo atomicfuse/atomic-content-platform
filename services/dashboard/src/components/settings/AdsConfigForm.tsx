@@ -17,8 +17,6 @@ export interface AdPlacement {
 export interface AdsConfigFormValue {
   interstitial: boolean;
   layout: string;
-  in_content_slots?: number;
-  sidebar?: boolean;
   ad_placements: AdPlacement[];
 }
 
@@ -51,6 +49,9 @@ const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "below-content", label: "Below Content" },
   { value: "sidebar", label: "Sidebar" },
   { value: "sticky-bottom", label: "Sticky Bottom" },
+  { value: "homepage-top", label: "Homepage Top" },
+  { value: "homepage-mid", label: "Homepage Mid" },
+  { value: "category-top", label: "Category Top" },
 ];
 
 export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.ReactElement {
@@ -123,13 +124,6 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
             updateField("interstitial", checked);
           }}
         />
-        <ToggleField
-          label="Sidebar Ads"
-          checked={value.sidebar ?? false}
-          onChange={(checked): void => {
-            updateField("sidebar", checked);
-          }}
-        />
       </div>
 
       {/* Layout dropdown */}
@@ -154,28 +148,6 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
             </option>
           ))}
         </select>
-      </div>
-
-      {/* In-content slots */}
-      <div className="space-y-1.5">
-        <label
-          htmlFor="in-content-slots"
-          className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"
-        >
-          In-Content Slots
-        </label>
-        <input
-          id="in-content-slots"
-          type="number"
-          min={0}
-          max={20}
-          value={value.in_content_slots ?? 0}
-          onChange={(e): void => {
-            const num = parseInt(e.target.value, 10);
-            updateField("in_content_slots", isNaN(num) ? undefined : num);
-          }}
-          className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-        />
       </div>
 
       {/* Ad Placements */}

@@ -30,12 +30,11 @@ scripts:
 
 ads_config:
   interstitial: false
-  in_content_slots: 2
-  sidebar: false
   layout: standard
   ad_placements: []
-  ads_txt:
-    - "google.com, pub-org, DIRECT"
+
+ads_txt:
+  - "google.com, pub-org, DIRECT"
 
 legal:
   company_name: "Test Org Ltd"

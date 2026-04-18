@@ -1,9 +1,17 @@
 ---
 /**
- * Simple content page layout for legal / static pages.
+ * Layout for shared/static pages (about, privacy, terms, contact, DMCA).
+ *
+ * Wraps BaseLayout and adds:
+ *  - Header and Footer
+ *  - SEO head
+ *  - Structural ad-slot anchors for all applicable positions
+ *  - Two-column layout with optional sidebar (desktop)
  */
 import BaseLayout from './BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
 import { getConfig } from '../config';
 
 interface Props {
@@ -15,6 +23,7 @@ interface Props {
 const { title, description, slug } = Astro.props;
 const config = await getConfig();
 const canonicalUrl = `https://${config.domain}/${slug}`;
+const heights = config.ad_placeholder_heights;
 ---
 
 <BaseLayout title={`${title} | ${config.site_name}`} description={description}>
@@ -27,21 +36,100 @@ const canonicalUrl = `https://${config.domain}/${slug}`;
     />
   </Fragment>
 
-  <main class="page-content">
-    <h1>{title}</h1>
-    <slot />
+  <Header config={config} currentPath={`/${slug}`} />
+
+  <main class="page-layout">
+    {/* Above-content structural anchor */}
+    <div
+      data-slot="above-content"
+      class="ad-anchor"
+      style={`min-height:${heights['above-content']}px;display:none;`}
+    ></div>
+
+    <div class="page-container">
+      <div class="page-content prose">
+        <h1>{title}</h1>
+        <slot />
+      </div>
+
+      {/* Below-content structural anchor */}
+      <div data-slot="below-content" class="ad-anchor"></div>
+
+      {/* Sidebar anchor (desktop only) */}
+      <aside
+        class="page-sidebar"
+        data-slot="sidebar"
+        style={`min-height:${heights.sidebar}px;`}
+      ></aside>
+    </div>
   </main>
+
+  <Footer config={config} />
+
+  {/* Sticky bottom anchor */}
+  <div
+    data-slot="sticky-bottom"
+    class="ad-sticky-bottom"
+    style={`min-height:${heights['sticky-bottom']}px;display:none;`}
+  ></div>
 </BaseLayout>
 
 <style>
-  .page-content {
-    max-width: 800px;
+  .page-layout {
+    max-width: var(--container-max, 1200px);
     margin: 0 auto;
-    padding: 2rem 1rem;
-    line-height: 1.75;
+    padding: 0 1rem 2rem;
   }
+
+  .page-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  @media (min-width: 960px) {
+    .page-container {
+      grid-template-columns: 1fr 300px;
+    }
+  }
+
+  .page-content {
+    line-height: 1.75;
+    font-size: 1.0625rem;
+  }
+
   .page-content h1 {
-    font-size: 2rem;
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-3xl, 1.875rem);
     margin-bottom: 1.5rem;
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .page-sidebar {
+    display: none;
+    width: 300px;
+  }
+
+  @media (min-width: 960px) {
+    .page-sidebar {
+      display: block;
+      position: sticky;
+      top: 80px;
+      align-self: start;
+    }
+  }
+
+  .ad-anchor {
+    margin: 1.5rem 0;
+  }
+
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
   }
 </style>

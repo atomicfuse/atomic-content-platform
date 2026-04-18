@@ -72,6 +72,9 @@ const pageTitle = page.currentPage > 1
 
   <main class="category-page">
     <div class="container">
+      {/* Category top ad anchor */}
+      <div data-slot="category-top" class="ad-anchor" style="display:none;"></div>
+
       <CategoryHeader name={topicName} articleCount={totalArticles} />
 
       {page.data.length > 0 ? (
@@ -102,6 +105,9 @@ const pageTitle = page.currentPage > 1
   </main>
 
   <Footer config={config} />
+
+  {/* Sticky bottom anchor */}
+  <div data-slot="sticky-bottom" class="ad-sticky-bottom" style="display:none;"></div>
 </BaseLayout>
 
 <style>
@@ -138,5 +144,19 @@ const pageTitle = page.currentPage > 1
     color: var(--color-muted, #9ca3af);
     padding: 4rem 0;
     font-size: 1.125rem;
+  }
+
+  .ad-anchor {
+    margin: 1.5rem 0;
+  }
+
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
   }
 </style>

@@ -6,15 +6,10 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-
-import { TrackingForm } from "@/components/settings/TrackingForm";
-import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
-import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
-import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
-import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
 import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
-import { PlacementPreview } from "@/components/shared/PlacementPreview";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
+import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
+import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 
 interface OverrideConfig {
   override_id?: string;
@@ -26,6 +21,8 @@ interface OverrideConfig {
   scripts_vars?: Record<string, string>;
   ads_config?: Record<string, unknown>;
   ads_txt?: string | string[];
+  theme?: Record<string, unknown>;
+  legal?: Record<string, string>;
   [key: string]: unknown;
 }
 
@@ -39,34 +36,9 @@ interface SiteSummary {
   domain: string;
 }
 
-interface TrackingConfig {
-  ga4: string | null;
-  gtm: string | null;
-  google_ads: string | null;
-  facebook_pixel: string | null;
-  custom: Array<{
-    name: string;
-    src: string;
-    position: "head" | "body_start" | "body_end";
-  }>;
-}
-
-interface ScriptsConfig {
-  head: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-  body_start: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-  body_end: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-}
-
-interface AdsConfigFormValue {
-  interstitial: boolean;
-  layout: string;
-  ad_placements: Array<{
-    id: string;
-    position: string;
-    sizes: { desktop?: number[][]; mobile?: number[][] };
-    device: "all" | "desktop" | "mobile";
-  }>;
-}
+// ---------------------------------------------------------------------------
+// Normalizers
+// ---------------------------------------------------------------------------
 
 function normalizeAdsTxt(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw as string[];
@@ -74,18 +46,18 @@ function normalizeAdsTxt(raw: unknown): string[] {
   return [];
 }
 
-function normalizeTracking(raw: Record<string, unknown> | undefined): TrackingConfig {
+function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedConfigFields["tracking"] {
   return {
     ga4: (raw?.ga4 as string) ?? null,
     gtm: (raw?.gtm as string) ?? null,
     google_ads: (raw?.google_ads as string) ?? null,
     facebook_pixel: (raw?.facebook_pixel as string) ?? null,
-    custom: (raw?.custom as TrackingConfig["custom"]) ?? [],
+    custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
   };
 }
 
-function normalizeScripts(raw: Record<string, unknown> | undefined): ScriptsConfig {
-  function normalizeEntries(entries: unknown): ScriptsConfig["head"] {
+function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConfigFields["scripts"] {
+  function normalizeEntries(entries: unknown): UnifiedConfigFields["scripts"]["head"] {
     if (!Array.isArray(entries)) return [];
     return entries.map((e: Record<string, unknown>) => ({
       id: (e.id as string) ?? "",
@@ -101,7 +73,7 @@ function normalizeScripts(raw: Record<string, unknown> | undefined): ScriptsConf
   };
 }
 
-function normalizeAdsConfig(raw: Record<string, unknown> | undefined): AdsConfigFormValue {
+function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
@@ -211,8 +183,6 @@ export default function OverrideDetailPage(): React.ReactElement {
       toast("Override saved", "success");
 
       // Affected sites = UNION of old targets + new targets.
-      // Old-target sites need rebuild to REMOVE the override.
-      // New-target sites need rebuild to APPLY the override.
       const newGroups = config.targets?.groups ?? [];
       const newSites = config.targets?.sites ?? [];
       const allGroupIds = [...new Set([...savedTargets.groups, ...newGroups])];
@@ -220,12 +190,10 @@ export default function OverrideDetailPage(): React.ReactElement {
 
       const affected = new Map<string, { domain: string; site_name?: string }>();
 
-      // Add all directly targeted sites (old + new)
       for (const domain of allDirectSites) {
         affected.set(domain, { domain });
       }
 
-      // Add sites from all targeted groups (old + new)
       await Promise.all(
         allGroupIds.map(async (gid) => {
           try {
@@ -239,14 +207,12 @@ export default function OverrideDetailPage(): React.ReactElement {
               if (!affected.has(s.domain)) affected.set(s.domain, s);
             }
           } catch {
-            // skip — non-blocking
+            // skip
           }
         }),
       );
 
-      // Update saved snapshot so next save compares against current state
       setSavedTargets({ groups: newGroups, sites: newSites });
-
       setRebuildSites(Array.from(affected.values()));
       setShowRebuildModal(true);
     } catch (err) {
@@ -287,11 +253,17 @@ export default function OverrideDetailPage(): React.ReactElement {
 
   const targetGroups = config.targets?.groups ?? [];
   const targetSites = config.targets?.sites ?? [];
-  const trackingValue = normalizeTracking(config.tracking);
-  const scriptsValue = normalizeScripts(config.scripts);
-  const scriptVarsValue = (config.scripts_vars ?? {}) as Record<string, string>;
-  const adsConfigValue = normalizeAdsConfig(config.ads_config as Record<string, unknown> | undefined);
-  const adsTxtEntries = normalizeAdsTxt(config.ads_txt);
+
+  // Build config for UnifiedConfigForm
+  const formConfig: Partial<UnifiedConfigFields> = {
+    tracking: normalizeTracking(config.tracking),
+    scripts: normalizeScripts(config.scripts),
+    scripts_vars: (config.scripts_vars ?? {}) as Record<string, string>,
+    ads_config: normalizeAdsConfig(config.ads_config as Record<string, unknown> | undefined),
+    ads_txt: normalizeAdsTxt(config.ads_txt),
+    theme: (config.theme ?? {}) as Record<string, unknown>,
+    legal: (config.legal ?? {}) as Record<string, string>,
+  };
 
   const tabs = [
     {
@@ -365,68 +337,17 @@ export default function OverrideDetailPage(): React.ReactElement {
       ),
     },
     {
-      id: "tracking",
-      label: "Tracking",
+      id: "config",
+      label: "Config",
       content: (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            Fields defined here <strong>REPLACE</strong> the group chain&apos;s
-            tracking for targeted sites. Leave fields empty to pass through.
-          </div>
-          <TrackingForm value={trackingValue} onChange={(v): void => updateField("tracking", v)} />
-        </div>
-      ),
-    },
-    {
-      id: "scripts",
-      label: "Scripts",
-      content: (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            Scripts arrays here <strong>REPLACE</strong> the group chain&apos;s
-            scripts for targeted sites.
-          </div>
-          <ScriptsEditor value={scriptsValue} onChange={(v): void => updateField("scripts", v)} />
-        </div>
-      ),
-    },
-    {
-      id: "script-vars",
-      label: "Script Variables",
-      content: (
-        <ScriptVariablesEditor
-          value={scriptVarsValue}
-          onChange={(v: Record<string, string>): void => updateField("scripts_vars", v)}
+        <UnifiedConfigForm
+          config={formConfig}
+          onChange={(updated): void => {
+            if (!config) return;
+            setConfig({ ...config, ...updated } as OverrideConfig);
+          }}
+          mode="override"
         />
-      ),
-    },
-    {
-      id: "ads",
-      label: "Ads Config",
-      content: (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            ads_config here <strong>completely REPLACES</strong> the group
-            chain&apos;s ads_config for targeted sites.
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <AdsConfigForm value={adsConfigValue} onChange={(v): void => updateField("ads_config", v)} />
-            <PlacementPreview placements={adsConfigValue.ad_placements} />
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: "ads-txt",
-      label: "ads.txt",
-      content: (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--text-secondary)]">
-            ads_txt entries here <strong>REPLACE</strong> all group chain
-            ads_txt entries for targeted sites.
-          </div>
-          <AdsTxtEditor value={adsTxtEntries} onChange={(v: string[]): void => updateField("ads_txt", v)} scopeLabel="override" />
-        </div>
       ),
     },
   ];

@@ -29,7 +29,24 @@ export interface AdPlacement {
     id: string;
     /**
      * Where the ad appears in the page layout.
-     * Common values: "above-content", "after-paragraph-3", "sidebar", "sticky-bottom".
+     *
+     * Article pages:
+     *   "above-content"      — before article body
+     *   "after-paragraph-N"  — after Nth paragraph in article body
+     *   "sidebar"            — sidebar column (desktop)
+     *   "sticky-bottom"      — fixed bottom of viewport
+     *   "below-content"      — after main content, before footer
+     *
+     * Homepage:
+     *   "homepage-top"       — above the article grid
+     *   "homepage-mid"       — between article card rows
+     *
+     * Category pages:
+     *   "category-top"       — above the category article list
+     *
+     * Shared pages (about, privacy, terms, contact, DMCA):
+     *   "above-content", "sidebar", "below-content", "sticky-bottom",
+     *   "after-paragraph-N" all work on shared pages too.
      */
     position: string;
     /** Available ad sizes per device class. */
@@ -39,21 +56,18 @@ export interface AdPlacement {
 }
 /**
  * Full advertising configuration for a site or group.
+ *
+ * Merge rules:
+ * - Standard merge (org → groups → site): deep merge, but `ad_placements`
+ *   uses REPLACEMENT — if child defines ad_placements, replaces parent entirely.
+ * - Override merge: ENTIRE ads_config replaced if override defines it.
  */
 export interface AdsConfig {
-    /** Name or identifier of the primary ad network / advertiser. */
-    primary_advertiser?: string;
     /** Whether interstitial (full-page) ads are enabled. */
     interstitial: boolean;
-    /** Layout strategy identifier (e.g. "standard", "aggressive"). */
+    /** Layout density identifier ("standard" | "high-density"). */
     layout: string;
-    /** Number of in-content ad slots to insert between paragraphs. */
-    in_content_slots?: number;
-    /** Whether to show sidebar ad placements. */
-    sidebar?: boolean;
     /** Ordered list of ad placement definitions. */
     ad_placements: AdPlacement[];
-    /** Lines to include in the site's ads.txt file. */
-    ads_txt: string[];
 }
 //# sourceMappingURL=ads.d.ts.map

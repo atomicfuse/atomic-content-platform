@@ -52,12 +52,15 @@ const mustReads = articles.slice(6, 12);
 
   <main class="homepage">
     <div class="container">
+      {/* Homepage top ad anchor */}
+      <div data-slot="homepage-top" class="ad-anchor" style="display:none;"></div>
+
       <div class:list={['homepage-layout', { 'has-sidebar': sidebarEnabled }]}>
         <div class="homepage-main">
           {/* What's New — main article grid */}
           <section class="section">
             <h2 class="section-heading">What's New</h2>
-            <div class="article-grid">
+            <div class="article-grid" data-grid="articles">
               {latestArticles.map((article) => (
                 <ArticleCard
                   title={article.data.title}
@@ -108,12 +111,18 @@ const mustReads = articles.slice(6, 12);
         )}
       </div>
 
+      {/* Homepage mid ad anchor (between sections) */}
+      <div data-slot="homepage-mid" class="ad-anchor" style="display:none;"></div>
+
       {/* Newsletter — always full-width below content + sidebar */}
       <NewsletterForm siteName={config.site_name} />
     </div>
   </main>
 
   <Footer config={config} />
+
+  {/* Sticky bottom anchor */}
+  <div data-slot="sticky-bottom" class="ad-sticky-bottom" style="display:none;"></div>
 </BaseLayout>
 
 <style>
@@ -185,5 +194,19 @@ const mustReads = articles.slice(6, 12);
     color: var(--color-muted, #9ca3af);
     padding: 4rem 0;
     font-size: 1.125rem;
+  }
+
+  .ad-anchor {
+    margin: 1.5rem 0;
+  }
+
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
   }
 </style>

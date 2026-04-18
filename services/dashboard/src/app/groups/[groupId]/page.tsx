@@ -9,18 +9,9 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
-
-import { TrackingForm } from "@/components/settings/TrackingForm";
-import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
-import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
-import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
-import { LegalForm } from "@/components/settings/LegalForm";
-
-import { ThemeForm } from "@/components/groups/ThemeForm";
 import { LegalPagesOverrideEditor } from "@/components/groups/LegalPagesOverrideEditor";
-
-import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
-import { PlacementPreview } from "@/components/shared/PlacementPreview";
+import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
+import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 
 interface GroupConfig {
   name?: string;
@@ -35,82 +26,34 @@ interface GroupConfig {
   theme?: Record<string, unknown>;
   legal?: Record<string, string>;
   legal_pages_override?: Record<string, string>;
+  ad_placeholder_heights?: Record<string, number>;
   [key: string]: unknown;
 }
 
-interface OrgConfig {
-  tracking?: Record<string, unknown>;
-  [key: string]: unknown;
-}
-
-interface TrackingConfig {
-  ga4: string | null;
-  gtm: string | null;
-  google_ads: string | null;
-  facebook_pixel: string | null;
-  custom: Array<{
-    name: string;
-    src: string;
-    position: "head" | "body_start" | "body_end";
-  }>;
-}
-
-interface ScriptsConfig {
-  head: Array<{ id: string; src?: string; inline?: string; async?: boolean }>;
-  body_start: Array<{
-    id: string;
-    src?: string;
-    inline?: string;
-    async?: boolean;
-  }>;
-  body_end: Array<{
-    id: string;
-    src?: string;
-    inline?: string;
-    async?: boolean;
-  }>;
-}
-
-interface AdsConfigFormValue {
-  interstitial: boolean;
-  layout: string;
-  in_content_slots?: number;
-  sidebar?: boolean;
-  ad_placements: Array<{
-    id: string;
-    position: string;
-    sizes: { desktop?: number[][]; mobile?: number[][] };
-    device: "all" | "desktop" | "mobile";
-  }>;
-}
+// ---------------------------------------------------------------------------
+// Normalizers — transform raw API data into typed form values
+// ---------------------------------------------------------------------------
 
 function normalizeAdsTxt(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw as string[];
   if (typeof raw === "string") {
-    return raw
-      .split("\n")
-      .map((l) => l.trim())
-      .filter(Boolean);
+    return raw.split("\n").map((l) => l.trim()).filter(Boolean);
   }
   return [];
 }
 
-function normalizeTracking(
-  raw: Record<string, unknown> | undefined,
-): TrackingConfig {
+function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedConfigFields["tracking"] {
   return {
     ga4: (raw?.ga4 as string) ?? null,
     gtm: (raw?.gtm as string) ?? null,
     google_ads: (raw?.google_ads as string) ?? null,
     facebook_pixel: (raw?.facebook_pixel as string) ?? null,
-    custom: (raw?.custom as TrackingConfig["custom"]) ?? [],
+    custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
   };
 }
 
-function normalizeScripts(
-  raw: Record<string, unknown> | undefined,
-): ScriptsConfig {
-  function normalizeEntries(entries: unknown): ScriptsConfig["head"] {
+function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConfigFields["scripts"] {
+  function normalizeEntries(entries: unknown): UnifiedConfigFields["scripts"]["head"] {
     if (!Array.isArray(entries)) return [];
     return entries.map((e: Record<string, unknown>) => ({
       id: (e.id as string) ?? "",
@@ -126,15 +69,11 @@ function normalizeScripts(
   };
 }
 
-function normalizeAdsConfig(
-  raw: Record<string, unknown> | undefined,
-): AdsConfigFormValue {
+function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
     layout: (raw?.layout as string) ?? "standard",
-    in_content_slots: (raw?.in_content_slots as number) ?? 3,
-    sidebar: (raw?.sidebar as boolean) ?? true,
     ad_placements: placements.map((p: Record<string, unknown>) => {
       const rawSizes = p.sizes;
       let sizes: { desktop?: number[][]; mobile?: number[][] } = {};
@@ -156,19 +95,11 @@ function normalizeAdsConfig(
       return {
         id: (p.id as string) ?? "",
         position: (p.position as string) ?? "",
-        device: (p.devices ?? p.device ?? "all") as
-          | "all"
-          | "desktop"
-          | "mobile",
+        device: (p.devices ?? p.device ?? "all") as "all" | "desktop" | "mobile",
         sizes,
       };
     }),
   };
-}
-
-/** Returns true if any of the given fields exists on the config object. */
-function hasAny(config: GroupConfig, keys: readonly string[]): boolean {
-  return keys.some((k) => k in config && config[k] != null);
 }
 
 export default function GroupDetailPage(): React.ReactElement {
@@ -178,14 +109,12 @@ export default function GroupDetailPage(): React.ReactElement {
   const { toast } = useToast();
 
   const [config, setConfig] = useState<GroupConfig | null>(null);
-  const [orgConfig, setOrgConfig] = useState<OrgConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showRebuildModal, setShowRebuildModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const [groupSites, setGroupSites] = useState<
     Array<{ domain: string; site_name?: string }>
@@ -194,9 +123,8 @@ export default function GroupDetailPage(): React.ReactElement {
   const fetchData = useCallback(async (): Promise<void> => {
     try {
       setError(null);
-      const [groupRes, orgRes, sitesRes] = await Promise.all([
+      const [groupRes, sitesRes] = await Promise.all([
         fetch(`/api/groups/${groupId}`),
-        fetch("/api/settings/org"),
         fetch(`/api/groups/${groupId}/sites`),
       ]);
       if (!groupRes.ok) {
@@ -205,32 +133,12 @@ export default function GroupDetailPage(): React.ReactElement {
       const groupData = (await groupRes.json()) as GroupConfig;
       setConfig(groupData);
 
-      if (orgRes.ok) {
-        const orgData = (await orgRes.json()) as OrgConfig;
-        setOrgConfig(orgData);
-      }
-
       if (sitesRes.ok) {
         const sitesData = (await sitesRes.json()) as Array<{
           domain: string;
           site_name?: string;
         }>;
         setGroupSites(sitesData);
-      }
-
-      // Auto-expand advanced if any of those fields are set.
-      if (
-        hasAny(groupData, [
-          "tracking",
-          "scripts",
-          "scripts_vars",
-          "script_variables",
-          "ads_config",
-          "ads",
-          "ads_txt",
-        ])
-      ) {
-        setAdvancedOpen(true);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load group config");
@@ -299,20 +207,19 @@ export default function GroupDetailPage(): React.ReactElement {
 
   if (!config) return <div />;
 
-  const adsTxtEntries = normalizeAdsTxt(config.ads_txt);
-  const trackingValue = normalizeTracking(config.tracking);
-  const scriptsValue = normalizeScripts(config.scripts);
-  const scriptVarsValue = (config.scripts_vars ??
-    config.script_variables ??
-    {}) as Record<string, string>;
-  const adsConfigValue = normalizeAdsConfig(
-    (config.ads_config ?? config.ads) as Record<string, unknown> | undefined,
-  );
-
-  const orgTracking = orgConfig?.tracking;
-  const inheritedTracking = orgTracking
-    ? normalizeTracking(orgTracking)
-    : undefined;
+  // Build the config object for UnifiedConfigForm
+  const formConfig: Partial<UnifiedConfigFields> = {
+    tracking: normalizeTracking(config.tracking),
+    scripts: normalizeScripts(config.scripts),
+    scripts_vars: (config.scripts_vars ?? config.script_variables ?? {}) as Record<string, string>,
+    ads_config: normalizeAdsConfig(
+      (config.ads_config ?? config.ads) as Record<string, unknown> | undefined,
+    ),
+    ad_placeholder_heights: config.ad_placeholder_heights as UnifiedConfigFields["ad_placeholder_heights"] | undefined,
+    ads_txt: normalizeAdsTxt(config.ads_txt),
+    theme: (config.theme ?? {}) as Record<string, unknown>,
+    legal: (config.legal ?? {}) as Record<string, string>,
+  };
 
   const tabs = [
     {
@@ -335,44 +242,33 @@ export default function GroupDetailPage(): React.ReactElement {
       ),
     },
     {
-      id: "theme",
-      label: "Theme",
+      id: "config",
+      label: "Config",
       content: (
-        <ThemeForm
-          value={(config.theme ?? {}) as Record<string, unknown>}
-          onChange={(v: Record<string, unknown>): void =>
-            updateField("theme", v)
-          }
+        <UnifiedConfigForm
+          config={formConfig}
+          onChange={(updated): void => {
+            if (!config) return;
+            setConfig({ ...config, ...updated } as GroupConfig);
+          }}
+          mode="group"
         />
       ),
     },
     {
-      id: "legal",
-      label: "Legal",
+      id: "legal-overrides",
+      label: "Legal Page Overrides",
       content: (
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-              Legal variables
-            </h3>
-            <LegalForm
-              value={(config.legal ?? {}) as Record<string, string>}
-              onChange={(v: Record<string, string>): void =>
-                updateField("legal", v)
-              }
-            />
-          </div>
-          <div className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
-            <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-              Legal page overrides
-            </h3>
-            <LegalPagesOverrideEditor
-              value={(config.legal_pages_override ?? {}) as Record<string, string>}
-              onChange={(v: Record<string, string>): void =>
-                updateField("legal_pages_override", v)
-              }
-            />
-          </div>
+        <div className="space-y-2">
+          <p className="text-xs text-[var(--text-muted)]">
+            Override shared legal page content for sites in this group.
+          </p>
+          <LegalPagesOverrideEditor
+            value={(config.legal_pages_override ?? {}) as Record<string, string>}
+            onChange={(v: Record<string, string>): void =>
+              updateField("legal_pages_override", v)
+            }
+          />
         </div>
       ),
     },
@@ -406,85 +302,6 @@ export default function GroupDetailPage(): React.ReactElement {
                 </li>
               ))}
             </ul>
-          )}
-        </div>
-      ),
-    },
-    {
-      id: "advanced",
-      label: "Advanced",
-      content: (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={(): void => setAdvancedOpen((o) => !o)}
-            className="w-full text-left text-sm font-semibold text-[var(--text-primary)] flex items-center justify-between rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 hover:bg-[var(--bg-surface)] transition-colors"
-          >
-            <span>{advancedOpen ? "Hide" : "Show"} group-level overrides</span>
-            <span className="text-lg text-[var(--text-muted)]">
-              {advancedOpen ? "−" : "+"}
-            </span>
-          </button>
-
-          {advancedOpen && (
-            <div className="space-y-6 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
-              <section className="space-y-2">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Tracking overrides
-                </h3>
-                <TrackingForm
-                  value={trackingValue}
-                  onChange={(v): void => updateField("tracking", v)}
-                  inheritedValues={inheritedTracking}
-                />
-              </section>
-
-              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Scripts
-                </h3>
-                <ScriptsEditor
-                  value={scriptsValue}
-                  onChange={(v): void => updateField("scripts", v)}
-                />
-              </section>
-
-              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Script variables
-                </h3>
-                <ScriptVariablesEditor
-                  value={scriptVarsValue}
-                  onChange={(v: Record<string, string>): void =>
-                    updateField("scripts_vars", v)
-                  }
-                />
-              </section>
-
-              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  Ads config
-                </h3>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <AdsConfigForm
-                    value={adsConfigValue}
-                    onChange={(v): void => updateField("ads_config", v)}
-                  />
-                  <PlacementPreview placements={adsConfigValue.ad_placements} />
-                </div>
-              </section>
-
-              <section className="space-y-2 pt-4 border-t border-[var(--border-secondary)]">
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">
-                  ads.txt
-                </h3>
-                <AdsTxtEditor
-                  value={adsTxtEntries}
-                  onChange={(v: string[]): void => updateField("ads_txt", v)}
-                  scopeLabel="group"
-                />
-              </section>
-            </div>
           )}
         </div>
       ),
