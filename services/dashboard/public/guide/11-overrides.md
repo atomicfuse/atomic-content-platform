@@ -20,10 +20,23 @@ Use overrides for exceptions — temporary test configs, per-site ad tweaks, A/B
 # overrides/config/test-ads-mock.yaml
 override_id: test-ads-mock
 name: "Test Ads (Mock Demo)"
-priority: 10
+priority: 100
 targets:
-  groups: []
-  sites: ["coolnews-atl"]
+  sites:
+    - coolnews-atl
+
+tracking:
+  ga4: "G-TESTDEMO000"
+
+scripts:
+  head:
+    - id: gilad-1
+      src: http://whatever.com/123.js
+      async: true
+  body_start: []
+  body_end:
+    - id: mock-ad-fill
+      src: "/mock-ad-fill.js"
 
 ads_config:
   interstitial: false
@@ -41,16 +54,24 @@ ads_config:
       sizes:
         desktop: [[336, 280], [300, 250]]
         mobile: [[300, 250]]
+    - id: in-content-2
+      position: after-paragraph-7
+      device: all
+      sizes:
+        desktop: [[336, 280], [300, 250]]
+        mobile: [[300, 250]]
     - id: sidebar-sticky
       position: sidebar
       device: desktop
       sizes:
         desktop: [[300, 600], [160, 600], [300, 250]]
+    - id: mobile-anchor
+      position: sticky-bottom
+      device: mobile
+      sizes:
+        mobile: [[320, 50]]
 
-scripts:
-  body_end:
-    - id: mock-ad-fill
-      src: "/mock-ad-fill.js"
+ads_txt: []
 ```
 
 An override uses the same YAML schema as org, group, and site configs. Any field that is valid in those files is valid in an override — `tracking`, `ads_config`, `scripts`, `scripts_vars`, `ads_txt`, `theme`, `legal`, and so on.
@@ -185,19 +206,15 @@ Lists all overrides with name, priority, target summary (N groups, N sites), and
 
 ### Override Editor (`/overrides/[id]`)
 
-A tabbed editor with the same layout used for org, group, and site config:
+A tabbed editor with three tabs:
 
 | Tab | Contents |
 |-----|----------|
 | **General** | Override id, name, priority |
 | **Targeting** | Searchable toggle lists for groups and sites. Groups show how many sites they contain; sites show which groups they belong to. |
-| **Tracking** | GA4, GTM, Google Ads, Facebook Pixel, custom tracking entries |
-| **Scripts** | Head, body start, body end script entries with id, src/inline, and attribute controls |
-| **Script Variables** | Key-value pairs for `{{placeholder}}` resolution |
-| **Ads Config** | Interstitial toggle, layout selector, ad placements editor with a live placement preview showing desktop and mobile mockups |
-| **ads.txt** | Line-by-line ads.txt entries contributed by this override |
+| **Config** | Unified config form with all sections: Tracking, Scripts, Script Variables, Ads Config, ads.txt, Theme, Legal. Each section shows "REPLACE semantics" notices reminding you that defined fields entirely replace the group chain's values. |
 
-Only tabs with defined values affect the resolved config. An override with only Ads Config filled replaces only `ads_config` for targeted sites — all other fields pass through from the group chain.
+The Config tab uses the same `UnifiedConfigForm` component used by org, group, and site pages — just with `mode="override"` to show REPLACE semantics descriptions. Only fields you define affect the resolved config. An override with only Ads Config filled replaces only `ads_config` for targeted sites — all other fields pass through from the group chain.
 
 ### Create Override (`/overrides/new`)
 
@@ -240,7 +257,7 @@ services/dashboard/
   src/app/api/overrides/route.ts           -- GET list / POST create
 
 packages/site-builder/
-  src/lib/resolve-config.ts                -- Merge chain: org -> groups -> overrides -> site
+  scripts/resolve-config.ts                -- Merge chain: org -> groups -> overrides -> site
 
 <network-repo>/overrides/config/<id>.yaml  -- Override config files (on main)
 ```

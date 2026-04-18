@@ -52,7 +52,7 @@ deploy job (matrix, one per site)
         │
         ├── generate-config-json.ts
         │     extracts runtime-only fields from ResolvedConfig
-        │     → dist/c/<domain>.json    (same-origin fallback)
+        │     → dist/m/<domain>.json    (same-origin fallback)
         │
         ├── generate-ads-txt.ts
         │     writes the cascaded + dedup ads.txt
@@ -78,9 +78,9 @@ Build time is where everything that must be right from first paint gets baked in
 | Theme colors as CSS variables on `<html>` | `ResolvedConfig.theme` | Colors must be available before first paint |
 | Fonts (`<link>` preload + `@font-face`) | `ResolvedConfig.theme` | Same — avoid FOUT |
 | Inline GA4 / GTM snippet in `<head>` | `ResolvedConfig.tracking.ga4`, `.gtm` | Analytics must start counting from first byte |
-| `window.__ATL_CONFIG__` inline | `ResolvedConfig.configJson` | Lets ad-loader work with zero network round-trips |
+| `window.__ATL_CONFIG__` inline | `ResolvedConfig.inlineAdConfig` | Lets ad-loader work with zero network round-trips |
 | `data-p-index` on every `<p>` inside the article | `ArticleLayout.astro` | Needed to anchor in-content ads to specific paragraphs |
-| `data-slot="<id>"` structural anchors | Ad placements from resolved config | Tells ad-loader where to inject ad divs |
+| `data-slot="<id>"` structural anchors on all page types | Ad placements from resolved config | Tells ad-loader where to inject ad divs. Present on article pages, homepage, category pages, and shared pages (about, privacy, terms, contact, DMCA). |
 | `data-ad-placeholder` reserved boxes with fixed heights | Placement sizes | Prevents CLS when ads load in |
 | `/ads.txt` at domain root | Cascaded + dedup ads.txt entries | Required by ad network policies |
 | Static article HTML, sitemap, RSS, OG images | Markdown + templates | Standard static-site output |
@@ -89,7 +89,7 @@ The one thing Astro does **not** output: anything ad-network specific. No `data-
 
 ### Inline Config JSON
 
-`BaseLayout.astro` reads `configJson` from the resolved config and emits it inline (XSS-safe) in the `<head>`:
+`BaseLayout.astro` reads `inlineAdConfig` from the resolved config and emits it inline (XSS-safe) in the `<head>`:
 
 ```html
 <script>
@@ -98,7 +98,7 @@ The one thing Astro does **not** output: anything ad-network specific. No `data-
 <script src="/ad-loader.js" defer></script>
 ```
 
-The inline object is the **single source of truth** for the runtime. The separate `/c/<domain>.json` file and CDN mirror exist only as fallbacks (see below).
+The inline object is the **single source of truth** for the runtime. The separate `/m/<domain>.json` file and CDN mirror exist only as fallbacks (see below).
 
 ## Runtime (Browser)
 
@@ -110,9 +110,9 @@ ad-loader.js boots
         ▼
 Resolve config — 4-tier fallback
    Tier 1: window.__ATL_CONFIG__                 ← inline (normal path)
-   Tier 2: fetch /c/<domain>.json                ← same-origin static file
-   Tier 3: fetch <cdnBase>/c/<domain>.json       ← platform CDN
-   Tier 4: JSON.parse(localStorage._atl_cfg)     ← last known good
+   Tier 2: fetch /m/<domain>.json                ← same-origin static file
+   Tier 3: fetch <cdnBase>/m/<domain>.json       ← platform CDN
+   Tier 4: JSON.parse(localStorage._atl_m)       ← last known good
         │
         ▼
 For every <ad-placeholder> anchor in the page:

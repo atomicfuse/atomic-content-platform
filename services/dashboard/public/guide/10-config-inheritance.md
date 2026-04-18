@@ -51,19 +51,26 @@ Each override specifies **targets** — the union of groups and/or individual si
 
 ```yaml
 # overrides/config/test-ads-mock.yaml
+override_id: test-ads-mock
+name: "Test Ads (Mock Demo)"
+priority: 100
 targets:
   sites:
     - coolnews-atl
 ads_config:
-  placements:
-    - id: mock-banner
-      size: "728x90"
-      slot: "mock-slot-001"
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: top-banner
+      position: above-content
+      device: all
+      sizes:
+        desktop: [[728, 90], [970, 90]]
+        mobile: [[320, 50], [320, 100]]
 scripts:
-  head:
-    - id: mock-ad-loader
-      src: "/mock-ad-loader.js"
-      async: true
+  body_end:
+    - id: mock-ad-fill
+      src: "/mock-ad-fill.js"
 ```
 
 An override with `targets.groups: [entertainment]` applies to every site whose groups list includes `entertainment`. Both `targets.groups` and `targets.sites` are optional; specify one or both.
@@ -172,11 +179,12 @@ The special variable `{{domain}}` is always available.
 
 | Where | What you edit | Writes to |
 |-------|---------------|-----------|
-| **Settings -> General / Tracking / Theme / Legal** | `org.yaml` | `main` |
+| **Settings -> General** | `org.yaml` (identity fields) | `main` |
+| **Settings -> Config** | `org.yaml` (tracking, scripts, ads, theme, legal) | `main` |
 | **Settings -> Network** | `network.yaml` | `main` |
-| **Groups -> [group]** | `groups/<id>.yaml` | `main` |
-| **Overrides -> [id]** | `overrides/config/<id>.yaml` | `main` |
-| **Sites -> [domain] -> Config / Theme / Brief** | `sites/<domain>/site.yaml` | staging branch or `main` |
+| **Groups -> [group] -> Config** | `groups/<id>.yaml` | `main` |
+| **Overrides -> [id] -> Config** | `overrides/config/<id>.yaml` | `main` |
+| **Sites -> [domain] -> Content Agent** | `sites/<domain>/site.yaml` | staging branch or `main` |
 
 Every inherited field in the dashboard shows a small **source badge** — `From org`, `From override: test-ads-mock`, `From group: news`, or `Custom` — so you can always tell where a value comes from without reading YAML.
 
