@@ -9,7 +9,7 @@
  * 5. For each candidate (up to targetCount successes):
  *    a. Route: factual → Claude, general → OpenAI
  *    b. Generate article (cross-model fallback on failure)
- *    c. Image pipeline: analyze thumbnail → generate original image (DALL-E 3)
+ *    c. Image pipeline: generate image from article content (Gemini Flash)
  *    d. SEO metadata
  *    e. Quality scoring
  *    f. Build frontmatter + serialize to markdown
@@ -28,7 +28,6 @@ import { getContent, getSettings } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
-import { analyzeThumbnail } from "./image-pipeline/analyzer.js";
 import { generateImage } from "./image-pipeline/generator.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
@@ -441,18 +440,14 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — analyze thumbnail → generate original → fallback to source
+    // Step 4: Image pipeline — generate from article content → fallback to source thumbnail
     let pendingImageAsset: PendingAsset | undefined;
     let featuredImageUrl: string | undefined;
 
     try {
-      const analysis = item.thumbnail?.url
-        ? await analyzeThumbnail(item.thumbnail.url)
-        : null;
-
       const imageResult = await generateImage({
-        analysis,
         articleTitle: generated.title,
+        articleDescription: generated.description,
         articleSummary: item.summary,
         vertical: item.vertical?.name ?? "General",
       });
@@ -461,10 +456,11 @@ async function processItem(
         const assetPath = `assets/images/${slug}.png`;
         pendingImageAsset = { siteDomain, assetPath, data: imageResult.data };
         featuredImageUrl = `/assets/images/${slug}.png`;
+        console.log(`[agent] Generated image: ${assetPath}`);
       }
     } catch (imgErr) {
       const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-      console.warn(`[agent] Image generation failed: ${msg}`);
+      console.error(`[agent] Image generation failed: ${msg}`);
     }
 
     // Fallback: use source thumbnail URL if generation didn't produce an image

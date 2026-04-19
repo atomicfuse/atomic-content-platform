@@ -1,102 +1,72 @@
 /**
- * Image Generator — creates ORIGINAL images using DALL-E 3.
+ * Image Generator — creates article images using Gemini Flash.
  *
- * HARD REQUIREMENT: Never copy or directly use source thumbnails.
- * The analysis from the analyzer is used ONLY as inspiration for
- * generating a completely new, original image.
+ * Builds a prompt from article title, description, and summary,
+ * then generates an editorial illustration via Gemini.
+ * Falls back gracefully — image generation is non-critical.
  */
 
-import OpenAI from "openai";
-import type { ImageAnalysis, ImageGenerationResult } from "./types.js";
-
-let openaiClient: OpenAI | null = null;
-
-function getClient(): OpenAI {
-  if (!openaiClient) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is required for image generation");
-    }
-    openaiClient = new OpenAI({ apiKey });
-  }
-  return openaiClient;
-}
+import { generateImageWithGemini } from "../../../lib/gemini.js";
+import type { ImageGenerationResult } from "./types.js";
 
 export interface ImageGenInput {
-  /** Visual analysis of the source thumbnail (null if no thumbnail). */
-  analysis: ImageAnalysis | null;
   articleTitle: string;
+  articleDescription: string;
   articleSummary: string;
   vertical: string;
 }
 
 /**
- * Build a DALL-E prompt from analysis + article context.
- * Creates an original image — never copies the source.
+ * Build an image generation prompt from article content.
+ * Focuses on the topic and mood rather than sensitive specifics.
  */
-function buildDallePrompt(input: ImageGenInput): string {
-  const parts: string[] = [];
+function buildImagePrompt(input: ImageGenInput): string {
+  const topicSummary = input.articleDescription || input.articleSummary.slice(0, 200);
 
-  parts.push(`Create a professional, original editorial illustration for an article titled "${input.articleTitle}".`);
-
-  if (input.analysis) {
-    parts.push(`Style inspiration: ${input.analysis.style} aesthetic with a ${input.analysis.mood} mood.`);
-    parts.push(`Color palette: ${input.analysis.palette.join(", ")}.`);
-    parts.push(`Subject matter: ${input.analysis.subject}.`);
-  } else {
-    parts.push(`The article is about: ${input.articleSummary.slice(0, 200)}.`);
-    parts.push(`Category: ${input.vertical}.`);
-  }
-
-  parts.push("The image should be clean, modern, and suitable for a professional news/content website.");
-  parts.push("Do NOT include any text, watermarks, or logos in the image.");
-
-  return parts.join(" ");
+  return [
+    `Create a professional editorial illustration for a ${input.vertical} article.`,
+    `Article title: "${input.articleTitle}".`,
+    `Topic: ${topicSummary}.`,
+    `Style: clean, modern, professional hero image for a news/content website.`,
+    `Wide landscape format (16:9). Vivid colors, editorial quality.`,
+    `Do NOT include any text, watermarks, logos, or identifiable real people.`,
+  ].join(" ");
 }
 
 /**
- * Generate alt text for the image.
+ * Generate alt text from article context.
  */
 function generateAltText(input: ImageGenInput): string {
-  if (input.analysis) {
-    return `Illustration of ${input.analysis.subject} for article: ${input.articleTitle}`;
-  }
-  return `Editorial illustration for article: ${input.articleTitle}`;
+  return `Editorial illustration for: ${input.articleTitle}`;
 }
 
 /**
- * Generate an original image using DALL-E 3.
+ * Generate an article image using Gemini Flash.
  * Returns null on failure — image generation is non-critical.
  */
 export async function generateImage(input: ImageGenInput): Promise<ImageGenerationResult | null> {
-  try {
-    const prompt = buildDallePrompt(input);
-    console.log(`[img-gen] Generating image for: "${input.articleTitle}"`);
-
-    const client = getClient();
-    const response = await client.images.generate({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1792x1024",
-      quality: "standard",
-      response_format: "b64_json",
-    });
-
-    const b64 = response.data?.[0]?.b64_json;
-    if (!b64) {
-      console.warn("[img-gen] No image data in response");
-      return null;
-    }
-
-    return {
-      data: Buffer.from(b64, "base64"),
-      altText: generateAltText(input),
-      prompt,
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(`[img-gen] Image generation failed (non-critical): ${message}`);
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("[img-gen] GEMINI_API_KEY not set — skipping image generation");
     return null;
   }
+
+  const prompt = buildImagePrompt(input);
+  console.log(`[img-gen] Generating image for: "${input.articleTitle}"`);
+  console.log(`[img-gen] Prompt: ${prompt.slice(0, 150)}...`);
+
+  const imageData = await generateImageWithGemini(apiKey, prompt);
+
+  if (!imageData) {
+    console.warn(`[img-gen] Gemini returned no image for: "${input.articleTitle}"`);
+    return null;
+  }
+
+  console.log(`[img-gen] Image generated successfully (${(imageData.length / 1024).toFixed(0)} KB)`);
+
+  return {
+    data: imageData,
+    altText: generateAltText(input),
+    prompt,
+  };
 }

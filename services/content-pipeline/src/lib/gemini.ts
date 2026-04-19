@@ -16,6 +16,7 @@ export async function generateImageWithGemini(
 ): Promise<Buffer | null> {
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
+    console.log(`[gemini] POST ${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent`);
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -23,10 +24,13 @@ export async function generateImageWithGemini(
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
       }),
+      signal: AbortSignal.timeout(60_000), // 60s timeout for image generation
     });
 
     if (!response.ok) {
-      console.warn(`[gemini] Image generation failed: ${response.status} ${response.statusText}`);
+      const errorBody = await response.text().catch(() => "");
+      console.error(`[gemini] Image generation failed: ${response.status} ${response.statusText}`);
+      console.error(`[gemini] Response: ${errorBody.slice(0, 500)}`);
       return null;
     }
 
