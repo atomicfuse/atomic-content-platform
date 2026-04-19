@@ -94,7 +94,16 @@ export default async function SiteDetailPage({
           ) : null
         }
         contentTab={
-          <ContentTab articles={articles} domain={decodedDomain} stagingBranch={site.staging_branch} previewUrl={site.preview_url ?? undefined} />
+          <ContentTab
+            articles={articles}
+            domain={decodedDomain}
+            stagingBranch={site.staging_branch}
+            previewUrl={
+              site.staging_branch && site.pages_project
+                ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+                : site.preview_url ?? undefined
+            }
+          />
         }
         identityTab={
           <ContentAgentTab
