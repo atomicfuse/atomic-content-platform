@@ -36,8 +36,13 @@ export function StagingTab({
   currentLogoPath,
   currentFaviconPath,
 }: StagingTabProps): React.ReactElement {
-  const [currentPreviewUrl, setCurrentPreviewUrl] = useState(previewUrl);
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
+
+  // Build stable staging URL from branch + pages project (not the deployment-specific preview_url)
+  const currentPreviewUrl =
+    currentStagingBranch && pagesProject
+      ? `https://${currentStagingBranch.replace(/\//g, "-")}.${pagesProject}.pages.dev`
+      : previewUrl;
   const [isRefreshing, startRefresh] = useTransition();
   const [isSaving, startSave] = useTransition();
   const [isGoingLive, startGoLive] = useTransition();
@@ -61,13 +66,8 @@ export function StagingTab({
   function handleRefreshPreview(): void {
     startRefresh(async () => {
       try {
-        const url = await refreshPreviewUrl(domain);
-        if (url) {
-          setCurrentPreviewUrl(url);
-          toast("Preview URL refreshed", "success");
-        } else {
-          toast("No preview deployment found", "info");
-        }
+        await refreshPreviewUrl(domain);
+        toast("Preview URL refreshed", "success");
       } catch {
         toast("Failed to refresh preview URL", "error");
       }
