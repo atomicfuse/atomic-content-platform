@@ -95,8 +95,9 @@ export async function getContent(params: GetContentParams): Promise<ContentItem[
   const response = await fetchWithRetry(url.toString());
   const body = (await response.json()) as ContentApiResponse;
 
-  console.log(`[api-client] Received ${body.data.length} items (total: ${body.total})`);
-  return body.data;
+  const items = body.items ?? [];
+  console.log(`[api-client] Received ${items.length} items (total: ${body.total_count ?? 0})`);
+  return items;
 }
 
 /**

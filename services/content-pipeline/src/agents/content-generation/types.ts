@@ -30,10 +30,12 @@ export interface ContentItem {
 
 /** Response shape from GET /api/content. */
 export interface ContentApiResponse {
-  data: ContentItem[];
-  total: number;
+  items: ContentItem[];
+  total_count: number;
+  total_returned: number;
   page: number;
   page_size: number;
+  total_pages: number;
 }
 
 /** Aggregator settings from GET /api/settings. */
