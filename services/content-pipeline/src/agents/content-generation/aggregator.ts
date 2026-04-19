@@ -34,8 +34,8 @@ export interface AggregatorResponse {
 }
 
 export interface AggregatorQueryParams {
-  vertical?: string;
-  audience_type?: string;
+  vertical_id?: string;
+  audience_type_id?: string;
   content_format?: string;
   freshness?: string;
   source_quality?: string;
@@ -48,28 +48,25 @@ export interface AggregatorQueryParams {
 // Query building
 // ---------------------------------------------------------------------------
 
-/** Valid verticals accepted by the Content Aggregator API. */
-const VALID_VERTICALS = new Set([
-  "Tech", "Travel", "News", "Sport", "Lifestyle",
-  "Entertainment", "Food & Drink", "Animals", "Science",
-]);
-
 /** Topics that suggest news/trending content → prefer "Today" freshness. */
 const NEWS_TOPICS = ["news", "breaking", "trending", "politics", "current events"];
 
 /**
  * Map a site brief to aggregator API query parameters.
+ * Uses vertical_id and audience_type_id (Content Aggregator v2 IDs).
  */
 export function buildQueryParams(brief: SiteBrief, limit?: number): AggregatorQueryParams {
   const params: AggregatorQueryParams = {};
 
-  if (brief.vertical && VALID_VERTICALS.has(brief.vertical)) {
-    params.vertical = brief.vertical;
+  if (brief.vertical_id) {
+    params.vertical_id = brief.vertical_id;
   } else if (brief.vertical) {
-    console.warn(`[aggregator] Unknown vertical "${brief.vertical}" — omitting from query`);
+    console.warn(`[aggregator] No vertical_id set, vertical name "${brief.vertical}" cannot be used as query param — omitting`);
   }
-  if (brief.audience_type && brief.audience_type.toLowerCase() !== "any") {
-    params.audience_type = brief.audience_type;
+  // Prefer audience_type_ids array; fall back to legacy singular audience_type_id
+  const audienceId = brief.audience_type_ids?.[0] ?? brief.audience_type_id;
+  if (audienceId) {
+    params.audience_type_id = audienceId;
   }
 
   params.language = brief.language ?? "EN";
@@ -213,16 +210,16 @@ export async function fetchWithFallback(
     params: { ...baseParams, content_format: undefined, freshness: "This week", source_quality: "Medium" },
   });
 
-  // Step 5: drop audience_type
+  // Step 5: drop audience_type_id
   paramChain.push({
-    label: "drop audience_type",
-    params: { ...baseParams, content_format: undefined, freshness: "This week", source_quality: undefined, audience_type: undefined },
+    label: "drop audience_type_id",
+    params: { ...baseParams, content_format: undefined, freshness: "This week", source_quality: undefined, audience_type_id: undefined },
   });
 
-  // Step 6: minimal — only vertical + language + limit
+  // Step 6: minimal — only vertical_id + language + limit
   paramChain.push({
-    label: "minimal (vertical + language only)",
-    params: { vertical: baseParams.vertical, language: baseParams.language, limit: baseParams.limit },
+    label: "minimal (vertical_id + language only)",
+    params: { vertical_id: baseParams.vertical_id, language: baseParams.language, limit: baseParams.limit },
   });
 
   for (const step of paramChain) {
@@ -251,8 +248,8 @@ export async function fetchWithFallback(
   }
 
   console.log("[aggregator] No articles found after all fallbacks", {
-    vertical: baseParams.vertical,
-    audience_type: baseParams.audience_type,
+    vertical_id: baseParams.vertical_id,
+    audience_type_id: baseParams.audience_type_id,
     language: baseParams.language,
   });
   return [];

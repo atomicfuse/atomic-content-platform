@@ -65,7 +65,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.siteTagline !== undefined) existing.site_tagline = configUpdates.siteTagline || null;
 
       const brief = (existing.brief ?? {}) as Record<string, unknown>;
-      if (configUpdates.audience !== undefined) brief.audience = configUpdates.audience;
+      if (configUpdates.audiences !== undefined) brief.audiences = configUpdates.audiences;
+      if (configUpdates.audienceIds !== undefined) brief.audience_type_ids = configUpdates.audienceIds;
       if (configUpdates.tone !== undefined) brief.tone = configUpdates.tone;
       if (configUpdates.topics !== undefined) brief.topics = configUpdates.topics;
       if (configUpdates.contentGuidelines !== undefined) {

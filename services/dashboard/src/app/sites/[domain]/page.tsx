@@ -33,6 +33,7 @@ export default async function SiteDetailPage({
 
   const brief = siteConfig?.brief as {
     audience: string;
+    audiences?: string[];
     tone: string;
     topics: string[];
     articles_per_day?: number;
@@ -58,7 +59,7 @@ export default async function SiteDetailPage({
   // Dual-read: prefer articles_per_day; fall back to legacy articles_per_week.
   const normalizedBrief = brief
     ? {
-        audience: brief.audience,
+        audience: brief.audiences?.join(", ") ?? brief.audience ?? "",
         tone: brief.tone,
         topics: brief.topics,
         articles_per_day:

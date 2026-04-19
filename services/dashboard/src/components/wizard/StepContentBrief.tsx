@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { suggestTopics } from "@/actions/wizard";
+import { useAudiences } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -31,6 +33,7 @@ export function StepContentBrief({
   onNext,
   onBack,
 }: StepContentBriefProps): React.ReactElement {
+  const { audiences } = useAudiences();
   const [topicInput, setTopicInput] = useState("");
   const [isSuggesting, startSuggest] = useTransition();
   const [didAutoSuggest, setDidAutoSuggest] = useState(false);
@@ -46,7 +49,7 @@ export function StepContentBrief({
             siteTagline: data.siteTagline || undefined,
             vertical: data.vertical,
             company: data.company || undefined,
-            audience: data.audience || undefined,
+            audience: data.audiences.join(", ") || undefined,
             tone: data.tone || undefined,
             contentGuidelines: data.contentGuidelines || undefined,
           });
@@ -101,7 +104,7 @@ export function StepContentBrief({
           siteTagline: data.siteTagline || undefined,
           vertical: data.vertical,
           company: data.company || undefined,
-          audience: data.audience || undefined,
+          audience: data.audiences.join(", ") || undefined,
           tone: data.tone || undefined,
           contentGuidelines: data.contentGuidelines || undefined,
         });
@@ -119,12 +122,54 @@ export function StepContentBrief({
       <h2 className="text-xl font-bold">Content Brief</h2>
 
       <div className="grid grid-cols-2 gap-4">
-        <Input
-          label="Target Audience"
-          placeholder="e.g. Young adults 25-40"
-          value={data.audience}
-          onChange={(e): void => onChange({ audience: e.target.value })}
-        />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Target Audiences
+          </label>
+          {data.audienceIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {data.audienceIds.map((id) => {
+                const name = audiences.find((a) => a.id === id)?.name ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={(): void => {
+                        onChange({
+                          audienceIds: data.audienceIds.filter((x) => x !== id),
+                          audiences: data.audiences.filter((_, i) => data.audienceIds[i] !== id),
+                        });
+                      }}
+                      className="hover:text-red-400 transition-colors"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <Select
+            options={audiences
+              .filter((a) => !data.audienceIds.includes(a.id))
+              .map((a) => ({ value: a.id, label: a.name }))}
+            placeholder="Add audience..."
+            value=""
+            onChange={(e): void => {
+              const id = e.target.value;
+              if (!id) return;
+              const name = audiences.find((a) => a.id === id)?.name ?? "";
+              onChange({
+                audienceIds: [...data.audienceIds, id],
+                audiences: [...data.audiences, name],
+              });
+            }}
+          />
+        </div>
         <Input
           label="Tone"
           placeholder="e.g. Informative, friendly"

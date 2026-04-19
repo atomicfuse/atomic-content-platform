@@ -1,15 +1,6 @@
 export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live" | "WordPress";
 export type Company = "ATL" | "NGC";
-export type Vertical =
-  | "Lifestyle"
-  | "Travel"
-  | "Entertainment"
-  | "Animals"
-  | "Science"
-  | "Food & Drink"
-  | "News"
-  | "Conspiracy"
-  | "Other";
+export type Vertical = string;
 
 export interface DashboardSiteEntry {
   domain: string;
@@ -87,11 +78,17 @@ export interface WizardFormData {
   siteName: string;
   siteTagline: string;
   company: Company;
+  /** Vertical display name. */
   vertical: Vertical;
+  /** Vertical ID from the Content Aggregator API. */
+  verticalId: string;
   /** Group IDs this site belongs to (merged left-to-right). */
   groups: string[];
   themeBase: "modern" | "editorial" | "bold" | "classic";
-  audience: string;
+  /** Audience display names. */
+  audiences: string[];
+  /** Audience type IDs from the Content Aggregator API. */
+  audienceIds: string[];
   tone: string;
   topics: string[];
   articlesPerDay: number;

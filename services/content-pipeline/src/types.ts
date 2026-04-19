@@ -47,7 +47,10 @@ export interface PublishSchedule {
 }
 
 export interface SiteBrief {
+  /** Display audience string (joined from audiences array or legacy single value). */
   audience: string;
+  /** Array of audience names — preferred over singular audience. */
+  audiences?: string[];
   tone: string;
   article_types: Record<string, number>;
   topics: string[];
@@ -55,8 +58,14 @@ export interface SiteBrief {
   content_guidelines: string | string[];
   review_percentage: number;
   schedule: PublishSchedule;
-  vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
-  audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+  vertical?: string;
+  /** Content Aggregator vertical ID — preferred over name for API queries. */
+  vertical_id?: string;
+  audience_type?: string;
+  /** Content Aggregator audience type IDs — preferred over name for API queries. */
+  audience_type_ids?: string[];
+  /** @deprecated Single audience type ID — use audience_type_ids instead. */
+  audience_type_id?: string;
   language?: string;
   quality_threshold?: number;
   quality_weights?: QualityWeights;

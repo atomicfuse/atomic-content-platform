@@ -33,11 +33,17 @@ export async function readSiteBrief(
     throw new Error(`Site ${domain} has no content brief defined`);
   }
 
+  // Normalize: ensure audience string is populated from audiences array
+  const brief = config.brief;
+  if (!brief.audience && brief.audiences?.length) {
+    brief.audience = brief.audiences.join(", ");
+  }
+
   return {
     domain: config.domain,
     siteName: config.site_name,
     group: config.group,
-    brief: config.brief,
+    brief,
   };
 }
 
