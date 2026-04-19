@@ -645,7 +645,6 @@ export async function runContentGeneration(
     const [items, settings] = await Promise.all([
       getContent({
         limit: fetchLimit,
-        vertical: brief.vertical,
         language: brief.language ?? "EN",
       }),
       getSettings(),

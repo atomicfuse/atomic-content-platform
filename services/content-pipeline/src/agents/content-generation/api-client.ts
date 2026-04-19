@@ -17,11 +17,13 @@ const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
 function getBaseUrl(): string {
-  return (
+  const raw =
     process.env.CONTENT_API_BASE_URL ??
     process.env.CONTENT_AGGREGATOR_URL ??
-    DEFAULT_BASE_URL
-  );
+    DEFAULT_BASE_URL;
+  // Strip trailing /api or /api/ — CONTENT_API_BASE_URL often includes it,
+  // but all callers already prepend /api/ in their paths.
+  return raw.replace(/\/api\/?$/, "");
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +68,6 @@ export interface GetContentParams {
   enriched?: boolean;
   status?: string;
   content_type?: string;
-  vertical?: string;
   language?: string;
 }
 
@@ -83,9 +84,6 @@ export async function getContent(params: GetContentParams): Promise<ContentItem[
   url.searchParams.set("content_type", params.content_type ?? "article");
   url.searchParams.set("page_size", String(params.limit));
 
-  if (params.vertical) {
-    url.searchParams.set("vertical", params.vertical);
-  }
   if (params.language) {
     url.searchParams.set("language", params.language);
   }
