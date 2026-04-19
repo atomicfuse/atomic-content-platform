@@ -378,6 +378,7 @@ export async function listDeployments(
     url: string;
     environment: string;
     created_on: string;
+    aliases?: string[];
     deployment_trigger?: { metadata?: { branch?: string } };
   }>
 > {
@@ -392,6 +393,7 @@ export async function listDeployments(
       url: string;
       environment: string;
       created_on: string;
+      aliases?: string[];
       deployment_trigger?: { metadata?: { branch?: string } };
     }>
   >;

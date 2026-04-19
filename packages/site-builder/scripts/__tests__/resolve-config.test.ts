@@ -31,12 +31,6 @@ describe("resolveConfig", () => {
 
     // group sets interstitial = true, org had false
     expect(config.ads_config.interstitial).toBe(true);
-
-    // group sets in_content_slots = 3, org had 2
-    expect(config.ads_config.in_content_slots).toBe(3);
-
-    // group sets sidebar = true, org had false
-    expect(config.ads_config.sidebar).toBe(true);
   });
 
   // 3. Site override — site value replaces group value
@@ -283,10 +277,10 @@ describe("resolveConfig", () => {
     const config = await resolveConfig(FIXTURES, "test-site.example.com");
 
     expect(config.inlineAdConfig).toBeDefined();
-    expect(config.inlineAdConfig!.domain).toBe("test-site.example.com");
-    expect(config.inlineAdConfig!.groups).toEqual(["test-group"]);
-    expect(config.inlineAdConfig!.applied_overrides).toEqual([]);
-    expect(config.inlineAdConfig!.generated_at).toBeDefined();
+    expect(config.inlineAdConfig.domain).toBe("test-site.example.com");
+    expect(config.inlineAdConfig.groups).toEqual(["test-group"]);
+    expect(config.inlineAdConfig.applied_overrides).toEqual([]);
+    expect(config.inlineAdConfig.generated_at).toBeDefined();
   });
 });
 
@@ -427,7 +421,7 @@ describe("resolveConfig — integration with real seed data", () => {
 
     // Inline ad config is always produced
     expect(config.inlineAdConfig).toBeDefined();
-    expect(config.inlineAdConfig!.domain).toBe("coolnews-atl");
+    expect(config.inlineAdConfig.domain).toBe("coolnews-atl");
 
     // Support email pattern resolves against the site domain.
     expect(config.support_email).toBe("contact@coolnews-atl");

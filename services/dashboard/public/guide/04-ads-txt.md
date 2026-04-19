@@ -77,36 +77,52 @@ ads_txt: []    # empty — removes all inherited ads.txt entries for this site
 
 ## Advertising Configuration
 
-Beyond `ads.txt`, the `ads_config` object controls ad display behavior:
+Beyond `ads.txt`, the `ads_config` object controls ad display behavior. Ads render on **all page types** — articles, homepage, category pages, and shared pages (about, privacy, terms, contact, DMCA).
 
 ```yaml
 ads_config:
-  primary_advertiser: "google"
   interstitial: true        # full-page ads between page loads
-  layout: "standard"        # or "aggressive"
-  in_content_slots: 3       # ads between paragraphs
-  sidebar: true             # sidebar ad placements
+  layout: "standard"        # or "high-density"
   ad_placements:
-    - id: "above-content"
+    - id: "top-banner"
       position: "above-content"
       device: "all"
       sizes:
         desktop: [[728, 90], [970, 250]]
         mobile: [[320, 50], [300, 250]]
-    - id: "after-paragraph-3"
+    - id: "in-content-1"
       position: "after-paragraph-3"
       device: "all"
       sizes:
         desktop: [[300, 250], [336, 280]]
         mobile: [[300, 250]]
-    - id: "sticky-bottom"
+    - id: "sidebar-sticky"
+      position: "sidebar"
+      device: "desktop"
+      sizes:
+        desktop: [[300, 600], [160, 600], [300, 250]]
+    - id: "homepage-top-banner"
+      position: "homepage-top"
+      device: "all"
+      sizes:
+        desktop: [[970, 90], [728, 90]]
+        mobile: [[320, 50]]
+    - id: "category-banner"
+      position: "category-top"
+      device: "all"
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+    - id: "mobile-anchor"
       position: "sticky-bottom"
       device: "mobile"
       sizes:
         mobile: [[320, 50]]
 ```
 
-These settings follow the same org -> groups -> overrides -> site merge hierarchy.
+Available positions: `above-content`, `after-paragraph-1` through `after-paragraph-8`, `below-content`, `sidebar`, `sticky-bottom`, `homepage-top`, `homepage-mid`, `category-top`.
+
+These settings follow the same org -> groups -> overrides -> site merge hierarchy. Ad placements use **replacement** semantics — a child layer that defines `ad_placements` replaces the parent's list entirely.
 
 ## Script Injection for Ads
 

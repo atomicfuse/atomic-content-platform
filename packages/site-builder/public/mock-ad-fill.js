@@ -66,6 +66,28 @@
       mockBrand: 'Download Our App',
       mockCta: 'Install Free'
     },
+    // Homepage / category placements
+    'homepage-top-banner': {
+      label: 'HOMEPAGE TOP',
+      color: '#1565C0',
+      bg: '#E3F2FD',
+      mockBrand: 'Featured Sponsor',
+      mockCta: 'Visit Site →'
+    },
+    'category-banner': {
+      label: 'CATEGORY TOP',
+      color: '#00838F',
+      bg: '#E0F7FA',
+      mockBrand: 'Category Sponsor',
+      mockCta: 'Discover More'
+    },
+    'homepage-mid': {
+      label: 'HOMEPAGE MID',
+      color: '#283593',
+      bg: '#E8EAF6',
+      mockBrand: 'Mid-Page Feature',
+      mockCta: 'Learn More'
+    },
     'taboola-below': {
       label: 'SPONSORED CONTENT',
       color: '#37474f',

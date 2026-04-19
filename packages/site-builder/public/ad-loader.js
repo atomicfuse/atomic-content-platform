@@ -112,6 +112,15 @@
     } else if (p.position === 'below-content') {
       var bc = document.querySelector('[data-slot="below-content"]');
       if (bc) bc.appendChild(slot);
+    } else if (p.position === 'homepage-top') {
+      var ht = document.querySelector('[data-slot="homepage-top"]');
+      if (ht) attachToSlot(ht, slot);
+    } else if (p.position === 'homepage-mid') {
+      var hm = document.querySelector('[data-slot="homepage-mid"]');
+      if (hm) attachToSlot(hm, slot);
+    } else if (p.position === 'category-top') {
+      var ct = document.querySelector('[data-slot="category-top"]');
+      if (ct) attachToSlot(ct, slot);
     }
   });
 

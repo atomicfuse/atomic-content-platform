@@ -4,18 +4,65 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-import { TrackingForm } from "@/components/settings/TrackingForm";
-import { ScriptsEditor } from "@/components/settings/ScriptsEditor";
-import { ScriptVariablesEditor } from "@/components/settings/ScriptVariablesEditor";
-import { AdsConfigForm } from "@/components/settings/AdsConfigForm";
-import { LegalForm } from "@/components/settings/LegalForm";
 import { GeneralForm } from "@/components/settings/GeneralForm";
-import { AdsTxtEditor } from "@/components/settings/AdsTxtEditor";
-import { PlacementPreview } from "@/components/shared/PlacementPreview";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
+import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
+import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 
 interface OrgConfig {
   [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
+// Normalizers
+// ---------------------------------------------------------------------------
+
+function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedConfigFields["tracking"] {
+  return {
+    ga4: (raw?.ga4 as string) ?? null,
+    gtm: (raw?.gtm as string) ?? null,
+    google_ads: (raw?.google_ads as string) ?? null,
+    facebook_pixel: (raw?.facebook_pixel as string) ?? null,
+    custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
+  };
+}
+
+function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConfigFields["scripts"] {
+  function normalizeEntries(entries: unknown): UnifiedConfigFields["scripts"]["head"] {
+    if (!Array.isArray(entries)) return [];
+    return entries.map((e: Record<string, unknown>) => ({
+      id: (e.id as string) ?? "",
+      src: (e.src as string) ?? undefined,
+      inline: (e.inline as string) ?? (e.content as string) ?? undefined,
+      async: (e.async as boolean) ?? undefined,
+    }));
+  }
+  return {
+    head: normalizeEntries(raw?.head),
+    body_start: normalizeEntries(raw?.body_start),
+    body_end: normalizeEntries(raw?.body_end),
+  };
+}
+
+function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
+  const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
+  return {
+    interstitial: (raw?.interstitial as boolean) ?? false,
+    layout: (raw?.layout as string) ?? "standard",
+    ad_placements: placements.map((p: Record<string, unknown>) => {
+      const rawSizes = p.sizes;
+      let sizes: { desktop?: number[][]; mobile?: number[][] } = {};
+      if (rawSizes && typeof rawSizes === "object" && !Array.isArray(rawSizes)) {
+        sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
+      }
+      return {
+        id: (p.id as string) ?? "",
+        position: (p.position as string) ?? "",
+        device: (p.device ?? "all") as "all" | "desktop" | "mobile",
+        sizes,
+      };
+    }),
+  };
 }
 
 export default function OrgSettingsPage(): React.ReactElement {
@@ -54,11 +101,6 @@ export default function OrgSettingsPage(): React.ReactElement {
     void fetchConfig();
   }, [fetchConfig]);
 
-  function updateField(key: string, value: unknown): void {
-    if (!config) return;
-    setConfig({ ...config, [key]: value });
-  }
-
   async function save(): Promise<void> {
     if (!config) return;
     setSaving(true);
@@ -93,6 +135,18 @@ export default function OrgSettingsPage(): React.ReactElement {
 
   if (!config) return <div />;
 
+  // Build config for UnifiedConfigForm
+  const formConfig: Partial<UnifiedConfigFields> = {
+    tracking: normalizeTracking(config.tracking as Record<string, unknown> | undefined),
+    scripts: normalizeScripts(config.scripts as Record<string, unknown> | undefined),
+    scripts_vars: ((config.scripts_vars ?? config.script_variables ?? {}) as Record<string, string>),
+    ads_config: normalizeAdsConfig((config.ads_config ?? config.ads) as Record<string, unknown> | undefined),
+    ad_placeholder_heights: config.ad_placeholder_heights as UnifiedConfigFields["ad_placeholder_heights"] | undefined,
+    ads_txt: Array.isArray(config.ads_txt) ? (config.ads_txt as string[]) : [],
+    theme: (config.theme ?? {}) as Record<string, unknown>,
+    legal: (config.legal ?? {}) as Record<string, string>,
+  };
+
   const tabs = [
     {
       id: "general",
@@ -118,111 +172,16 @@ export default function OrgSettingsPage(): React.ReactElement {
       ),
     },
     {
-      id: "tracking",
-      label: "Tracking",
+      id: "config",
+      label: "Config",
       content: (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--text-muted)]">
-            These are org-wide defaults. Groups, overrides, and sites can override.
-          </p>
-          <TrackingForm
-            value={
-              (config.tracking ?? {
-                ga4: null,
-                gtm: null,
-                google_ads: null,
-                facebook_pixel: null,
-                custom: [],
-              }) as unknown as Parameters<typeof TrackingForm>[0]["value"]
-            }
-            onChange={(v): void => updateField("tracking", v)}
-          />
-        </div>
-      ),
-    },
-    {
-      id: "scripts",
-      label: "Scripts",
-      content: (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--text-muted)]">
-            These scripts load on EVERY site unless overridden by a group,
-            override, or site.
-          </p>
-          <ScriptsEditor
-            value={
-              (config.scripts ?? {
-                head: [],
-                body_start: [],
-                body_end: [],
-              }) as unknown as Parameters<typeof ScriptsEditor>[0]["value"]
-            }
-            onChange={(v): void => updateField("scripts", v)}
-          />
-        </div>
-      ),
-    },
-    {
-      id: "script-variables",
-      label: "Script Variables",
-      content: (
-        <ScriptVariablesEditor
-          value={
-            (config.scripts_vars ?? config.script_variables ?? {}) as Record<
-              string,
-              string
-            >
-          }
-          onChange={(v: Record<string, string>): void =>
-            updateField("scripts_vars", v)
-          }
-        />
-      ),
-    },
-    {
-      id: "ads",
-      label: "Ads Config",
-      content: (() => {
-        const adsVal = (config.ads_config ?? config.ads ?? {
-          interstitial: false,
-          layout: "standard",
-          ad_placements: [],
-        }) as unknown as Parameters<typeof AdsConfigForm>[0]["value"];
-        return (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <AdsConfigForm
-              value={adsVal}
-              onChange={(v): void => updateField("ads_config", v)}
-            />
-            <PlacementPreview placements={adsVal.ad_placements ?? []} />
-          </div>
-        );
-      })(),
-    },
-    {
-      id: "ads-txt",
-      label: "ads.txt",
-      content: (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--text-muted)]">
-            These entries appear in EVERY site&apos;s ads.txt. Group, override,
-            and site entries are added on top.
-          </p>
-          <AdsTxtEditor
-            value={(config.ads_txt ?? []) as string[]}
-            onChange={(v): void => updateField("ads_txt", v)}
-            scopeLabel="organization"
-          />
-        </div>
-      ),
-    },
-    {
-      id: "legal",
-      label: "Legal",
-      content: (
-        <LegalForm
-          value={(config.legal ?? {}) as Record<string, string>}
-          onChange={(v: Record<string, string>): void => updateField("legal", v)}
+        <UnifiedConfigForm
+          config={formConfig}
+          onChange={(updated): void => {
+            if (!config) return;
+            setConfig({ ...config, ...updated } as OrgConfig);
+          }}
+          mode="org"
         />
       ),
     },

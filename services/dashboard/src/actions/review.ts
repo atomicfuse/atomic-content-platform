@@ -31,7 +31,11 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
 
   for (const site of index.sites) {
     const branch = site.staging_branch ?? undefined;
-    const stagingBaseUrl = site.preview_url ?? null;
+    // Build stable staging URL from branch + pages project (not deployment-specific preview_url)
+    const stagingBaseUrl =
+      site.staging_branch && site.pages_project
+        ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+        : site.preview_url ?? null;
 
     const articles = await readArticles(site.domain, branch);
     for (const article of articles) {

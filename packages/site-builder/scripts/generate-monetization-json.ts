@@ -57,7 +57,7 @@ export async function generateMonetizationJson(
     options.siteDomain,
   );
 
-  const json = resolved.inlineAdConfig!;
+  const json = resolved.inlineAdConfig;
   const outputPath = join(options.outputDir, `${options.siteDomain}.json`);
   await mkdir(dirname(outputPath), { recursive: true });
   await writeFile(outputPath, JSON.stringify(json, null, 2), "utf-8");

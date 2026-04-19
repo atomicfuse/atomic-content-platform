@@ -28,8 +28,6 @@ scripts_vars:
 
 ads_config:
   interstitial: true
-  in_content_slots: 3
-  sidebar: true
   layout: standard
   ad_placements:
     - id: top-banner

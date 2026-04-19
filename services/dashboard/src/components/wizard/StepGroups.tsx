@@ -7,7 +7,7 @@ import type { WizardFormData } from "@/types/dashboard";
 interface GroupSummary {
   group_id: string;
   name: string;
-  ads_config?: { primary_advertiser?: string; layout?: string };
+  ads_config?: { layout?: string };
 }
 
 interface StepGroupsProps {
@@ -108,12 +108,9 @@ export function StepGroups({
                     </span>
                   )}
                 </div>
-                {group.ads_config?.primary_advertiser && (
+                {group.ads_config?.layout && (
                   <p className="mt-1 text-xs text-gray-500">
-                    Ad network: {group.ads_config.primary_advertiser}
-                    {group.ads_config.layout
-                      ? ` \u00B7 Layout: ${group.ads_config.layout}`
-                      : ""}
+                    Layout: {group.ads_config.layout}
                   </p>
                 )}
               </button>

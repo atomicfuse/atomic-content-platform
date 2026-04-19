@@ -467,36 +467,34 @@ function applyOverride(
     }
   }
 
-  // Override scripts: replace entire arrays
+  // Override scripts: REPLACE entire scripts object.
+  // If override defines scripts, all positions are replaced.
+  // Undefined positions default to empty (not inherited from parent).
   if (override.scripts) {
     newScripts = {
-      head: override.scripts.head !== undefined
+      head: override.scripts.head
         ? normaliseScriptArray(override.scripts.head as unknown as unknown[])
-        : scripts.head,
-      body_start: override.scripts.body_start !== undefined
+        : [],
+      body_start: override.scripts.body_start
         ? normaliseScriptArray(override.scripts.body_start as unknown as unknown[])
-        : scripts.body_start,
-      body_end: override.scripts.body_end !== undefined
+        : [],
+      body_end: override.scripts.body_end
         ? normaliseScriptArray(override.scripts.body_end as unknown as unknown[])
-        : scripts.body_end,
+        : [],
     };
   }
 
-  // Override ads_config: replace entirely
+  // Override ads_config: REPLACE entirely (no fields inherited from parent).
   if (override.ads_config) {
-    const overrideAds = override.ads_config as Record<string, unknown>;
+    const overrideAds = override.ads_config;
+    const rawPlacements = (overrideAds as Record<string, unknown>)["ad_placements"];
     newAdsConfig = {
-      ...adsConfig,
-      ...overrideAds,
-    } as AdsConfig;
-
-    // Normalize placements if present
-    if (overrideAds["ad_placements"] && Array.isArray(overrideAds["ad_placements"])) {
-      newAdsConfig = {
-        ...newAdsConfig,
-        ad_placements: normaliseAdPlacements(overrideAds["ad_placements"] as unknown[]),
-      };
-    }
+      interstitial: overrideAds.interstitial ?? false,
+      layout: overrideAds.layout ?? "standard",
+      ad_placements: rawPlacements && Array.isArray(rawPlacements)
+        ? normaliseAdPlacements(rawPlacements as unknown[])
+        : [],
+    };
   }
 
   // Override ads_txt: replace (not additive)

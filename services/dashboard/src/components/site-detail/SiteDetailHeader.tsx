@@ -18,19 +18,23 @@ export function SiteDetailHeader({
   } else if (site.pages_project && (site.status === "Ready" || site.status === "Live")) {
     primaryHref = `https://${site.pages_project}.pages.dev`;
     primaryLabel = "Open Site";
-  } else if (site.preview_url && site.status === "Staging") {
-    primaryHref = site.preview_url;
+  } else if (site.staging_branch && site.pages_project && site.status === "Staging") {
+    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`;
     primaryLabel = "Open Staging";
   } else {
     primaryHref = `https://${site.domain}`;
     primaryLabel = "Open Live Site";
   }
 
+  // Build stable staging URL from branch + pages project (not the deployment-specific preview_url)
+  const stagingUrl =
+    site.staging_branch && site.pages_project
+      ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+      : null;
+
   // Show staging link for live sites that also have a staging branch
   const showStagingLink =
-    site.preview_url &&
-    site.staging_branch &&
-    (site.status === "Ready" || site.status === "Live");
+    stagingUrl && (site.status === "Ready" || site.status === "Live");
 
   const linkIcon = (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -61,7 +65,7 @@ export function SiteDetailHeader({
       <div className="flex items-center gap-2">
         {showStagingLink && (
           <a
-            href={site.preview_url!}
+            href={stagingUrl!}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"

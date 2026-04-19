@@ -372,7 +372,7 @@ export interface ResolvedConfig {
      * time (as `window.__ATL_CONFIG__`) so that ad-loader.js can render ads
      * without a CDN round-trip.
      */
-    inlineAdConfig?: InlineAdConfig;
+    inlineAdConfig: InlineAdConfig;
 }
 /**
  * Recursively makes all properties of T optional.
