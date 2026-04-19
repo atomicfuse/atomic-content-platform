@@ -34,6 +34,10 @@ import type {
   OverrideConfig,
   InlineAdConfig,
   AdPlaceholderHeights,
+  SimpleMergeMode,
+  ScriptsMergeMode,
+  AdsConfigMergeMode,
+  AdsTxtMergeMode,
 } from "@atomic-platform/shared-types";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
 import type { ScriptEntry, AdsConfig, AdPlacement } from "@atomic-platform/shared-types";
@@ -437,69 +441,295 @@ function isOverrideTargetingSite(
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Smart merge mode helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Apply override fields with REPLACE semantics onto the current merged config.
- * Fields defined in the override REPLACE the corresponding field from the
- * group chain entirely. Fields not in the override pass through.
+ * Extract `_mode` from a field value object, stripping it from the data.
+ * Returns the mode and a clean copy of the data without _mode.
+ */
+function extractMode<M extends string>(
+  value: Record<string, unknown>,
+  defaultMode: M,
+): { mode: M; clean: Record<string, unknown> } {
+  const { _mode, ...clean } = value;
+  return { mode: (_mode as M) ?? defaultMode, clean };
+}
+
+/**
+ * Merge tracking: deep-merge override keys into the current tracking.
+ * Only specified keys change; unset keys inherit from parent.
+ */
+function mergeTracking(
+  current: TrackingConfig,
+  overrideData: Record<string, unknown>,
+): TrackingConfig {
+  const result = { ...current };
+  for (const [key, value] of Object.entries(overrideData)) {
+    (result as unknown as Record<string, unknown>)[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Append scripts from the override without replacing any existing scripts.
+ * New entries are added at the end of each position's array.
+ */
+function appendScripts(
+  current: ScriptsConfig,
+  overrideScripts: Partial<ScriptsConfig>,
+): ScriptsConfig {
+  return {
+    head: [
+      ...current.head,
+      ...(overrideScripts.head
+        ? normaliseScriptArray(overrideScripts.head as unknown as unknown[])
+            .filter((entry) => !current.head.some((e) => e.id === entry.id))
+        : []),
+    ],
+    body_start: [
+      ...current.body_start,
+      ...(overrideScripts.body_start
+        ? normaliseScriptArray(overrideScripts.body_start as unknown as unknown[])
+            .filter((entry) => !current.body_start.some((e) => e.id === entry.id))
+        : []),
+    ],
+    body_end: [
+      ...current.body_end,
+      ...(overrideScripts.body_end
+        ? normaliseScriptArray(overrideScripts.body_end as unknown as unknown[])
+            .filter((entry) => !current.body_end.some((e) => e.id === entry.id))
+        : []),
+    ],
+  };
+}
+
+/**
+ * Merge ad placements by id: existing placements are kept, matching ids are
+ * replaced, new ids are appended.
+ */
+function mergeAdPlacementsById(
+  current: AdPlacement[],
+  overridePlacements: unknown[],
+): AdPlacement[] {
+  const normalised = normaliseAdPlacements(overridePlacements);
+  const merged = new Map<string, AdPlacement>();
+  for (const p of current) merged.set(p.id, p);
+  for (const p of normalised) merged.set(p.id, p);
+  return Array.from(merged.values());
+}
+
+/**
+ * Apply override fields with per-field merge mode control.
+ *
+ * Each field checks its `_mode` directive (falling back to a safe default):
+ *   tracking     → merge (default)
+ *   scripts      → merge_by_id (default)
+ *   scripts_vars → merge (default)
+ *   ads_config   → replace (default)
+ *   ads_txt      → add (default)
+ *   theme        → merge (default)
+ *   legal        → merge (default)
  */
 function applyOverride(
   tracking: TrackingConfig,
   scripts: ScriptsConfig,
   adsConfig: AdsConfig,
   adsTxt: string[],
+  scriptsVars: Record<string, string>,
+  theme: Record<string, unknown> | undefined,
+  legal: Record<string, string>,
   override: OverrideConfig,
 ): {
   tracking: TrackingConfig;
   scripts: ScriptsConfig;
   adsConfig: AdsConfig;
   adsTxt: string[];
+  scriptsVars: Record<string, string>;
+  theme: Record<string, unknown> | undefined;
+  legal: Record<string, string>;
 } {
   let newTracking = tracking;
   let newScripts = scripts;
   let newAdsConfig = adsConfig;
   let newAdsTxt = adsTxt;
+  let newScriptsVars = scriptsVars;
+  let newTheme = theme;
+  let newLegal = legal;
 
-  // Override tracking: field-level replace within the tracking object
+  // ---- Tracking ----
   if (override.tracking) {
-    newTracking = { ...newTracking };
-    for (const [key, value] of Object.entries(override.tracking)) {
-      (newTracking as unknown as Record<string, unknown>)[key] = value;
+    const { mode, clean } = extractMode<SimpleMergeMode>(
+      override.tracking as unknown as Record<string, unknown>,
+      "merge",
+    );
+    if (mode === "replace") {
+      // Wipe and use only override values
+      newTracking = {
+        ga4: null,
+        gtm: null,
+        google_ads: null,
+        facebook_pixel: null,
+        custom: [],
+        ...clean,
+      } as unknown as TrackingConfig;
+    } else {
+      // merge: deep-merge override keys into current tracking
+      newTracking = mergeTracking(newTracking, clean);
     }
   }
 
-  // Override scripts: REPLACE entire scripts object.
-  // If override defines scripts, all positions are replaced.
-  // Undefined positions default to empty (not inherited from parent).
+  // ---- Scripts ----
   if (override.scripts) {
-    newScripts = {
-      head: override.scripts.head
-        ? normaliseScriptArray(override.scripts.head as unknown as unknown[])
-        : [],
-      body_start: override.scripts.body_start
-        ? normaliseScriptArray(override.scripts.body_start as unknown as unknown[])
-        : [],
-      body_end: override.scripts.body_end
-        ? normaliseScriptArray(override.scripts.body_end as unknown as unknown[])
-        : [],
-    };
+    const { mode, clean } = extractMode<ScriptsMergeMode>(
+      override.scripts as unknown as Record<string, unknown>,
+      "merge_by_id",
+    );
+    const overrideScripts = clean as unknown as Partial<ScriptsConfig>;
+
+    if (mode === "replace") {
+      // Wipe and use only override scripts
+      newScripts = {
+        head: overrideScripts.head
+          ? normaliseScriptArray(overrideScripts.head as unknown as unknown[])
+          : [],
+        body_start: overrideScripts.body_start
+          ? normaliseScriptArray(overrideScripts.body_start as unknown as unknown[])
+          : [],
+        body_end: overrideScripts.body_end
+          ? normaliseScriptArray(overrideScripts.body_end as unknown as unknown[])
+          : [],
+      };
+    } else if (mode === "append") {
+      // Add new scripts without replacing existing ones
+      newScripts = appendScripts(newScripts, overrideScripts);
+    } else {
+      // merge_by_id: merge by script id (same id = replace, new id = append)
+      newScripts = mergeScriptsConfigs(newScripts, {
+        head: overrideScripts.head
+          ? normaliseScriptArray(overrideScripts.head as unknown as unknown[])
+          : undefined,
+        body_start: overrideScripts.body_start
+          ? normaliseScriptArray(overrideScripts.body_start as unknown as unknown[])
+          : undefined,
+        body_end: overrideScripts.body_end
+          ? normaliseScriptArray(overrideScripts.body_end as unknown as unknown[])
+          : undefined,
+      });
+    }
   }
 
-  // Override ads_config: REPLACE entirely (no fields inherited from parent).
+  // ---- Ads Config ----
   if (override.ads_config) {
-    const overrideAds = override.ads_config;
-    const rawPlacements = (overrideAds as Record<string, unknown>)["ad_placements"];
-    newAdsConfig = {
-      interstitial: overrideAds.interstitial ?? false,
-      layout: overrideAds.layout ?? "standard",
-      ad_placements: rawPlacements && Array.isArray(rawPlacements)
-        ? normaliseAdPlacements(rawPlacements as unknown[])
-        : [],
-    };
+    const { mode, clean } = extractMode<AdsConfigMergeMode>(
+      override.ads_config as unknown as Record<string, unknown>,
+      "replace",
+    );
+    const overrideAds = clean as Record<string, unknown>;
+
+    if (mode === "merge_placements") {
+      // Keep existing config, merge placements by id
+      const rawPlacements = overrideAds["ad_placements"];
+      if (rawPlacements && Array.isArray(rawPlacements) && rawPlacements.length > 0) {
+        newAdsConfig = {
+          ...newAdsConfig,
+          ...(overrideAds["interstitial"] !== undefined ? { interstitial: overrideAds["interstitial"] as boolean } : {}),
+          ...(overrideAds["layout"] !== undefined ? { layout: overrideAds["layout"] as string } : {}),
+          ad_placements: mergeAdPlacementsById(
+            newAdsConfig.ad_placements,
+            rawPlacements as unknown[],
+          ),
+        };
+      } else {
+        // No placements to merge, just merge other fields
+        if (overrideAds["interstitial"] !== undefined) {
+          newAdsConfig = { ...newAdsConfig, interstitial: overrideAds["interstitial"] as boolean };
+        }
+        if (overrideAds["layout"] !== undefined) {
+          newAdsConfig = { ...newAdsConfig, layout: overrideAds["layout"] as string };
+        }
+      }
+    } else {
+      // replace: wipe and use only override ads_config
+      const rawPlacements = overrideAds["ad_placements"];
+      newAdsConfig = {
+        interstitial: (overrideAds["interstitial"] as boolean | undefined) ?? false,
+        layout: (overrideAds["layout"] as string | undefined) ?? "standard",
+        ad_placements: rawPlacements && Array.isArray(rawPlacements)
+          ? normaliseAdPlacements(rawPlacements as unknown[])
+          : [],
+      };
+    }
   }
 
-  // Override ads_txt: replace (not additive)
+  // ---- Ads.txt ----
   if (override.ads_txt !== undefined) {
-    newAdsTxt = [...override.ads_txt];
+    let mode: AdsTxtMergeMode = "add";
+    let entries: string[] = [];
+
+    if (Array.isArray(override.ads_txt)) {
+      // Plain array — use default mode (add)
+      entries = override.ads_txt;
+    } else if (
+      override.ads_txt &&
+      typeof override.ads_txt === "object" &&
+      "_mode" in override.ads_txt
+    ) {
+      // Object with _mode and _values
+      mode = (override.ads_txt as { _mode: AdsTxtMergeMode })._mode;
+      entries = (override.ads_txt as { _values: string[] })._values ?? [];
+    }
+
+    if (mode === "replace") {
+      newAdsTxt = [...entries];
+    } else {
+      // add: append entries to existing, dedupe
+      newAdsTxt = [...new Set([...newAdsTxt, ...entries])];
+    }
+  }
+
+  // ---- Scripts Vars ----
+  if (override.scripts_vars) {
+    const { mode, clean } = extractMode<SimpleMergeMode>(
+      override.scripts_vars as unknown as Record<string, unknown>,
+      "merge",
+    );
+    if (mode === "replace") {
+      newScriptsVars = clean as unknown as Record<string, string>;
+    } else {
+      // merge: add/overwrite keys
+      newScriptsVars = { ...newScriptsVars, ...clean as unknown as Record<string, string> };
+    }
+  }
+
+  // ---- Theme ----
+  if (override.theme) {
+    const { mode, clean } = extractMode<SimpleMergeMode>(
+      override.theme as unknown as Record<string, unknown>,
+      "merge",
+    );
+    if (mode === "replace") {
+      newTheme = clean;
+    } else {
+      // merge: deep-merge
+      newTheme = newTheme
+        ? deepMerge(newTheme as Record<string, unknown>, clean)
+        : clean;
+    }
+  }
+
+  // ---- Legal ----
+  if (override.legal) {
+    const { mode, clean } = extractMode<SimpleMergeMode>(
+      override.legal as unknown as Record<string, unknown>,
+      "merge",
+    );
+    if (mode === "replace") {
+      newLegal = clean as unknown as Record<string, string>;
+    } else {
+      newLegal = { ...newLegal, ...clean as unknown as Record<string, string> };
+    }
   }
 
   return {
@@ -507,6 +737,9 @@ function applyOverride(
     scripts: newScripts,
     adsConfig: newAdsConfig,
     adsTxt: newAdsTxt,
+    scriptsVars: newScriptsVars,
+    theme: newTheme,
+    legal: newLegal,
   };
 }
 
@@ -669,7 +902,7 @@ export async function resolveConfig(
     adsTxtEntries.push(...collectAdsTxt(gRaw));
   }
 
-  // ---- 8. Load and apply overrides (REPLACE semantics) ----
+  // ---- 8. Load and apply overrides (per-field merge modes) ----
 
   const allOverrides = await loadOverrides(networkRepoPath);
   const matchingOverrides = allOverrides
@@ -679,16 +912,48 @@ export async function resolveConfig(
   const appliedOverrideIds: string[] = [];
   let currentAdsTxt = [...new Set(adsTxtEntries)];
 
+  // Collect override-level vars and theme/legal for the new applyOverride signature
+  let overrideVarsAccum: Record<string, string> = {};
+  let overrideTheme: Record<string, unknown> | undefined;
+
+  // Merge group themes into a single object for override to build on
+  for (const gRaw of groupRaws) {
+    const gt = (gRaw as Record<string, unknown>)["theme"] as Record<string, unknown> | undefined;
+    if (gt) {
+      overrideTheme = overrideTheme
+        ? deepMerge(overrideTheme, gt)
+        : { ...gt };
+    }
+  }
+
+  // Accumulate legal from groups for override
+  let overrideLegal: Record<string, string> = { ...(org.legal ?? {}) };
+  for (const gRaw of groupRaws) {
+    const g = gRaw as unknown as GroupConfig;
+    if (g.legal_pages_override) {
+      overrideLegal = { ...overrideLegal, ...g.legal_pages_override };
+    }
+  }
+
   for (const override of matchingOverrides) {
-    const result = applyOverride(tracking, mergedScripts, adsConfig, currentAdsTxt, override);
+    const result = applyOverride(
+      tracking,
+      mergedScripts,
+      adsConfig,
+      currentAdsTxt,
+      overrideVarsAccum,
+      overrideTheme,
+      overrideLegal,
+      override,
+    );
     tracking = result.tracking;
     mergedScripts = result.scripts;
     adsConfig = result.adsConfig;
     currentAdsTxt = result.adsTxt;
+    overrideVarsAccum = result.scriptsVars;
+    overrideTheme = result.theme;
+    overrideLegal = result.legal;
     appliedOverrideIds.push(override.override_id);
-
-    // Override scripts_vars merge into the var pool
-    // (handled below when we collect all vars)
   }
 
   // ---- 9. Apply site-level overrides (standard merge, site wins) ----
@@ -727,18 +992,13 @@ export async function resolveConfig(
     const gVars = (gRaw["scripts_vars"] as Record<string, string>) ?? {};
     groupVars = { ...groupVars, ...gVars };
   }
-  let overrideVars: Record<string, string> = {};
-  for (const override of matchingOverrides) {
-    if (override.scripts_vars) {
-      overrideVars = { ...overrideVars, ...override.scripts_vars };
-    }
-  }
+  // overrideVarsAccum was accumulated during override application (respects _mode)
   const siteVars = (site.scripts_vars as Record<string, string>) ?? {};
 
   const allVars: Record<string, string> = {
     ...orgVars,
     ...groupVars,
-    ...overrideVars,
+    ...overrideVarsAccum,
     ...siteVars,
     domain: siteDomain,
   };
@@ -755,28 +1015,21 @@ export async function resolveConfig(
     );
   }
 
-  // ---- 11. Merge theme: org defaults → each group → override themes → site ----
+  // ---- 11. Merge theme: org defaults → each group → override (with _mode) → site ----
 
   const groupThemes = groupRaws.map((g) => (g as Record<string, unknown>)["theme"] as Partial<ThemeConfig> | undefined);
 
-  // Apply override themes (REPLACE semantics for theme)
-  const overrideThemes: (Partial<ThemeConfig> | undefined)[] = matchingOverrides
-    .map((o) => o.theme as Partial<ThemeConfig> | undefined);
-
-  const allThemes = [...groupThemes, ...overrideThemes];
+  // Override themes were already merged during applyOverride with _mode support.
+  // Pass the accumulated override theme as a single entry.
+  const allThemes = [...groupThemes, overrideTheme as Partial<ThemeConfig> | undefined];
   const theme = resolveTheme(org, allThemes, site.theme);
 
-  // ---- 12. Merge legal: org → groups → overrides → site ----
+  // ---- 12. Merge legal: org → groups → overrides (with _mode) → site ----
 
-  let legal: Record<string, string> = { ...(org.legal ?? {}) };
-  for (const gRaw of groupRaws) {
-    const g = gRaw as unknown as GroupConfig;
-    if (g.legal_pages_override) {
-      legal = { ...legal, ...g.legal_pages_override };
-    }
-  }
+  // overrideLegal was accumulated during applyOverride with _mode support.
+  // Apply legacy legal_pages_override from overrides (not affected by _mode).
+  let legal = { ...overrideLegal };
   for (const override of matchingOverrides) {
-    if (override.legal) legal = { ...legal, ...override.legal };
     if (override.legal_pages_override) legal = { ...legal, ...override.legal_pages_override };
   }
   if (site.legal) {
