@@ -9,7 +9,8 @@ import { useToast } from "@/components/ui/Toast";
 import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
-import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
+import { DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
 
 interface OverrideConfig {
   override_id?: string;
@@ -114,6 +115,7 @@ export default function OverrideDetailPage(): React.ReactElement {
   const [allSites, setAllSites] = useState<SiteSummary[]>([]);
   // Track the saved-in-git targets so we can union old + new for rebuild
   const [savedTargets, setSavedTargets] = useState<{ groups: string[]; sites: string[] }>({ groups: [], sites: [] });
+  const [mergeModes, setMergeModes] = useState<OverrideMergeModes>({ ...DEFAULT_MERGE_MODES });
 
   const fetchData = useCallback(async (): Promise<void> => {
     try {
@@ -130,6 +132,18 @@ export default function OverrideDetailPage(): React.ReactElement {
       setSavedTargets({
         groups: overrideData.targets?.groups ?? [],
         sites: overrideData.targets?.sites ?? [],
+      });
+      // Extract _mode from each field for the merge mode selector
+      setMergeModes({
+        tracking: (overrideData.tracking as Record<string, unknown>)?._mode as OverrideMergeModes["tracking"] ?? DEFAULT_MERGE_MODES.tracking,
+        scripts: (overrideData.scripts as Record<string, unknown>)?._mode as OverrideMergeModes["scripts"] ?? DEFAULT_MERGE_MODES.scripts,
+        scripts_vars: (overrideData.scripts_vars as Record<string, unknown>)?._mode as OverrideMergeModes["scripts_vars"] ?? DEFAULT_MERGE_MODES.scripts_vars,
+        ads_config: (overrideData.ads_config as Record<string, unknown>)?._mode as OverrideMergeModes["ads_config"] ?? DEFAULT_MERGE_MODES.ads_config,
+        ads_txt: Array.isArray(overrideData.ads_txt) || typeof overrideData.ads_txt === "string"
+          ? DEFAULT_MERGE_MODES.ads_txt
+          : ((overrideData.ads_txt as unknown as Record<string, unknown>)?._mode as OverrideMergeModes["ads_txt"] ?? DEFAULT_MERGE_MODES.ads_txt),
+        theme: (overrideData.theme as Record<string, unknown>)?._mode as OverrideMergeModes["theme"] ?? DEFAULT_MERGE_MODES.theme,
+        legal: (overrideData.legal as Record<string, unknown>)?._mode as OverrideMergeModes["legal"] ?? DEFAULT_MERGE_MODES.legal,
       });
       if (groupsRes.ok) setAllGroups((await groupsRes.json()) as GroupSummary[]);
       if (sitesRes.ok) setAllSites((await sitesRes.json()) as SiteSummary[]);
@@ -174,10 +188,33 @@ export default function OverrideDetailPage(): React.ReactElement {
     setSaving(true);
     setError(null);
     try {
+      // Embed _mode into each field before saving
+      const configToSave = { ...config };
+      if (configToSave.tracking && mergeModes.tracking !== DEFAULT_MERGE_MODES.tracking) {
+        configToSave.tracking = { ...configToSave.tracking, _mode: mergeModes.tracking };
+      }
+      if (configToSave.scripts && mergeModes.scripts !== DEFAULT_MERGE_MODES.scripts) {
+        configToSave.scripts = { ...configToSave.scripts, _mode: mergeModes.scripts };
+      }
+      if (configToSave.scripts_vars && mergeModes.scripts_vars !== DEFAULT_MERGE_MODES.scripts_vars) {
+        configToSave.scripts_vars = { ...configToSave.scripts_vars, _mode: mergeModes.scripts_vars };
+      }
+      if (configToSave.ads_config && mergeModes.ads_config !== DEFAULT_MERGE_MODES.ads_config) {
+        configToSave.ads_config = { ...configToSave.ads_config, _mode: mergeModes.ads_config };
+      }
+      if (mergeModes.ads_txt !== DEFAULT_MERGE_MODES.ads_txt) {
+        configToSave.ads_txt = { _mode: mergeModes.ads_txt, _values: normalizeAdsTxt(config.ads_txt) } as unknown as string[];
+      }
+      if (configToSave.theme && mergeModes.theme !== DEFAULT_MERGE_MODES.theme) {
+        configToSave.theme = { ...configToSave.theme, _mode: mergeModes.theme };
+      }
+      if (configToSave.legal && mergeModes.legal !== DEFAULT_MERGE_MODES.legal) {
+        configToSave.legal = { ...configToSave.legal, _mode: mergeModes.legal };
+      }
       const res = await fetch(`/api/overrides/${overrideId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(configToSave),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast("Override saved", "success");
@@ -347,6 +384,8 @@ export default function OverrideDetailPage(): React.ReactElement {
             setConfig({ ...config, ...updated } as OverrideConfig);
           }}
           mode="override"
+          mergeModes={mergeModes}
+          onMergeModesChange={setMergeModes}
         />
       ),
     },

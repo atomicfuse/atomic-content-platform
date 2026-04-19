@@ -41,4 +41,9 @@ export type {
   AdPlaceholderHeights,
   OverrideConfig,
   InlineAdConfig,
+  SimpleMergeMode,
+  ScriptsMergeMode,
+  AdsConfigMergeMode,
+  AdsTxtMergeMode,
+  MergeMode,
 } from "./monetization.js";

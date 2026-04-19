@@ -12,6 +12,7 @@ tracking:
   ga4: "G-OVERRIDE-001"
 
 scripts:
+  _mode: replace
   head: []
   body_start: []
   body_end:

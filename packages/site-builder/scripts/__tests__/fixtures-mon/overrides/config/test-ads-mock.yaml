@@ -10,6 +10,7 @@ tracking:
   ga4: "G-OVERRIDE-MOCK"
 
 scripts:
+  _mode: replace
   head: []
   body_start: []
   body_end:
@@ -17,6 +18,7 @@ scripts:
       src: "/mock-ad-fill.js"
 
 ads_config:
+  _mode: replace
   interstitial: false
   layout: standard
   ad_placements:
@@ -27,4 +29,6 @@ ads_config:
         mobile: [[320, 50]]
       device: all
 
-ads_txt: []
+ads_txt:
+  _mode: replace
+  _values: []
