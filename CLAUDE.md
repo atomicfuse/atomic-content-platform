@@ -288,7 +288,6 @@ For any user-visible feature, there should be a matching guide page in `services
 
 Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-builder.
 
-
 ## Content Agent v2 — Dual-Model Generation (append to existing CLAUDE.md)
 
 > Added 2026-04-19. Restructure of content-generation and article-regeneration agents.
@@ -325,6 +324,26 @@ Content Aggregator API (enriched items with summary, taxonomy, thumbnail)
 - `enriched` defaults to `true` — "golden plate" philosophy, items arrive ready-to-use
 - **Key fields per item**: `id`, `url`, `title`, `description`, `summary` (structured brief: "What happened… Why it matters… Content opportunity…"), `thumbnail.url`, `content_type`, `vertical.name`, `categories[].name`, `tags[].name`, `audience_types[].name`, `source.name`, `published_at`, `language`
 - **Settings**: `GET /api/settings` → `classification.factual_tags`, `enrichment.batch_size`, etc.
+
+### Lightweight Fetching Rule (IMPORTANT)
+
+**Never fetch more than you need.** The orchestrator receives a `targetCount` (how many articles to produce). Apply a 2x buffer for filtering/failures, then stop.
+
+```typescript
+// If user wants 3 articles → fetch page_size=6 from API
+// If user wants 10 articles → fetch page_size=20
+const fetchLimit = targetCount * 2;
+const items = await apiClient.getContent({ page_size: fetchLimit, ... });
+// Generate only targetCount articles, stop early once reached
+```
+
+This applies everywhere:
+- `content-generation/index.ts` orchestrator: accept `targetCount`, fetch `targetCount * 2`, generate until `targetCount` succeeded, stop
+- `api-client.ts`: always pass `page_size` — never fetch unbounded
+- Scheduler: `articles_per_day` from site brief IS the `targetCount`
+- On-demand generate from dashboard: request body specifies count
+
+**No pagination loops.** One fetch with the right `page_size`. If the 2x buffer wasn't enough (too many failures), log a warning and return what we have — don't keep fetching pages.
 
 ### File Structure (under `services/content-pipeline/src/agents/`)
 

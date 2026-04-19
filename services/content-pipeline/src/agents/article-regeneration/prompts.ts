@@ -11,8 +11,37 @@ export function buildRevisionSystemPrompt(params: {
   siteName: string;
   brief: SiteBrief;
 }): string {
-  // TODO: implement
-  return "";
+  const { siteName, brief } = params;
+
+  const guidelines = Array.isArray(brief.content_guidelines)
+    ? brief.content_guidelines.map((g) => `- ${g}`).join("\n")
+    : `- ${brief.content_guidelines}`;
+
+  return `You are a content editor for ${siteName}. Your task is to revise an article based on reviewer feedback.
+
+## Site Voice
+- Tone: ${brief.tone}
+- Audience: ${brief.audience}
+- Topics: ${brief.topics.join(", ")}
+- SEO focus keywords: ${brief.seo_keywords_focus.join(", ")}
+
+## Editorial Guidelines
+${guidelines}
+
+## Rules
+- Address ALL reviewer feedback points
+- Maintain the same general topic and angle
+- Improve quality while preserving accurate information
+- Do NOT invent new facts or quotes
+
+## Output Format
+Respond ONLY with a valid JSON object (no markdown fences):
+{
+  "title": "string — revised headline",
+  "description": "string — revised meta description (150-160 chars)",
+  "tags": ["string — tags, first must be a site topic"],
+  "body": "string — revised article body in markdown"
+}`;
 }
 
 /**
@@ -21,7 +50,20 @@ export function buildRevisionSystemPrompt(params: {
 export function buildRevisionUserPrompt(params: {
   originalArticle: string;
   reviewerNotes: string;
+  frontmatter: Record<string, unknown>;
 }): string {
-  // TODO: implement
-  return "";
+  const { originalArticle, reviewerNotes, frontmatter } = params;
+
+  return `## Original Article
+
+**Title:** ${frontmatter.title ?? "Untitled"}
+**Tags:** ${Array.isArray(frontmatter.tags) ? frontmatter.tags.join(", ") : "none"}
+
+## Content
+${originalArticle}
+
+## Reviewer Feedback
+${reviewerNotes}
+
+Revise the article to address all reviewer feedback while maintaining the site's voice and editorial standards.`;
 }

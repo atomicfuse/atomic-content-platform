@@ -103,13 +103,16 @@ Restructure the content generation agents to consume pre-enriched items from the
 
 ## Data Flow — Step by Step
 
-### 1. Fetch enriched content
+### 1. Fetch enriched content (LIGHTWEIGHT — only what you need)
 ```typescript
+// targetCount = how many articles caller wants (e.g. 3 from scheduler, 5 from dashboard)
+// Fetch 2x buffer for filtering/failures — ONE request, no pagination loops
+const fetchLimit = targetCount * 2;
 const items = await apiClient.getContent({
   enriched: true,
   status: 'active',
   content_type: 'article',
-  page_size: 20
+  page_size: fetchLimit  // e.g. want 3 → fetch 6, want 10 → fetch 20
 });
 ```
 
@@ -175,9 +178,9 @@ const seo = await seoGenerator.generate({
 // → { metaTitle, metaDescription, slug, schemaOrg, ogTags, readingTime }
 ```
 
-### 7. Output
+### 7. Output + Early Stop
 ```typescript
-const package: ArticlePackage = {
+const pkg: ArticlePackage = {
   article,      // markdown content
   heroImage,    // generated image URL/buffer
   seo,          // all metadata
@@ -185,7 +188,14 @@ const package: ArticlePackage = {
   generatedBy: decision.generator, // 'claude' or 'openai'
   generatedAt: new Date()
 };
+
+results.push(pkg);
+
+// EARLY STOP — once we have enough, don't waste tokens on remaining items
+if (results.length >= targetCount) break;
 ```
+
+**Lightweight principle**: The entire pipeline is driven by `targetCount`. We never process more items than needed. The 2x fetch buffer exists for failures — not to generate extra articles.
 
 ---
 
