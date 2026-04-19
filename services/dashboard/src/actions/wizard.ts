@@ -339,17 +339,18 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
     return site.staging_branch;
   }
 
-  // No staging branch recorded — create one
-  const projectName = site.pages_project ?? domain;
-  const stagingBranch = `staging/${projectName}`;
+  // No staging branch recorded — create one.
+  // Branch name uses the domain (site folder), NOT pages_project (CF may have renamed it).
+  const pagesProject = site.pages_project ?? domain;
+  const stagingBranch = `staging/${domain}`;
   const exists = await branchExists(stagingBranch);
   if (!exists) {
     await createBranch(stagingBranch, "main");
   }
 
-  // Construct preview URL
+  // Construct preview URL — branch slug from branch name, domain from CF project name
   const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${projectName}.pages.dev`;
+  const previewUrl = `https://${branchSlug}.${pagesProject}.pages.dev`;
 
   await updateSiteInIndex(domain, {
     staging_branch: stagingBranch,
