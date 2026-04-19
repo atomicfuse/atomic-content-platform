@@ -3,7 +3,6 @@ import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
-import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { StagingTab } from "@/components/site-detail/StagingTab";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import { SiteDetailTabs } from "./SiteDetailTabs";
@@ -103,10 +102,8 @@ export default async function SiteDetailPage({
             brief={normalizedBrief}
             siteConfig={siteConfig}
             stagingBranch={site.staging_branch}
+            pagesProject={site.pages_project}
           />
-        }
-        agentTab={
-          <ContentGenerationPanel domain={decodedDomain} pagesProject={site.pages_project} stagingBranch={site.staging_branch} />
         }
       />
       {site.pages_project && (

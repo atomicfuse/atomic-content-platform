@@ -8,7 +8,6 @@ interface SiteDetailTabsProps {
   stagingTab: React.ReactNode | null;
   contentTab: React.ReactNode;
   identityTab: React.ReactNode;
-  agentTab: React.ReactNode;
 }
 
 export function SiteDetailTabs({
@@ -16,7 +15,6 @@ export function SiteDetailTabs({
   stagingTab,
   contentTab,
   identityTab,
-  agentTab,
 }: SiteDetailTabsProps): React.ReactElement {
   const tabItems = [];
   if (stagingTab) {
@@ -25,7 +23,6 @@ export function SiteDetailTabs({
   tabItems.push(
     { id: "content", label: "Content", content: contentTab },
     { id: "identity", label: "Site Identity", content: identityTab },
-    { id: "agent", label: "Content Agent", content: agentTab },
   );
   tabItems.push({
     id: "email",

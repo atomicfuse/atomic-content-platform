@@ -11,6 +11,12 @@ import { useToast } from "@/components/ui/Toast";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import {
+  normalizeAdsTxt,
+  normalizeTracking,
+  normalizeScripts,
+  normalizeAdsConfig,
+} from "@/lib/config-normalizers";
 
 interface GroupConfig {
   name?: string;
@@ -27,78 +33,6 @@ interface GroupConfig {
   legal_pages_override?: Record<string, string>;
   ad_placeholder_heights?: Record<string, number>;
   [key: string]: unknown;
-}
-
-// ---------------------------------------------------------------------------
-// Normalizers — transform raw API data into typed form values
-// ---------------------------------------------------------------------------
-
-function normalizeAdsTxt(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw as string[];
-  if (typeof raw === "string") {
-    return raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  }
-  return [];
-}
-
-function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedConfigFields["tracking"] {
-  return {
-    ga4: (raw?.ga4 as string) ?? null,
-    gtm: (raw?.gtm as string) ?? null,
-    google_ads: (raw?.google_ads as string) ?? null,
-    facebook_pixel: (raw?.facebook_pixel as string) ?? null,
-    custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
-  };
-}
-
-function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConfigFields["scripts"] {
-  function normalizeEntries(entries: unknown): UnifiedConfigFields["scripts"]["head"] {
-    if (!Array.isArray(entries)) return [];
-    return entries.map((e: Record<string, unknown>) => ({
-      id: (e.id as string) ?? "",
-      src: (e.src as string) ?? undefined,
-      inline: (e.inline as string) ?? (e.content as string) ?? undefined,
-      async: (e.async as boolean) ?? undefined,
-    }));
-  }
-  return {
-    head: normalizeEntries(raw?.head),
-    body_start: normalizeEntries(raw?.body_start),
-    body_end: normalizeEntries(raw?.body_end),
-  };
-}
-
-function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
-  const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
-  return {
-    interstitial: (raw?.interstitial as boolean) ?? false,
-    layout: (raw?.layout as string) ?? "standard",
-    ad_placements: placements.map((p: Record<string, unknown>) => {
-      const rawSizes = p.sizes;
-      let sizes: { desktop?: number[][]; mobile?: number[][] } = {};
-      if (Array.isArray(rawSizes)) {
-        const tuples = (rawSizes as unknown[])
-          .map((s) => {
-            if (typeof s === "string" && s.includes("x")) {
-              const [w, h] = s.split("x").map(Number);
-              return w && h ? [w, h] : null;
-            }
-            if (Array.isArray(s)) return s as number[];
-            return null;
-          })
-          .filter(Boolean) as number[][];
-        sizes = { desktop: tuples, mobile: tuples };
-      } else if (rawSizes && typeof rawSizes === "object") {
-        sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
-      }
-      return {
-        id: (p.id as string) ?? "",
-        position: (p.position as string) ?? "",
-        device: (p.devices ?? p.device ?? "all") as "all" | "desktop" | "mobile",
-        sizes,
-      };
-    }),
-  };
 }
 
 export default function GroupDetailPage(): React.ReactElement {
@@ -118,13 +52,19 @@ export default function GroupDetailPage(): React.ReactElement {
   const [groupSites, setGroupSites] = useState<
     Array<{ domain: string; site_name?: string }>
   >([]);
+  const [allSites, setAllSites] = useState<
+    Array<{ domain: string; status?: string }>
+  >([]);
+  const [siteSearch, setSiteSearch] = useState("");
+  const [updatingSite, setUpdatingSite] = useState<string | null>(null);
 
   const fetchData = useCallback(async (): Promise<void> => {
     try {
       setError(null);
-      const [groupRes, sitesRes] = await Promise.all([
+      const [groupRes, sitesRes, allSitesRes] = await Promise.all([
         fetch(`/api/groups/${groupId}`),
         fetch(`/api/groups/${groupId}/sites`),
+        fetch("/api/sites/list"),
       ]);
       if (!groupRes.ok) {
         throw new Error(`Failed to load group: HTTP ${groupRes.status}`);
@@ -138,6 +78,14 @@ export default function GroupDetailPage(): React.ReactElement {
           site_name?: string;
         }>;
         setGroupSites(sitesData);
+      }
+
+      if (allSitesRes.ok) {
+        const allData = (await allSitesRes.json()) as Array<{
+          domain: string;
+          status?: string;
+        }>;
+        setAllSites(allData);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load group config");
@@ -187,6 +135,38 @@ export default function GroupDetailPage(): React.ReactElement {
       setShowDeleteModal(false);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function toggleSiteInGroup(
+    domain: string,
+    action: "add" | "remove",
+  ): Promise<void> {
+    setUpdatingSite(domain);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/sites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain, action }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      if (action === "add") {
+        setGroupSites((prev) => [...prev, { domain }]);
+        toast(`Added ${domain} to group`, "success");
+      } else {
+        setGroupSites((prev) => prev.filter((s) => s.domain !== domain));
+        toast(`Removed ${domain} from group`, "success");
+      }
+    } catch (err) {
+      toast(
+        err instanceof Error ? err.message : "Failed to update site",
+        "error",
+      );
+    } finally {
+      setUpdatingSite(null);
     }
   }
 
@@ -257,36 +237,115 @@ export default function GroupDetailPage(): React.ReactElement {
     {
       id: "sites",
       label: `Sites (${groupSites.length})`,
-      content: (
-        <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
-          {groupSites.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">
-              No sites assigned to this group.
-            </p>
-          ) : (
-            <ul className="divide-y divide-[var(--border-secondary)]">
-              {groupSites.map((site) => (
-                <li key={site.domain} className="py-3">
-                  <Link
-                    href={`/sites/${encodeURIComponent(site.domain)}`}
-                    className="flex items-center justify-between gap-2 text-sm hover:text-cyan transition-colors"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-cyan" />
-                      <span className="font-medium">
-                        {site.site_name ?? site.domain}
+      content: (() => {
+        const assignedDomains = new Set(groupSites.map((s) => s.domain));
+        const unassigned = allSites.filter(
+          (s) => !assignedDomains.has(s.domain),
+        );
+        const filtered = siteSearch
+          ? unassigned.filter((s) =>
+              s.domain.toLowerCase().includes(siteSearch.toLowerCase()),
+            )
+          : unassigned;
+
+        return (
+          <div className="space-y-4">
+            {/* Assigned sites */}
+            <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">
+                Assigned Sites
+              </h3>
+              {groupSites.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No sites assigned to this group.
+                </p>
+              ) : (
+                <ul className="divide-y divide-[var(--border-secondary)]">
+                  {groupSites.map((site) => (
+                    <li
+                      key={site.domain}
+                      className="flex items-center justify-between py-2.5"
+                    >
+                      <Link
+                        href={`/sites/${encodeURIComponent(site.domain)}`}
+                        className="flex items-center gap-2 text-sm hover:text-cyan transition-colors"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan" />
+                        <span className="font-medium">
+                          {site.site_name ?? site.domain}
+                        </span>
+                        {site.site_name && (
+                          <span className="text-[var(--text-muted)] text-xs">
+                            {site.domain}
+                          </span>
+                        )}
+                      </Link>
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 rounded border border-error/30 text-error hover:bg-error/10 transition-colors disabled:opacity-50"
+                        disabled={updatingSite === site.domain}
+                        onClick={(): void => {
+                          void toggleSiteInGroup(site.domain, "remove");
+                        }}
+                      >
+                        {updatingSite === site.domain ? "..." : "Remove"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Add sites */}
+            <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">
+                Add Sites
+              </h3>
+              <Input
+                placeholder="Search sites..."
+                value={siteSearch}
+                onChange={(e): void => setSiteSearch(e.target.value)}
+              />
+              {filtered.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)] mt-3">
+                  {unassigned.length === 0
+                    ? "All sites are already in this group."
+                    : "No sites match your search."}
+                </p>
+              ) : (
+                <ul className="divide-y divide-[var(--border-secondary)] mt-2 max-h-64 overflow-y-auto">
+                  {filtered.map((site) => (
+                    <li
+                      key={site.domain}
+                      className="flex items-center justify-between py-2.5"
+                    >
+                      <span className="flex items-center gap-2 text-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />
+                        <span>{site.domain}</span>
+                        {site.status && (
+                          <span className="text-[var(--text-muted)] text-xs">
+                            {site.status}
+                          </span>
+                        )}
                       </span>
-                    </span>
-                    <span className="text-[var(--text-muted)] text-xs">
-                      {site.domain}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ),
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 rounded border border-cyan/30 text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-50"
+                        disabled={updatingSite === site.domain}
+                        onClick={(): void => {
+                          void toggleSiteInGroup(site.domain, "add");
+                        }}
+                      >
+                        {updatingSite === site.domain ? "..." : "Add"}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        );
+      })(),
     },
   ];
 
