@@ -77,6 +77,7 @@ export async function readDashboardIndex(): Promise<DashboardIndex> {
       parsed.sites = parsed.sites.map((s) => ({
         ...s,
         pages_project: (s as Partial<DashboardSiteEntry>).pages_project ?? null,
+        pages_subdomain: (s as Partial<DashboardSiteEntry>).pages_subdomain ?? null,
         zone_id: (s as Partial<DashboardSiteEntry>).zone_id ?? null,
         staging_branch: (s as Partial<DashboardSiteEntry>).staging_branch ?? null,
         preview_url: (s as Partial<DashboardSiteEntry>).preview_url ?? null,

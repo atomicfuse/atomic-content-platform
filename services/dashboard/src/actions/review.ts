@@ -31,10 +31,12 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
 
   for (const site of index.sites) {
     const branch = site.staging_branch ?? undefined;
-    // Build stable staging URL from branch + pages project (not deployment-specific preview_url)
+    // Build stable staging URL from branch + pages subdomain (not deployment-specific preview_url)
+    // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
+    const pagesHost = site.pages_subdomain ?? site.pages_project;
     const stagingBaseUrl =
-      site.staging_branch && site.pages_project
-        ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+      site.staging_branch && pagesHost
+        ? `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
         : site.preview_url ?? null;
 
     const articles = await readArticles(site.domain, branch);

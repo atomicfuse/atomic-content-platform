@@ -35,6 +35,7 @@ interface ContentAgentTabProps {
   siteConfig: Record<string, unknown> | null;
   stagingBranch?: string | null;
   pagesProject?: string | null;
+  pagesSubdomain?: string | null;
   customDomain?: string | null;
 }
 
@@ -50,6 +51,7 @@ export function ContentAgentTab({
   siteConfig,
   stagingBranch,
   pagesProject,
+  pagesSubdomain,
   customDomain,
 }: ContentAgentTabProps): React.ReactElement {
   const { toast } = useToast();
@@ -362,6 +364,7 @@ export function ContentAgentTab({
         <ContentGenerationPanel
           domain={domain}
           pagesProject={pagesProject ?? null}
+          pagesSubdomain={pagesSubdomain ?? null}
           stagingBranch={stagingBranch ?? null}
         />
       </div>

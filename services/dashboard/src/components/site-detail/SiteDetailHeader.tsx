@@ -9,27 +9,29 @@ export function SiteDetailHeader({
   site,
 }: SiteDetailHeaderProps): React.ReactElement {
   // Determine primary link based on site state
+  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
+  const pagesHost = site.pages_subdomain ?? site.pages_project;
   let primaryHref: string;
   let primaryLabel: string;
 
   if (site.custom_domain) {
     primaryHref = `https://${site.custom_domain}`;
     primaryLabel = "Open Live Site";
-  } else if (site.pages_project && (site.status === "Ready" || site.status === "Live")) {
-    primaryHref = `https://${site.pages_project}.pages.dev`;
+  } else if (pagesHost && (site.status === "Ready" || site.status === "Live")) {
+    primaryHref = `https://${pagesHost}.pages.dev`;
     primaryLabel = "Open Site";
-  } else if (site.staging_branch && site.pages_project && site.status === "Staging") {
-    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`;
+  } else if (site.staging_branch && pagesHost && site.status === "Staging") {
+    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`;
     primaryLabel = "Open Staging";
   } else {
     primaryHref = `https://${site.domain}`;
     primaryLabel = "Open Live Site";
   }
 
-  // Build stable staging URL from branch + pages project (not the deployment-specific preview_url)
+  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
   const stagingUrl =
-    site.staging_branch && site.pages_project
-      ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+    site.staging_branch && pagesHost
+      ? `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
       : null;
 
   // Show staging link for live sites that also have a staging branch
@@ -55,9 +57,9 @@ export function SiteDetailHeader({
             <span>&middot;</span>
             <span>{site.vertical}</span>
           </div>
-          {site.pages_project && (
+          {pagesHost && (
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              {site.pages_project}.pages.dev
+              {pagesHost}.pages.dev
             </p>
           )}
         </div>
