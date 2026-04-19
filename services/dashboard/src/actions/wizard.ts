@@ -479,7 +479,16 @@ export async function refreshPreviewUrl(domain: string): Promise<string | null> 
   const deployments = await listDeployments(site.pages_project, "preview");
   if (deployments.length === 0) return null;
 
-  const latestUrl = deployments[0]!.url;
+  const deployment = deployments[0]!;
+  let latestUrl = deployment.url;
+  
+  if (deployment.aliases && deployment.aliases.length > 0) {
+    latestUrl = deployment.aliases[0]!;
+  } else if (site.staging_branch) {
+    const branchSlug = site.staging_branch.replace(/\//g, "-");
+    latestUrl = `https://${branchSlug}.${site.pages_project}.pages.dev`;
+  }
+
   const previewUrl = latestUrl.startsWith("https://") ? latestUrl : `https://${latestUrl}`;
   await updateSiteInIndex(domain, { preview_url: previewUrl });
 
