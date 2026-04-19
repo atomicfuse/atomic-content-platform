@@ -13,9 +13,11 @@ interface StepReviewProps {
 export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): React.ReactElement {
   const router = useRouter();
 
-  const projectName = stagingResult?.pagesProject ?? data.pagesProjectName;
-  const stagingUrl = stagingResult?.stagingUrl ?? `https://staging-${projectName}.${projectName}.pages.dev`;
-  const siteFolder = data.pagesProjectName; // folder name = user-chosen name
+  const pagesProject = stagingResult?.pagesProject ?? data.pagesProjectName;
+  const siteSlug = data.pagesProjectName;
+  // Branch slug uses the site slug (folder name); domain uses the actual CF Pages project name
+  const stagingUrl = stagingResult?.stagingUrl ?? `https://staging-${siteSlug}.${pagesProject}.pages.dev`;
+  const siteFolder = siteSlug; // folder name = user-chosen name
 
   return (
     <div className="space-y-6">
@@ -25,7 +27,7 @@ export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): Re
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <p className="text-[var(--text-muted)]">Pages Project</p>
-            <p className="font-medium font-mono">{projectName}.pages.dev</p>
+            <p className="font-medium font-mono">{pagesProject}.pages.dev</p>
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Site Name</p>
