@@ -441,7 +441,7 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — analyze thumbnail → generate original
+    // Step 4: Image pipeline — analyze thumbnail → generate original → fallback to source
     let pendingImageAsset: PendingAsset | undefined;
     let featuredImageUrl: string | undefined;
 
@@ -463,9 +463,14 @@ async function processItem(
         featuredImageUrl = `/assets/images/${slug}.png`;
       }
     } catch (imgErr) {
-      // Image pipeline is non-critical
       const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-      console.warn(`[agent] Image pipeline failed (non-critical): ${msg}`);
+      console.warn(`[agent] Image generation failed: ${msg}`);
+    }
+
+    // Fallback: use source thumbnail URL if generation didn't produce an image
+    if (!featuredImageUrl && item.thumbnail?.url) {
+      console.log(`[agent] Using source thumbnail as fallback: ${item.thumbnail.url}`);
+      featuredImageUrl = item.thumbnail.url;
     }
 
     // Step 5: SEO metadata
