@@ -1,14 +1,11 @@
 import Link from "next/link";
 
 const TABS = [
-  { label: "Org", href: "/settings" },
-  { label: "Network", href: "/settings/network" },
-  { label: "Domains", href: "/settings/domains" },
-  { label: "General Scheduler", href: "/settings/scheduler" },
-  { label: "Email", href: "/settings/email" },
+  { label: "Overrides", href: "/overrides" },
+  { label: "Shared Pages", href: "/overrides/shared-pages" },
 ] as const;
 
-export default function SettingsLayout({
+export default function OverridesLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -16,9 +13,9 @@ export default function SettingsLayout({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold">Overrides</h1>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          Organization and network configuration
+          Targeted config exceptions and shared page management
         </p>
       </div>
 

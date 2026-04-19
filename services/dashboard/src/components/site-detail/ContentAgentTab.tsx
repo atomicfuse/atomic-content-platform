@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAudiences } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
+import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -34,6 +35,7 @@ interface ContentAgentTabProps {
   siteConfig: Record<string, unknown> | null;
   stagingBranch?: string | null;
   pagesProject?: string | null;
+  customDomain?: string | null;
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -48,6 +50,7 @@ export function ContentAgentTab({
   siteConfig,
   stagingBranch,
   pagesProject,
+  customDomain,
 }: ContentAgentTabProps): React.ReactElement {
   const { toast } = useToast();
   const { audiences: audienceOptions } = useAudiences();
@@ -293,6 +296,13 @@ export function ContentAgentTab({
         </div>
         <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
       </div>
+      {pagesProject && (
+        <AttachDomainPanel
+          domain={domain}
+          pagesProject={pagesProject}
+          customDomain={customDomain ?? null}
+        />
+      )}
       <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
         <Button onClick={saveIdentity} loading={savingIdentity}>Save Identity</Button>
       </div>

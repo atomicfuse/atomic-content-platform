@@ -23,10 +23,14 @@ services/
     src/app/
       groups/                Group management (config, site membership, overrides)
       sites/                 Site management, detail pages, wizard
-      shared-pages/          Shared page editor + per-site overrides
+      shared-pages/          Shared page editor + per-site overrides (list redirects to /overrides/shared-pages)
       review/                Article review queue
       trash/                 Deleted sites
-      scheduler/             Scheduler Agent UI (enable toggle, run_at_hours, Run Now)
+      scheduler/             Redirects to /settings/scheduler
+      domains/               Redirects to /settings/domains
+      email/                 Redirects to /settings/email
+      settings/              Settings (Org, Network, Domains, General Scheduler, Email tabs)
+      overrides/             Overrides + Shared Pages (tabbed layout)
       wizard/                New-site flow
       guide/                 In-app markdown docs (loads /public/guide/*.md)
       api/                   Server routes (shared-pages, sites, groups, agent proxy, scheduler, ads-txt, …)
@@ -152,16 +156,16 @@ function shouldWriteLocal(config): boolean {
 
 ## Site Detail Page — Unified Tab Architecture
 
-The site detail page (`/sites/[domain]`) has 4 top-level tabs:
+The site detail page (`/sites/[domain]`) has 3 top-level tabs:
 
-1. **Staging & Preview** — deploy status, staging URL, build trigger
-2. **Content** — article list, status filters
-3. **Site Identity** — 4 sub-tabs:
-   - **Identity** — site name, tagline, audience, tone
+1. **Site Settings** (default tab) — 5 sub-tabs:
+   - **Identity** — site name, tagline, audience, tone, Custom Domain panel
    - **Content Brief** — topics, schedule (`articles_per_day`, `preferred_days`), content guidelines, inline Generate Articles section, quality threshold + criteria sliders
    - **Groups** — assign/remove groups, view active overrides with source badges, links to group pages
+   - **Overrides** — overrides that apply to this site
    - **Config** — `SiteConfigTab` renders `UnifiedConfigForm` (same component used on Org/Group pages); shows inheritance badges ("From org", "From group: X")
-4. **Email** — email routing config
+2. **Deployments** — deploy status, staging URL, build trigger
+3. **Content** — article list, status filters
 
 Each sub-tab has its own independent Save button. The Config sub-tab fetches from `/api/sites/site-config` which returns the full inheritance chain (`{ config, inheritance: { org, groups[] } }`).
 
@@ -266,7 +270,8 @@ Service contract (both services satisfy):
 7. **`.DS_Store` exists on network repo main** — don't add it to gitignore surprise-work; it's been living there.
 8. **Config normalizers are centralized** — `src/lib/config-normalizers.ts` is the single source for `normalizeTracking`, `normalizeScripts`, `normalizeAdsConfig`, `normalizeAdsTxt`. Do not duplicate these in page components.
 9. **`/api/sites/site-config` returns inheritance** — response shape is `{ config, inheritance: { org, groups[] } }`, not just the raw config. Frontend must handle the wrapper.
-10. **Site page tabs restructured** — old tab names (Tracking, Scripts & Vars, Ads Config, Content Agent, Quality) no longer exist as separate tabs. Config is unified under Site Identity → Config; generation and quality are in Site Identity → Content Brief.
+10. **Site page tabs restructured** — old tab names (Tracking, Scripts & Vars, Ads Config, Content Agent, Quality) no longer exist as separate tabs. Config is unified under Site Settings → Config; generation and quality are in Site Settings → Content Brief. Custom Domain is inside Site Settings → Identity only.
+11. **Sidebar restructured** — Domains, Scheduler, Email, Shared Pages no longer have sidebar entries. They live under Settings tabs (Domains, General Scheduler, Email) and Overrides tabs (Shared Pages) respectively. Old routes redirect.
 
 ## Quick Reference — File Ownership
 

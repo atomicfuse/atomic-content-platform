@@ -4,7 +4,6 @@ import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
 import { StagingTab } from "@/components/site-detail/StagingTab";
-import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -113,16 +112,10 @@ export default async function SiteDetailPage({
             siteConfig={siteConfig}
             stagingBranch={site.staging_branch}
             pagesProject={site.pages_project}
+            customDomain={site.custom_domain}
           />
         }
       />
-      {site.pages_project && (
-        <AttachDomainPanel
-          domain={decodedDomain}
-          pagesProject={site.pages_project}
-          customDomain={site.custom_domain}
-        />
-      )}
     </div>
   );
 }
