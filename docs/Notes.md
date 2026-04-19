@@ -34,11 +34,18 @@ No Postgres, no Redis, no SQLite. Just YAML files in git.
 The dashboard is **not built yet** — it's Phase 4 in the SOP. Currently just an empty stub (`packages/dashboard/package.json` only).
 
 When built, it will run like any Next.js app:
-
+also run the content-agent :
 ```bash
-cd packages/dashboard
+cd /Users/michal/Documents/ATL-content-network/atomic-content-platform/services/dashboard
 pnpm dev
+
 # Opens at http://localhost:3000
+
+
+cd ~/Documents/ATL-content-network/atomic-content-platform/services/content-pipeline
+pnpm agent:content-generation
+
+
 ```
 
 With a `.env.local`:
@@ -269,3 +276,27 @@ Or use the manual workflow in `atomic-content-platform` → Actions → "Rebuild
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token scoped to `Pages: Edit` only |
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID (from dashboard URL) |
 | `PLATFORM_REPO_TOKEN` | Fine-grained GitHub PAT with `Contents: Read` on `atomic-content-platform` |
+
+---
+
+## Where does the Site ID in the dashboard come from?
+
+**It's auto-generated — not pulled from Cloudflare or GitHub.** The dashboard generates it when a domain is added (via Sync or Add Domain):
+
+```typescript
+function generateSiteId(): string {
+  const timestamp = Date.now().toString().slice(-10);
+  const random = Math.floor(Math.random() * 1000)
+    .toString()
+    .padStart(3, "0");
+  return `${timestamp}${random}`;
+}
+```
+
+It's just `timestamp + 3 random digits` — a throwaway unique ID with no real meaning. Stored in `dashboard-index.yaml` alongside each domain entry.
+
+**Possible alternatives if we want it meaningful:**
+1. **Cloudflare Zone ID** — the actual CF zone identifier
+2. **Cloudflare Pages project name** — like `coolnews-dev`
+3. **A custom ID defined per site** in Jira or an internal system
+4. **Remove it entirely** — domain is already a unique identifier

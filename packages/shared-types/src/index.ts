@@ -15,9 +15,11 @@ export type {
 export type {
   ArticleType,
   ArticleFrontmatter,
+  QualityScoreBreakdown,
 } from "./article.js";
 
 export type {
+  QualityWeights,
   PublishSchedule,
   SiteBrief,
   PreviewPageConfig,
@@ -32,4 +34,16 @@ export type {
   GroupConfig,
   SiteConfig,
   ResolvedConfig,
+  DeepPartial,
 } from "./config.js";
+
+export type {
+  AdPlaceholderHeights,
+  OverrideConfig,
+  InlineAdConfig,
+  SimpleMergeMode,
+  ScriptsMergeMode,
+  AdsConfigMergeMode,
+  AdsTxtMergeMode,
+  MergeMode,
+} from "./monetization.js";

@@ -24,8 +24,9 @@ import { parse } from "yaml";
 import type { NetworkManifest } from "@atomic-platform/shared-types";
 
 import { resolveConfig } from "./resolve-config.js";
-import { generateAdsTxt } from "./generate-ads-txt.js";
+import { buildAdsTxtForSite } from "./generate-ads-txt.js";
 import { injectSharedPages } from "./inject-shared-pages.js";
+import { resolveAdsTxtProfile } from "./resolve-ads-txt-profile.js";
 
 // ---------------------------------------------------------------------------
 // ESM __dirname shim
@@ -186,12 +187,34 @@ export async function buildSite(
 
   // ---- 4. Generate ads.txt ----
 
-  const adsTxtContent = generateAdsTxt(resolvedConfig);
+  let adsTxtContent = await buildAdsTxtForSite({
+    networkRepoPath: networkDataPath,
+    siteDomain,
+    resolvedConfig,
+  });
   const adsTxtPath = join(process.cwd(), "public", "ads.txt");
   await writeFileWithDir(adsTxtPath, adsTxtContent);
   console.log(
     `[build-site] Wrote ads.txt (${resolvedConfig.ads_txt.length} entries)`,
   );
+
+  // Resolve ads.txt profile — read from network data repo first, fall back to bundled
+  const networkAdsTxtDir = join(networkDataPath, "shared-pages", "ads-txt");
+  const networkAssignmentsPath = join(networkDataPath, "ads-txt-assignments.json");
+  const bundledAdsTxtDir = join(__dirname, "..", "shared-pages", "ads-txt");
+  const bundledAssignmentsPath = join(__dirname, "..", "ads-txt-assignments.json");
+
+  let profileContent = await resolveAdsTxtProfile(siteDomain, networkAdsTxtDir, networkAssignmentsPath);
+  if (!profileContent.trim()) {
+    profileContent = await resolveAdsTxtProfile(siteDomain, bundledAdsTxtDir, bundledAssignmentsPath);
+  }
+  if (profileContent.trim()) {
+    const combined = adsTxtContent.trim()
+      ? `${adsTxtContent}\n${profileContent}`
+      : profileContent;
+    await writeFileWithDir(adsTxtPath, combined);
+    console.log(`[build-site] Appended ads.txt profile content`);
+  }
 
   // ---- 4a. Link site assets ----
 
@@ -199,10 +222,15 @@ export async function buildSite(
 
   // ---- 5. Inject shared legal pages ----
 
-  const sharedPagesDir = join(__dirname, "..", "shared-pages");
   const pagesOutputDir = join(process.cwd(), "src", "pages");
+  const networkOverridesDir = join(networkDataPath, "overrides");
+  const bundledSharedPagesDir = join(__dirname, "..", "shared-pages");
+  const networkSharedPagesDir = join(networkDataPath, "shared-pages");
 
-  await injectSharedPages(resolvedConfig, sharedPagesDir, pagesOutputDir);
+  // Inject bundled templates first (fallback), then network repo templates (overwrite).
+  // Both passes check for site-specific overrides from the network data repo.
+  await injectSharedPages(resolvedConfig, bundledSharedPagesDir, pagesOutputDir, networkOverridesDir);
+  await injectSharedPages(resolvedConfig, networkSharedPagesDir, pagesOutputDir, networkOverridesDir);
 
   // ---- 6. Summary ----
 

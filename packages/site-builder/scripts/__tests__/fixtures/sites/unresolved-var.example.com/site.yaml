@@ -1,0 +1,20 @@
+domain: unresolved-var.example.com
+site_name: "Unresolved Var Site"
+group: unresolved-group
+active: true
+
+brief:
+  audience: "Test"
+  tone: "Test"
+  article_types:
+    standard: 100
+  topics:
+    - test
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 5
+  schedule:
+    articles_per_day: 1
+    preferred_days:
+      - Monday
+    preferred_time: "10:00"

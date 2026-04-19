@@ -1,0 +1,6 @@
+group_id: mon-group
+name: "Mon Group"
+
+theme:
+  colors:
+    primary: "#FF0000"

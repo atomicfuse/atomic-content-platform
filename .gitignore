@@ -3,12 +3,15 @@ node_modules/
 
 # Build output
 dist/
+!packages/shared-types/dist/
 .turbo/
+*.tsbuildinfo
 
 # Environment
 .env
 .env.local
 .env.*.local
+.env.production
 
 # IDE
 .vscode/

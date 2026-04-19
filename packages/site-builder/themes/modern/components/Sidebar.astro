@@ -10,7 +10,6 @@ import SearchWidget from './widgets/SearchWidget.astro';
 import RecentPostsWidget from './widgets/RecentPostsWidget.astro';
 import CategoriesWidget from './widgets/CategoriesWidget.astro';
 import NewsletterWidget from './widgets/NewsletterWidget.astro';
-import AdSlot from '../../../src/components/AdSlot.astro';
 
 interface ArticleData {
   title: string;
@@ -26,11 +25,7 @@ interface Props {
 
 const { config, articles } = Astro.props;
 const widgets = config.sidebar.widgets.filter((w) => w.enabled !== false);
-
-// Get sidebar ad placements
-const sidebarAds = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'sidebar',
-);
+const sidebarHeight = config.ad_placeholder_heights.sidebar;
 ---
 
 <aside class="sidebar">
@@ -55,7 +50,13 @@ const sidebarAds = config.ads_config.ad_placements.filter(
       case 'newsletter':
         return <NewsletterWidget siteName={config.site_name} />;
       case 'ad':
-        return sidebarAds.map((p) => <AdSlot placement={p} />);
+        return (
+          <div
+            data-slot="sidebar"
+            class="sidebar-ad-anchor"
+            style={`min-height:${sidebarHeight}px;`}
+          />
+        );
       default:
         return null;
     }

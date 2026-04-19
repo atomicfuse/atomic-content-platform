@@ -4,12 +4,17 @@
  *
  * - Loads Google Fonts for the resolved heading + body fonts
  * - Sets CSS custom properties from the theme colour map
- * - Injects tracking / ad scripts in the correct positions
+ * - Injects build-time inline tracking (GA4/GTM only) for first-paint events
+ * - Embeds the resolved inline ad config as window.__ATL_CONFIG__ so the
+ *   runtime ad-loader has an immediate, zero-network-cost source of truth.
+ *   Also emits a CDN URL + domain hint so ad-loader can fall back to
+ *   /m/<domain>.json served either from the same origin or the network CDN.
+ * - Loads the local /ad-loader.js which renders ads, ad network SDKs, and
+ *   the interstitial overlay at runtime.
+ *
+ * No ad-specific divs or ad-network scripts are baked into the static HTML.
  */
-import HeadScripts from '../components/HeadScripts.astro';
-import BodyStartScripts from '../components/BodyStartScripts.astro';
-import BodyEndScripts from '../components/BodyEndScripts.astro';
-import Interstitial from '../components/Interstitial.astro';
+import InlineTracking from '../components/InlineTracking.astro';
 import { getConfig } from '../config';
 import '../../themes/modern/styles/theme.css';
 
@@ -20,7 +25,19 @@ interface Props {
 
 const { title, description } = Astro.props;
 const config = await getConfig();
-const { theme, ads_config } = config;
+const { theme, inlineAdConfig } = config;
+
+// The ad-loader is shipped from the site's own /public directory. External
+// CDN delivery is still supported as a fallback but not the default.
+const adLoaderUrl = import.meta.env.AD_LOADER_URL ?? '/ad-loader.js';
+const cdnBase = import.meta.env.AD_CDN_BASE ?? 'https://cdn.atomicnetwork.com';
+
+// Serialise the inline ad config. Use JSON.stringify with a replacer that
+// escapes `</` so the `</script>` close-tag cannot appear inside the string
+// (XSS-safe inline JSON pattern).
+const inlineConfigHtml = inlineAdConfig
+  ? JSON.stringify(inlineAdConfig).replace(/</g, '\\u003c')
+  : null;
 
 // Build Google Fonts URL
 const fontFamilies = [theme.fonts.heading, theme.fonts.body]
@@ -40,7 +57,7 @@ const cssVars = Object.entries(theme.colors)
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-atl-cdn={cdnBase}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -58,7 +75,14 @@ const cssVars = Object.entries(theme.colors)
       </>
     )}
 
-    <HeadScripts config={config} />
+    <InlineTracking config={config} />
+
+    {inlineConfigHtml && (
+      <script
+        is:inline
+        set:html={`window.__ATL_CONFIG__=${inlineConfigHtml};`}
+      />
+    )}
 
     <slot name="head" />
 
@@ -74,6 +98,13 @@ const cssVars = Object.entries(theme.colors)
       h1, h2, h3, h4, h5, h6 {
         font-family: var(--fontHeading), sans-serif;
       }
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+      [data-ad-placeholder] { transition: min-height 0.2s ease; }
     </style>
 
     {/* Inject theme colour custom properties */}
@@ -81,11 +112,8 @@ const cssVars = Object.entries(theme.colors)
   </head>
 
   <body>
-    <BodyStartScripts config={config} />
-
     <slot />
 
-    <Interstitial enabled={ads_config.interstitial} />
-    <BodyEndScripts config={config} />
+    <script is:inline async src={adLoaderUrl}></script>
   </body>
 </html>

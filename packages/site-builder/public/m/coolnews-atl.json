@@ -1,0 +1,137 @@
+{
+  "domain": "coolnews-atl",
+  "monetization_id": "test-ads",
+  "tracking": {
+    "ga4": "G-COOLNEWS-XXX",
+    "gtm": null,
+    "google_ads": null,
+    "facebook_pixel": null,
+    "custom": []
+  },
+  "scripts": {
+    "head": [],
+    "body_start": [],
+    "body_end": [
+      {
+        "id": "mock-ad-fill",
+        "src": "/mock-ad-fill.js"
+      }
+    ]
+  },
+  "ads_config": {
+    "interstitial": false,
+    "in_content_slots": 2,
+    "sidebar": false,
+    "layout": "standard",
+    "ad_placements": [
+      {
+        "id": "top-banner",
+        "position": "above-content",
+        "sizes": {
+          "desktop": [
+            [
+              728,
+              90
+            ],
+            [
+              970,
+              90
+            ]
+          ],
+          "mobile": [
+            [
+              320,
+              50
+            ],
+            [
+              320,
+              100
+            ]
+          ]
+        },
+        "device": "all"
+      },
+      {
+        "id": "in-content-1",
+        "position": "after-paragraph-3",
+        "sizes": {
+          "desktop": [
+            [
+              336,
+              280
+            ],
+            [
+              300,
+              250
+            ]
+          ],
+          "mobile": [
+            [
+              300,
+              250
+            ]
+          ]
+        },
+        "device": "all"
+      },
+      {
+        "id": "in-content-2",
+        "position": "after-paragraph-7",
+        "sizes": {
+          "desktop": [
+            [
+              336,
+              280
+            ],
+            [
+              300,
+              250
+            ]
+          ],
+          "mobile": [
+            [
+              300,
+              250
+            ]
+          ]
+        },
+        "device": "all"
+      },
+      {
+        "id": "sidebar-sticky",
+        "position": "sidebar",
+        "sizes": {
+          "desktop": [
+            [
+              300,
+              600
+            ],
+            [
+              160,
+              600
+            ],
+            [
+              300,
+              250
+            ]
+          ]
+        },
+        "device": "desktop"
+      },
+      {
+        "id": "mobile-anchor",
+        "position": "sticky-bottom",
+        "sizes": {
+          "mobile": [
+            [
+              320,
+              50
+            ]
+          ]
+        },
+        "device": "mobile"
+      }
+    ]
+  },
+  "generated_at": "2026-04-15T12:55:37.709Z"
+}

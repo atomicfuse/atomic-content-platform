@@ -8,18 +8,20 @@
  *  - Hero featured image (full-width)
  *  - Article header (title, date, author)
  *  - Content area with prose styling
- *  - Ad slots positioned around content
+ *  - Structural ad-slot anchors (data-slot="..."): generic divs with
+ *    reserved heights. The runtime ad-loader.js fills them based on the
+ *    per-domain ad config JSON. No ad-network specifics are baked in.
  *  - RelatedPosts section below content
- *  - Sidebar with sticky ad on desktop
+ *  - Sidebar anchor (desktop only)
  */
 import { getCollection } from 'astro:content';
 import BaseLayout from './BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
-import AdSlot from '../components/AdSlot.astro';
 import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import { getConfig } from '../config';
+import { isVisibleArticle } from '../utils/article-status';
 
 interface Props {
   title: string;
@@ -37,22 +39,12 @@ interface Props {
 const { title, description, author, publishDate, featuredImage, slug, noindex = false, canonicalOverride } = Astro.props;
 const config = await getConfig();
 const canonicalUrl = canonicalOverride ?? `https://${config.domain}/${slug}`;
-
-// Separate ad placements by position type
-const aboveContent = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'above-content',
-);
-const sidebar = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'sidebar',
-);
-const stickyBottom = config.ads_config.ad_placements.filter(
-  (p) => p.position === 'sticky-bottom',
-);
+const heights = config.ad_placeholder_heights;
 
 // Gather related posts (other published articles, excluding current)
 const allArticles = await getCollection('articles');
 const related = allArticles
-  .filter((a) => a.data.status === 'published' && a.data.slug !== slug)
+  .filter((a) => isVisibleArticle(a.data.status) && a.data.slug !== slug)
   .sort(
     (a, b) =>
       new Date(b.data.publishDate).getTime() -
@@ -89,8 +81,12 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   <Header config={config} currentPath={`/${slug}`} />
 
   <main class="article-page">
-    {/* Above-content ads */}
-    {aboveContent.map((p) => <AdSlot placement={p} />)}
+    {/* Above-content structural anchor (CLS-reserved) */}
+    <div
+      data-slot="above-content"
+      class="ad-anchor"
+      style={`min-height:${heights['above-content']}px;display:none;`}
+    ></div>
 
     {/* Hero image */}
     {featuredImage && (
@@ -113,23 +109,30 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
           <slot />
         </div>
 
+        {/* Below-content structural anchor */}
+        <div data-slot="below-content" class="ad-anchor"></div>
+
         {/* Related Posts */}
         <RelatedPosts articles={related} heading="You Might Also Like" />
       </article>
 
-      {/* Sidebar ads (desktop only) */}
-      {sidebar.length > 0 && (
-        <aside class="article-sidebar">
-          {sidebar.map((p) => <AdSlot placement={p} />)}
-        </aside>
-      )}
+      {/* Sidebar anchor (desktop only) */}
+      <aside
+        class="article-sidebar"
+        data-slot="sidebar"
+        style={`min-height:${heights.sidebar}px;`}
+      ></aside>
     </div>
-
-    {/* Sticky bottom ads (mobile only) */}
-    {stickyBottom.map((p) => <AdSlot placement={p} />)}
   </main>
 
   <Footer config={config} />
+
+  {/* Sticky bottom anchor — fixed, hidden until ad-loader fills */}
+  <div
+    data-slot="sticky-bottom"
+    class="ad-sticky-bottom"
+    style={`min-height:${heights['sticky-bottom']}px;display:none;`}
+  ></div>
 </BaseLayout>
 
 <style>
@@ -209,6 +212,7 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   /* Sidebar */
   .article-sidebar {
     display: none;
+    width: 300px;
   }
 
   @media (min-width: 960px) {
@@ -218,5 +222,19 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
       top: 80px;
       align-self: start;
     }
+  }
+
+  .ad-anchor {
+    margin: 1.5rem 0;
+  }
+
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
   }
 </style>

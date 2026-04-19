@@ -1,0 +1,34 @@
+override_id: test-ads-mock
+name: "Test Ads (Mock Demo)"
+priority: 100
+
+targets:
+  sites:
+    - override-site.example.com
+
+tracking:
+  ga4: "G-OVERRIDE-MOCK"
+
+scripts:
+  _mode: replace
+  head: []
+  body_start: []
+  body_end:
+    - id: mock-ad-fill
+      src: "/mock-ad-fill.js"
+
+ads_config:
+  _mode: replace
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: mock-banner
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all
+
+ads_txt:
+  _mode: replace
+  _values: []

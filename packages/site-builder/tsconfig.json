@@ -9,5 +9,5 @@
       "@utils/*": ["src/utils/*"]
     }
   },
-  "include": ["src/**/*", "scripts/**/*", ".astro/types.d.ts"]
+  "include": ["src/**/*", "scripts/**/*", "themes/**/*.ts", ".astro/types.d.ts"]
 }

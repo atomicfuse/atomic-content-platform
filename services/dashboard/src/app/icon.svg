@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Blue glow layer (offset left) -->
+  <g transform="translate(-4, -2)" opacity="0.7">
+    <path d="M64 12 C40 12, 24 30, 24 50 C24 56, 28 60, 34 60 L94 60 C100 60, 104 56, 104 50 C104 30, 88 12, 64 12Z" fill="#33AAFF"/>
+    <line x1="44" y1="60" x2="34" y2="100" stroke="#33AAFF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="54" y1="60" x2="48" y2="108" stroke="#33AAFF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="64" y1="60" x2="64" y2="112" stroke="#33AAFF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="74" y1="60" x2="80" y2="108" stroke="#33AAFF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="84" y1="60" x2="94" y2="100" stroke="#33AAFF" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="34" cy="100" r="5" fill="#33AAFF"/>
+    <circle cx="48" cy="108" r="5" fill="#33AAFF"/>
+    <circle cx="64" cy="112" r="5" fill="#33AAFF"/>
+    <circle cx="80" cy="108" r="5" fill="#33AAFF"/>
+    <circle cx="94" cy="100" r="5" fill="#33AAFF"/>
+  </g>
+  <!-- Purple glow layer (offset right) -->
+  <g transform="translate(4, 2)" opacity="0.7">
+    <path d="M64 12 C40 12, 24 30, 24 50 C24 56, 28 60, 34 60 L94 60 C100 60, 104 56, 104 50 C104 30, 88 12, 64 12Z" fill="#CC44FF"/>
+    <line x1="44" y1="60" x2="34" y2="100" stroke="#CC44FF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="54" y1="60" x2="48" y2="108" stroke="#CC44FF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="64" y1="60" x2="64" y2="112" stroke="#CC44FF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="74" y1="60" x2="80" y2="108" stroke="#CC44FF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="84" y1="60" x2="94" y2="100" stroke="#CC44FF" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="34" cy="100" r="5" fill="#CC44FF"/>
+    <circle cx="48" cy="108" r="5" fill="#CC44FF"/>
+    <circle cx="64" cy="112" r="5" fill="#CC44FF"/>
+    <circle cx="80" cy="108" r="5" fill="#CC44FF"/>
+    <circle cx="94" cy="100" r="5" fill="#CC44FF"/>
+  </g>
+  <!-- Main black layer -->
+  <g>
+    <path d="M64 12 C40 12, 24 30, 24 50 C24 56, 28 60, 34 60 L94 60 C100 60, 104 56, 104 50 C104 30, 88 12, 64 12Z" fill="#000000"/>
+    <line x1="44" y1="60" x2="34" y2="100" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+    <line x1="54" y1="60" x2="48" y2="108" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+    <line x1="64" y1="60" x2="64" y2="112" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+    <line x1="74" y1="60" x2="80" y2="108" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+    <line x1="84" y1="60" x2="94" y2="100" stroke="#000000" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="34" cy="100" r="5" fill="#000000"/>
+    <circle cx="48" cy="108" r="5" fill="#000000"/>
+    <circle cx="64" cy="112" r="5" fill="#000000"/>
+    <circle cx="80" cy="108" r="5" fill="#000000"/>
+    <circle cx="94" cy="100" r="5" fill="#000000"/>
+  </g>
+</svg>

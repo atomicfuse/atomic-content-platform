@@ -1,5 +1,22 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
+import type { AdPlaceholderHeights, InlineAdConfig } from "./monetization.js";
+
+// ---------------------------------------------------------------------------
+// Quality scoring
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-criterion weight configuration for the content quality agent.
+ * Values should sum to 100. Defaults to 20 each when not configured.
+ */
+export interface QualityWeights {
+  seo_quality?: number;
+  tone_match?: number;
+  content_length?: number;
+  factual_accuracy?: number;
+  keyword_relevance?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Site brief
@@ -9,8 +26,18 @@ import type { ScriptEntry, AdsConfig } from "./ads.js";
  * Publishing schedule for a site.
  */
 export interface PublishSchedule {
-  /** Target number of articles to publish per week. */
-  articles_per_week: number;
+  /**
+   * Target number of articles to publish on each matching day. Takes priority
+   * over `articles_per_week` when present.
+   */
+  articles_per_day?: number;
+
+  /**
+   * Legacy field — target number of articles per week. Still read as a
+   * fallback: `articles_per_day ?? ceil(articles_per_week / preferred_days.length)`.
+   * New sites write `articles_per_day` only.
+   */
+  articles_per_week?: number;
 
   /** Preferred days of the week to publish (e.g. ["Monday", "Wednesday"]). */
   preferred_days: string[];
@@ -49,6 +76,21 @@ export interface SiteBrief {
 
   /** Publishing cadence settings. */
   schedule: PublishSchedule;
+
+  /** Content vertical for aggregator API queries. */
+  vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
+
+  /** Target audience type for aggregator API queries. */
+  audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+
+  /** Content language code (ISO 639-1). Defaults to "EN". */
+  language?: string;
+
+  /** Minimum quality score (0-100) for auto-publish. Default 75. */
+  quality_threshold?: number;
+
+  /** Per-criterion weight overrides for quality scoring. Must sum to 100. */
+  quality_weights?: QualityWeights;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +102,7 @@ export interface SiteBrief {
  */
 export interface ThemeConfig {
   /** Base theme template to extend. */
-  base?: "modern" | "editorial";
+  base?: "modern" | "editorial" | "bold" | "classic";
 
   /** Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }). */
   colors?: Record<string, string>;
@@ -86,7 +128,7 @@ export interface ThemeConfig {
  */
 export interface ResolvedThemeConfig {
   /** Base theme template. */
-  base: "modern" | "editorial";
+  base: "modern" | "editorial" | "bold" | "classic";
 
   /** Named colour map. */
   colors: Record<string, string>;
@@ -232,14 +274,36 @@ export interface OrgConfig {
     body: string;
   };
 
+  /**
+   * Default group IDs applied to sites that don't specify their own `groups:`.
+   * References files at `groups/<id>.yaml`.
+   */
+  default_groups?: string[];
+
   /** Organisation-wide tracking configuration. */
   tracking: TrackingConfig;
 
   /** Organisation-wide script injection configuration. */
   scripts: ScriptsConfig;
 
+  /** Organisation-wide script variable substitutions. */
+  scripts_vars?: Record<string, string>;
+
   /** Default advertising configuration. */
   ads_config: AdsConfig;
+
+  /**
+   * Placeholder heights used at build time for CLS prevention. Required so
+   * the static HTML can reserve vertical space before runtime ad injection.
+   */
+  ad_placeholder_heights?: AdPlaceholderHeights;
+
+  /**
+   * Organisation-wide ads.txt entries. Top-level (not inside ads_config).
+   * Merged additively across all layers (org + groups + site).
+   * Overrides use REPLACE semantics for ads_txt.
+   */
+  ads_txt?: string[];
 
   /** Legal page templates keyed by slug (e.g. "privacy-policy", "terms"). */
   legal: Record<string, string>;
@@ -272,13 +336,16 @@ export interface GroupConfig {
   name: string;
 
   /** Group-specific ads.txt lines (merged with org-level entries). */
-  ads_txt: string[];
+  ads_txt?: string[];
 
   /** Tracking overrides — only specified fields replace org defaults. */
   tracking?: Partial<TrackingConfig>;
 
   /** Script overrides — only specified positions replace org defaults. */
   scripts?: Partial<ScriptsConfig>;
+
+  /** Group-level script variable substitutions. */
+  scripts_vars?: Record<string, string>;
 
   /** Advertising overrides. */
   ads_config?: Partial<AdsConfig>;
@@ -319,8 +386,24 @@ export interface SiteConfig {
   /** Optional tagline shown in headers / meta tags. */
   site_tagline?: string | null;
 
-  /** ID of the group this site belongs to. */
-  group: string;
+  /**
+   * @deprecated Legacy single-group field. Use `groups` array instead.
+   * If only `group` is present, treated as `groups: [group]`.
+   */
+  group?: string;
+
+  /**
+   * Group references. Array of group IDs, merged left-to-right.
+   * Each ID references `groups/<id>.yaml` in the network repo.
+   */
+  groups: string[];
+
+  /**
+   * @deprecated Legacy monetization profile reference. The monetization layer
+   * has been replaced by the unified groups + overrides architecture.
+   * If present, the id is appended to the groups array for backward compat.
+   */
+  monetization?: string;
 
   /** Whether the site is live and should be built/deployed. */
   active: boolean;
@@ -345,6 +428,12 @@ export interface SiteConfig {
 
   /** Site-level advertising overrides. */
   ads_config?: Partial<AdsConfig>;
+
+  /**
+   * Site-level ads.txt entries. Top-level (not inside ads_config).
+   * Additively merged with org/group entries.
+   */
+  ads_txt?: string[];
 
   /** Site-level preview page overrides. */
   preview_page?: Partial<PreviewPageConfig>;
@@ -393,8 +482,17 @@ export interface ResolvedConfig {
   /** Site tagline (null if not set). */
   site_tagline: string | null;
 
-  /** Group ID this site belongs to. */
+  /** Primary group ID (first entry in groups array, empty string if none). */
   group: string;
+
+  /** All group IDs this site belongs to (merged left-to-right). */
+  groups: string[];
+
+  /** Override IDs that were applied during config resolution (by priority order). */
+  applied_overrides: string[];
+
+  /** Resolved support email (from org support_email_pattern with domain). */
+  support_email: string;
 
   /** Whether the site is active. */
   active: boolean;
@@ -405,7 +503,7 @@ export interface ResolvedConfig {
   /** Fully-resolved scripts with all placeholders replaced. */
   scripts: ScriptsConfig;
 
-  /** Merged ads.txt lines from org + group. */
+  /** Merged ads.txt lines from org + groups (additive) or override (replace). */
   ads_txt: string[];
 
   /** Fully-resolved advertising configuration. */
@@ -420,6 +518,9 @@ export interface ResolvedConfig {
   /** Merged legal pages. */
   legal: Record<string, string>;
 
+  /** Placeholder heights used at build time for CLS prevention. */
+  ad_placeholder_heights: AdPlaceholderHeights;
+
   /** Fully-resolved preview page configuration. */
   preview_page: PreviewPageConfig;
 
@@ -431,4 +532,26 @@ export interface ResolvedConfig {
 
   /** Fully-resolved search configuration. */
   search: SearchConfig;
+
+  /**
+   * Runtime-shaped inline config JSON. Embedded into the HTML head at build
+   * time (as `window.__ATL_CONFIG__`) so that ad-loader.js can render ads
+   * without a CDN round-trip.
+   */
+  inlineAdConfig: InlineAdConfig;
 }
+
+// ---------------------------------------------------------------------------
+// Utility types
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursively makes all properties of T optional.
+ */
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends (infer U)[]
+    ? DeepPartial<U>[]
+    : T[P] extends Record<string, unknown>
+      ? DeepPartial<T[P]>
+      : T[P];
+};
