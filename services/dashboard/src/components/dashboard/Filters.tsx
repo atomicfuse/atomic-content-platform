@@ -1,7 +1,8 @@
 "use client";
 
 import type { SiteStatus, Company, Vertical } from "@/types/dashboard";
-import { COMPANIES, VERTICALS, STATUSES } from "@/lib/constants";
+import { COMPANIES, STATUSES } from "@/lib/constants";
+import { useVerticals } from "@/hooks/useReferenceData";
 
 interface FiltersProps {
   search: string;
@@ -24,6 +25,7 @@ export function Filters({
   onVerticalChange,
   onStatusChange,
 }: FiltersProps): React.ReactElement {
+  const { verticals } = useVerticals();
   return (
     <div className="flex items-center gap-3 flex-wrap">
       {/* Search */}
@@ -65,8 +67,8 @@ export function Filters({
         className="px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
       >
         <option value="">All Verticals</option>
-        {VERTICALS.map((v) => (
-          <option key={v} value={v}>{v}</option>
+        {verticals.map((v) => (
+          <option key={v.id} value={v.name}>{v.name}</option>
         ))}
       </select>
 

@@ -3,7 +3,8 @@
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
-import { COMPANIES, VERTICALS } from "@/lib/constants";
+import { COMPANIES } from "@/lib/constants";
+import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface StepIdentityProps {
@@ -21,6 +22,8 @@ export function StepIdentity({
   onNext,
   onCancel,
 }: StepIdentityProps): React.ReactElement {
+  const { audiences } = useAudiences();
+  const { verticals } = useVerticals();
   const canProceed = data.pagesProjectName && data.siteName;
 
   function handleProjectNameChange(value: string): void {
@@ -71,12 +74,54 @@ export function StepIdentity({
         />
       </div>
 
-      <Input
-        label="Audience"
-        placeholder="Describe your target audience (e.g. Women 25-45 interested in home decor and DIY projects)"
-        value={data.audience}
-        onChange={(e): void => onChange({ audience: e.target.value })}
-      />
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+          Audiences
+        </label>
+        {data.audienceIds.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {data.audienceIds.map((id) => {
+              const name = audiences.find((a) => a.id === id)?.name ?? id;
+              return (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      onChange({
+                        audienceIds: data.audienceIds.filter((x) => x !== id),
+                        audiences: data.audiences.filter((_, i) => data.audienceIds[i] !== id),
+                      });
+                    }}
+                    className="hover:text-red-400 transition-colors"
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <Select
+          options={audiences
+            .filter((a) => !data.audienceIds.includes(a.id))
+            .map((a) => ({ value: a.id, label: a.name }))}
+          placeholder="Add audience..."
+          value=""
+          onChange={(e): void => {
+            const id = e.target.value;
+            if (!id) return;
+            const name = audiences.find((a) => a.id === id)?.name ?? "";
+            onChange({
+              audienceIds: [...data.audienceIds, id],
+              audiences: [...data.audiences, name],
+            });
+          }}
+        />
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Select
@@ -90,11 +135,13 @@ export function StepIdentity({
         />
         <Select
           label="Vertical"
-          options={VERTICALS.map((v) => ({ value: v, label: v }))}
-          value={data.vertical}
-          onChange={(e): void =>
-            onChange({ vertical: e.target.value as WizardFormData["vertical"] })
-          }
+          options={verticals.map((v) => ({ value: v.id, label: v.name }))}
+          value={data.verticalId}
+          onChange={(e): void => {
+            const id = e.target.value;
+            const name = verticals.find((v) => v.id === id)?.name ?? "";
+            onChange({ verticalId: id, vertical: name });
+          }}
         />
       </div>
 

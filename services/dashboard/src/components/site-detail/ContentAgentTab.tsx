@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
+import { useAudiences } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import Link from "next/link";
@@ -48,12 +50,25 @@ export function ContentAgentTab({
   pagesProject,
 }: ContentAgentTabProps): React.ReactElement {
   const { toast } = useToast();
+  const { audiences: audienceOptions } = useAudiences();
 
   // --- Identity state ---
   const [savingIdentity, setSavingIdentity] = useState(false);
   const [siteName, setSiteName] = useState((siteConfig?.site_name as string) ?? "");
   const [siteTagline, setSiteTagline] = useState((siteConfig?.site_tagline as string) ?? "");
-  const [audience, setAudience] = useState(brief?.audience ?? "");
+  const briefRaw = siteConfig?.brief as Record<string, unknown> | undefined;
+  const [audiences, setAudiences] = useState<string[]>(() => {
+    const raw = briefRaw?.audiences;
+    if (Array.isArray(raw)) return raw as string[];
+    const single = brief?.audience;
+    return single ? [single] : [];
+  });
+  const [audienceIds, setAudienceIds] = useState<string[]>(() => {
+    const raw = briefRaw?.audience_type_ids;
+    if (Array.isArray(raw)) return raw as string[];
+    const single = briefRaw?.audience_type_id as string | undefined;
+    return single ? [single] : [];
+  });
   const [tone, setTone] = useState(brief?.tone ?? "");
 
   // --- Content Brief state ---
@@ -159,7 +174,7 @@ export function ContentAgentTab({
           domain,
           logoBase64: null,
           faviconBase64: null,
-          configUpdates: { siteName, siteTagline, audience, tone },
+          configUpdates: { siteName, siteTagline, audiences, audienceIds, tone },
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
@@ -232,7 +247,50 @@ export function ContentAgentTab({
       <div className="space-y-4">
         <Input label="Site Name" value={siteName} onChange={(e): void => setSiteName(e.target.value)} />
         <Input label="Tagline" value={siteTagline} onChange={(e): void => setSiteTagline(e.target.value)} />
-        <Input label="Target Audience" value={audience} onChange={(e): void => setAudience(e.target.value)} />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Target Audiences
+          </label>
+          {audienceIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {audienceIds.map((id) => {
+                const name = audienceOptions.find((a) => a.id === id)?.name ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={(): void => {
+                        setAudienceIds(audienceIds.filter((x) => x !== id));
+                        setAudiences(audiences.filter((_, i) => audienceIds[i] !== id));
+                      }}
+                      className="hover:text-red-400 transition-colors"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <Select
+            options={audienceOptions
+              .filter((a) => !audienceIds.includes(a.id))
+              .map((a) => ({ value: a.id, label: a.name }))}
+            placeholder="Add audience..."
+            value=""
+            onChange={(e): void => {
+              const id = e.target.value;
+              if (!id) return;
+              const name = audienceOptions.find((a) => a.id === id)?.name ?? "";
+              setAudienceIds([...audienceIds, id]);
+              setAudiences([...audiences, name]);
+            }}
+          />
+        </div>
         <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
       </div>
       <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">

@@ -16,7 +16,10 @@ const baseBrief: SiteBrief = {
   review_percentage: 5,
   schedule: { articles_per_week: 3, preferred_days: ["Monday"], preferred_time: "10:00" },
   vertical: "Tech",
+  vertical_id: "abc123",
   audience_type: "Adult 25-44",
+  audience_type_ids: ["def456"],
+  audience_type_id: "def456",
   language: "EN",
 };
 
@@ -24,8 +27,8 @@ describe("buildQueryParams", () => {
   it("maps brief fields to API params", () => {
     const params = buildQueryParams(baseBrief);
 
-    expect(params.vertical).toBe("Tech");
-    expect(params.audience_type).toBe("Adult 25-44");
+    expect(params.vertical_id).toBe("abc123");
+    expect(params.audience_type_id).toBe("def456");
     expect(params.language).toBe("EN");
     expect(params.limit).toBe(3);
     expect(params.source_quality).toBe("High");
@@ -51,11 +54,11 @@ describe("buildQueryParams", () => {
     expect(params.limit).toBe(10);
   });
 
-  it("omits vertical and audience_type when not set in brief", () => {
-    const brief = { ...baseBrief, vertical: undefined, audience_type: undefined };
+  it("omits vertical_id and audience_type_id when not set in brief", () => {
+    const brief = { ...baseBrief, vertical_id: undefined, audience_type_ids: undefined, audience_type_id: undefined };
     const params = buildQueryParams(brief);
-    expect(params.vertical).toBeUndefined();
-    expect(params.audience_type).toBeUndefined();
+    expect(params.vertical_id).toBeUndefined();
+    expect(params.audience_type_id).toBeUndefined();
   });
 });
 

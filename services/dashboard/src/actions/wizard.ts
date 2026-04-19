@@ -62,7 +62,8 @@ export async function createSiteAndBuildStaging(
     active: true,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
-      audience: data.audience,
+      audiences: data.audiences,
+      audience_type_ids: data.audienceIds.length > 0 ? data.audienceIds : undefined,
       tone: data.tone,
       article_types: {
         listicle: 40,
@@ -75,9 +76,8 @@ export async function createSiteAndBuildStaging(
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
         : [],
-      vertical: ["Tech", "Travel", "News", "Sport", "Lifestyle", "Entertainment", "Food & Drink", "Animals", "Science"].includes(data.vertical)
-        ? data.vertical
-        : undefined,
+      vertical: data.vertical || undefined,
+      vertical_id: data.verticalId || undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,
@@ -93,8 +93,8 @@ export async function createSiteAndBuildStaging(
   // 2. Build skill.md content
   const skillContent = `# Content Agent Instructions for ${data.siteName}
 
-## Target Audience
-${data.audience}
+## Target Audiences
+${data.audiences.join(", ") || "General"}
 
 ## Tone
 ${data.tone}
@@ -124,7 +124,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
           geminiKey,
           data.siteName,
           data.vertical,
-          data.audience
+          data.audiences.join(", ") || undefined
         );
       } catch (err) {
         console.warn("[wizard] Logo generation failed, continuing without:", err);
@@ -503,7 +503,9 @@ export async function refreshPreviewUrl(domain: string): Promise<string | null> 
 export interface StagingSiteConfig {
   siteName: string;
   siteTagline: string;
-  audience: string;
+  audiences?: string[];
+  /** Content Aggregator audience type IDs. */
+  audienceIds?: string[];
   tone: string;
   topics: string[];
   contentGuidelines: string;
@@ -538,7 +540,7 @@ export async function readStagingConfig(
   return {
     siteName: (config.site_name as string) ?? "",
     siteTagline: (config.site_tagline as string) ?? "",
-    audience: (brief?.audience as string) ?? "",
+    audiences: (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []),
     tone: (brief?.tone as string) ?? "",
     topics: (brief?.topics as string[]) ?? [],
     contentGuidelines: Array.isArray(brief?.content_guidelines)
@@ -589,7 +591,8 @@ export async function updateStagingSite(
 
   // Update brief
   const brief = (existing.brief ?? {}) as Record<string, unknown>;
-  if (updates.audience !== undefined) brief.audience = updates.audience;
+  if (updates.audiences !== undefined) brief.audiences = updates.audiences;
+  if (updates.audienceIds !== undefined) brief.audience_type_ids = updates.audienceIds;
   if (updates.tone !== undefined) brief.tone = updates.tone;
   if (updates.topics !== undefined) brief.topics = updates.topics;
   if (updates.contentGuidelines !== undefined) {
@@ -643,7 +646,8 @@ export async function generateLogoPreview(domain: string): Promise<string | null
   const siteName = (config?.site_name as string) ?? domain;
   const vertical = site?.vertical ?? "Other";
   const brief = config?.brief as Record<string, unknown> | undefined;
-  const audience = brief?.audience as string | undefined;
+  const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
+  const audience = audiences.join(", ") || undefined;
 
   const logoBuffer = await generateLogoWithGemini(geminiKey, siteName, vertical, audience);
   if (!logoBuffer) return null;
@@ -674,7 +678,8 @@ export async function saveAllStagingEdits(
     if (configUpdates.siteTagline !== undefined) existing.site_tagline = configUpdates.siteTagline || null;
 
     const brief = (existing.brief ?? {}) as Record<string, unknown>;
-    if (configUpdates.audience !== undefined) brief.audience = configUpdates.audience;
+    if (configUpdates.audiences !== undefined) brief.audiences = configUpdates.audiences;
+    if (configUpdates.audienceIds !== undefined) brief.audience_type_ids = configUpdates.audienceIds;
     if (configUpdates.tone !== undefined) brief.tone = configUpdates.tone;
     if (configUpdates.topics !== undefined) brief.topics = configUpdates.topics;
     if (configUpdates.contentGuidelines !== undefined) {

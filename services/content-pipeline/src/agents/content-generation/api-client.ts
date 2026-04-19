@@ -69,6 +69,10 @@ export interface GetContentParams {
   status?: string;
   content_type?: string;
   language?: string;
+  /** Content Aggregator vertical ID for filtering. */
+  vertical_id?: string;
+  /** Content Aggregator audience type ID for filtering. */
+  audience_type_id?: string;
 }
 
 /**
@@ -86,6 +90,12 @@ export async function getContent(params: GetContentParams): Promise<ContentItem[
 
   if (params.language) {
     url.searchParams.set("language", params.language);
+  }
+  if (params.vertical_id) {
+    url.searchParams.set("vertical_id", params.vertical_id);
+  }
+  if (params.audience_type_id) {
+    url.searchParams.set("audience_type_id", params.audience_type_id);
   }
 
   console.log(`[api-client] GET ${url.toString()}`);
