@@ -178,16 +178,27 @@
     div.dataset.adId = p.id;
     div.dataset.sizesDesktop = JSON.stringify(sizes.desktop || []);
     div.dataset.sizesMobile = JSON.stringify(sizes.mobile || []);
-    var first = (sizes.desktop && sizes.desktop[0]) || (sizes.mobile && sizes.mobile[0]) || [300, 250];
-    // 0 means fluid — use 100% for width, skip minHeight for height
+    // Pick sizes for current viewport — mobile if narrower than 768 px
+    var isMobile = window.matchMedia
+      ? window.matchMedia('(max-width: 767px)').matches
+      : window.innerWidth < 768;
+    var activeSizes = isMobile
+      ? (sizes.mobile && sizes.mobile.length ? sizes.mobile : sizes.desktop)
+      : (sizes.desktop && sizes.desktop.length ? sizes.desktop : sizes.mobile);
+    var first = (activeSizes && activeSizes[0]) || [300, 250];
+    // 0 means fluid — use 100% for that dimension.
+    // Set both min (CLS prevention) and max (overflow prevention) constraints.
     if (first[0] > 0) {
       div.style.minWidth = first[0] + 'px';
+      div.style.maxWidth = first[0] + 'px';
     } else {
       div.style.width = '100%';
     }
     if (first[1] > 0) {
       div.style.minHeight = first[1] + 'px';
+      div.style.maxHeight = first[1] + 'px';
     }
+    div.style.overflow = 'hidden';
     div.style.margin = '1rem auto';
     div.style.textAlign = 'center';
     var label = document.createElement('span');
