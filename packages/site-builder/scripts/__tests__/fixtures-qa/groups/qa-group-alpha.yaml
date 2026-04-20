@@ -1,0 +1,43 @@
+group_id: qa-group-alpha
+name: "QA Group Alpha"
+
+tracking:
+  gtm: "GTM-ALPHA"
+  google_ads: "AW-ALPHA"
+  facebook_pixel: "PX-ALPHA"
+
+scripts:
+  head:
+    - id: org-analytics
+      src: "https://analytics.example.com/alpha.js"
+      async: true
+    - id: alpha-script
+      inline: "console.log('alpha: {{group_var}}')"
+  body_start: []
+  body_end: []
+
+scripts_vars:
+  group_var: "alpha-value"
+  shared_var: "from-alpha"
+
+ads_config:
+  interstitial: true
+  layout: standard
+  ad_placements:
+    - id: alpha-banner
+      position: sidebar
+      sizes:
+        desktop: [[300, 250]]
+        mobile: [[300, 250]]
+      device: all
+
+ads_txt:
+  - "net-alpha.com, 111, DIRECT"
+
+theme:
+  colors:
+    primary: "#AA0000"
+    secondary: "#AA1111"
+
+legal_pages_override:
+  company_country: "UK"

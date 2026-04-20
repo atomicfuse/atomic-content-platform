@@ -1,0 +1,23 @@
+domain: combo-ads-cascade.test
+site_name: "Ads Cascade Combo"
+groups: [qa-group-alpha, qa-group-beta]
+active: true
+ads_config:
+  ad_placements:
+    - id: site-ad
+      position: after-paragraph
+      sizes:
+        desktop: [[300, 250]]
+        mobile: [[300, 250]]
+      device: all
+ads_txt:
+  - "site-ads.com, 99, DIRECT"
+brief:
+  audience: "QA testers"
+  tone: "Casual"
+  article_types: {standard: 100}
+  topics: ["qa"]
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 5
+  schedule: {articles_per_day: 1, preferred_days: [Monday], preferred_time: "10:00"}

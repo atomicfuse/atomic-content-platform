@@ -1,0 +1,35 @@
+override_id: replace-override
+name: "Replace Override"
+priority: 30
+
+targets:
+  sites:
+    - override-replace.test
+
+tracking:
+  _mode: replace
+  ga4: "G-REPLACE-ONLY"
+
+scripts:
+  _mode: replace
+  head:
+    - id: replace-script
+      src: "/replace.js"
+  body_start: []
+  body_end: []
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: override-banner
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all
+
+ads_txt:
+  _mode: replace
+  _values:
+    - "override-only.com, 1, DIRECT"

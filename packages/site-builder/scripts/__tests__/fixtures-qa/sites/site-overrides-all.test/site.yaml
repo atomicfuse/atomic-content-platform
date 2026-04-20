@@ -1,0 +1,39 @@
+domain: site-overrides-all.test
+site_name: "Site Overrides All"
+groups: [qa-group-alpha]
+active: true
+tracking:
+  ga4: "G-SITE"
+  gtm: "GTM-SITE"
+  google_ads: "AW-SITE"
+ads_config:
+  interstitial: false
+  layout: minimal
+  ad_placements:
+    - id: site-banner
+      position: above-content
+      sizes:
+        desktop: [[970, 250]]
+        mobile: [[320, 100]]
+      device: all
+ads_txt:
+  - "site-specific.com, 42, DIRECT"
+scripts_vars:
+  group_var: "site-override-value"
+theme:
+  colors:
+    primary: "#SITE00"
+  logo: "/site-logo.svg"
+  fonts:
+    heading: "Site Font"
+legal:
+  site_description: "Site overrides all"
+brief:
+  audience: "QA testers"
+  tone: "Professional"
+  article_types: {standard: 100}
+  topics: ["qa"]
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 10
+  schedule: {articles_per_day: 1, preferred_days: [Monday], preferred_time: "09:00"}
