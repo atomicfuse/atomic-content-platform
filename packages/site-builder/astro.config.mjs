@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import sitemap from '@astrojs/sitemap';
 import { paragraphIndexPlugin } from './src/utils/index-paragraphs.ts';
+import { stripLeadingH1Plugin } from './src/utils/strip-leading-h1.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,6 @@ export default defineConfig({
   integrations: [sitemap()],
 
   markdown: {
-    rehypePlugins: [paragraphIndexPlugin],
+    rehypePlugins: [stripLeadingH1Plugin, paragraphIndexPlugin],
   },
 });

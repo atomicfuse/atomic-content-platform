@@ -543,7 +543,11 @@ async function processItem(
       ...(seo.readingTime ? { reading_time: seo.readingTime } : {}),
     };
 
-    const markdown = matter.stringify(generated.body, frontmatter);
+    // Strip leading H1 from body — the title is in frontmatter and rendered
+    // by the layout. Models sometimes include it despite prompt instructions.
+    const cleanBody = generated.body.replace(/^\s*#\s+[^\n]+\n*/, "");
+
+    const markdown = matter.stringify(cleanBody, frontmatter);
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
 
     return {

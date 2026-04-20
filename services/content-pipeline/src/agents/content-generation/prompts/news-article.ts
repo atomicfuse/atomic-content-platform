@@ -2,7 +2,7 @@
  * Prompt templates for factual/news article generation (Claude Sonnet).
  *
  * Journalist tone, factual fidelity, no invented facts.
- * Default target: 600-900 words, markdown with H1/H2 (overridden by content_guidelines).
+ * Default target: 600-900 words, markdown with H2 subheadings (overridden by content_guidelines).
  */
 
 import type { PromptContext } from "../generators/base-generator.js";
@@ -50,7 +50,7 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
   "description": "string — 1-2 sentence factual meta description (150-160 chars)",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST must be a site topic, then 2-4 descriptive tags"],
-  "body": "string — ${wc.label} article in markdown with H1 title and H2 subheadings. STRICT: never exceed ${wc.max} words."
+  "body": "string — ${wc.label} article in markdown with H2 subheadings. Do NOT include an H1 title — it is rendered separately from frontmatter. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

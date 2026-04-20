@@ -2,7 +2,7 @@
  * Prompt templates for general/evergreen article generation (OpenAI GPT-4o-mini).
  *
  * Engagement + SEO focused, conversational tone, TL;DR.
- * Default target: 800-1200 words, markdown with H1/H2/H3 (overridden by content_guidelines).
+ * Default target: 800-1200 words, markdown with H2/H3 subheadings (overridden by content_guidelines).
  */
 
 import type { PromptContext } from "../generators/base-generator.js";
@@ -51,7 +51,7 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
   "description": "string — engaging meta description (150-160 chars)",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST must be a site topic, then 2-4 descriptive tags"],
-  "body": "string — ${wc.label} article in markdown with H1, H2, H3. Include a TL;DR near the top. STRICT: never exceed ${wc.max} words."
+  "body": "string — ${wc.label} article in markdown with H2, H3 subheadings. Do NOT include an H1 title — it is rendered separately from frontmatter. Include a TL;DR near the top. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

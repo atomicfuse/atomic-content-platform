@@ -43,7 +43,7 @@ Respond ONLY with a valid JSON object (no markdown fences):
   "title": "string — revised headline",
   "description": "string — revised meta description (150-160 chars)",
   "tags": ["string — tags, first must be a site topic"],
-  "body": "string — revised ${wc.label} article body in markdown. STRICT: never exceed ${wc.max} words."
+  "body": "string — revised ${wc.label} article body in markdown with H2 subheadings. Do NOT include an H1 title — it is rendered separately from frontmatter. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

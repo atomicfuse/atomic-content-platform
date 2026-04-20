@@ -97,7 +97,11 @@ export async function regenerateArticle(
       quality_note: "Auto-revised by regeneration agent",
     };
 
-    const markdown = matter.stringify(revised.body, updatedFrontmatter);
+    // Strip leading H1 from body — the title is in frontmatter and rendered
+    // by the layout. Models sometimes include it despite prompt instructions.
+    const cleanBody = revised.body.replace(/^\s*#\s+[^\n]+\n*/, "");
+
+    const markdown = matter.stringify(cleanBody, updatedFrontmatter);
 
     // Commit revised article
     await commitFile(octokit, config.networkRepo, {
