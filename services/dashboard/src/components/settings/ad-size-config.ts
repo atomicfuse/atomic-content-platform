@@ -42,18 +42,34 @@ export function sizeTuplesToConfig(
   return config;
 }
 
-/** Compute number[][] from AdSizeConfig's customSizes (filters out incomplete entries). */
+/**
+ * Compute number[][] from AdSizeConfig's customSizes.
+ * A size is valid when at least one dimension is > 0:
+ *   - width > 0, height > 0 → fixed WxH (e.g. 300×250)
+ *   - width  = 0, height > 0 → fluid width, fixed height (e.g. sticky bottom banner)
+ *   - width > 0, height  = 0 → fixed width, fluid height (e.g. sidebar stretcher)
+ *   - width  = 0, height = 0 → invalid, filtered out
+ */
 export function configToSizeTuples(config: AdSizeConfig): number[][] {
   return config.customSizes
-    .filter((s) => s.width > 0 && s.height > 0)
+    .filter((s) => s.width > 0 || s.height > 0)
     .map((s) => [s.width, s.height]);
 }
 
-/** Format customSizes as display string "WxH, WxH". */
+/**
+ * Format customSizes as display string.
+ * - Both set: "300x250"
+ * - Fluid width: "fluidx250"
+ * - Fluid height: "300xfluid"
+ */
 export function formatConfigSizes(config: AdSizeConfig): string {
   return config.customSizes
-    .filter((s) => s.width > 0 && s.height > 0)
-    .map((s) => `${s.width}x${s.height}`)
+    .filter((s) => s.width > 0 || s.height > 0)
+    .map((s) => {
+      const w = s.width > 0 ? String(s.width) : "fluid";
+      const h = s.height > 0 ? String(s.height) : "fluid";
+      return `${w}x${h}`;
+    })
     .join(", ");
 }
 
@@ -83,10 +99,11 @@ export function validateSizeConfig(config: AdSizeConfig): SizeConfigErrors {
   }
 
   const validSizes = config.customSizes.filter(
-    (s) => s.width > 0 && s.height > 0,
+    (s) => s.width > 0 || s.height > 0,
   );
   if (validSizes.length === 0) {
-    errors.customSizes = "At least one custom size is required";
+    errors.customSizes =
+      "At least one custom size is required (set a dimension to 0 for fluid)";
   }
 
   return errors;

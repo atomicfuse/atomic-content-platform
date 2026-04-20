@@ -192,9 +192,10 @@ export function SizeConfigPanel({
           <div key={i} className="flex items-center gap-1.5">
             <input
               type="number"
-              min={1}
+              min={0}
               value={size.width || ""}
               placeholder="W"
+              title="Width in px (leave empty for fluid/100%)"
               onChange={(e): void =>
                 updateCustomSize(i, "width", e.target.value)
               }
@@ -204,9 +205,10 @@ export function SizeConfigPanel({
             <span className="text-xs text-[var(--text-muted)]">&times;</span>
             <input
               type="number"
-              min={1}
+              min={0}
               value={size.height || ""}
               placeholder="H"
+              title="Height in px (leave empty for fluid/auto)"
               onChange={(e): void =>
                 updateCustomSize(i, "height", e.target.value)
               }

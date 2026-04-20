@@ -66,22 +66,37 @@ describe("configToSizeTuples", () => {
     ]);
   });
 
-  it("filters out zero-width entries", () => {
+  it("keeps fluid-width entries (width=0, height>0)", () => {
     const config = createDefaultSizeConfig();
     config.customSizes = [
       { width: 728, height: 90 },
-      { width: 0, height: 50 },
+      { width: 0, height: 250 },
     ];
-    expect(configToSizeTuples(config)).toEqual([[728, 90]]);
+    expect(configToSizeTuples(config)).toEqual([
+      [728, 90],
+      [0, 250],
+    ]);
   });
 
-  it("filters out zero-height entries", () => {
+  it("keeps fluid-height entries (width>0, height=0)", () => {
     const config = createDefaultSizeConfig();
     config.customSizes = [
-      { width: 728, height: 0 },
+      { width: 300, height: 0 },
       { width: 300, height: 250 },
     ];
-    expect(configToSizeTuples(config)).toEqual([[300, 250]]);
+    expect(configToSizeTuples(config)).toEqual([
+      [300, 0],
+      [300, 250],
+    ]);
+  });
+
+  it("filters out fully-zero entries (width=0, height=0)", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [
+      { width: 728, height: 90 },
+      { width: 0, height: 0 },
+    ];
+    expect(configToSizeTuples(config)).toEqual([[728, 90]]);
   });
 
   it("returns empty array for empty customSizes", () => {
@@ -102,7 +117,7 @@ describe("formatConfigSizes", () => {
     expect(formatConfigSizes(createDefaultSizeConfig())).toBe("");
   });
 
-  it("skips zero-dimension entries", () => {
+  it("skips fully-zero entries", () => {
     const config = createDefaultSizeConfig();
     config.customSizes = [
       { width: 728, height: 90 },
@@ -115,12 +130,50 @@ describe("formatConfigSizes", () => {
     const config = sizeTuplesToConfig([[320, 50]]);
     expect(formatConfigSizes(config)).toBe("320x50");
   });
+
+  it("formats fluid-width as 'fluidxH'", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [{ width: 0, height: 250 }];
+    expect(formatConfigSizes(config)).toBe("fluidx250");
+  });
+
+  it("formats fluid-height as 'Wxfluid'", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [{ width: 300, height: 0 }];
+    expect(formatConfigSizes(config)).toBe("300xfluid");
+  });
+
+  it("formats mixed sizes with fluid entries", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [
+      { width: 728, height: 90 },
+      { width: 0, height: 250 },
+      { width: 300, height: 0 },
+    ];
+    expect(formatConfigSizes(config)).toBe("728x90, fluidx250, 300xfluid");
+  });
 });
 
 describe("validateSizeConfig", () => {
   it("returns empty errors for valid config with sizes", () => {
     const config = sizeTuplesToConfig([[728, 90]]);
     const errors = validateSizeConfig(config);
+    expect(hasErrors(errors)).toBe(false);
+  });
+
+  it("valid for fluid-width size (width=0, height>0)", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [{ width: 0, height: 250 }];
+    const errors = validateSizeConfig(config);
+    expect(errors.customSizes).toBeUndefined();
+    expect(hasErrors(errors)).toBe(false);
+  });
+
+  it("valid for fluid-height size (width>0, height=0)", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [{ width: 300, height: 0 }];
+    const errors = validateSizeConfig(config);
+    expect(errors.customSizes).toBeUndefined();
     expect(hasErrors(errors)).toBe(false);
   });
 
@@ -145,15 +198,15 @@ describe("validateSizeConfig", () => {
   it("errors when no valid custom sizes exist", () => {
     const config = createDefaultSizeConfig();
     const errors = validateSizeConfig(config);
-    expect(errors.customSizes).toBe("At least one custom size is required");
+    expect(errors.customSizes).toBeDefined();
     expect(hasErrors(errors)).toBe(true);
   });
 
-  it("errors when only zero-dimension sizes exist", () => {
+  it("errors when only fully-zero sizes exist (both dimensions 0)", () => {
     const config = createDefaultSizeConfig();
     config.customSizes = [{ width: 0, height: 0 }];
     const errors = validateSizeConfig(config);
-    expect(errors.customSizes).toBe("At least one custom size is required");
+    expect(errors.customSizes).toBeDefined();
   });
 
   it("no range error when only one bound is set", () => {
@@ -210,6 +263,19 @@ describe("validatePlacementConfigs", () => {
     expect(valid).toBe(true);
   });
 
+  it("returns true for fluid-width placement", () => {
+    const config = createDefaultSizeConfig();
+    config.customSizes = [{ width: 0, height: 250 }];
+    const valid = validatePlacementConfigs([
+      {
+        device: "all",
+        desktopSizeConfig: config,
+        mobileSizeConfig: sizeTuplesToConfig([[320, 50]]),
+      },
+    ]);
+    expect(valid).toBe(true);
+  });
+
   it("returns false when active desktop panel has no custom sizes", () => {
     const valid = validatePlacementConfigs([
       {
@@ -251,6 +317,20 @@ describe("round-trip: sizeTuplesToConfig → configToSizeTuples", () => {
       [970, 250],
       [300, 600],
     ];
+    const config = sizeTuplesToConfig(original);
+    const result = configToSizeTuples(config);
+    expect(result).toEqual(original);
+  });
+
+  it("preserves fluid-width sizes through round-trip", () => {
+    const original = [[0, 250]];
+    const config = sizeTuplesToConfig(original);
+    const result = configToSizeTuples(config);
+    expect(result).toEqual(original);
+  });
+
+  it("preserves fluid-height sizes through round-trip", () => {
+    const original = [[300, 0]];
     const config = sizeTuplesToConfig(original);
     const result = configToSizeTuples(config);
     expect(result).toEqual(original);
