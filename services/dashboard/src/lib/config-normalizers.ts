@@ -8,6 +8,16 @@ import { sizeTuplesToConfig } from "@/components/settings/ad-size-config";
  * Used by group page, site config tab, and any other consumer of UnifiedConfigForm.
  */
 
+function isValidSizeConfig(raw: unknown): raw is AdSizeConfig {
+  if (!raw || typeof raw !== "object") return false;
+  const obj = raw as Record<string, unknown>;
+  return (
+    obj.ratio != null && typeof obj.ratio === "object" &&
+    obj.range != null && typeof obj.range === "object" &&
+    Array.isArray(obj.customSizes)
+  );
+}
+
 export function normalizeAdsTxt(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw as string[];
   if (typeof raw === "string") {
@@ -68,8 +78,12 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
       }
       const dismissible = p.dismissible as boolean | undefined;
       // Hydrate size config: use persisted config or migrate from sizes
-      const rawDesktopCfg = p.desktopSizeConfig as AdSizeConfig | undefined;
-      const rawMobileCfg = p.mobileSizeConfig as AdSizeConfig | undefined;
+      const rawDesktopCfg = isValidSizeConfig(p.desktopSizeConfig)
+        ? (p.desktopSizeConfig as AdSizeConfig)
+        : undefined;
+      const rawMobileCfg = isValidSizeConfig(p.mobileSizeConfig)
+        ? (p.mobileSizeConfig as AdSizeConfig)
+        : undefined;
 
       return {
         id: (p.id as string) ?? "",

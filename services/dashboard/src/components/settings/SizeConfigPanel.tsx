@@ -20,7 +20,7 @@ export function SizeConfigPanel({
   onChange,
   disabled = false,
 }: SizeConfigPanelProps): React.ReactElement {
-  const errors = validateSizeConfig(config);
+  const errors = disabled ? ({} as ReturnType<typeof validateSizeConfig>) : validateSizeConfig(config);
   const preview = formatConfigSizes(config);
 
   function updateRatio(field: "x" | "y", raw: string): void {
