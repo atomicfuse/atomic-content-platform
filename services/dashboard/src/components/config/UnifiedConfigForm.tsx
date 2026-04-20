@@ -194,15 +194,15 @@ const ADS_CONFIG_MODES: ModeOption[] = [
   {
     value: "add",
     label: "Add (recommended)",
-    info: "Append new placements to the group chain. Existing placements are never touched.",
-    exampleInherited: "sidebar, sticky-bottom",
-    exampleOverride: "above-content",
-    exampleResult: "sidebar, sticky-bottom, above-content",
+    info: "Append placements on top of inherited ones. Even if IDs match, nothing is replaced \u2014 you get both. Use this to stack multiple units in the same slot.",
+    exampleInherited: "sidebar (id:1), sticky-bottom (id:2)",
+    exampleOverride: "sidebar (id:3)",
+    exampleResult: "sidebar (id:1), sticky-bottom (id:2), sidebar (id:3) \u2190 two sidebars",
   },
   {
     value: "merge_placements",
     label: "Merge placements",
-    info: "Keep existing placements and add/update specific ones by ID. Same-ID placements are replaced.",
+    info: "Match by ID: same-ID placements are replaced, new IDs are added. No duplicates. Use this to swap out a specific placement.",
     exampleInherited: "sidebar (id:1), sticky-bottom (id:2)",
     exampleOverride: "sidebar-wide (id:1), banner (id:3)",
     exampleResult: "sidebar-wide (id:1), sticky-bottom (id:2), banner (id:3)",
@@ -211,9 +211,9 @@ const ADS_CONFIG_MODES: ModeOption[] = [
     value: "replace",
     label: "Replace",
     info: "Wipe the entire ad layout and use only what you define here.",
-    exampleInherited: "sidebar, sticky-bottom",
-    exampleOverride: "banner",
-    exampleResult: "banner only",
+    exampleInherited: "sidebar (id:1), sticky-bottom (id:2)",
+    exampleOverride: "banner (id:3)",
+    exampleResult: "banner (id:3) only",
   },
 ];
 
