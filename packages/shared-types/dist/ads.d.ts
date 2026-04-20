@@ -53,6 +53,8 @@ export interface AdPlacement {
     sizes: AdPlacementSizes;
     /** Which devices this placement targets. */
     device: "all" | "desktop" | "mobile";
+    /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
+    dismissible?: boolean;
 }
 /**
  * Full advertising configuration for a site or group.

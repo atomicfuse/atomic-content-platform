@@ -64,11 +64,13 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
       } else if (rawSizes && typeof rawSizes === "object") {
         sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
       }
+      const dismissible = p.dismissible as boolean | undefined;
       return {
         id: (p.id as string) ?? "",
         position: (p.position as string) ?? "",
         device: (p.devices ?? p.device ?? "all") as "all" | "desktop" | "mobile",
         sizes,
+        ...(dismissible !== undefined && { dismissible }),
       };
     }),
   };
