@@ -76,10 +76,13 @@ sites/<domain>/              Per-site — ONLY exists on main after publish-to-p
   articles/<slug>.md         Markdown articles with YAML frontmatter (quality_score, status, …)
   theme/ assets/ …           Per-site assets
   .build-trigger             Touched to force Cloudflare Pages rebuild
-overrides/                   Shared-page per-site overrides (by site_id)
+overrides/
+  <site_id>/<name>.yaml      Shared-page per-site overrides (content only)
+  config/<id>.yaml           Config overrides — targeted exceptions with merge modes (see below)
 scheduler/config.yaml        Global scheduler gate: { enabled, run_at_hours, timezone }
-org.yaml / network.yaml      Org- and network-wide defaults (merged with group.yaml → site.yaml)
-groups/<group>.yaml          Group-level defaults
+network.yaml                 Platform manifest (network_id, platform_version, network_name)
+org.yaml                     Org-wide defaults: tracking, scripts, ads_config, ads_txt, theme, legal, CLS heights
+groups/<group>.yaml          Group-level config overrides (same fields as org, all optional/partial)
 ```
 
 ### Branch conventions in the network repo
@@ -148,11 +151,91 @@ function shouldWriteLocal(config): boolean {
 - Dashboard `/scheduler` page writes the global config; **Run Now** calls `/scheduled-publish?force=true` (bypasses Layer 1 only, per-site `preferred_days` still applies).
 - Sites listed from `dashboard-index.yaml`; brief read from `staging/<domain>` with fallback to main.
 
+## Config Inheritance — 5-Layer Resolution
+
+The site-builder resolves config at build time (`packages/site-builder/scripts/resolve-config.ts`). The full chain:
+
+```
+org.yaml → groups[0].yaml → groups[1].yaml → … → overrides/config (by priority) → site.yaml
+```
+
+### Layer 1: `org.yaml` — Org-Wide Defaults
+
+Root of the inheritance chain. Contains: `organization`, `legal_entity`, `support_email_pattern`, `default_theme`, `default_fonts`, `default_groups`, `tracking` (GA4/GTM/Google Ads/Facebook Pixel), `scripts` (head/body_start/body_end injection), `scripts_vars` (placeholder substitution), `ads_config` (placements, interstitial, layout), `ad_placeholder_heights` (CLS prevention), `ads_txt`, `legal`, feature flags (`preview_page`, `categories`, `sidebar`, `search`).
+
+**Dashboard:** Settings → Org tab → `GET/PUT /api/settings/org` → reads/writes `org.yaml` on `main`.
+
+### Layer 2: `groups/<id>.yaml` — Group-Level Config
+
+Same fields as org but all optional/partial. Groups cluster sites sharing config. A site can belong to **multiple groups** (`groups: [id1, id2, ...]` in `site.yaml`), merged left-to-right.
+
+**Dashboard:** `/groups/[groupId]` → three tabs: General (name/ID), Config (`UnifiedConfigForm` in `mode="group"`), Sites (add/remove members). API: `GET/PUT/DELETE /api/groups/[groupId]`. Group membership writes update `site.yaml` on the staging branch.
+
+### Layer 3: `overrides/config/<id>.yaml` — Targeted Config Exceptions
+
+Named exception sets that target specific groups and/or individual sites. Applied **after** groups but **before** the site layer. Sorted by `priority` (lowest first, highest wins).
+
+```yaml
+override_id: my-override
+name: "My Override"
+priority: 10
+targets:
+  groups: [group-a]       # all sites in these groups
+  sites: [domain.com]     # specific sites (UNION with groups, not intersection)
+tracking:
+  _mode: merge            # per-field merge mode
+  ga4: "G-NEWID"
+ads_config:
+  _mode: replace
+  ad_placements: [...]
+ads_txt:
+  _mode: add
+  _values: ["newpartner.com, DIRECT"]
+```
+
+**Per-field merge modes** (`_mode` key inside each field):
+
+| Field | Default | Available |
+|-------|---------|-----------|
+| `tracking` | `merge` | `merge`, `replace` |
+| `scripts` | `merge_by_id` | `merge_by_id`, `replace` |
+| `scripts_vars` | `merge` | `merge`, `replace` |
+| `ads_config` | `replace` | `add`, `merge_placements`, `replace` |
+| `ads_txt` | `add` | `add`, `replace` |
+| `theme` | `merge` | `merge`, `replace` |
+| `legal` | `merge` | `merge`, `replace` |
+
+**Dashboard:** `/overrides` page lists all `overrides/config/*.yaml`. Detail page `/overrides/[id]` has three tabs: General (ID, name, priority), Targeting (group/site selectors), Config (`UnifiedConfigForm` in `mode="override"` — shows `MergeModeSelector` dropdowns). API: `GET/PUT/DELETE /api/overrides/[id]`.
+
+### Layer 4: `sites/<domain>/site.yaml` — Per-Site Config
+
+The leaf. Site-level values always win. Contains `domain`, `groups`, `active`, `brief` (editorial — never merged), plus optional `tracking`, `scripts_vars`, `ads_config`, `ads_txt`, `theme`, `legal`, feature flags.
+
+**Dashboard:** `/sites/[domain]` → Config sub-tab → `SiteConfigTab` fetches `GET /api/sites/site-config?domain=<domain>` which returns `{ config, inheritance: { org, groups[] } }`. Saves via `POST /api/sites/save` to the staging branch.
+
+### Key merge rules at build time
+
+- **Tracking, theme, legal:** deep merge across layers, later wins per-key.
+- **Scripts:** merge-by-id (same `id` replaces, new `id` appends).
+- **Ads config:** deep merge for top-level fields; `ad_placements` is **replacement** — last layer with non-empty placements wins.
+- **Ads.txt:** additive append from all layers, deduped.
+- **Script vars:** shallow merge, then `{{placeholder}}` tokens resolved in all scripts; unresolved tokens throw.
+- **CLS heights (`ad_placeholder_heights`):** set at org/group level only, not site-level.
+
+### `UnifiedConfigForm` — shared config UI
+
+Rendered in four modes via `mode` prop: `"org"`, `"group"`, `"override"`, `"site"`. Override mode shows `MergeModeSelector` dropdowns. CLS heights section only shows in org/group modes. `SourceBadge` renders inline badges: org (cyan), group (violet), override (amber), site (emerald).
+
+### Also: `network.yaml` — Platform Manifest
+
+Not a config-inheritance layer. Carries metadata: `network_id`, `platform_version`, `network_name`. Dashboard: Settings → Network tab → `GET/PUT /api/settings/network`.
+
 ## Shared Pages Overrides
 
 - Shared pages (about, contact, privacy, tos…) live in the network repo.
 - Sites can override content per-site via `overrides/<site_id>/<name>.yaml` (written from dashboard `/shared-pages`).
 - Per-site overrides are on `main` of the network repo; the site-builder resolves overrides at build time.
+- **These are content overrides, not config overrides** — distinct from `overrides/config/` above.
 
 ## Site Detail Page — Unified Tab Architecture
 
@@ -171,11 +254,7 @@ Each sub-tab has its own independent Save button. The Config sub-tab fetches fro
 
 ### Config inheritance model
 
-```
-org.yaml → groups[0].yaml → groups[1].yaml → … → site.yaml
-```
-
-Sites can belong to multiple groups (`groups: [id1, id2, ...]`). Groups merge left-to-right. Config fields display badges indicating their source (org, group, or local override). Normalizer functions in `src/lib/config-normalizers.ts` are shared between the group page and `SiteConfigTab`.
+See **Config Inheritance — 5-Layer Resolution** above for the full chain (`org → groups → overrides/config → site`). The Config sub-tab shows `SourceBadge` indicating where each value comes from. Normalizer functions in `src/lib/config-normalizers.ts` are shared between org, group, override, and site config pages.
 
 ## Tech Stack
 
@@ -245,7 +324,7 @@ Service contract (both services satisfy):
 - Shared types in `packages/shared-types/`.
 - YAML extension `.yaml` (never `.yml`).
 - Article slugs: kebab-case, e.g. `best-thriller-movies-2026.md`.
-- Config inheritance: `org.yaml → group[0].yaml → group[1].yaml → … → site.yaml` (deep merge, multi-group). Sites list groups in `groups: []` array; legacy `group` string field still supported.
+- Config inheritance: `org.yaml → groups → overrides/config → site.yaml` (deep merge, multi-group, targeted overrides with per-field merge modes). Sites list groups in `groups: []` array; legacy `group` string field still supported.
 - Commit messages: conventional (`feat(scope):`, `fix(scope):`, `docs:`). Always include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`.
 - Local vs prod env parity: defaults must match across `.env`, `config.ts`, and CloudGrid; always add local SDK fallbacks.
 
@@ -277,6 +356,10 @@ Service contract (both services satisfy):
 
 | Concern | Owner |
 |---------|-------|
+| Org config | Network repo, main, `org.yaml` |
+| Network manifest | Network repo, main, `network.yaml` |
+| Group configs | Network repo, main, `groups/<id>.yaml` |
+| Config overrides (targeted exceptions) | Network repo, main, `overrides/config/<id>.yaml` |
 | Site config + articles | Network repo, staging branch |
 | Shared page base content | Network repo, main |
 | Per-site shared-page overrides | Network repo, main, `overrides/<site_id>/` |
@@ -292,124 +375,3 @@ Service contract (both services satisfy):
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
 Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-builder.
-
-## Content Agent v2 — Dual-Model Generation (append to existing CLAUDE.md)
-
-> Added 2026-04-19. Restructure of content-generation and article-regeneration agents.
-
-### What Changed
-
-The content-pipeline agents now consume the **Content Aggregator v2 API** instead of scraping original article URLs. The old flow (`read URL → fallback to title+description → Claude`) is replaced by a summary-based dual-model pipeline.
-
-**Old flow (removed):**
-```
-RSS item URL → try scrape full text → success: generate from text / fail: generate from title+description → Claude
-```
-
-**New flow:**
-```
-Content Aggregator API (enriched items with summary, taxonomy, thumbnail)
-  → Router: isFactual? → NEWS: Claude Sonnet (via @cloudgrid-io/ai) / GENERAL: OpenAI GPT-4o-mini
-  → Image Pipeline: analyze source thumbnail → generate original image (DALL-E 3)
-  → SEO: meta tags, schema.org, slug, reading time
-  → Output: ArticlePackage
-```
-
-### Why Two Models
-
-- **News/factual** (vertical: News/Politics/Finance, tags matching `factual_tags` from settings) → Claude Sonnet via CloudGrid AI. Accuracy and factual fidelity are critical. No hallucinated facts.
-- **General/evergreen** (how-tos, listicles, opinions) → OpenAI GPT-4o-mini. 10-20x cheaper, fast, creative enough for non-news content.
-- The Content Aggregator's `GET /api/settings` provides `classification.factual_tags: ["news", "announcement", "breaking"]` — used by the router.
-
-### Content Aggregator v2 API
-
-- **Base URL env**: `CONTENT_AGGREGATOR_URL` (defaults to `https://content-aggregator-cloudgrid.apps.cloudgrid.io`)
-  - Also available as: `CONTENT_API_BASE_URL=https://content-aggregator-cloudgrid.atomic.cloudgrid.io/api`
-- **Primary endpoint**: `GET /api/content?enriched=true&status=active&content_type=article`
-- `enriched` defaults to `true` — "golden plate" philosophy, items arrive ready-to-use
-- **Key fields per item**: `id`, `url`, `title`, `description`, `summary` (structured brief: "What happened… Why it matters… Content opportunity…"), `thumbnail.url`, `content_type`, `vertical.name`, `categories[].name`, `tags[].name`, `audience_types[].name`, `source.name`, `published_at`, `language`
-- **Settings**: `GET /api/settings` → `classification.factual_tags`, `enrichment.batch_size`, etc.
-
-### Lightweight Fetching Rule (IMPORTANT)
-
-**Never fetch more than you need.** The orchestrator receives a `targetCount` (how many articles to produce). Apply a 2x buffer for filtering/failures, then stop.
-
-```typescript
-// If user wants 3 articles → fetch page_size=6 from API
-// If user wants 10 articles → fetch page_size=20
-const fetchLimit = targetCount * 2;
-const items = await apiClient.getContent({ page_size: fetchLimit, ... });
-// Generate only targetCount articles, stop early once reached
-```
-
-This applies everywhere:
-- `content-generation/index.ts` orchestrator: accept `targetCount`, fetch `targetCount * 2`, generate until `targetCount` succeeded, stop
-- `api-client.ts`: always pass `page_size` — never fetch unbounded
-- Scheduler: `articles_per_day` from site brief IS the `targetCount`
-- On-demand generate from dashboard: request body specifies count
-
-**No pagination loops.** One fetch with the right `page_size`. If the 2x buffer wasn't enough (too many failures), log a warning and return what we have — don't keep fetching pages.
-
-### File Structure (under `services/content-pipeline/src/agents/`)
-
-```
-content-generation/
-  index.ts                  — orchestrator (fetch → route → generate → image → SEO → output)
-  router.ts                 — isFactual() classifier using vertical, tags, settings
-  api-client.ts             — Content Aggregator v2 typed HTTP client
-  types.ts                  — ContentItem, GeneratedArticle, ArticlePackage, SEOMetadata, etc.
-  generators/
-    base-generator.ts       — shared Generator interface & prompt context builder
-    claude-generator.ts     — news/factual via @cloudgrid-io/ai (model: claude-sonnet)
-    openai-generator.ts     — general/evergreen via openai SDK (model: gpt-4o-mini)
-  prompts/
-    news-article.ts         — Claude prompt: journalist tone, factual, no invented facts
-    general-article.ts      — OpenAI prompt: engagement + SEO, conversational, TL;DR
-    seo-metadata.ts         — meta title/description generation prompt
-  image-pipeline/
-    analyzer.ts             — vision model extracts style/mood/palette from source thumbnail
-    generator.ts            — DALL-E 3 generates ORIGINAL image (never copies source — copyright)
-    types.ts                — ImageAnalysis, ImageGenerationResult
-  seo/
-    metadata-generator.ts   — meta title, description, schema.org JSON-LD, OG tags, reading time
-    slug-generator.ts       — title → URL-safe slug
-
-article-regeneration/
-  index.ts                  — updated to use new generator pipeline
-```
-
-### Image Pipeline — Copyright Rules (HARD REQUIREMENT)
-
-1. **NEVER** use the source thumbnail directly in generated articles
-2. Analyze thumbnail with vision model → extract subject, palette, composition, mood
-3. Use analysis ONLY AS INSPIRATION for a DALL-E 3 prompt
-4. Generate a completely new, original image
-5. Always generate alt text for accessibility + SEO
-
-### Additional Environment Variables
-
-| Variable | Used by | Notes |
-|----------|---------|-------|
-| `OPENAI_API_KEY` | content-pipeline | For GPT-4o-mini (general articles) + DALL-E 3 (images). In CloudGrid secrets. |
-| `CONTENT_API_BASE_URL` | content-pipeline | Content Aggregator v2 endpoint. Set via `cloudgrid env set`. |
-
-### Error Handling Strategy
-
-- API fetch fails → retry 3x with exponential backoff, skip batch
-- Claude fails → fallback to OpenAI for that item (log the fallback)
-- OpenAI fails → fallback to Claude via CloudGrid AI (log the fallback)
-- Image gen fails → use placeholder, don't block article
-- SEO gen fails → generate basic metadata algorithmically (no AI)
-
-### Router Logic
-
-```typescript
-function isFactual(item: ContentItem, settings: AggregatorSettings): boolean {
-  const factualVerticals = ['News', 'Politics', 'Finance', 'World News'];
-  if (factualVerticals.includes(item.vertical?.name)) return true;
-  const factualTags = settings.classification.factual_tags;
-  if (item.tags.some(t => factualTags.includes(t.name.toLowerCase()))) return true;
-  return false;
-}
-// factual → Claude Sonnet (via @cloudgrid-io/ai), general → OpenAI GPT-4o-mini
-```

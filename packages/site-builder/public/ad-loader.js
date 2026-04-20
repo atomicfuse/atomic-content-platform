@@ -179,8 +179,15 @@
     div.dataset.sizesDesktop = JSON.stringify(sizes.desktop || []);
     div.dataset.sizesMobile = JSON.stringify(sizes.mobile || []);
     var first = (sizes.desktop && sizes.desktop[0]) || (sizes.mobile && sizes.mobile[0]) || [300, 250];
-    div.style.minWidth = first[0] + 'px';
-    div.style.minHeight = first[1] + 'px';
+    // 0 means fluid — use 100% for width, skip minHeight for height
+    if (first[0] > 0) {
+      div.style.minWidth = first[0] + 'px';
+    } else {
+      div.style.width = '100%';
+    }
+    if (first[1] > 0) {
+      div.style.minHeight = first[1] + 'px';
+    }
     div.style.margin = '1rem auto';
     div.style.textAlign = 'center';
     var label = document.createElement('span');
