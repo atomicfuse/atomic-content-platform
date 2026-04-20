@@ -213,7 +213,7 @@ export function StagingEditPanel({
 
       {showSuccess && (
         <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 space-y-2">
-          <p className="text-sm font-medium text-green-400">
+          <p className="text-sm font-medium text-green-700 dark:text-green-400">
             Assets saved! A staging rebuild has been triggered.
           </p>
           <p className="text-xs text-[var(--text-muted)]">

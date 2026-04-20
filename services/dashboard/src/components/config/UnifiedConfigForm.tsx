@@ -240,8 +240,8 @@ const FIELD_DISPLAY_NAMES: Record<string, string> = {
 function ReplaceWarningBanner({ fieldName }: { fieldName: string }): React.ReactElement {
   const displayName = FIELD_DISPLAY_NAMES[fieldName] ?? fieldName;
   return (
-    <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-4 py-3 mb-4">
-      <p className="text-sm text-amber-300">
+    <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 mb-4">
+      <p className="text-sm text-amber-700 dark:text-amber-300">
         <span className="font-semibold">Replace mode:</span> the group chain&apos;s {displayName} will
         be wiped for targeted sites. Make sure you include all values you need.
       </p>

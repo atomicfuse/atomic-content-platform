@@ -17,9 +17,9 @@ interface ContentTabProps {
 
 function scoreColor(score: number | undefined): string {
   if (score === undefined) return "text-[var(--text-muted)]";
-  if (score >= 80) return "text-green-400";
-  if (score >= 60) return "text-yellow-400";
-  return "text-red-400";
+  if (score >= 80) return "text-green-700 dark:text-green-400";
+  if (score >= 60) return "text-yellow-700 dark:text-yellow-400";
+  return "text-red-700 dark:text-red-400";
 }
 
 function scoreBgColor(score: number): string {

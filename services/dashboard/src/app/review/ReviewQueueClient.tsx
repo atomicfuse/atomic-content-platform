@@ -17,9 +17,9 @@ function ScoreBadge({ score }: { score?: number }): React.ReactElement {
   if (score === undefined) return <span className="text-xs text-[var(--text-muted)]">--</span>;
 
   const color =
-    score >= 80 ? "text-green-400 bg-green-500/10" :
-    score >= 60 ? "text-yellow-400 bg-yellow-500/10" :
-    "text-red-400 bg-red-500/10";
+    score >= 80 ? "text-green-700 dark:text-green-400 bg-green-500/10" :
+    score >= 60 ? "text-yellow-700 dark:text-yellow-400 bg-yellow-500/10" :
+    "text-red-700 dark:text-red-400 bg-red-500/10";
 
   return (
     <span className={`text-xs font-bold px-2 py-0.5 rounded ${color}`}>
@@ -381,7 +381,7 @@ function ArticleCard({ article, status, onApprove, onReject, onUndo }: ArticleCa
             </span>
             {status !== "pending" && (
               <span className={`text-[10px] font-semibold uppercase tracking-wider ${
-                status === "approved" ? "text-green-400" : "text-red-400"
+                status === "approved" ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"
               }`}>
                 {status}
               </span>

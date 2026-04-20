@@ -408,7 +408,7 @@ export default function GroupDetailPage(): React.ReactElement {
 
           {groupSites.length > 0 && (
             <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
-              <p className="text-xs font-medium text-yellow-400">
+              <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400">
                 These sites will lose this group from their configuration. You should reassign them first.
               </p>
               <ul className="text-xs text-[var(--text-secondary)] space-y-1">

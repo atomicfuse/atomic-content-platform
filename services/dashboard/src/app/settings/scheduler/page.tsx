@@ -243,13 +243,13 @@ export default function SettingsSchedulerPage(): React.ReactElement {
               </p>
               <div className="text-xs space-y-1">
                 <p>
-                  <span className="text-green-400 font-mono">
+                  <span className="text-green-700 dark:text-green-400 font-mono">
                     triggered ({runResult.triggered?.length ?? 0}):
                   </span>{" "}
                   {runResult.triggered?.join(", ") || "—"}
                 </p>
                 <p>
-                  <span className="text-yellow-400 font-mono">
+                  <span className="text-yellow-700 dark:text-yellow-400 font-mono">
                     skipped ({runResult.skipped?.length ?? 0}):
                   </span>{" "}
                   {runResult.skipped?.map((s) => `${s.domain} (${s.reason})`).join(", ") || "—"}
