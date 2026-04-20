@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { TrackingForm } from "../settings/TrackingForm";
 import { ScriptsEditor } from "../settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "../settings/ScriptVariablesEditor";
@@ -47,9 +47,9 @@ export interface AdPlaceholderHeights {
 /** Per-field merge modes for override configs. */
 export interface OverrideMergeModes {
   tracking: "merge" | "replace";
-  scripts: "merge_by_id" | "append" | "replace";
+  scripts: "merge_by_id" | "replace";
   scripts_vars: "merge" | "replace";
-  ads_config: "replace" | "merge_placements";
+  ads_config: "add" | "replace" | "merge_placements";
   ads_txt: "add" | "replace";
   theme: "merge" | "replace";
   legal: "merge" | "replace";
@@ -59,7 +59,7 @@ export const DEFAULT_MERGE_MODES: OverrideMergeModes = {
   tracking: "merge",
   scripts: "merge_by_id",
   scripts_vars: "merge",
-  ads_config: "replace",
+  ads_config: "add",
   ads_txt: "add",
   theme: "merge",
   legal: "merge",
@@ -125,18 +125,30 @@ interface ModeOption {
   value: string;
   label: string;
   info: string;
+  /** Example: what the inherited chain looks like. */
+  exampleInherited: string;
+  /** Example: what the override defines. */
+  exampleOverride: string;
+  /** Example: the resulting output after applying this mode. */
+  exampleResult: string;
 }
 
 const TRACKING_MODES: ModeOption[] = [
   {
     value: "merge",
     label: "Merge (recommended)",
-    info: "Only change the fields you set. Other tracking IDs (GTM, Google Ads, Facebook Pixel) inherit from groups. Safe default \u2014 won\u2019t break existing tracking.",
+    info: "Only change the fields you set. Other tracking IDs inherit from groups.",
+    exampleInherited: "GA4: G-AAA, GTM: GTM-BBB",
+    exampleOverride: "GA4: G-NEW",
+    exampleResult: "GA4: G-NEW, GTM: GTM-BBB",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Wipe all inherited tracking and use ONLY what you define here. Any field not set will be null. Use only when you want to completely reset tracking for these sites.",
+    info: "Wipe all inherited tracking. Only what you define here will remain.",
+    exampleInherited: "GA4: G-AAA, GTM: GTM-BBB",
+    exampleOverride: "GA4: G-NEW",
+    exampleResult: "GA4: G-NEW (GTM gone)",
   },
 ];
 
@@ -144,17 +156,18 @@ const SCRIPTS_MODES: ModeOption[] = [
   {
     value: "merge_by_id",
     label: "Merge by ID (recommended)",
-    info: "Add new scripts or replace specific ones by their id. Existing ad network scripts from groups are preserved. Safe default.",
-  },
-  {
-    value: "append",
-    label: "Append only",
-    info: "Add new scripts to the group chain without replacing any existing ones. Use when you only need to add tracking pixels or test scripts.",
+    info: "Add new scripts or replace specific ones by their ID. Existing scripts are preserved.",
+    exampleInherited: "analytics (id:1), chat (id:2)",
+    exampleOverride: "analytics-v2 (id:1), pixel (id:3)",
+    exampleResult: "analytics-v2 (id:1), chat (id:2), pixel (id:3)",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Remove all scripts from the group chain and use only these. Will kill ad network SDKs (GPT, Taboola, AdSense) unless you re-include them.",
+    info: "Remove all inherited scripts and use only these. Ad network SDKs will be removed unless re-included.",
+    exampleInherited: "analytics (id:1), chat (id:2)",
+    exampleOverride: "pixel (id:3)",
+    exampleResult: "pixel (id:3) only",
   },
 ];
 
@@ -162,25 +175,45 @@ const SCRIPTS_VARS_MODES: ModeOption[] = [
   {
     value: "merge",
     label: "Merge (recommended)",
-    info: "Your variables are added to the group chain\u2019s variables. Existing placeholders in group scripts continue to work.",
+    info: "Your variables are added to the chain. Existing placeholders in group scripts keep working.",
+    exampleInherited: "SITE_ID=abc, AD_KEY=xyz",
+    exampleOverride: "SITE_ID=new",
+    exampleResult: "SITE_ID=new, AD_KEY=xyz",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Wipe all variables and use only yours. WARNING: if group scripts reference variables you don\u2019t redefine, the build will fail with \u2018unresolved placeholder\u2019 errors.",
+    info: "Wipe all variables. Scripts referencing removed variables will break.",
+    exampleInherited: "SITE_ID=abc, AD_KEY=xyz",
+    exampleOverride: "SITE_ID=new",
+    exampleResult: "SITE_ID=new (AD_KEY gone)",
   },
 ];
 
 const ADS_CONFIG_MODES: ModeOption[] = [
   {
-    value: "replace",
-    label: "Replace (default)",
-    info: "Wipe the group\u2019s ad layout and use this one entirely. Good when testing a completely different ad configuration. All placements in groups are removed.",
+    value: "add",
+    label: "Add (recommended)",
+    info: "Append new placements to the group chain. Existing placements are never touched.",
+    exampleInherited: "sidebar, sticky-bottom",
+    exampleOverride: "above-content",
+    exampleResult: "sidebar, sticky-bottom, above-content",
   },
   {
     value: "merge_placements",
     label: "Merge placements",
-    info: "Keep the group\u2019s placements and add/update specific ones by id. Placements with the same id are replaced. New ids are added. Existing placements untouched.",
+    info: "Keep existing placements and add/update specific ones by ID. Same-ID placements are replaced.",
+    exampleInherited: "sidebar (id:1), sticky-bottom (id:2)",
+    exampleOverride: "sidebar-wide (id:1), banner (id:3)",
+    exampleResult: "sidebar-wide (id:1), sticky-bottom (id:2), banner (id:3)",
+  },
+  {
+    value: "replace",
+    label: "Replace",
+    info: "Wipe the entire ad layout and use only what you define here.",
+    exampleInherited: "sidebar, sticky-bottom",
+    exampleOverride: "banner",
+    exampleResult: "banner only",
   },
 ];
 
@@ -188,12 +221,18 @@ const ADS_TXT_MODES: ModeOption[] = [
   {
     value: "add",
     label: "Add (recommended)",
-    info: "Your entries are APPENDED to the group chain\u2019s entries. Real ad partner entries are preserved. Safe default \u2014 won\u2019t break revenue verification.",
+    info: "Your entries are appended. Existing ad partner entries are preserved.",
+    exampleInherited: "google.com, DIRECT\ntaboola.com, DIRECT",
+    exampleOverride: "newpartner.com, DIRECT",
+    exampleResult: "google.com + taboola.com + newpartner.com",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Remove all entries from the group chain and use only yours. WARNING: this can break ad partner verification and stop revenue. Only use for testing isolated sites.",
+    info: "Remove all inherited entries. Can break ad partner verification and stop revenue.",
+    exampleInherited: "google.com, DIRECT\ntaboola.com, DIRECT",
+    exampleOverride: "newpartner.com, DIRECT",
+    exampleResult: "newpartner.com only",
   },
 ];
 
@@ -201,12 +240,18 @@ const THEME_MODES: ModeOption[] = [
   {
     value: "merge",
     label: "Merge (recommended)",
-    info: "Change only the theme values you set. Fonts, logo, and other colors are inherited from groups. Safe \u2014 won\u2019t break site appearance.",
+    info: "Change only the theme values you set. Fonts, logo, and colors inherit from groups.",
+    exampleInherited: "primary: blue, font: Inter, logo: logo.svg",
+    exampleOverride: "primary: red",
+    exampleResult: "primary: red, font: Inter, logo: logo.svg",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Wipe the entire theme from groups and use only what you define. You must include all colors, fonts, logo, and favicon or the site will render broken.",
+    info: "Wipe the entire theme. You must include all colors, fonts, logo, and favicon.",
+    exampleInherited: "primary: blue, font: Inter, logo: logo.svg",
+    exampleOverride: "primary: red",
+    exampleResult: "primary: red (font, logo gone)",
   },
 ];
 
@@ -214,12 +259,18 @@ const LEGAL_MODES: ModeOption[] = [
   {
     value: "merge",
     label: "Merge (recommended)",
-    info: "Your legal keys are added to the group chain. Existing legal variables (company name, country, etc.) are preserved.",
+    info: "Your legal keys are added to the chain. Existing variables are preserved.",
+    exampleInherited: "company: Acme, country: US",
+    exampleOverride: "company: NewCo",
+    exampleResult: "company: NewCo, country: US",
   },
   {
     value: "replace",
     label: "Replace",
-    info: "Wipe all legal keys and use only yours. May break shared legal pages that reference other keys.",
+    info: "Wipe all legal keys. May break shared pages that reference removed keys.",
+    exampleInherited: "company: Acme, country: US",
+    exampleOverride: "company: NewCo",
+    exampleResult: "company: NewCo (country gone)",
   },
 ];
 
@@ -264,30 +315,69 @@ function MergeModeSelector({
   value: string;
   onChange: (value: string) => void;
 }): React.ReactElement {
+  const [showExplain, setShowExplain] = useState(false);
+
   return (
-    <div className="flex items-center gap-3 mb-3">
-      <label
-        htmlFor={`mode-${fieldName}`}
-        className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] whitespace-nowrap"
-      >
-        Mode
-      </label>
-      <select
-        id={`mode-${fieldName}`}
-        value={value}
-        onChange={(e): void => onChange(e.target.value)}
-        className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      {options.map((opt) =>
-        opt.value === value ? (
-          <InfoTooltip key={opt.value} content={opt.info} maxWidth={340} />
-        ) : null,
+    <div className="mb-3 space-y-2">
+      <div className="flex items-center gap-3">
+        <label
+          htmlFor={`mode-${fieldName}`}
+          className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] whitespace-nowrap"
+        >
+          Mode
+        </label>
+        <select
+          id={`mode-${fieldName}`}
+          value={value}
+          onChange={(e): void => onChange(e.target.value)}
+          className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none"
+        >
+          {options.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={(): void => setShowExplain(!showExplain)}
+          className="text-[11px] text-[var(--text-muted)] hover:text-cyan transition-colors underline decoration-dotted underline-offset-2"
+        >
+          {showExplain ? "hide" : "what do these modes do?"}
+        </button>
+      </div>
+
+      {showExplain && (
+        <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-surface)] overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-elevated)]">
+                <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Mode</th>
+                <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Inherited</th>
+                <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Override</th>
+                <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {options.map((opt, i) => (
+                <tr
+                  key={opt.value}
+                  className={`${i < options.length - 1 ? "border-b border-[var(--border-secondary)]" : ""} ${opt.value === value ? "bg-cyan/5" : ""}`}
+                >
+                  <td className="px-3 py-2 align-top">
+                    <span className={`font-semibold whitespace-nowrap ${opt.value === value ? "text-cyan" : "text-[var(--text-primary)]"}`}>
+                      {opt.label.replace(" (recommended)", "").replace(" (default)", "")}
+                    </span>
+                    <p className="text-[var(--text-muted)] mt-0.5 leading-snug">{opt.info}</p>
+                  </td>
+                  <td className="px-3 py-2 align-top font-mono text-[var(--text-secondary)] whitespace-pre-line">{opt.exampleInherited}</td>
+                  <td className="px-3 py-2 align-top font-mono text-cyan whitespace-pre-line">{opt.exampleOverride}</td>
+                  <td className="px-3 py-2 align-top font-mono font-semibold text-[var(--text-primary)] whitespace-pre-line">{opt.exampleResult}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
@@ -425,7 +515,7 @@ export function UnifiedConfigForm({
               fieldName="scripts"
               options={SCRIPTS_MODES}
               value={modes.scripts}
-              onChange={(v): void => updateMode("scripts", v as "merge_by_id" | "append" | "replace")}
+              onChange={(v): void => updateMode("scripts", v as "merge_by_id" | "replace")}
             />
             {isReplaceMode("scripts") && <ReplaceWarningBanner fieldName="scripts" />}
           </>
@@ -472,7 +562,7 @@ export function UnifiedConfigForm({
               fieldName="ads_config"
               options={ADS_CONFIG_MODES}
               value={modes.ads_config}
-              onChange={(v): void => updateMode("ads_config", v as "replace" | "merge_placements")}
+              onChange={(v): void => updateMode("ads_config", v as "add" | "replace" | "merge_placements")}
             />
             {isReplaceMode("ads_config") && <ReplaceWarningBanner fieldName="ads_config" />}
           </>

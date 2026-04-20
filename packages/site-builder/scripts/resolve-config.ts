@@ -582,7 +582,8 @@ function applyOverride(
 
   // ---- Scripts ----
   if (override.scripts) {
-    const { mode, clean } = extractMode<ScriptsMergeMode>(
+    // Accept legacy "append" from existing YAML data even though UI no longer offers it
+    const { mode, clean } = extractMode<ScriptsMergeMode | "append">(
       override.scripts as unknown as Record<string, unknown>,
       "merge_by_id",
     );
@@ -628,7 +629,21 @@ function applyOverride(
     );
     const overrideAds = clean as Record<string, unknown>;
 
-    if (mode === "merge_placements") {
+    if (mode === "add") {
+      // Append new placements without touching existing ones
+      const rawPlacements = overrideAds["ad_placements"];
+      if (rawPlacements && Array.isArray(rawPlacements) && rawPlacements.length > 0) {
+        newAdsConfig = {
+          ...newAdsConfig,
+          ...(overrideAds["interstitial"] !== undefined ? { interstitial: overrideAds["interstitial"] as boolean } : {}),
+          ...(overrideAds["layout"] !== undefined ? { layout: overrideAds["layout"] as string } : {}),
+          ad_placements: [
+            ...newAdsConfig.ad_placements,
+            ...normaliseAdPlacements(rawPlacements as unknown[]),
+          ],
+        };
+      }
+    } else if (mode === "merge_placements") {
       // Keep existing config, merge placements by id
       const rawPlacements = overrideAds["ad_placements"];
       if (rawPlacements && Array.isArray(rawPlacements) && rawPlacements.length > 0) {
