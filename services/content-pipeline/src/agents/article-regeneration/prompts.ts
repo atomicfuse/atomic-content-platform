@@ -3,6 +3,7 @@
  */
 
 import type { SiteBrief } from "../../types.js";
+import { parseWordCountFromGuidelines } from "../word-count.js";
 
 /**
  * Build the system prompt for article revision.
@@ -16,6 +17,8 @@ export function buildRevisionSystemPrompt(params: {
   const guidelines = Array.isArray(brief.content_guidelines)
     ? brief.content_guidelines.map((g) => `- ${g}`).join("\n")
     : `- ${brief.content_guidelines}`;
+
+  const wc = parseWordCountFromGuidelines(brief.content_guidelines, 600, 1000);
 
   return `You are a content editor for ${siteName}. Your task is to revise an article based on reviewer feedback.
 
@@ -40,7 +43,7 @@ Respond ONLY with a valid JSON object (no markdown fences):
   "title": "string — revised headline",
   "description": "string — revised meta description (150-160 chars)",
   "tags": ["string — tags, first must be a site topic"],
-  "body": "string — revised article body in markdown"
+  "body": "string — revised ${wc.label} article body in markdown. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

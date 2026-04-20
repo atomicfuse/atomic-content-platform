@@ -2,11 +2,12 @@
  * Prompt templates for factual/news article generation (Claude Sonnet).
  *
  * Journalist tone, factual fidelity, no invented facts.
- * Target: 600-900 words, markdown with H1/H2.
+ * Default target: 600-900 words, markdown with H1/H2 (overridden by content_guidelines).
  */
 
 import type { PromptContext } from "../generators/base-generator.js";
 import type { SiteBrief } from "../../../types.js";
+import { parseWordCountFromGuidelines } from "../../word-count.js";
 
 /**
  * Build the system prompt for news/factual articles.
@@ -15,6 +16,8 @@ export function buildNewsSystemPrompt(siteName: string, brief: SiteBrief): strin
   const guidelines = Array.isArray(brief.content_guidelines)
     ? brief.content_guidelines.map((g) => `- ${g}`).join("\n")
     : `- ${brief.content_guidelines}`;
+
+  const wc = parseWordCountFromGuidelines(brief.content_guidelines, 600, 900);
 
   return `You are a factual journalist writing for ${siteName}, a publication covering ${brief.topics.join(", ")} for ${brief.audience}.
 
@@ -47,7 +50,7 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
   "description": "string — 1-2 sentence factual meta description (150-160 chars)",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST must be a site topic, then 2-4 descriptive tags"],
-  "body": "string — 600-900 word article in markdown with H1 title and H2 subheadings"
+  "body": "string — ${wc.label} article in markdown with H1 title and H2 subheadings. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

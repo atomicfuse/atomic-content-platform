@@ -78,7 +78,8 @@ export function ContentAgentTab({
 
   // --- Content Brief state ---
   const [savingBrief, setSavingBrief] = useState(false);
-  const [topics, setTopics] = useState(brief?.topics.join(", ") ?? "");
+  const [topics, setTopics] = useState<string[]>(brief?.topics ?? []);
+  const [topicInput, setTopicInput] = useState("");
   const [articlesPerDay, setArticlesPerDay] = useState(
     brief?.articles_per_day
       ?? Math.max(1, Math.ceil((brief?.articles_per_week ?? 5) / Math.max(1, brief?.preferred_days?.length ?? 7)))
@@ -169,6 +170,23 @@ export function ContentAgentTab({
     }
   }
 
+  function addTopic(raw: string): void {
+    const tag = raw.trim();
+    if (tag && !topics.includes(tag)) setTopics([...topics, tag]);
+    setTopicInput("");
+  }
+  function removeTopic(tag: string): void {
+    setTopics(topics.filter((t) => t !== tag));
+  }
+  function handleTopicKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTopic(topicInput);
+    } else if (e.key === "Backspace" && topicInput === "" && topics.length > 0) {
+      removeTopic(topics[topics.length - 1]);
+    }
+  }
+
   async function saveIdentity(): Promise<void> {
     setSavingIdentity(true);
     try {
@@ -203,7 +221,7 @@ export function ContentAgentTab({
           logoBase64: null,
           faviconBase64: null,
           configUpdates: {
-            topics: topics.split(",").map((t) => t.trim()).filter(Boolean),
+            topics,
             contentGuidelines: guidelines,
             articlesPerDay,
             preferredDays,
@@ -315,7 +333,36 @@ export function ContentAgentTab({
     <div className="space-y-6">
       {/* Topics, schedule, guidelines */}
       <div className="space-y-4">
-        <Input label="Topics" value={topics} onChange={(e): void => setTopics(e.target.value)} placeholder="Comma-separated topics" />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Topics
+          </label>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors">
+            {topics.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+              >
+                {tag}
+                <button
+                  type="button"
+                  onClick={(): void => removeTopic(tag)}
+                  className="hover:text-red-400 transition-colors"
+                >
+                  &times;
+                </button>
+              </span>
+            ))}
+            <input
+              className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+              placeholder={topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
+              value={topicInput}
+              onChange={(e): void => setTopicInput(e.target.value)}
+              onKeyDown={handleTopicKeyDown}
+              onBlur={(): void => { if (topicInput.trim()) addTopic(topicInput); }}
+            />
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <Input
             label="Articles Per Day"
