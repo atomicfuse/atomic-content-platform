@@ -318,7 +318,8 @@ function normaliseAdPlacements(placements: unknown[]): AdPlacement[] {
       sizes = { desktop: [], mobile: [] };
     }
 
-    return { id, position, sizes, device };
+    const dismissible = p["dismissible"] as boolean | undefined;
+    return { id, position, sizes, device, ...(dismissible !== undefined && { dismissible }) };
   });
 }
 

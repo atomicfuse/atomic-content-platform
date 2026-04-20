@@ -1,0 +1,24 @@
+group_id: dismissible-group
+name: "Dismissible Test Group"
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: top-banner
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+      device: all
+    - id: sticky-dismissible
+      position: sticky-bottom
+      sizes:
+        mobile: [[320, 50]]
+      device: mobile
+      dismissible: true
+    - id: sticky-no-dismiss
+      position: sticky-bottom
+      sizes:
+        mobile: [[320, 50]]
+      device: mobile
+      dismissible: false

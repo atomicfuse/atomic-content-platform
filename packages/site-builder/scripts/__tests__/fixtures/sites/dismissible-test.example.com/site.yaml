@@ -1,0 +1,17 @@
+domain: dismissible-test.example.com
+site_name: "Dismissible Test Site"
+site_tagline: "Testing dismissible ad field"
+group: dismissible-group
+active: true
+
+brief:
+  audience: "Test audience"
+  tone: "Professional"
+  article_types:
+    standard: 100
+  topics:
+    - testing
+  schedule:
+    articles_per_week: 1
+    preferred_days:
+      - Monday

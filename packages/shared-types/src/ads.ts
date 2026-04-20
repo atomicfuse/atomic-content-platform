@@ -62,6 +62,9 @@ export interface AdPlacement {
 
   /** Which devices this placement targets. */
   device: "all" | "desktop" | "mobile";
+
+  /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
+  dismissible?: boolean;
 }
 
 /**

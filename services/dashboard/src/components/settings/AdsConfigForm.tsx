@@ -12,6 +12,8 @@ export interface AdPlacement {
   position: string;
   sizes: AdPlacementSizes;
   device: "all" | "desktop" | "mobile";
+  /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
+  dismissible?: boolean;
 }
 
 export interface AdsConfigFormValue {
@@ -296,6 +298,28 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
                 />
               </div>
             </div>
+
+            {/* Dismissible toggle — sticky-bottom only */}
+            {placement.position === "sticky-bottom" && (
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={placement.dismissible !== false}
+                  onChange={(e): void => {
+                    updatePlacement(index, { dismissible: e.target.checked });
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-[var(--border-primary)] text-cyan accent-cyan"
+                />
+                <div>
+                  <span className="text-sm text-[var(--text-primary)]">
+                    Allow visitors to dismiss this ad (&times;)
+                  </span>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    If unchecked, the sticky ad stays until the user leaves the page.
+                  </p>
+                </div>
+              </label>
+            )}
           </div>
         ))}
       </div>
@@ -422,7 +446,30 @@ function PlacementPreview({ placements }: { placements: AdPlacement[] }): React.
           <div className="text-[10px] uppercase tracking-wider text-amber-500 font-semibold mb-2">
             Sticky bottom (always visible at runtime)
           </div>
-          <PreviewSlot placements={stickyBottom} />
+          {stickyBottom.map((p, i) => (
+            <div
+              key={`${p.id}-sticky-${i}`}
+              className="relative rounded-md border border-dashed border-cyan/50 bg-cyan/10 px-3 py-3 text-center"
+            >
+              {p.dismissible !== false && (
+                <span
+                  className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 rounded-full border border-[var(--text-muted)] text-[var(--text-muted)] text-[10px] leading-none"
+                  title="Visitors can dismiss this ad"
+                >
+                  &times;
+                </span>
+              )}
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan">
+                Ad slot &middot; {p.position}
+              </div>
+              <div className="mt-1 text-xs font-medium text-[var(--text-primary)]">
+                {p.id || "(no id)"}
+              </div>
+              <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                {formatPlacementSizes(p.sizes) || "no sizes"} &middot; {p.device}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
