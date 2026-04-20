@@ -1,0 +1,27 @@
+override_id: add-ads
+name: "Add Ads Override"
+priority: 10
+
+targets:
+  sites:
+    - add-test.example.com
+
+# T09 — ads_config add: append placements without replacing
+# T11 — also sets interstitial + layout (should update those while appending placements)
+ads_config:
+  _mode: add
+  interstitial: false
+  layout: premium
+  ad_placements:
+    - id: sidebar-extra
+      position: sidebar
+      sizes:
+        desktop: [[160, 600]]
+        mobile: [[300, 250]]
+      device: all
+    - id: sticky-bottom
+      position: sticky-bottom
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all

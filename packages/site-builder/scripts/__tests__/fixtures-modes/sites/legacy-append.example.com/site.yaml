@@ -1,0 +1,19 @@
+domain: legacy-append.example.com
+site_name: "Legacy Append Test"
+site_tagline: "Testing legacy append mode"
+group: modes-group
+active: true
+scripts_vars: {}
+brief:
+  audience: "Test"
+  tone: "Pro"
+  article_types:
+    standard: 100
+  topics: [test]
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 5
+  schedule:
+    articles_per_day: 1
+    preferred_days: [Monday]
+    preferred_time: "10:00"

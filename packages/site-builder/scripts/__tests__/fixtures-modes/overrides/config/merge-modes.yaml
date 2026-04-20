@@ -1,0 +1,28 @@
+override_id: merge-modes
+name: "Merge Modes Override"
+priority: 10
+
+targets:
+  sites:
+    - merge-test.example.com
+
+# T01 — tracking merge (default): only ga4 changes, gtm preserved
+tracking:
+  ga4: "G-MERGED"
+
+# T06 — scripts_vars merge (default): ad_site_id changes, group_var preserved
+scripts_vars:
+  ad_site_id: "override-site-001"
+
+# T12 — ads_txt add (default): entries appended
+ads_txt:
+  - "override-network.com, 999, DIRECT"
+
+# T14 — theme merge (default): only primary changes, secondary preserved
+theme:
+  colors:
+    primary: "#OVERRIDE"
+
+# T16 — legal merge (default): only company_name changes
+legal:
+  company_name: "Override Legal Name"

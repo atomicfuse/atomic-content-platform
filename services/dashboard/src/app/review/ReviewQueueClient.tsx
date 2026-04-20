@@ -75,6 +75,8 @@ function articleKey(domain: string, slug: string): string {
   return `${domain}::${slug}`;
 }
 
+type SortOrder = "default" | "newest" | "oldest";
+
 export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.ReactElement {
   const [decisions, setDecisions] = useState<Map<string, Decision>>(new Map());
   const [isApplying, startTransition] = useTransition();
@@ -85,6 +87,9 @@ export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.R
   const [siteSearch, setSiteSearch] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sort state
+  const [sortOrder, setSortOrder] = useState<SortOrder>("default");
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent): void {
@@ -113,9 +118,19 @@ export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.R
   }, [domainCounts, siteSearch]);
 
   const filteredArticles = useMemo(() => {
-    if (!selectedDomain) return articles;
-    return articles.filter((a) => a.domain === selectedDomain);
-  }, [articles, selectedDomain]);
+    let result = articles;
+    if (selectedDomain) {
+      result = result.filter((a) => a.domain === selectedDomain);
+    }
+    if (sortOrder !== "default") {
+      result = [...result].sort((a, b) => {
+        const da = a.publishDate ? new Date(a.publishDate).getTime() : 0;
+        const db = b.publishDate ? new Date(b.publishDate).getTime() : 0;
+        return sortOrder === "newest" ? db - da : da - db;
+      });
+    }
+    return result;
+  }, [articles, selectedDomain, sortOrder]);
 
   const { pending, approved, rejected } = useMemo(() => {
     const p: ReviewArticle[] = [];
@@ -175,75 +190,100 @@ export function ReviewQueueClient({ articles }: ReviewQueueClientProps): React.R
 
   return (
     <div className="space-y-3">
-      {/* Site filter */}
-      {domainCounts.length > 1 && (
-        <div ref={dropdownRef} className="relative w-72">
-          <div
-            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] cursor-pointer"
-            onClick={(): void => { setDropdownOpen(!dropdownOpen); setSiteSearch(""); }}
-          >
-            <svg className="w-4 h-4 text-[var(--text-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
-            </svg>
-            <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
-              {selectedDomain ?? `All Sites (${articles.length})`}
-            </span>
-            {selectedDomain && (
-              <button
-                onClick={(e): void => { e.stopPropagation(); setSelectedDomain(null); setDropdownOpen(false); }}
-                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-            <svg className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${dropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
-          </div>
-          {dropdownOpen && (
-            <div className="absolute z-20 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden">
-              <div className="p-2 border-b border-[var(--border-secondary)]">
-                <input
-                  type="text"
-                  value={siteSearch}
-                  onChange={(e): void => setSiteSearch(e.target.value)}
-                  placeholder="Search sites..."
-                  autoFocus
-                  className="w-full px-2.5 py-1.5 text-sm rounded-md bg-[var(--bg-surface)] border border-[var(--border-secondary)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-cyan"
-                />
-              </div>
-              <div className="max-h-56 overflow-y-auto">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Site filter */}
+        {domainCounts.length > 1 && (
+          <div ref={dropdownRef} className="relative w-72">
+            <div
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] cursor-pointer"
+              onClick={(): void => { setDropdownOpen(!dropdownOpen); setSiteSearch(""); }}
+            >
+              <svg className="w-4 h-4 text-[var(--text-muted)] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z" />
+              </svg>
+              <span className="text-sm text-[var(--text-primary)] flex-1 truncate">
+                {selectedDomain ?? `All Sites (${articles.length})`}
+              </span>
+              {selectedDomain && (
                 <button
-                  onClick={(): void => { setSelectedDomain(null); setDropdownOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-[var(--bg-surface)] ${
-                    !selectedDomain ? "text-cyan font-medium" : "text-[var(--text-primary)]"
-                  }`}
+                  onClick={(e): void => { e.stopPropagation(); setSelectedDomain(null); setDropdownOpen(false); }}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
-                  All Sites
-                  <span className="text-[var(--text-muted)] ml-1">({articles.length})</span>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-                {filteredDomains.map(({ domain, count }) => (
+              )}
+              <svg className={`w-4 h-4 text-[var(--text-muted)] transition-transform ${dropdownOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+              </svg>
+            </div>
+            {dropdownOpen && (
+              <div className="absolute z-20 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg overflow-hidden">
+                <div className="p-2 border-b border-[var(--border-secondary)]">
+                  <input
+                    type="text"
+                    value={siteSearch}
+                    onChange={(e): void => setSiteSearch(e.target.value)}
+                    placeholder="Search sites..."
+                    autoFocus
+                    className="w-full px-2.5 py-1.5 text-sm rounded-md bg-[var(--bg-surface)] border border-[var(--border-secondary)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none focus:border-cyan"
+                  />
+                </div>
+                <div className="max-h-56 overflow-y-auto">
                   <button
-                    key={domain}
-                    onClick={(): void => { setSelectedDomain(domain); setDropdownOpen(false); }}
+                    onClick={(): void => { setSelectedDomain(null); setDropdownOpen(false); }}
                     className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-[var(--bg-surface)] ${
-                      selectedDomain === domain ? "text-cyan font-medium" : "text-[var(--text-primary)]"
+                      !selectedDomain ? "text-cyan font-medium" : "text-[var(--text-primary)]"
                     }`}
                   >
-                    {domain}
-                    <span className="text-[var(--text-muted)] ml-1">({count})</span>
+                    All Sites
+                    <span className="text-[var(--text-muted)] ml-1">({articles.length})</span>
                   </button>
-                ))}
-                {filteredDomains.length === 0 && (
-                  <p className="px-3 py-3 text-xs text-[var(--text-muted)] text-center">No matching sites</p>
-                )}
+                  {filteredDomains.map(({ domain, count }) => (
+                    <button
+                      key={domain}
+                      onClick={(): void => { setSelectedDomain(domain); setDropdownOpen(false); }}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-[var(--bg-surface)] ${
+                        selectedDomain === domain ? "text-cyan font-medium" : "text-[var(--text-primary)]"
+                      }`}
+                    >
+                      {domain}
+                      <span className="text-[var(--text-muted)] ml-1">({count})</span>
+                    </button>
+                  ))}
+                  {filteredDomains.length === 0 && (
+                    <p className="px-3 py-3 text-xs text-[var(--text-muted)] text-center">No matching sites</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
+          </div>
+        )}
+
+        {/* Sort by date */}
+        <button
+          onClick={(): void => setSortOrder((prev) => prev === "default" ? "newest" : prev === "newest" ? "oldest" : "default")}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+            sortOrder !== "default"
+              ? "border-cyan/40 bg-cyan/5 text-cyan"
+              : "border-[var(--border-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+          }`}
+        >
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" />
+          </svg>
+          <span className="text-sm whitespace-nowrap">
+            {sortOrder === "newest" ? "Newest first" : sortOrder === "oldest" ? "Oldest first" : "Date"}
+          </span>
+          {sortOrder !== "default" && (
+            <svg className={`w-3.5 h-3.5 ${sortOrder === "oldest" ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+            </svg>
           )}
-        </div>
-      )}
+        </button>
+      </div>
 
       {/* Apply banner */}
       {hasDecisions && (
