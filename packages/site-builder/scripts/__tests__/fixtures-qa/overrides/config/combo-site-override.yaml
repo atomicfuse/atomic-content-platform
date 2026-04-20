@@ -1,0 +1,10 @@
+override_id: combo-site-override
+name: "Combo Site Override"
+priority: 50
+
+targets:
+  sites:
+    - combo-full-chain.test
+
+tracking:
+  gtm: "GTM-COMBO-OVERRIDE"

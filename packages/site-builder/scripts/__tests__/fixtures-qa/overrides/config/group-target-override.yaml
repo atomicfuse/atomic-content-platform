@@ -1,0 +1,10 @@
+override_id: group-target-override
+name: "Group Target Override"
+priority: 25
+
+targets:
+  groups:
+    - qa-group-beta
+
+tracking:
+  ga4: "G-GROUP-TARGET"

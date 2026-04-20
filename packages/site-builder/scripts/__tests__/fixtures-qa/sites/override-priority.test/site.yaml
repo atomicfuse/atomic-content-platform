@@ -1,0 +1,13 @@
+domain: override-priority.test
+site_name: "Override Priority Site"
+groups: [qa-group-alpha]
+active: true
+brief:
+  audience: "QA testers"
+  tone: "Professional"
+  article_types: {standard: 100}
+  topics: ["qa"]
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 10
+  schedule: {articles_per_day: 1, preferred_days: [Monday], preferred_time: "09:00"}

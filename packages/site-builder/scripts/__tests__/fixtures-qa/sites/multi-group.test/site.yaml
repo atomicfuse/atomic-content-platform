@@ -1,0 +1,13 @@
+domain: multi-group.test
+site_name: "Multi Group Site"
+groups: [qa-group-alpha, qa-group-beta]
+active: true
+brief:
+  audience: "QA testers"
+  tone: "Casual"
+  article_types: {standard: 100}
+  topics: ["qa"]
+  seo_keywords_focus: []
+  content_guidelines: "Test"
+  review_percentage: 5
+  schedule: {articles_per_day: 1, preferred_days: [Monday], preferred_time: "10:00"}

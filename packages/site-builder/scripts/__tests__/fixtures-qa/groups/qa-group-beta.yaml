@@ -1,0 +1,31 @@
+group_id: qa-group-beta
+name: "QA Group Beta"
+
+tracking:
+  google_ads: "AW-BETA"
+
+scripts:
+  head:
+    - id: org-analytics
+      src: "https://analytics.example.com/beta.js"
+      async: true
+    - id: beta-script
+      inline: "console.log('beta')"
+  body_start: []
+  body_end: []
+
+scripts_vars:
+  shared_var: "from-beta"
+  beta_var: "beta-value"
+
+ads_config:
+  interstitial: false
+  layout: high-density
+
+ads_txt:
+  - "net-beta.com, 222, DIRECT"
+
+theme:
+  colors:
+    primary: "#BB0000"
+    accent: "#BBB"

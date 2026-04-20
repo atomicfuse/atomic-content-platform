@@ -1,0 +1,25 @@
+override_id: merge-override
+name: "Merge Override"
+priority: 20
+
+targets:
+  sites:
+    - override-merge.test
+    - combo-full-chain.test
+    - combo-scripts-merge.test
+    - combo-ads-cascade.test
+
+tracking:
+  ga4: "G-OVERRIDE"
+
+scripts:
+  _mode: merge_by_id
+  head:
+    - id: org-analytics
+      src: "https://analytics.example.com/override.js"
+      async: true
+    - id: override-script
+      inline: "init('{{org_var}}', '{{group_var}}', '{{shared_var}}')"
+
+ads_txt:
+  - "override-extra.com, 555, DIRECT"

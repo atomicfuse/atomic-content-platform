@@ -1,0 +1,53 @@
+organization: "QA Test Org"
+legal_entity: "QA Org Ltd"
+company_address: "456 QA Blvd"
+support_email_pattern: "support@{{domain}}"
+default_theme: modern
+default_fonts:
+  heading: "Arial"
+  body: "Helvetica"
+
+tracking:
+  ga4: "G-ORG"
+  gtm: "GTM-ORG"
+  google_ads: null
+  facebook_pixel: null
+  custom: []
+
+scripts:
+  head:
+    - id: org-analytics
+      src: "https://analytics.example.com/org.js"
+      async: true
+  body_start: []
+  body_end:
+    - id: org-footer
+      inline: "console.log('{{org_var}}')"
+
+scripts_vars:
+  org_var: "org-value"
+
+ads_config:
+  interstitial: false
+  layout: standard
+  ad_placements:
+    - id: org-banner
+      position: above-content
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[320, 50]]
+      device: all
+
+ad_placeholder_heights:
+  above-content: 100
+  after-paragraph: 280
+  sidebar: 500
+  sticky-bottom: 50
+
+ads_txt:
+  - "google.com, pub-org, DIRECT"
+
+legal:
+  company_name: "QA Org Ltd"
+  company_country: "US"
+  effective_date: "2026-01-01"
