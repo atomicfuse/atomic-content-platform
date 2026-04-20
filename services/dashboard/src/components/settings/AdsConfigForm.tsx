@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback } from "react";
+import { SizeConfigPanel } from "./SizeConfigPanel";
+import type { AdSizeConfig } from "./ad-size-config";
+import {
+  createDefaultSizeConfig,
+  configToSizeTuples,
+  sizeTuplesToConfig,
+} from "./ad-size-config";
 /** Ad placement — mirrors @atomic-platform/shared-types */
 interface AdPlacementSizes {
   desktop?: number[][];
@@ -14,7 +21,13 @@ export interface AdPlacement {
   device: "all" | "desktop" | "mobile";
   /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
   dismissible?: boolean;
+  /** Structured desktop size config for the editor UI. */
+  desktopSizeConfig?: AdSizeConfig;
+  /** Structured mobile size config for the editor UI. */
+  mobileSizeConfig?: AdSizeConfig;
 }
+
+export { validatePlacementConfigs } from "./ad-size-config";
 
 export interface AdsConfigFormValue {
   interstitial: boolean;
@@ -80,6 +93,8 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
       position: "above-content",
       device: "all",
       sizes: {},
+      desktopSizeConfig: createDefaultSizeConfig(),
+      mobileSizeConfig: createDefaultSizeConfig(),
     };
     onChange({ ...value, ad_placements: [...value.ad_placements, newPlacement] });
   }, [value, onChange]);
@@ -103,16 +118,6 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
       onChange({ ...value, ad_placements: updated });
     },
     [value, onChange],
-  );
-
-  const updateSizes = useCallback(
-    (placementIndex: number, device: keyof AdPlacementSizes, sizesStr: string): void => {
-      const placement = value.ad_placements[placementIndex];
-      const parsed = parseSizes(sizesStr);
-      const newSizes = { ...placement.sizes, [device]: parsed.length > 0 ? parsed : undefined };
-      updatePlacement(placementIndex, { sizes: newSizes });
-    },
-    [value, updatePlacement],
   );
 
   return (
@@ -267,36 +272,44 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
               </div>
             </div>
 
-            {/* Sizes */}
+            {/* Size Config Panels */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Desktop Sizes
-                </label>
-                <input
-                  type="text"
-                  value={formatSizes(placement.sizes.desktop)}
-                  placeholder="728x90, 970x250"
-                  onChange={(e): void => {
-                    updateSizes(index, "desktop", e.target.value);
-                  }}
-                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Mobile Sizes
-                </label>
-                <input
-                  type="text"
-                  value={formatSizes(placement.sizes.mobile)}
-                  placeholder="320x50, 300x250"
-                  onChange={(e): void => {
-                    updateSizes(index, "mobile", e.target.value);
-                  }}
-                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-                />
-              </div>
+              <SizeConfigPanel
+                label="Desktop Sizes"
+                config={
+                  placement.desktopSizeConfig ??
+                  sizeTuplesToConfig(placement.sizes.desktop)
+                }
+                onChange={(cfg): void => {
+                  const tuples = configToSizeTuples(cfg);
+                  updatePlacement(index, {
+                    desktopSizeConfig: cfg,
+                    sizes: {
+                      ...placement.sizes,
+                      desktop: tuples.length > 0 ? tuples : undefined,
+                    },
+                  });
+                }}
+                disabled={placement.device === "mobile"}
+              />
+              <SizeConfigPanel
+                label="Mobile Sizes"
+                config={
+                  placement.mobileSizeConfig ??
+                  sizeTuplesToConfig(placement.sizes.mobile)
+                }
+                onChange={(cfg): void => {
+                  const tuples = configToSizeTuples(cfg);
+                  updatePlacement(index, {
+                    mobileSizeConfig: cfg,
+                    sizes: {
+                      ...placement.sizes,
+                      mobile: tuples.length > 0 ? tuples : undefined,
+                    },
+                  });
+                }}
+                disabled={placement.device === "desktop"}
+              />
             </div>
 
             {/* Dismissible toggle — sticky-bottom only */}
@@ -531,20 +544,3 @@ function ToggleField({
   );
 }
 
-function formatSizes(sizes?: number[][]): string {
-  if (!sizes || sizes.length === 0) return "";
-  return sizes.map((s) => `${s[0]}x${s[1]}`).join(", ");
-}
-
-function parseSizes(str: string): number[][] {
-  if (!str.trim()) return [];
-  return str
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.includes("x"))
-    .map((s) => {
-      const [w, h] = s.split("x").map(Number);
-      return [w, h];
-    })
-    .filter(([w, h]) => !isNaN(w) && !isNaN(h));
-}
