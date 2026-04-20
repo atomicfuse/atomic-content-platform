@@ -66,7 +66,7 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
           .map((s) => {
             if (typeof s === "string" && s.includes("x")) {
               const [w, h] = s.split("x").map(Number);
-              return w && h ? [w, h] : null;
+              return (!isNaN(w) && !isNaN(h) && (w > 0 || h > 0)) ? [w, h] : null;
             }
             if (Array.isArray(s)) return s as number[];
             return null;
