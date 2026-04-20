@@ -1,5 +1,7 @@
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 import type { AdsConfigFormValue } from "@/components/settings/AdsConfigForm";
+import type { AdSizeConfig } from "@/components/settings/ad-size-config";
+import { sizeTuplesToConfig } from "@/components/settings/ad-size-config";
 
 /**
  * Shared normalizers for transforming raw YAML config data into typed form values.
@@ -65,12 +67,18 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
         sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
       }
       const dismissible = p.dismissible as boolean | undefined;
+      // Hydrate size config: use persisted config or migrate from sizes
+      const rawDesktopCfg = p.desktopSizeConfig as AdSizeConfig | undefined;
+      const rawMobileCfg = p.mobileSizeConfig as AdSizeConfig | undefined;
+
       return {
         id: (p.id as string) ?? "",
         position: (p.position as string) ?? "",
         device: (p.devices ?? p.device ?? "all") as "all" | "desktop" | "mobile",
         sizes,
         ...(dismissible !== undefined && { dismissible }),
+        desktopSizeConfig: rawDesktopCfg ?? sizeTuplesToConfig(sizes.desktop),
+        mobileSizeConfig: rawMobileCfg ?? sizeTuplesToConfig(sizes.mobile),
       };
     }),
   };
