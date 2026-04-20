@@ -229,6 +229,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     last_updated: now,
     created_at: now,
     pages_project: actualProjectName,
+    pages_subdomain: cfSubdomain,
     zone_id: null,
     staging_branch: stagingBranch,
     preview_url: previewUrl,
@@ -245,6 +246,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       company: data.company,
       vertical: data.vertical,
       pages_project: actualProjectName,
+      pages_subdomain: cfSubdomain,
       staging_branch: stagingBranch,
       preview_url: previewUrl,
     });
@@ -341,16 +343,16 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
 
   // No staging branch recorded — create one.
   // Branch name uses the domain (site folder), NOT pages_project (CF may have renamed it).
-  const pagesProject = site.pages_project ?? domain;
+  const pagesHost = site.pages_subdomain ?? site.pages_project ?? domain;
   const stagingBranch = `staging/${domain}`;
   const exists = await branchExists(stagingBranch);
   if (!exists) {
     await createBranch(stagingBranch, "main");
   }
 
-  // Construct preview URL — branch slug from branch name, domain from CF project name
+  // Construct preview URL — branch slug from branch name, domain from CF subdomain
   const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${pagesProject}.pages.dev`;
+  const previewUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
 
   await updateSiteInIndex(domain, {
     staging_branch: stagingBranch,
@@ -487,7 +489,8 @@ export async function refreshPreviewUrl(domain: string): Promise<string | null> 
     latestUrl = deployment.aliases[0]!;
   } else if (site.staging_branch) {
     const branchSlug = site.staging_branch.replace(/\//g, "-");
-    latestUrl = `https://${branchSlug}.${site.pages_project}.pages.dev`;
+    const pagesHost = site.pages_subdomain ?? site.pages_project;
+    latestUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
   }
 
   const previewUrl = latestUrl.startsWith("https://") ? latestUrl : `https://${latestUrl}`;

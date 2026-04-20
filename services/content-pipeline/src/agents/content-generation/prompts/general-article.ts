@@ -2,11 +2,12 @@
  * Prompt templates for general/evergreen article generation (OpenAI GPT-4o-mini).
  *
  * Engagement + SEO focused, conversational tone, TL;DR.
- * Target: 800-1200 words, markdown with H1/H2/H3.
+ * Default target: 800-1200 words, markdown with H2/H3 subheadings (overridden by content_guidelines).
  */
 
 import type { PromptContext } from "../generators/base-generator.js";
 import type { SiteBrief } from "../../../types.js";
+import { parseWordCountFromGuidelines } from "../../word-count.js";
 
 /**
  * Build the system prompt for general/evergreen articles.
@@ -15,6 +16,8 @@ export function buildGeneralSystemPrompt(siteName: string, brief: SiteBrief): st
   const guidelines = Array.isArray(brief.content_guidelines)
     ? brief.content_guidelines.map((g) => `- ${g}`).join("\n")
     : `- ${brief.content_guidelines}`;
+
+  const wc = parseWordCountFromGuidelines(brief.content_guidelines, 800, 1200);
 
   return `You are a content writer for ${siteName}, creating engaging articles on ${brief.topics.join(", ")} for ${brief.audience}.
 
@@ -48,7 +51,7 @@ Respond ONLY with a valid JSON object (no markdown fences). Schema:
   "description": "string — engaging meta description (150-160 chars)",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST must be a site topic, then 2-4 descriptive tags"],
-  "body": "string — 800-1200 word article in markdown with H1, H2, H3. Include a TL;DR near the top."
+  "body": "string — ${wc.label} article in markdown with H2, H3 subheadings. Do NOT include an H1 title — it is rendered separately from frontmatter. Include a TL;DR near the top. STRICT: never exceed ${wc.max} words."
 }`;
 }
 

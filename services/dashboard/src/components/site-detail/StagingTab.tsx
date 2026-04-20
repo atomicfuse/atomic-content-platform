@@ -16,6 +16,7 @@ import type { SiteStatus } from "@/types/dashboard";
 interface StagingTabProps {
   domain: string;
   pagesProject: string | null;
+  pagesSubdomain: string | null;
   stagingBranch: string | null;
   previewUrl: string | null;
   savedPreviews: Array<{ url: string; label: string; saved_at: string }> | null;
@@ -28,6 +29,7 @@ interface StagingTabProps {
 export function StagingTab({
   domain,
   pagesProject,
+  pagesSubdomain,
   stagingBranch,
   previewUrl,
   savedPreviews,
@@ -38,10 +40,13 @@ export function StagingTab({
 }: StagingTabProps): React.ReactElement {
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
 
-  // Build stable staging URL from branch + pages project (not the deployment-specific preview_url)
+  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
+  const pagesHost = pagesSubdomain ?? pagesProject;
+
+  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
   const currentPreviewUrl =
-    currentStagingBranch && pagesProject
-      ? `https://${currentStagingBranch.replace(/\//g, "-")}.${pagesProject}.pages.dev`
+    currentStagingBranch && pagesHost
+      ? `https://${currentStagingBranch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
       : previewUrl;
   const [isRefreshing, startRefresh] = useTransition();
   const [isSaving, startSave] = useTransition();
@@ -59,8 +64,8 @@ export function StagingTab({
 
   const productionUrl = customDomain
     ? `https://${customDomain}`
-    : pagesProject
-      ? `https://${pagesProject}.pages.dev`
+    : pagesHost
+      ? `https://${pagesHost}.pages.dev`
       : null;
 
   function handleRefreshPreview(): void {
@@ -326,7 +331,7 @@ export function StagingTab({
             <p className="text-sm text-[var(--text-secondary)]">
               Merging staging to production will make this site live at{" "}
               <span className="font-mono text-cyan">
-                {pagesProject}.pages.dev
+                {pagesHost}.pages.dev
               </span>
             </p>
           </div>
@@ -370,10 +375,10 @@ export function StagingTab({
       )}
 
       {/* Pages Project info */}
-      {pagesProject && (
+      {pagesHost && (
         <p className="text-xs text-[var(--text-muted)]">
           Pages project:{" "}
-          <span className="font-mono">{pagesProject}.pages.dev</span>
+          <span className="font-mono">{pagesHost}.pages.dev</span>
           {currentStagingBranch && (
             <>
               {" "}&middot; Branch:{" "}

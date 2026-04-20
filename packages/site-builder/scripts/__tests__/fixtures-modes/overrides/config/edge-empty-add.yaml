@@ -1,0 +1,12 @@
+override_id: edge-empty-add
+name: "Edge Case Empty Add"
+priority: 10
+
+targets:
+  sites:
+    - edge-case.example.com
+
+# T24 — ads_config add with empty placements: should be a no-op
+ads_config:
+  _mode: add
+  ad_placements: []

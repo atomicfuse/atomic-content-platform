@@ -120,6 +120,7 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
         last_updated: now,
         created_at: now,
         pages_project: cfInfo.pagesProject,
+        pages_subdomain: cfInfo.pagesSubdomain?.replace(".pages.dev", "") ?? cfInfo.pagesProject,
         zone_id: cfInfo.zoneId,
         staging_branch: null,
         preview_url: null,

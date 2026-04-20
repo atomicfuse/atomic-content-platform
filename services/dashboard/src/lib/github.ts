@@ -74,15 +74,26 @@ export async function readDashboardIndex(): Promise<DashboardIndex> {
       const parsed = parseYaml(content) as DashboardIndex | null;
       if (!parsed) return { sites: [], deleted: [] };
       // Backfill new fields for entries written before pages_project/zone_id existed
-      parsed.sites = parsed.sites.map((s) => ({
-        ...s,
-        pages_project: (s as Partial<DashboardSiteEntry>).pages_project ?? null,
-        zone_id: (s as Partial<DashboardSiteEntry>).zone_id ?? null,
-        staging_branch: (s as Partial<DashboardSiteEntry>).staging_branch ?? null,
-        preview_url: (s as Partial<DashboardSiteEntry>).preview_url ?? null,
-        saved_previews: (s as Partial<DashboardSiteEntry>).saved_previews ?? null,
-        custom_domain: (s as Partial<DashboardSiteEntry>).custom_domain ?? null,
-      }));
+      parsed.sites = parsed.sites.map((s) => {
+        const partial = s as Partial<DashboardSiteEntry>;
+        // Derive pages_subdomain from preview_url when not explicitly set.
+        // preview_url format: https://<branch-slug>.<subdomain>.pages.dev
+        let pagesSubdomain = partial.pages_subdomain ?? null;
+        if (!pagesSubdomain && partial.preview_url) {
+          const m = partial.preview_url.match(/\.([^.]+)\.pages\.dev/);
+          if (m) pagesSubdomain = m[1]!;
+        }
+        return {
+          ...s,
+          pages_project: partial.pages_project ?? null,
+          pages_subdomain: pagesSubdomain,
+          zone_id: partial.zone_id ?? null,
+          staging_branch: partial.staging_branch ?? null,
+          preview_url: partial.preview_url ?? null,
+          saved_previews: partial.saved_previews ?? null,
+          custom_domain: partial.custom_domain ?? null,
+        };
+      });
       parsed.deleted = parsed.deleted ?? [];
       dashboardIndexCache.set(parsed);
       return parsed;

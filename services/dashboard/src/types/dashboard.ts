@@ -15,8 +15,10 @@ export interface DashboardSiteEntry {
   fixed_ad: boolean;
   last_updated: string;
   created_at: string;
-  /** Cloudflare Pages project name (e.g. "coolnews-dev"). */
+  /** Cloudflare Pages project name for API calls (e.g. "coolnews-dev"). */
   pages_project: string | null;
+  /** Cloudflare Pages *.pages.dev subdomain prefix (may differ from pages_project if CF renamed it). */
+  pages_subdomain: string | null;
   /** Cloudflare zone ID for API operations. */
   zone_id: string | null;
   /** Git branch used for staging (e.g., "staging/coolnews-dev-v2"). */

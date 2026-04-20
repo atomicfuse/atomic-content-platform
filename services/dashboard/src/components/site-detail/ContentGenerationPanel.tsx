@@ -9,6 +9,7 @@ import { publishStagingToProduction } from "@/actions/wizard";
 interface ContentGenerationPanelProps {
   domain: string;
   pagesProject: string | null;
+  pagesSubdomain: string | null;
   stagingBranch: string | null;
 }
 
@@ -115,6 +116,7 @@ const MAX_ARTICLE_COUNT = 50;
 export function ContentGenerationPanel({
   domain,
   pagesProject,
+  pagesSubdomain,
   stagingBranch,
 }: ContentGenerationPanelProps): React.ReactElement {
   const [articleCount, setArticleCount] = useState(3);
@@ -127,6 +129,9 @@ export function ContentGenerationPanel({
   const { toast } = useToast();
 
   const domainSlug = domain.replace(/\./g, "-");
+  // For URL construction, prefer pages_subdomain (actual *.pages.dev prefix)
+  const pagesHost = pagesSubdomain ?? pagesProject ?? domainSlug;
+  // For CF API calls (build trigger, deployment polling), use pages_project
   const projectName = pagesProject ?? domainSlug;
 
   const advancePipeline = useCallback(
@@ -338,8 +343,8 @@ export function ContentGenerationPanel({
 
       let deploymentUrl: string | null = null;
       const branchSlug = stagingBranch ? stagingBranch.replace(/\//g, "-") : null;
-      const stagingBaseUrl = branchSlug ? `https://${branchSlug}.${projectName}.pages.dev` : null;
-      const productionBaseUrl = `https://${projectName}.pages.dev`;
+      const stagingBaseUrl = branchSlug ? `https://${branchSlug}.${pagesHost}.pages.dev` : null;
+      const productionBaseUrl = `https://${pagesHost}.pages.dev`;
 
       try {
         const buildRes = await fetch("/api/agent/build", {
@@ -760,12 +765,12 @@ export function ContentGenerationPanel({
                     )}
                   </div>
                   {pipeline.step === "complete" && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-700 dark:text-green-400">
                       Live
                     </span>
                   )}
                   {pipeline.step === "staging_live" && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
                       Staging
                     </span>
                   )}
@@ -788,20 +793,20 @@ export function ContentGenerationPanel({
                       </span>
                       {r.qualityScore !== undefined && (
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                          r.qualityScore >= 80 ? "text-green-400 bg-green-500/10" :
-                          r.qualityScore >= 60 ? "text-yellow-400 bg-yellow-500/10" :
-                          "text-red-400 bg-red-500/10"
+                          r.qualityScore >= 80 ? "text-green-700 dark:text-green-400 bg-green-500/10" :
+                          r.qualityScore >= 60 ? "text-yellow-700 dark:text-yellow-400 bg-yellow-500/10" :
+                          "text-red-700 dark:text-red-400 bg-red-500/10"
                         }`}>
                           Score: {r.qualityScore}
                         </span>
                       )}
                       {r.articleStatus === "review" && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
                           Review
                         </span>
                       )}
                       {r.articleStatus === "published" && r.qualityScore !== undefined && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-700 dark:text-green-400">
                           Published
                         </span>
                       )}

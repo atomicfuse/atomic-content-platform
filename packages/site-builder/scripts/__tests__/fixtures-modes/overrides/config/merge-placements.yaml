@@ -1,0 +1,25 @@
+override_id: merge-placements
+name: "Merge Placements Override"
+priority: 20
+
+targets:
+  sites:
+    - add-test.example.com
+
+# T10 — ads_config merge_placements: sidebar replaced by ID, new IDs appended
+# Applied AFTER add-ads (priority 20 > 10), so it operates on the add result
+ads_config:
+  _mode: merge_placements
+  ad_placements:
+    - id: sidebar
+      position: sidebar
+      sizes:
+        desktop: [[336, 280]]
+        mobile: [[300, 250]]
+      device: all
+    - id: in-article
+      position: after-paragraph
+      sizes:
+        desktop: [[728, 90]]
+        mobile: [[300, 250]]
+      device: all

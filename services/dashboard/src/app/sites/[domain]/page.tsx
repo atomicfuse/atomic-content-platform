@@ -83,6 +83,7 @@ export default async function SiteDetailPage({
             <StagingTab
               domain={decodedDomain}
               pagesProject={site.pages_project}
+              pagesSubdomain={site.pages_subdomain}
               stagingBranch={site.staging_branch}
               previewUrl={site.preview_url}
               savedPreviews={site.saved_previews}
@@ -99,8 +100,8 @@ export default async function SiteDetailPage({
             domain={decodedDomain}
             stagingBranch={site.staging_branch}
             previewUrl={
-              site.staging_branch && site.pages_project
-                ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+              site.staging_branch && (site.pages_subdomain ?? site.pages_project)
+                ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_subdomain ?? site.pages_project}.pages.dev`
                 : site.preview_url ?? undefined
             }
           />
@@ -112,6 +113,7 @@ export default async function SiteDetailPage({
             siteConfig={siteConfig}
             stagingBranch={site.staging_branch}
             pagesProject={site.pages_project}
+            pagesSubdomain={site.pages_subdomain}
             customDomain={site.custom_domain}
           />
         }

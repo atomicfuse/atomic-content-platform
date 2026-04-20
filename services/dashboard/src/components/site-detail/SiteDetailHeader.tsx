@@ -9,27 +9,29 @@ export function SiteDetailHeader({
   site,
 }: SiteDetailHeaderProps): React.ReactElement {
   // Determine primary link based on site state
+  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
+  const pagesHost = site.pages_subdomain ?? site.pages_project;
   let primaryHref: string;
   let primaryLabel: string;
 
   if (site.custom_domain) {
     primaryHref = `https://${site.custom_domain}`;
     primaryLabel = "Open Live Site";
-  } else if (site.pages_project && (site.status === "Ready" || site.status === "Live")) {
-    primaryHref = `https://${site.pages_project}.pages.dev`;
+  } else if (pagesHost && (site.status === "Ready" || site.status === "Live")) {
+    primaryHref = `https://${pagesHost}.pages.dev`;
     primaryLabel = "Open Site";
-  } else if (site.staging_branch && site.pages_project && site.status === "Staging") {
-    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`;
+  } else if (site.staging_branch && pagesHost && site.status === "Staging") {
+    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`;
     primaryLabel = "Open Staging";
   } else {
     primaryHref = `https://${site.domain}`;
     primaryLabel = "Open Live Site";
   }
 
-  // Build stable staging URL from branch + pages project (not the deployment-specific preview_url)
+  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
   const stagingUrl =
-    site.staging_branch && site.pages_project
-      ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
+    site.staging_branch && pagesHost
+      ? `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
       : null;
 
   // Show staging link for live sites that also have a staging branch
@@ -55,9 +57,9 @@ export function SiteDetailHeader({
             <span>&middot;</span>
             <span>{site.vertical}</span>
           </div>
-          {site.pages_project && (
+          {pagesHost && (
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              {site.pages_project}.pages.dev
+              {pagesHost}.pages.dev
             </p>
           )}
         </div>
@@ -68,7 +70,7 @@ export function SiteDetailHeader({
             href={stagingUrl!}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors"
           >
             Staging
             {linkIcon}

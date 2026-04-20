@@ -8,6 +8,7 @@
 
 import type { SiteBrief, QualityWeights, QualityScoreBreakdown } from "../../types.js";
 import { generateContent } from "../../lib/ai.js";
+import { parseWordCountFromGuidelines } from "../word-count.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +54,11 @@ export function buildQualityScoringPrompt(
   siteName: string,
   brief: SiteBrief,
 ): { systemPrompt: string; userPrompt: string } {
+  const wc = parseWordCountFromGuidelines(brief.content_guidelines, 800, 1200);
+  const midpoint = Math.round((wc.min + wc.max) / 2);
+  const tooShort = Math.round(wc.min * 0.5);
+  const tooLong = Math.round(wc.max * 1.5);
+
   const systemPrompt = `You are a content quality evaluator for ${siteName}. Your job is to score articles on a 0-100 scale across five criteria.
 
 ## Site Context
@@ -68,7 +74,7 @@ export function buildQualityScoringPrompt(
 
 2. **tone_match** (0-100): How well the writing matches "${brief.tone}" tone for "${brief.audience}" audience. Consider vocabulary, sentence structure, formality level, and engagement style.
 
-3. **content_length** (0-100): Target is ~1000 words. Score 100 for 900-1100 words. Penalize: <500 words gets ≤40, 500-700 gets ≤60, 700-900 gets ≤80. Over 1500 words gets ≤70 (too long).
+3. **content_length** (0-100): Target is ~${midpoint} words (${wc.min}-${wc.max} range per content guidelines). Score 100 for ${wc.min}-${wc.max} words. Penalize: <${tooShort} words gets ≤40. Over ${tooLong} words gets ≤70 (too long). Scale linearly between thresholds.
 
 4. **factual_accuracy** (0-100): Check for obvious hallucinations, fabricated statistics, contradictory statements, or unsupported claims. Score 100 if no issues detected. Deduct heavily for any fabricated data.
 
