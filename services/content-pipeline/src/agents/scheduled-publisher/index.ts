@@ -23,6 +23,28 @@ import type { PublishSchedule } from "../../types.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
+/**
+ * Map common timezone abbreviations to IANA names so Intl correctly
+ * handles DST transitions. CloudGrid cron supports UTC, EST, PST —
+ * without this map, "EST" resolves to fixed UTC-5 (no DST) and the
+ * scheduler is off by 1 hour during summer (EDT).
+ */
+export const TIMEZONE_MAP: Record<string, string> = {
+  EST: "America/New_York",
+  EDT: "America/New_York",
+  PST: "America/Los_Angeles",
+  PDT: "America/Los_Angeles",
+  CST: "America/Chicago",
+  CDT: "America/Chicago",
+  MST: "America/Denver",
+  MDT: "America/Denver",
+};
+
+/** Resolve an abbreviation like "EST" to its IANA name, or pass through. */
+export function resolveTimezone(tz: string): string {
+  return TIMEZONE_MAP[tz.toUpperCase()] ?? tz;
+}
+
 const DEFAULT_SCHEDULER_CONFIG: SchedulerConfig = {
   enabled: true,
   run_at_hours: [14],
@@ -74,13 +96,14 @@ async function readSchedulerConfig(
   }
 }
 
-/** Current hour in a given IANA/abbreviated timezone. */
-function currentHourInTimezone(timezone: string): number {
+/** Current hour (0-23) in a given IANA or abbreviated timezone. */
+export function currentHourInTimezone(timezone: string): number {
   try {
+    const resolved = resolveTimezone(timezone);
     const hour = new Intl.DateTimeFormat("en-US", {
       hour: "numeric",
-      hour12: false,
-      timeZone: timezone,
+      hourCycle: "h23",
+      timeZone: resolved,
     }).format(new Date());
     const n = parseInt(hour, 10);
     return isNaN(n) ? new Date().getHours() : n;
@@ -90,11 +113,12 @@ function currentHourInTimezone(timezone: string): number {
 }
 
 /** Current day-of-week name in a given timezone. */
-function currentDayNameInTimezone(timezone: string): string {
+export function currentDayNameInTimezone(timezone: string): string {
   try {
+    const resolved = resolveTimezone(timezone);
     return new Intl.DateTimeFormat("en-US", {
       weekday: "long",
-      timeZone: timezone,
+      timeZone: resolved,
     }).format(new Date());
   } catch {
     const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -103,20 +127,20 @@ function currentDayNameInTimezone(timezone: string): string {
 }
 
 /** If preferred_days is empty, any day is valid. */
-function isTodayPreferredDay(schedule: PublishSchedule, timezone: string): boolean {
+export function isTodayPreferredDay(schedule: PublishSchedule, timezone: string): boolean {
   if (!schedule.preferred_days || schedule.preferred_days.length === 0) return true;
   const today = currentDayNameInTimezone(timezone).toLowerCase();
   return schedule.preferred_days.some((d) => d.toLowerCase() === today);
 }
 
 /** Derive N articles/day from the schedule (dual-read). */
-function resolveArticlesPerDay(schedule: PublishSchedule): number {
+export function resolveArticlesPerDay(schedule: PublishSchedule): number {
   if (typeof schedule.articles_per_day === "number" && schedule.articles_per_day > 0) {
     return schedule.articles_per_day;
   }
   const perWeek = schedule.articles_per_week ?? 0;
   if (perWeek <= 0) return 0;
-  const daysCount = Math.max(1, schedule.preferred_days?.length ?? 7);
+  const daysCount = schedule.preferred_days?.length || 7;
   return Math.max(1, Math.ceil(perWeek / daysCount));
 }
 

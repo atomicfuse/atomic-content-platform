@@ -32,7 +32,9 @@ export async function readSchedulerConfig(): Promise<SchedulerConfig> {
     enabled: parsed.enabled ?? DEFAULT_SCHEDULER_CONFIG.enabled,
     run_at_hours:
       Array.isArray(parsed.run_at_hours) && parsed.run_at_hours.length > 0
-        ? parsed.run_at_hours
+        ? parsed.run_at_hours.filter(
+            (h): h is number => typeof h === "number" && Number.isInteger(h) && h >= 0 && h <= 23,
+          )
         : DEFAULT_SCHEDULER_CONFIG.run_at_hours,
     timezone: parsed.timezone ?? DEFAULT_SCHEDULER_CONFIG.timezone,
   };
