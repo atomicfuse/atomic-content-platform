@@ -91,6 +91,12 @@ export interface WizardFormData {
   audiences: string[];
   /** Audience type IDs from the Content Aggregator API. */
   audienceIds: string[];
+  /** Selected categories from Niche Targeting step: { id, name, iabCode }. */
+  selectedCategories: Array<{ id: string; name: string; iabCode: string }>;
+  /** Selected tags from Niche Targeting step: { id, name }. */
+  selectedTags: Array<{ id: string; name: string }>;
+  /** IAB vertical code (denormalized from vertical object). */
+  iabVerticalCode: string;
   tone: string;
   topics: string[];
   articlesPerDay: number;
