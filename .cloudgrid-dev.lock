@@ -1,8 +1,8 @@
 {
-  "pid": 16723,
+  "pid": 28876,
   "ports": {
     "dashboard": 3001,
     "content-pipeline": 5000
   },
-  "startedAt": "2026-04-23T07:31:19.274Z"
+  "startedAt": "2026-04-23T08:57:26.742Z"
 }
