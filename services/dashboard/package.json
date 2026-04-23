@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cloudgrid-io/ai": "^0.1.1",
     "@octokit/rest": "^21.1.0",
     "google-auth-library": "^10.6.2",
     "google-spreadsheet": "^5.2.0",

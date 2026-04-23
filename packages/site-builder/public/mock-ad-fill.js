@@ -142,9 +142,10 @@
     // Create the mock ad
     var ad = document.createElement('div');
     ad.style.cssText = [
+      'box-sizing: border-box',
       'width: 100%',
-      'max-width: ' + w + 'px',
-      'height: ' + h + 'px',
+      w > 0 ? ('max-width: ' + w + 'px') : '',
+      h > 0 ? ('height: ' + h + 'px') : 'height: auto',
       'background: ' + mock.bg,
       'border: 2px dashed ' + mock.color,
       'border-radius: 8px',
@@ -152,7 +153,7 @@
       'flex-direction: column',
       'align-items: center',
       'justify-content: center',
-      'margin: 8px auto',
+      'margin: 0 auto',
       'position: relative',
       'overflow: hidden',
       'font-family: -apple-system, BlinkMacSystemFont, sans-serif',

@@ -299,29 +299,5 @@ const categoryBadge = tags[0] ?? null;
     text-align: center;
   }
 
-  /* :global() required — button is injected by ad-loader.js at runtime,
-     so it lacks the scoped data-astro-cid attribute. */
-  .ad-sticky-bottom :global(.ad-close-btn) {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 32px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid var(--color-text, #333);
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
-    color: var(--color-text, #333);
-    padding: 0;
-    z-index: 101;
-  }
-  .ad-sticky-bottom :global(.ad-close-btn:focus-visible) {
-    outline: 2px solid var(--color-primary, #0066cc);
-    outline-offset: 2px;
-  }
+  /* .ad-close-btn styles moved to BaseLayout global styles */
 </style>
