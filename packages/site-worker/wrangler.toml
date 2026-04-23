@@ -1,0 +1,29 @@
+# Cloudflare Worker configuration for the multi-tenant Astro site-worker.
+#
+# Phase 1 (scaffold) deliberately declares NO KV bindings. Phase 3 of the
+# migration plan adds `CONFIG_KV` and `CONFIG_KV_STAGING` namespaces.
+#
+# During the migration the two existing Cloudflare Pages projects
+# (coolnews-atl, scienceworld) keep serving production traffic. This Worker
+# is staging-only until Phase 6 DNS cutover.
+
+name = "atomic-site-worker-staging"
+compatibility_date = "2026-04-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Static assets — the Astro Cloudflare adapter emits static files alongside
+# the Worker entrypoint into ./dist and wires `main` + `_routes.json` at
+# build time. Leaving `main` unset here lets the adapter own that path.
+assets = { directory = "./dist", binding = "ASSETS" }
+
+# Observability — Workers Logs (enabled by default on Workers Paid).
+[observability]
+enabled = true
+
+# Environment placeholders. Real KV bindings arrive in Phase 3.
+
+[env.staging]
+name = "atomic-site-worker-staging"
+
+[env.production]
+name = "atomic-site-worker"

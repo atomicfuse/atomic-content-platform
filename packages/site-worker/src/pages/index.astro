@@ -1,0 +1,42 @@
+---
+export const prerender = false;
+
+const host = Astro.request.headers.get('host') ?? 'unknown';
+const cfIpCountry = Astro.request.headers.get('cf-ipcountry') ?? 'unknown';
+const cfRay = Astro.request.headers.get('cf-ray') ?? 'local';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Atomic site-worker — scaffold</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        max-width: 48rem;
+        margin: 4rem auto;
+        padding: 0 1rem;
+        color: #1a1a2e;
+      }
+      h1 { font-size: 1.5rem; margin: 0 0 1rem; }
+      dt { font-weight: 600; margin-top: 0.75rem; }
+      dd { margin: 0; font-family: ui-monospace, monospace; color: #334155; }
+      .note { color: #6b7280; font-size: 0.9rem; margin-top: 2rem; border-top: 1px solid #e5e7eb; padding-top: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Atomic site-worker</h1>
+    <p>Phase 1 scaffold. Request reached the Worker and rendered.</p>
+    <dl>
+      <dt>host</dt><dd>{host}</dd>
+      <dt>cf-ipcountry</dt><dd>{cfIpCountry}</dd>
+      <dt>cf-ray</dt><dd>{cfRay}</dd>
+    </dl>
+    <p class="note">
+      Multi-tenant resolution, KV config lookups, and Server Islands arrive in
+      Phases 3 and 4 — see <code>docs/migration-plan.md</code>.
+    </p>
+  </body>
+</html>
