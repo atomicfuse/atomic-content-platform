@@ -97,6 +97,8 @@ export interface WizardFormData {
   selectedTags: Array<{ id: string; name: string }>;
   /** IAB vertical code (denormalized from vertical object). */
   iabVerticalCode: string;
+  /** Existing bundle ID (set when user picks an existing bundle instead of creating new). */
+  bundleId: string;
   tone: string;
   topics: string[];
   articlesPerDay: number;

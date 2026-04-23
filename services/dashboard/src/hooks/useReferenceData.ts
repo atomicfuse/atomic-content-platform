@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getAudiences,
   getVerticals,
   getCategories,
   getTags,
+  searchTags,
+  getBundles,
   type ReferenceItem,
   type VerticalItem,
   type CategoryItem,
   type TagItem,
+  type BundleItem,
 } from "@/lib/reference-data";
 
 export function useAudiences(): { audiences: ReferenceItem[]; loading: boolean } {
@@ -83,4 +86,50 @@ export function useTags(verticalId: string): { tags: TagItem[]; loading: boolean
   }
 
   return { tags, loading, refetch };
+}
+
+/** Search tags via API with debounce. Only calls when search is non-empty. */
+export function useTagSearch(
+  verticalId: string,
+  search: string,
+  debounceMs = 300,
+): { results: TagItem[]; loading: boolean } {
+  const [results, setResults] = useState<TagItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!search.trim() || !verticalId) {
+      setResults([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    timerRef.current = setTimeout(() => {
+      searchTags(verticalId, search)
+        .then(setResults)
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, debounceMs);
+    return (): void => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [verticalId, search, debounceMs]);
+
+  return { results, loading };
+}
+
+export function useBundles(): { bundles: BundleItem[]; loading: boolean } {
+  const [bundles, setBundles] = useState<BundleItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getBundles()
+      .then(setBundles)
+      .catch(() => setBundles([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return { bundles, loading };
 }

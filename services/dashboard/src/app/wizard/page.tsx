@@ -28,6 +28,7 @@ const DEFAULT_FORM: WizardFormData = {
   selectedCategories: [],
   selectedTags: [],
   iabVerticalCode: "",
+  bundleId: "",
   tone: "",
   topics: [],
   articlesPerDay: 1,

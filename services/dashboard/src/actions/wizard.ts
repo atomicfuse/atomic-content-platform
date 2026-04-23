@@ -100,16 +100,30 @@ export async function createSiteAndBuildStaging(
   // custom domain is just an alias on the CF Pages project.
   const siteFolder = projectName;
 
-  // 0. Derive niche targeting IDs from object arrays and create bundle
-  const categoryIds = data.selectedCategories.map((c) => c.id);
-  const tagIds = data.selectedTags.map((t) => t.id);
+  // 0. Resolve niche targeting: existing bundle or create new
+  let bundleId: string | undefined = data.bundleId || undefined;
+  let categoryIds: string[] = data.selectedCategories.map((c) => c.id);
+  let tagIds: string[] = data.selectedTags.map((t) => t.id);
   const iabCategoryCodes = data.selectedCategories
     .map((c) => c.iabCode)
     .filter(Boolean);
 
-  // Create bundle BEFORE first commit (so bundle_id goes in site.yaml)
-  let bundleId: string | undefined;
-  if (data.verticalId && categoryIds.length > 0) {
+  if (bundleId) {
+    // Existing bundle — fetch its rules for site.yaml fields
+    try {
+      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`);
+      if (res.ok) {
+        const bundle = (await res.json()) as {
+          rules?: { category_ids?: string[]; tag_ids?: string[] };
+        };
+        categoryIds = bundle.rules?.category_ids ?? categoryIds;
+        tagIds = bundle.rules?.tag_ids ?? tagIds;
+      }
+    } catch {
+      // Best-effort — proceed with what we have
+    }
+  } else if (data.verticalId && categoryIds.length > 0) {
+    // Create new bundle
     const bundle = await createBundle(
       data.siteName,
       data.verticalId,
