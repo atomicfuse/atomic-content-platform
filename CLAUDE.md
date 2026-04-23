@@ -61,7 +61,8 @@ services/
 
 packages/
   shared-types/              TS interfaces: SiteConfig, SiteBrief, PublishSchedule, DashboardIndex, Article, Ads, Tracking
-  site-builder/              Astro 6 static site generator (themes, components, config resolver)
+  site-builder/              Astro 5.7 static site generator (themes, components, config resolver) — legacy Pages-per-site target, serves production during the Pages→Workers migration
+  site-worker/               Astro 6 + @astrojs/cloudflare SSR app (migration target, Phase 1 scaffold). One Worker serves many hostnames via KV-driven config. Lives alongside site-builder until Phase 8 cutover. See docs/migration-plan.md
   migration/                 WordPress migration tooling (placeholder)
 
 cloudgrid.yaml               Service + cron definitions
@@ -260,7 +261,8 @@ See **Config Inheritance — 5-Layer Resolution** above for the full chain (`org
 
 - **Monorepo:** Turborepo + pnpm. Package names: `@atomic-platform/<name>`.
 - **Dashboard:** Next.js 15 (App Router), React 19, next-themes, NextAuth.
-- **Site builder:** Astro 6 (static output).
+- **Site builder (legacy, live traffic):** Astro 5.7 (static output), deployed to Cloudflare Pages per-site. Retires in Phase 8 of the migration.
+- **Site worker (migration target, Phase 1 scaffold):** Astro 6.1 + `@astrojs/cloudflare` 13.2 (`output: 'server'`), deployed to Cloudflare Workers. One deployment serves many hostnames.
 - **Content pipeline:** Node 20, raw `http.createServer`, Octokit.
 - **Styling:** Tailwind CSS v4.
 - **Language:** TypeScript strict — no `any`, explicit return types.
@@ -285,9 +287,14 @@ cloudgrid dev             # dashboard → :3001, content-pipeline → :5000
 cd services/dashboard && pnpm dev
 cd services/content-pipeline && pnpm dev
 
-# Site builder (for debugging static output)
+# Site builder (legacy, for debugging static output)
 cd packages/site-builder
 SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm dev
+
+# Site worker (migration target — Phase 1 scaffold only)
+cd packages/site-worker
+pnpm dev           # astro dev (Vite) — fast iteration, no workerd
+pnpm dev:worker    # astro build && wrangler dev --config dist/server/wrangler.json  (workerd parity)
 ```
 
 ## CloudGrid

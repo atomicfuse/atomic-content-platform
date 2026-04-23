@@ -165,25 +165,68 @@ See §Final verification for the scaffold smoke test. No unit tests written this
 
 ## Final verification
 
-Will be completed after Phase 1 work is executed. This audit file was created BEFORE the scaffold tasks (per dev-audit-trail Law 1).
+| Check | Result | Notes |
+|-------|--------|-------|
+| `pnpm install` | ✅ | 7 workspace projects; +63 deps added; 1 deprecation warning (`node-domexception`, subdep, not ours); `workerd` postinstall script skipped by pnpm (harmless — wrangler ships its own binary) |
+| Astro / adapter resolved versions | ✅ | Astro **6.1.9**, `@astrojs/cloudflare` **13.2.0** |
+| `pnpm --filter @atomic-platform/site-worker build` | ✅ | Server built in 3.21 s; emits `dist/client/` + `dist/server/{entry.mjs, wrangler.json, chunks/}` |
+| `pnpm --filter @atomic-platform/site-worker typecheck` | ✅ | `astro check`: 0 errors, 0 warnings, 0 hints; `tsc --noEmit`: clean |
+| `wrangler dev --config dist/server/wrangler.json` | ✅ | Serves 200 OK on `http://127.0.0.1:8788` |
+| Hostname-echo smoke test (curl with different Host headers) | ✅ | `Host: scienceworld.local` → `<dd>scienceworld.local</dd>`; `Host: coolnews.dev` → `<dd>coolnews.dev</dd>` |
+| Browser render (preview_screenshot) | ✅ | Clean monospace listing of host, cf-ipcountry, cf-ray |
+| Existing `site-builder` untouched | ✅ | No files modified under `packages/site-builder/`; prod path unchanged |
 
-**Files touched (planned — updated at end of session):**
-- `docs/audit-logs/2026-04-23-1630-migration-phase-0-and-1-scaffold.md` — this file
-- `docs/migration-baselines.md` — new (Phase 0)
-- `docs/migration-plan.md` — modified (append Resolved Open Questions section)
-- `docs/future-decisions.md` — new (Q9)
-- `packages/site-worker/` — new package (Phase 1)
-- `docs/sessions/2026-04-23-phase-0-and-1.md` — new (session summary, written last)
-- `docs/backlog/general.md` — modified
+**Non-issues observed:**
+- Wrangler 4.77.0 prints `[wrangler:warn] The latest compatibility date supported by the installed Cloudflare Workers Runtime is "2026-03-17", but you've requested "2026-04-23". Falling back to "2026-03-17"…` — upgrade to `wrangler@4.84.1` removes it. Logged as a backlog item.
+- `[WARN] [@astrojs/sitemap] The Sitemap integration requires the `site` astro.config option. Skipping.` — expected; no canonical `site:` exists until middleware resolves per-site in Phase 3. Logged as a backlog item.
+- `shell-init: error retrieving current directory: getcwd…` in preview logs — cosmetic, caused by the harness launching under a no-longer-existent cwd. Doesn't affect the Worker.
+
+**Files touched (final):**
+- `docs/audit-logs/2026-04-23-1630-migration-phase-0-and-1-scaffold.md` — created (this file)
+- `docs/migration-baselines.md` — created
+- `docs/migration-plan.md` — modified (Resolved Open Questions + theme-extraction + Decision log sections)
+- `docs/future-decisions.md` — created
+- `docs/sessions/2026-04-23-phase-0-and-1-scaffold.md` — created
+- `docs/backlog/general.md` — modified (marked resolved items; added Phase-1 follow-ups)
+- `.claude/launch.json` — modified (added `site-worker` preview config)
+- `CLAUDE.md` — modified (Layout, Tech Stack, Common Commands reflect both packages)
+- `packages/site-worker/.gitignore` — created
+- `packages/site-worker/README.md` — created
+- `packages/site-worker/astro.config.mjs` — created
+- `packages/site-worker/package.json` — created
+- `packages/site-worker/src/env.d.ts` — created
+- `packages/site-worker/src/pages/index.astro` — created
+- `packages/site-worker/tsconfig.json` — created
+- `packages/site-worker/wrangler.toml` — created
+- `pnpm-lock.yaml` — modified (new deps)
 
 ## Post-deploy verification
-None yet — Phase 1 scaffold produces a local-only artefact. No Cloudflare resources created this session.
+No Cloudflare resources created this session. No deploy to Cloudflare. Production (the two existing Pages projects) untouched.
+
+When Phase 3 (KV + middleware) deploys the first staging Worker, THIS audit's smoke test pair (`curl -H "Host: scienceworld.local"` and `curl -H "Host: coolnews.dev"`) should be re-run against the staging URL — they're now canonical regression checks for the multi-tenant foundation.
 
 ## CLAUDE.md updates
-Pending — will add `packages/site-worker/` to the "Layout — Platform Repo" section in the final commit of this session. Not updating yet because the scaffold isn't written yet; updating CLAUDE.md preemptively would create a CLAUDE-vs-reality drift for the duration of the scaffold work.
+Updated three sections:
+- "Layout — Platform Repo" (`packages/` listing) — added `site-worker/` with its migration-target description; re-labelled `site-builder/` as legacy/Pages-per-site.
+- "Tech Stack" — replaced the single "Site builder: Astro 6" line (which was drift — actual pin was 5.7) with two lines that correctly describe both packages during the migration.
+- "Common Commands" — added `packages/site-worker` commands (`pnpm dev`, `pnpm dev:worker`) alongside the legacy `site-builder` commands.
 
 ## Backlog sync
-Will update at end of session.
+**Read:** `docs/backlog/general.md`.
+**Marked done (this session):** `Astro 5.7 → 6 upgrade` (superseded — new package path instead), `CLAUDE.md:264 drift` (fixed), `docs/plans/content-network-guide.md untracked` (fixed in prev commit), Q2/Q3/Q4/Q9 open questions (answered by user).
+**Added:** new "Phase-1 scaffold follow-ups" subsection — wrangler upgrade, `site:` config, `SESSION` KV binding note, theme-extraction sequencing.
+**All 6 categories reviewed:** ✅
+**Backlog is accurate:** ✅
 
 ## Session completion checklist
-Will be filled in at end of session.
+- [x] Audit log created BEFORE investigation/scaffold work began (created at 16:30 UTC, before any `pnpm install` or file creation).
+- [x] Recent context populated from last 2-3 sessions + backlog.
+- [x] Pre-flight checks recorded (typecheck/lint skipped with reason — no existing code modified).
+- [x] Every file change has its own entry (or is covered in aggregate under Change 4 for the scaffold package files, which are inherently one related unit).
+- [x] Every non-trivial decision has alternatives + reasoning (4 decisions recorded).
+- [x] Changes functionally tested (curl hostname-echo pair, browser render, typecheck, build — not just "it compiles").
+- [x] Post-deploy verification section filled.
+- [x] CLAUDE.md checked and updated in 3 specific sections (listed above).
+- [x] Backlog read, done items marked, new items added, 6 categories reviewed.
+- [x] Session summary created (`docs/sessions/2026-04-23-phase-0-and-1-scaffold.md`).
+- [x] All records cross-reference each other.
