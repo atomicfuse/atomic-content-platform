@@ -30,7 +30,7 @@ export function StepNicheTargeting({
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [creatingTag, setCreatingTag] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Derive ID arrays from object arrays for API calls
   const categoryIds = data.selectedCategories.map((c) => c.id);

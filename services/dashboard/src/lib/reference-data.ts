@@ -114,7 +114,10 @@ export async function getTags(verticalId: string): Promise<TagItem[]> {
     .map((d: unknown) => {
       const obj = d as { id?: string; name?: string; vertical_id?: string; usage_count?: number };
       if (obj.id && obj.name) {
-        return { id: obj.id, name: obj.name, vertical_id: obj.vertical_id, usage_count: obj.usage_count };
+        const tag: TagItem = { id: obj.id, name: obj.name };
+        if (obj.vertical_id) tag.vertical_id = obj.vertical_id;
+        if (obj.usage_count !== undefined) tag.usage_count = obj.usage_count;
+        return tag;
       }
       return null;
     })
