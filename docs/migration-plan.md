@@ -436,6 +436,37 @@ Each of these is a separate, valuable follow-up. None of them is required to fix
 
 ---
 
+## Resolved open questions (2026-04-23)
+
+User answered all 9 open questions above on 2026-04-23. Answers frozen here so the plan stays readable without cross-referencing chat.
+
+| Q | Answer | Plan impact |
+|---|--------|-------------|
+| Q1 baselines | `coolnews-atl` deploy = **52 s**; `scienceworld` not yet measured | Captured in `docs/migration-baselines.md`; Phase 0 partially complete |
+| Q2 article storage | **Option A — markdown-in-repo synced to KV** | Phase 3 + Phase 5 proceed with `article:<siteId>:<slug>` + `article-index:<siteId>` key schema |
+| Q3 Pages custom settings | **None** (confirmed via `wrangler pages download config`) | Phase 6/7 cutover simplified — no custom headers / redirects / env vars to mirror |
+| Q4 CF account | Dev/test on `dev1@atomiclabs.io` (account id `953511f6356ff606d84ac89bba3eff50`), Workers Paid. Production migration on a different account later. | Phase 1-7 execute on Dev1 account; Phase 8 adds a parallel cutover procedure for the prod-account rollout |
+| Q5 staging | **Option i** — single `atomic-site-worker-staging` Worker bound to `CONFIG_KV_STAGING`, hostnames distinguish sites | Phase 3 creates exactly one staging Worker; Phase 5's CI writes to one staging namespace |
+| Q6 SEO continuity | No constraints; pick best defaults | Canonical: custom domain when available, else `.pages.dev`; sitemap route at `/sitemap.xml`; GA4/GTM IDs preserved via KV `pixels.*` fields |
+| Q7 pilot | `scienceworld` first, `coolnews-atl` second — confirmed | No plan change |
+| Q8 force-rebuild button | Rewire to cache purge (confirmed) | Added as a follow-up backlog item; not part of migration scope but dashboard team will own it |
+| Q9 ad SDK placement | **Full Server Islands** — mock ads only today; revisit when real networks integrate | Phase 4 implements clean Server Islands; `docs/future-decisions.md` documents the re-open trigger |
+
+### Additional decision — theme sharing (raised by user alongside answers)
+
+> "the porting confirm it's sane to share theme + layouts as a workspace package (`packages/site-theme-modern` pulled into both old and new)"
+
+**Accepted.** Phase 2 extracts `themes/modern/` + shared layouts into `packages/site-theme-modern`, with the extraction itself sequenced to minimise risk to the live build (see `docs/audit-logs/2026-04-23-1630-migration-phase-0-and-1-scaffold.md` Decision 1). Fallback plan: if Astro 5 vs 6 component surfaces prove incompatible, revert to duplication — logged in `docs/future-decisions.md`.
+
+---
+
 ## Decision log (populated during execution)
 
-This section stays empty until Phase 1 starts. Record the actual decisions taken per phase (when they diverge from the plan) as new headings, following the dev-audit-trail decision-entry template.
+Record actual decisions per phase (when they diverge from the plan) as new headings, following the dev-audit-trail decision-entry template.
+
+### 2026-04-23 — Phase 0 + Phase 1 session (audit log: `audit-logs/2026-04-23-1630-migration-phase-0-and-1-scaffold.md`)
+
+- **Theme extraction deferred to Phase 2.** Phase 1 scaffolds with a single placeholder page; theme extraction is its own reviewable step to protect the live `site-builder` build path.
+- **Phase 1 placeholder renders hostname from request headers** (not a hard-coded string) — costs nothing, validates workerd request-header access on day 1.
+- **Phase 1 `wrangler.toml` omits KV bindings** — added in Phase 3 when real namespaces exist.
+- **Branch not pushed this session** — system default policy; user can push when ready to review.
