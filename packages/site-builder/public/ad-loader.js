@@ -86,8 +86,17 @@
     document.head.appendChild(el);
   });
 
+  // Detect viewport once for device targeting and size selection
+  var isMobile = window.matchMedia
+    ? window.matchMedia('(max-width: 767px)').matches
+    : window.innerWidth < 768;
+
   // Inject ad containers
   (ads.ad_placements || []).forEach(function (p) {
+    // Skip placements targeted to a different viewport
+    if (p.device === 'desktop' && isMobile) return;
+    if (p.device === 'mobile' && !isMobile) return;
+
     var slot = makeSlot(p);
     if (p.position === 'above-content') {
       var anchor = document.querySelector('[data-slot="above-content"]');
@@ -173,15 +182,12 @@
     div.id = 'ad-' + p.id;
     div.className =
       'ad-slot' +
-      (p.device === 'desktop' ? ' atl-hidden-mobile' : '') +
-      (p.device === 'mobile' ? ' atl-hidden-desktop' : '');
+      (p.device === 'desktop' ? ' atl-hidden-desktop' : '') +
+      (p.device === 'mobile' ? ' atl-hidden-mobile' : '');
     div.dataset.adId = p.id;
     div.dataset.sizesDesktop = JSON.stringify(sizes.desktop || []);
     div.dataset.sizesMobile = JSON.stringify(sizes.mobile || []);
-    // Pick sizes for current viewport — mobile if narrower than 768 px
-    var isMobile = window.matchMedia
-      ? window.matchMedia('(max-width: 767px)').matches
-      : window.innerWidth < 768;
+    // Pick sizes for current viewport (isMobile defined in outer scope)
     var activeSizes = isMobile
       ? (sizes.mobile && sizes.mobile.length ? sizes.mobile : sizes.desktop)
       : (sizes.desktop && sizes.desktop.length ? sizes.desktop : sizes.mobile);

@@ -97,6 +97,18 @@ Paginated responses include:
 | PUT | `/api/audiences/:id` | Update an audience type |
 | DELETE | `/api/audiences/:id` | Soft-delete an audience type |
 
+### Content Bundles
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/bundles` | List bundles (pagination, `?active=true|false`) |
+| GET | `/api/bundles/:id` | Get a single bundle |
+| POST | `/api/bundles` | Create a bundle (validates min-rule + referenced categories/tags; 409 on duplicate name) |
+| PUT | `/api/bundles/:id` | Update a bundle (targeted inline re-evaluation on rule / active change) |
+| DELETE | `/api/bundles/:id` | Soft-delete (default, `active: false`) or `?hard=true` permanent |
+| POST | `/api/bundles/:id/reevaluate` | Force full reevaluation; refreshes `content_count` + `last_evaluated_at` |
+| POST | `/api/bundles/preview` | Count matching content for a rule set (no bundle persisted) |
+
 ### Taxonomy Suggestions
 
 | Method | Path | Description |
@@ -130,13 +142,16 @@ Query content items with filters, pagination, and text search. Returns consumer-
 | `status` | string | `active` | Filter by status: `active`, `inactive`, `archived` |
 | `content_type` | string | -- | Comma-separated: `article`, `video`, `social_post`, `discussion`, `trend` |
 | `vertical_id` | string | -- | Filter by vertical ID |
-| `category_id` | string | -- | Filter by category ID |
-| `tag_id` | string | -- | Filter by tag ID |
+| `category_ids` | string | -- | Comma-separated category IDs. OR logic across values. |
+| `tag_ids` | string | -- | Comma-separated tag IDs. OR logic across values. |
+| `bundle_id` | string | -- | Filter by a single bundle ID. Automatically scoped to active bundles — an unknown or inactive bundle returns an empty result with `total_count: 0` (no 404). |
 | `audience_type_id` | string | -- | Filter by audience type ID |
 | `source_id` | string | -- | Filter by source ID |
 | `enriched` | string | `true` | `true` (default — only enriched items) or `false` (all items including unenriched). "Golden plate" philosophy: consumers get ready-to-use content by default. |
 | `language` | string | -- | ISO language code (auto-uppercased) |
 | `search` | string | -- | Text search across title, description, url, and exact content ID |
+| `category_id` | string | -- | **Deprecated** — legacy single-value alias for `category_ids`. Accepted for one release. Prefer `category_ids`. |
+| `tag_id` | string | -- | **Deprecated** — legacy single-value alias for `tag_ids`. Accepted for one release. Prefer `tag_ids`. |
 
 **Response** `200 OK`
 
@@ -179,18 +194,23 @@ Query content items with filters, pagination, and text search. Returns consumer-
         "name": "Technology"
       },
       "categories": [
-        { "id": "6650c...", "name": "Artificial Intelligence", "iab_code": "IAB19-40" }
+        { "id": "6650c...", "name": "Artificial Intelligence", "iab_code": "597" }
       ],
       "tags": [
         { "id": "6650d...", "name": "machine learning" }
       ],
       "audience_types": [
         { "id": "6650e...", "name": "Tech professionals", "group": "profession" }
+      ],
+      "bundles": [
+        { "id": "6651c...", "name": "AI for Healthcare" }
       ]
     }
   ]
 }
 ```
+
+> **`bundles`** on each item includes only **active** bundle memberships. If a bundle has been deactivated or deleted, its id is stripped from the response even if it remains on the item's underlying `bundle_ids`.
 
 **curl example**
 
@@ -309,7 +329,7 @@ Bulk permanent delete.
 
 ### POST /api/content/enrich
 
-Trigger the AI enrichment pipeline. Processes unenriched content items: generates content briefs, classifies with IAB taxonomy, and estimates expiration.
+Trigger the AI enrichment pipeline. Processes unenriched content items: generates content briefs, classifies with IAB Content Taxonomy 3.1 (picks one vertical + one-to-three categories under that vertical), and estimates expiration. Vertical-only classification is a retryable failure (`enrichment_error: 'classified_without_category'`); after `max_attempts` the item is marked `enrichment_status: 'failed'` and auto-purged by the lifecycle cron after `failure_retention_days`.
 
 **Request Body** (optional)
 
@@ -632,22 +652,25 @@ List verticals.
 
 ```json
 {
-  "total_count": 9,
+  "total_count": 36,
   "page": 1,
   "page_size": 20,
-  "total_pages": 1,
+  "total_pages": 2,
   "items": [
     {
       "id": "6650a...",
-      "name": "Technology",
-      "description": "Tech, software, hardware, AI, gadgets",
+      "name": "Technology & Computing",
+      "iab_code": "596",
+      "description": "Software, hardware, AI, devices",
       "is_system": true,
       "active": true,
-      "created_at": "2026-04-01T00:00:00.000Z"
+      "created_at": "2026-04-20T00:00:00.000Z"
     }
   ]
 }
 ```
+
+> **`iab_code`** is the canonical IAB Content Taxonomy 3.1 unique_id (case-sensitive string). Examples: `"596"` (Technology & Computing), `"JLBCU7"` (Entertainment), `"v9i3On"` (Sensitive Topics — brand-safety sink). Empty string for operator-created verticals outside the IAB namespace.
 
 ---
 
@@ -660,11 +683,12 @@ Create a vertical.
 ```json
 {
   "name": "Finance",
+  "iab_code": "",
   "description": "Markets, investing, personal finance"
 }
 ```
 
-**Required**: `name`
+**Required**: `name`. **Optional**: `iab_code` (defaults to empty string for operator-created verticals).
 
 **Response** `201 Created`
 
@@ -672,10 +696,11 @@ Create a vertical.
 {
   "id": "665aa...",
   "name": "Finance",
+  "iab_code": "",
   "description": "Markets, investing, personal finance",
   "is_system": false,
   "active": true,
-  "created_at": "2026-04-15T10:00:00.000Z"
+  "created_at": "2026-04-20T10:00:00.000Z"
 }
 ```
 
@@ -690,23 +715,24 @@ Create a vertical.
 
 ### PUT /api/verticals/:id
 
-Update a vertical. All fields optional.
+Update a vertical. All fields optional (`name`, `iab_code`, `description`, `active`).
 
 ```json
 {
   "name": "Finance & Business",
+  "iab_code": "",
   "description": "Updated description",
   "active": true
 }
 ```
 
-**Response** `200 OK` -- returns the full updated vertical object.
+**Response** `200 OK` — returns the full updated vertical object with `iab_code`.
 
 ---
 
 ### DELETE /api/verticals/:id
 
-Soft-delete a vertical (sets `active: false`).
+Soft-delete a vertical (sets `active: false`). **Returns 409 when any active bundle references this vertical** — operator must edit those bundles first.
 
 **Response** `200 OK`
 
@@ -714,13 +740,20 @@ Soft-delete a vertical (sets `active: false`).
 { "success": true }
 ```
 
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 404 | `not_found` | Vertical does not exist |
+| 409 | `referenced_by_bundle` | At least one bundle's `rules.vertical_ids` includes this id. Payload includes `error.bundles: [{id, name}]` listing the referencing bundles. |
+
 ---
 
 ## Categories
 
 ### GET /api/categories
 
-List categories. Seeded with ~130 IAB categories.
+List categories. Seeded with 466 IAB Content Taxonomy 3.1 categories (274 canonical tier-3 + 131 tier-2 auto-lifts under tier-1s without tier-3 descendants + 61 approved tier-2 exceptions — AI, AR, VR, Robotics, Movies, Television, 51 Sports, 4 Video Gaming platforms).
 
 **Query Parameters**
 
@@ -743,7 +776,7 @@ List categories. Seeded with ~130 IAB categories.
     {
       "id": "6650c...",
       "name": "Artificial Intelligence",
-      "iab_code": "IAB19-40",
+      "iab_code": "597",
       "vertical_id": "6650a...",
       "description": "",
       "is_system": true,
@@ -766,7 +799,7 @@ Create a category.
 {
   "name": "Quantum Computing",
   "vertical_id": "6650a...",
-  "iab_code": "IAB19-50",
+  "iab_code": "597-custom",
   "description": "Quantum hardware and algorithms"
 }
 ```
@@ -797,10 +830,34 @@ Update a category. All fields optional: `name`, `iab_code`, `vertical_id`, `desc
 
 Soft-delete a category (sets `active: false`).
 
+Blocks if the category is referenced by any content bundle — operator must edit those bundles first.
+
 **Response** `200 OK`
 
 ```json
 { "success": true }
+```
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 404 | `not_found` | Category id unknown |
+| 409 | `referenced_by_bundle` | One or more bundles reference this category |
+
+**409 body**
+
+```json
+{
+  "error": {
+    "code": "referenced_by_bundle",
+    "message": "Category is referenced by 2 bundle(s). Edit those bundles first.",
+    "bundles": [
+      { "id": "6651c...", "name": "AI for Healthcare" },
+      { "id": "6651d...", "name": "Fashion Events" }
+    ]
+  }
+}
 ```
 
 ---
@@ -889,11 +946,21 @@ Update a tag. Fields: `name`, `vertical_id`.
 
 Hard delete a tag (permanently removed).
 
+If the tag is referenced by any content bundle, the tag is removed from those bundles' rules and each affected bundle is re-evaluated. If stripping the tag would leave a bundle with empty rules (which would violate the min-selector invariant on subsequent saves), that bundle is auto-**deactivated** and surfaced in the response.
+
 **Response** `200 OK`
 
 ```json
-{ "success": true }
+{
+  "success": true,
+  "stripped_from_bundles": [
+    { "id": "6651c...", "name": "AI for Healthcare", "deactivated": false },
+    { "id": "6651d...", "name": "Fashion Events", "deactivated": true }
+  ]
+}
 ```
+
+`stripped_from_bundles` is omitted when no bundles referenced the tag.
 
 ---
 
@@ -987,6 +1054,238 @@ Soft-delete an audience type (sets `active: false`).
 
 ```json
 { "success": true }
+```
+
+---
+
+## Content Bundles
+
+Content bundles are operator-defined groupings that span sources. A bundle's `rules` are **categories + tags** (OR within each dimension, AND across). Membership is materialized on each content item as `bundle_ids[]` and re-evaluated automatically at ingestion, after enrichment, and on taxonomy override. Consumers only ever see **active** bundle memberships.
+
+### GET /api/bundles
+
+List bundles.
+
+**Query Parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | `1` | Page number |
+| `page_size` | integer | `20` | Items per page (max 100) |
+| `active` | string | -- | `true` → active only; `false` → inactive only; omit → all |
+
+**Response** `200 OK`
+
+```json
+{
+  "total_count": 6,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1,
+  "items": [
+    {
+      "id": "6651c...",
+      "name": "AI for Healthcare",
+      "description": "Content about AI applications in medicine",
+      "active": true,
+      "rules": {
+        "vertical_ids": ["6650b..."],
+        "category_ids": ["6650c...", "6650f..."],
+        "tag_ids": ["6650d...", "6650e..."]
+      },
+      "content_count": 47,
+      "last_evaluated_at": "2026-04-19T15:00:00.000Z",
+      "created_at": "2026-04-15T09:12:00.000Z",
+      "updated_at": "2026-04-19T15:00:00.000Z"
+    }
+  ]
+}
+```
+
+**curl**
+
+```bash
+curl "http://localhost:3000/api/bundles?active=true"
+```
+
+---
+
+### GET /api/bundles/:id
+
+Get a single bundle by id.
+
+**Response** `200 OK` -- same `BundleResponse` shape as items above.
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 404 | `not_found` | Bundle id unknown |
+
+---
+
+### POST /api/bundles
+
+Create a bundle.
+
+**Request Body**
+
+```json
+{
+  "name": "AI for Healthcare",
+  "description": "Content about AI applications in medicine",
+  "active": true,
+  "rules": {
+    "vertical_ids": ["6650b..."],
+    "category_ids": ["6650c..."],
+    "tag_ids": ["6650d...", "6650e..."]
+  }
+}
+```
+
+**Rules shape (3 dimensions):**
+- `vertical_ids[]` — OR within: content must have its `vertical_id` in this set.
+- `category_ids[]` — OR within: content must share at least one category id.
+- `tag_ids[]` — OR within: content must share at least one tag id.
+- AND across: if multiple dims are specified, ALL specified dims must match.
+- Empty array = dim ignored.
+
+**Required**: `name`, and at least **one id total** across `rules.vertical_ids` + `rules.category_ids` + `rules.tag_ids`.
+
+On successful create with `active !== false`, an inline re-evaluation runs immediately so `content_count` and every content item's `bundle_ids` reflect the new bundle.
+
+**Response** `201 Created` — returns the created bundle in `BundleResponse` shape (including `rules.vertical_ids`).
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `validation_error` | Missing `name`, empty rules (all three arrays empty), or referenced vertical/category/tag does not exist. Body includes `missing_vertical_ids` / `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 409 | `duplicate` | A bundle with this name already exists |
+
+**curl**
+
+```bash
+curl -X POST http://localhost:3000/api/bundles \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "AI for Healthcare",
+    "rules": {
+      "vertical_ids": ["6650b..."],
+      "category_ids": ["6650c..."],
+      "tag_ids": ["6650d..."]
+    }
+  }'
+```
+
+---
+
+### PUT /api/bundles/:id
+
+Update a bundle. All fields optional: `name`, `description`, `active`, `rules`.
+
+If `rules` or `active` changes, the server runs a **targeted** re-evaluation:
+- `true → false`: strips this bundle id from every content item carrying it; `content_count` → 0.
+- Still-active or `false → true`: `$pull` from items that no longer match, `$addToSet` onto items that now match. Both operations are indexed and bounded to affected rows.
+
+**Response** `200 OK` -- returns the updated bundle.
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 400 | `validation_error` | Empty rules (all 3 dims empty) or referenced vertical/category/tag does not exist. Body includes `missing_vertical_ids` / `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 404 | `not_found` | Bundle id unknown |
+| 409 | `duplicate` | Renaming to a name that already exists |
+
+---
+
+### DELETE /api/bundles/:id
+
+Delete a bundle. Soft by default; `?hard=true` for permanent removal. Both paths run a `removeOnly` re-evaluation first to strip the bundle id from every content item carrying it.
+
+**Query Parameters**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `hard` | string | -- | Set to `true` to permanently delete. Default (omitted/`false`) is a soft delete (`active: false`). |
+
+**Response** `200 OK`
+
+```json
+{
+  "success": true,
+  "deleted": "soft",
+  "stripped_from_items": 47
+}
+```
+
+With `?hard=true`, `deleted` is `"hard"`.
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 404 | `not_found` | Bundle id unknown |
+
+---
+
+### POST /api/bundles/:id/reevaluate
+
+Force a full re-evaluation of the bundle against all content items. Refreshes `content_count` and `last_evaluated_at`. Useful after manual DB edits or bulk changes.
+
+**Response** `200 OK`
+
+```json
+{
+  "bundle": {
+    "id": "6651c...",
+    "name": "AI for Healthcare",
+    "active": true,
+    "rules": { "vertical_ids": ["6650b..."], "category_ids": ["6650c..."], "tag_ids": ["6650d..."] },
+    "content_count": 49,
+    "last_evaluated_at": "2026-04-19T18:00:00.000Z",
+    "created_at": "2026-04-15T09:12:00.000Z",
+    "updated_at": "2026-04-19T18:00:00.000Z"
+  },
+  "reevaluation": {
+    "added": 3,
+    "removed": 1,
+    "matched_active": 49
+  }
+}
+```
+
+**Errors**
+
+| Status | Code | When |
+|--------|------|------|
+| 404 | `not_found` | Bundle id unknown |
+
+---
+
+### POST /api/bundles/preview
+
+Count the active content items that would match a given rule set, without persisting a bundle. Powers the live preview in the dashboard form — safe to call repeatedly as the operator adjusts rules (empty rules return `0`, no validation error).
+
+**Request Body**
+
+```json
+{
+  "rules": {
+    "vertical_ids": ["6650b..."],
+    "category_ids": ["6650c..."],
+    "tag_ids": ["6650d...", "6650e..."]
+  }
+}
+```
+
+All three arrays are optional; missing fields default to `[]`.
+
+**Response** `200 OK`
+
+```json
+{ "count": 47 }
 ```
 
 ---
@@ -1225,7 +1524,9 @@ System metrics including content counts, source health, enrichment costs, and ta
   "taxonomy": {
     "verticals": 9,
     "categories": 130
-  }
+  },
+  "total_bundles": 8,
+  "active_bundles": 6
 }
 ```
 

@@ -203,6 +203,58 @@ describe("overflow constraint", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Device targeting — viewport skip logic
+// ---------------------------------------------------------------------------
+describe("device targeting — viewport skip", () => {
+  /**
+   * Mirrors ad-loader.js device-skip logic:
+   *   if (p.device === 'desktop' && isMobile) return; // skip
+   *   if (p.device === 'mobile' && !isMobile) return; // skip
+   */
+  function shouldRender(device: string, isMobile: boolean): boolean {
+    if (device === "desktop" && isMobile) return false;
+    if (device === "mobile" && !isMobile) return false;
+    return true;
+  }
+
+  it("skips desktop-only placement on mobile viewport", () => {
+    expect(shouldRender("desktop", true)).toBe(false);
+  });
+
+  it("renders desktop-only placement on desktop viewport", () => {
+    expect(shouldRender("desktop", false)).toBe(true);
+  });
+
+  it("skips mobile-only placement on desktop viewport", () => {
+    expect(shouldRender("mobile", false)).toBe(false);
+  });
+
+  it("renders mobile-only placement on mobile viewport", () => {
+    expect(shouldRender("mobile", true)).toBe(true);
+  });
+
+  it("renders 'all' device placement on desktop viewport", () => {
+    expect(shouldRender("all", false)).toBe(true);
+  });
+
+  it("renders 'all' device placement on mobile viewport", () => {
+    expect(shouldRender("all", true)).toBe(true);
+  });
+
+  it("sticky-bottom mobile-anchor: skipped on desktop", () => {
+    // The taboola group config: device: "mobile"
+    // On desktop viewport: should be skipped entirely
+    expect(shouldRender("mobile", false)).toBe(false);
+  });
+
+  it("sidebar-sticky: skipped on mobile", () => {
+    // The taboola group config: device: "desktop"
+    // On mobile viewport: should be skipped entirely
+    expect(shouldRender("desktop", true)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Viewport-aware size selection
 // ---------------------------------------------------------------------------
 describe("viewport-aware size selection", () => {
