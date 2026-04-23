@@ -84,8 +84,8 @@ importers:
         specifier: ^0.86.1
         version: 0.86.1(zod@4.3.6)
       '@cloudgrid-io/ai':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.1
+        version: 0.1.1
       '@octokit/rest':
         specifier: ^21.1.0
         version: 21.1.1
@@ -123,6 +123,9 @@ importers:
 
   services/dashboard:
     dependencies:
+      '@cloudgrid-io/ai':
+        specifier: ^0.1.1
+        version: 0.1.1
       '@octokit/rest':
         specifier: ^21.1.0
         version: 21.1.1
@@ -377,8 +380,8 @@ packages:
     resolution: {integrity: sha512-VERIM64vtTP1C4mxQ5thVT9fK0apjPFobqybMtA1UdUujWka24ERHbRHFGmpbbhp73MhV+KSsHQH9C6uOTdEQA==}
     engines: {node: '>=18'}
 
-  '@cloudgrid-io/ai@0.1.0':
-    resolution: {integrity: sha512-xxCYZFuPsHEYP/TKmT3rModcFu2i+PEXYWxMzzxTDHlLB0ztUJEAa5gGYGAhyzlZEpVoZP9DMWcLvNfXwNzSwQ==}
+  '@cloudgrid-io/ai@0.1.1':
+    resolution: {integrity: sha512-/ZsWPmLOVy8zf35C+R7itBBemenD4kSqrH3kSMDN/PJRIR+8Xo8B9vmZwl9JLYStJo9v/QWpZ/p/g1NoPzqIWg==}
     engines: {node: '>=18'}
 
   '@csstools/color-helpers@6.0.2':
@@ -3708,7 +3711,7 @@ snapshots:
     dependencies:
       fontkitten: 1.0.3
 
-  '@cloudgrid-io/ai@0.1.0': {}
+  '@cloudgrid-io/ai@0.1.1': {}
 
   '@csstools/color-helpers@6.0.2': {}
 
