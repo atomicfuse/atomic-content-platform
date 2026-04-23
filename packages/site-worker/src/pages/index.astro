@@ -1,26 +1,27 @@
 ---
 export const prerender = false;
 
-import { getCollection, type CollectionEntry } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
 import ArticleCard from '../themes/modern/components/ArticleCard.astro';
-import { getConfig } from '../lib/config';
+import { env } from 'cloudflare:workers';
+import { getConfig, getSiteId } from '../lib/config';
+import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
 import { isVisibleArticle } from '../utils/article-status';
 
-const config = await getConfig();
-const allArticles = await getCollection('articles');
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
 
-type ArticleEntry = CollectionEntry<'articles'>;
+const allArticles =
+  (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
 
 const articles = allArticles
-  .filter((a: ArticleEntry) => isVisibleArticle(a.data.status))
+  .filter((a) => isVisibleArticle(a.status))
   .sort(
-    (a: ArticleEntry, b: ArticleEntry) =>
-      new Date(b.data.publishDate).getTime() -
-      new Date(a.data.publishDate).getTime(),
+    (a, b) =>
+      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
   );
 
 const latestArticles = articles.slice(0, 12);
@@ -48,22 +49,25 @@ const latestArticles = articles.slice(0, 12);
       <section class="section">
         <h2 class="section-heading">Latest Articles</h2>
         <div class="article-grid">
-          {latestArticles.map((article: ArticleEntry) => (
+          {latestArticles.map((article) => (
             <ArticleCard
-              title={article.data.title}
-              slug={article.data.slug}
-              featuredImage={article.data.featuredImage}
-              description={article.data.description}
-              author={article.data.author}
-              publishDate={article.data.publishDate}
-              tags={article.data.tags}
-              type={article.data.type}
+              title={article.title}
+              slug={article.slug}
+              featuredImage={article.featuredImage}
+              description={article.description}
+              author={article.author}
+              publishDate={article.publishDate}
+              tags={article.tags}
+              type={article.type}
             />
           ))}
         </div>
 
         {articles.length === 0 && (
-          <p class="empty-state">No published articles yet for <code>{config.domain}</code>.</p>
+          <p class="empty-state">
+            No published articles yet for <code>{config.domain}</code>.
+            Seed <code>article-index:{siteId}</code> in CONFIG_KV.
+          </p>
         )}
       </section>
     </div>

@@ -1,35 +1,35 @@
 ---
 export const prerender = false;
 
-import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { env } from 'cloudflare:workers';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import { getSiteId } from '../../lib/config';
+import { articleKey, type ArticleRecord } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
-
-type ArticleEntry = CollectionEntry<'articles'>;
 
 const { slug } = Astro.params;
 
 if (!slug) {
-  return Astro.redirect('/', 302);
-}
-
-const all = await getCollection('articles');
-const entry = all.find((a: ArticleEntry) => a.data.slug === slug && isVisibleArticle(a.data.status));
-
-if (!entry) {
   return new Response('Not found', { status: 404 });
 }
 
-const { Content } = await render(entry);
+const siteId = getSiteId(Astro);
+const record = (await env.CONFIG_KV.get<ArticleRecord>(articleKey(siteId, slug), 'json')) ?? null;
+
+if (!record || !isVisibleArticle(record.frontmatter.status)) {
+  return new Response('Not found', { status: 404 });
+}
+
+const { frontmatter, body } = record;
 ---
 
 <ArticleLayout
-  title={entry.data.title}
-  description={entry.data.description ?? entry.data.title}
-  author={entry.data.author}
-  publishDate={entry.data.publishDate.toISOString()}
-  featuredImage={entry.data.featuredImage}
-  slug={entry.data.slug}
+  title={frontmatter.title}
+  description={frontmatter.description ?? frontmatter.title}
+  author={frontmatter.author}
+  publishDate={new Date(frontmatter.publishDate).toISOString()}
+  featuredImage={frontmatter.featuredImage}
+  slug={frontmatter.slug}
 >
-  <Content />
+  <Fragment set:html={body} />
 </ArticleLayout>

@@ -105,6 +105,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      marked:
+        specifier: ^14.1.4
+        version: 14.1.4
       tailwindcss:
         specifier: ^4.1.0
         version: 4.2.2
@@ -117,6 +120,9 @@ importers:
       wrangler:
         specifier: ^4.77.0
         version: 4.84.1(@cloudflare/workers-types@4.20260423.1)
+      yaml:
+        specifier: ^2.7.0
+        version: 2.8.3
 
   services/content-pipeline:
     dependencies:
@@ -2688,6 +2694,11 @@ packages:
 
   markdown-table@3.0.4:
     resolution: {integrity: sha512-wiYz4+JrLyb/DqW2hkFJxP7Vd7JuTDm77fvbM8VfEQdmSMqcImWeeRbHwZjBjIFki/VaMK2BhFi7oUUZeM5bqw==}
+
+  marked@14.1.4:
+    resolution: {integrity: sha512-vkVZ8ONmUdPnjCKc5uTRvmkRbx4EAi2OkTOXmfTDhZz3OFqMNBM1oTTWwTr4HY4uAEojhzPf+Fy8F1DWa3Sndg==}
+    engines: {node: '>= 18'}
+    hasBin: true
 
   mdast-util-definitions@6.0.0:
     resolution: {integrity: sha512-scTllyX6pnYNZH/AIp/0ePz6s4cZtARxImwoPJ7kS42n+MnVsI4XbnG6d4ibehRIldYMWM2LD7ImQblVhUejVQ==}
@@ -6432,6 +6443,8 @@ snapshots:
       source-map-js: 1.2.1
 
   markdown-table@3.0.4: {}
+
+  marked@14.1.4: {}
 
   mdast-util-definitions@6.0.0:
     dependencies:

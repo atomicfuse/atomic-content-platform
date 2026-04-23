@@ -17,7 +17,7 @@ interface Props {
 }
 
 const { title, description, author, publishDate, featuredImage, slug, noindex = false, canonicalOverride } = Astro.props;
-const config = await getConfig();
+const config = getConfig(Astro);
 const canonicalUrl = canonicalOverride ?? `https://${config.domain}/${slug}`;
 const heights = config.ad_placeholder_heights;
 

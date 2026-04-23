@@ -1,9 +1,9 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "types": ["@cloudflare/workers-types", "astro/client"],
+    "types": ["astro/client"],
     "jsx": "preserve"
   },
-  "include": ["src", "astro.config.mjs"],
+  "include": ["src", "astro.config.mjs", "worker-configuration.d.ts"],
   "exclude": ["dist", ".astro", "node_modules"]
 }

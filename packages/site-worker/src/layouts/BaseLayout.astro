@@ -15,7 +15,7 @@ interface Props {
 }
 
 const { title, description } = Astro.props;
-const config = await getConfig();
+const config = getConfig(Astro);
 const { theme } = config;
 
 const fontFamilies = [theme.fonts.heading, theme.fonts.body]

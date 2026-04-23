@@ -10,6 +10,7 @@
     "build": "astro build",
     "preview": "wrangler dev --config dist/server/wrangler.json --port 8788",
     "deploy:staging": "astro build && wrangler deploy --config dist/server/wrangler.json --env staging",
+    "seed:kv": "tsx scripts/seed-kv.ts",
     "typecheck": "astro check && tsc --noEmit",
     "clean": "rm -rf dist .astro .wrangler/tmp"
   },
@@ -24,9 +25,11 @@
     "@cloudflare/workers-types": "^4.20260101.0",
     "@tailwindcss/vite": "^4.1.0",
     "@types/node": "^25.5.0",
+    "marked": "^14.1.4",
     "tailwindcss": "^4.1.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "wrangler": "^4.77.0"
+    "wrangler": "^4.77.0",
+    "yaml": "^2.7.0"
   }
 }
