@@ -1,0 +1,67 @@
+---
+/**
+ * Server Island — analytics + marketing pixels rendered per request.
+ *
+ * Pulls tracking IDs from the KV-resolved config (populated by
+ * middleware.ts on every request). Changing a GA4 / GTM / Meta pixel
+ * ID in a merged YAML config propagates to live traffic in one KV
+ * write — no rebuild.
+ */
+import { getConfig } from '../lib/config';
+
+const config = getConfig(Astro);
+const t = config.tracking ?? {};
+
+const ga4 = (t.ga4 as string | null | undefined) ?? null;
+const gtm = (t.gtm as string | null | undefined) ?? null;
+const googleAds = (t.google_ads as string | null | undefined) ?? null;
+const facebookPixel = (t.facebook_pixel as string | null | undefined) ?? null;
+const customScripts = Array.isArray(t.custom) ? (t.custom as Array<{ id?: string; html?: string }>) : [];
+---
+
+{ga4 && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${ga4}`}></script>
+    <script is:inline set:html={`
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', '${ga4}');
+    `} />
+  </>
+)}
+
+{gtm && (
+  <script is:inline set:html={`
+    (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','${gtm}');
+  `} />
+)}
+
+{googleAds && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${googleAds}`}></script>
+    <script is:inline set:html={`
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('config', '${googleAds}');
+    `} />
+  </>
+)}
+
+{facebookPixel && (
+  <script is:inline set:html={`
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '${facebookPixel}');
+    fbq('track', 'PageView');
+  `} />
+)}
+
+{customScripts.map((s) => s.html ? <Fragment set:html={s.html} /> : null)}

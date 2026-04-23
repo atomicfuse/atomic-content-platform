@@ -1,0 +1,131 @@
+---
+/**
+ * Server Island — ad slot rendered per request.
+ *
+ * Reads the resolved monetization config from `Astro.locals.site.config`
+ * (populated by middleware.ts from KV). Picks the layout appropriate
+ * for the current page type (`article` | `category` | `homepage`)
+ * and emits an ad placeholder for the requested position.
+ *
+ * The current ad-loader is mock only — Phase 9 follow-up (see
+ * docs/future-decisions.md) swaps in real ad-network SDKs. When that
+ * happens, SDK loaders that need pre-paint availability should move
+ * into BaseLayout.astro; this island continues to handle per-slot
+ * rendering.
+ */
+import { getConfig } from '../lib/config';
+
+export interface Props {
+  position: 'header' | 'above-content' | 'below-content' | 'sidebar' | 'sticky-bottom' | 'homepage-top' | 'homepage-mid' | 'inline';
+  pageType: 'homepage' | 'article' | 'category';
+  /** Paragraph index for `inline` positions on article pages. */
+  paragraphIndex?: number;
+}
+
+const { position, pageType, paragraphIndex } = Astro.props;
+const config = getConfig(Astro);
+const heights = config.ad_placeholder_heights;
+
+// Pick per-page-type layout if the schema has been migrated, else fall
+// back to the legacy flat `ad_placements`. The Phase-5 CI writer is the
+// one that produces `layouts.{article,category,homepage}` — for now we
+// just test whether the position is enabled for this page type via the
+// slot-name convention used in the existing YAML.
+const adsConfig = config.ads_config ?? {};
+const placements = (adsConfig.ad_placements as Array<{ slot?: string; pages?: string[]; dismissible?: boolean }>) ?? [];
+const match = placements.find((p) => p.slot === position && (!p.pages || p.pages.includes(pageType)));
+
+const slotKey = `${pageType}-${position}${paragraphIndex != null ? `-p${paragraphIndex}` : ''}`;
+
+// Heights from the org-level placeholder map (CLS prevention).
+const reserved = heights[position as keyof typeof heights] ?? null;
+const style = [
+  reserved ? `min-height:${reserved}px` : '',
+  position === 'sticky-bottom'
+    ? 'position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(255,255,255,0.95);text-align:center'
+    : '',
+].filter(Boolean).join(';');
+
+const enabled = !!match;
+---
+
+{enabled && (
+  <div
+    data-atl-ad-slot={slotKey}
+    data-atl-position={position}
+    data-atl-page-type={pageType}
+    data-atl-dismissible={match?.dismissible === false ? 'false' : 'true'}
+    class={`atl-ad-slot atl-ad-${position}`}
+    style={style}
+  >
+    {/* Mock fill — the real ad-loader replaces this at runtime on the client. */}
+    <div class="atl-ad-mock">
+      <span class="atl-ad-mock-label">ad · {position}</span>
+      <span class="atl-ad-mock-meta">{pageType}{paragraphIndex != null ? ` · p${paragraphIndex}` : ''}</span>
+    </div>
+    {position === 'sticky-bottom' && match?.dismissible !== false && (
+      <button
+        class="atl-ad-close"
+        aria-label="Close advertisement"
+        data-atl-close="sticky-bottom"
+        type="button"
+      >×</button>
+    )}
+  </div>
+)}
+
+<style is:global>
+  .atl-ad-mock {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
+    color: #6b7280;
+    background: repeating-linear-gradient(45deg, #f5f5f5, #f5f5f5 8px, #efefef 8px, #efefef 16px);
+    border: 1px dashed #d1d5db;
+    border-radius: 4px;
+    padding: 1rem;
+    min-height: inherit;
+  }
+  .atl-ad-mock-label {
+    font-weight: 700;
+    color: #4b5563;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .atl-ad-mock-meta { color: #9ca3af; }
+  .atl-ad-sticky-bottom .atl-ad-mock { min-height: auto; padding: 0.5rem; }
+  .atl-ad-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #333;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    cursor: pointer;
+    font-size: 16px;
+    z-index: 101;
+  }
+</style>
+
+<script>
+  // Client-side dismiss — mirrors the legacy public/ad-loader.js behaviour.
+  // Session-scoped so the dismiss resets on new tab/window.
+  document.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    if (t.matches('[data-atl-close="sticky-bottom"]')) {
+      sessionStorage.setItem('_atl_sticky_dismissed', '1');
+      t.closest('.atl-ad-sticky-bottom')?.setAttribute('style', 'display:none;');
+    }
+  });
+  if (sessionStorage.getItem('_atl_sticky_dismissed') === '1') {
+    document.querySelectorAll('.atl-ad-sticky-bottom').forEach((el) => {
+      (el as HTMLElement).style.display = 'none';
+    });
+  }
+</script>

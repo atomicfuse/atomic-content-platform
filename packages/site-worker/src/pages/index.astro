@@ -6,6 +6,7 @@ import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
 import ArticleCard from '../themes/modern/components/ArticleCard.astro';
+import AdSlot from '../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
 import { getConfig, getSiteId } from '../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
@@ -44,7 +45,7 @@ const latestArticles = articles.slice(0, 12);
 
   <main class="homepage">
     <div class="container">
-      <div data-slot="homepage-top" class="ad-anchor" style="display:none;"></div>
+      <AdSlot position="homepage-top" pageType="homepage" server:defer />
 
       <section class="section">
         <h2 class="section-heading">Latest Articles</h2>
@@ -75,7 +76,7 @@ const latestArticles = articles.slice(0, 12);
 
   <Footer config={config} />
 
-  <div data-slot="sticky-bottom" class="ad-sticky-bottom" style="display:none;"></div>
+  <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
 </BaseLayout>
 
 <style>

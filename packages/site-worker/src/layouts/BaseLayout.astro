@@ -7,6 +7,7 @@
  * are intentionally absent — Phase 4 brings them back as Server Islands.
  */
 import { getConfig } from '../lib/config';
+import PixelLoader from '../components/PixelLoader.astro';
 import '../themes/modern/styles/theme.css';
 
 interface Props {
@@ -54,6 +55,9 @@ const cssVars = Object.entries(theme.colors)
 
     <slot name="head" />
 
+    {/* Server Island — GA4/GTM/Meta pixels re-render per request from KV. */}
+    <PixelLoader server:defer />
+
     <style
       define:vars={{
         fontHeading: theme.fonts.heading,
@@ -82,6 +86,5 @@ const cssVars = Object.entries(theme.colors)
 
   <body>
     <slot />
-    {/* Ad-loader and pixel loader return as Server Islands in Phase 4. */}
   </body>
 </html>
