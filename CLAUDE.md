@@ -291,10 +291,16 @@ cd services/content-pipeline && pnpm dev
 cd packages/site-builder
 SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm dev
 
-# Site worker (migration target — Phase 1 scaffold only)
+# Site worker (migration target — Phases 1-4 done)
 cd packages/site-worker
-pnpm dev           # astro dev (Vite) — fast iteration, no workerd
-pnpm dev:worker    # astro build && wrangler dev --config dist/server/wrangler.json  (workerd parity)
+pnpm dev                 # astro dev (Vite) — fast iteration, no workerd
+pnpm dev:worker          # astro build && wrangler dev --config dist/server/wrangler.json  (workerd parity)
+pnpm build               # astro build — emits dist/_worker.js + dist/server/wrangler.json
+pnpm deploy:staging      # astro build && wrangler deploy --env staging
+CLOUDFLARE_ACCOUNT_ID=953511f6356ff606d84ac89bba3eff50 pnpm seed:kv <siteId> [hostname ...]
+                         # Manual KV seed (Phase-3 bootstrap / local recovery).
+                         # Phase-5 CI (atomic-labs-network/.github/workflows/sync-kv.yml)
+                         # runs this automatically on commits to the network repo.
 ```
 
 ## CloudGrid
@@ -324,6 +330,9 @@ Service contract (both services satisfy):
 | `SITE_DOMAIN`, `NETWORK_DATA_PATH` | site-builder | For local builds/previews. |
 | `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | dashboard | Auth. |
 | `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard | Google auth + Sheets sync. |
+| `CLOUDFLARE_ACCOUNT_ID` | site-worker (dev + CI) | `953511f6356ff606d84ac89bba3eff50` for Dev1 account during migration. Required for `wrangler deploy`, `wrangler kv ...`, `pnpm seed:kv`. |
+| `CLOUDFLARE_API_TOKEN` | CI only | Needed by the sync-kv.yml workflow. Required scopes: Workers Scripts:Edit, Workers KV Storage:Edit. Not needed for local dev (uses OAuth via `wrangler login`). |
+| `KV_NAMESPACE_ID` | seed-kv.ts | Defaults to CONFIG_KV_STAGING (`4673c82cdd7f41d49e93d938fb1c6848`). Set to `a69cb2c59507482ca5e6d114babdd098` for CONFIG_KV (prod). |
 
 ## Conventions
 
@@ -358,6 +367,11 @@ Service contract (both services satisfy):
 9. **`/api/sites/site-config` returns inheritance** — response shape is `{ config, inheritance: { org, groups[] } }`, not just the raw config. Frontend must handle the wrapper.
 10. **Site page tabs restructured** — old tab names (Tracking, Scripts & Vars, Ads Config, Content Agent, Quality) no longer exist as separate tabs. Config is unified under Site Settings → Config; generation and quality are in Site Settings → Content Brief. Custom Domain is inside Site Settings → Identity only.
 11. **Sidebar restructured** — Domains, Scheduler, Email, Shared Pages no longer have sidebar entries. They live under Settings tabs (Domains, General Scheduler, Email) and Overrides tabs (Shared Pages) respectively. Old routes redirect.
+12. **site-worker — Astro 6 runtime env access.** `Astro.locals.runtime.env` was removed. Use `import { env } from 'cloudflare:workers'` for KV / Assets / bindings. Error on this is clear in `wrangler tail` but doesn't appear at build time.
+13. **site-worker — middleware MUST run on every request.** `assets = { ..., run_worker_first = true }` in `wrangler.toml` is required. Without it, the CF Assets layer 404s `/` (no static index.html) before middleware runs, and nothing will fix it from inside the Worker.
+14. **site-worker — fail closed on unknown hostname.** If `site:<hostname>` isn't in CONFIG_KV, middleware returns 404. Do not add a default-site fallback — that has caused real incidents (serving the wrong config to a new hostname before seeding completed).
+15. **site-worker — use `wrangler types`, not `@cloudflare/workers-types`.** The generated `worker-configuration.d.ts` reflects actual bindings; the static `@cloudflare/workers-types` package lies the moment you add a binding that isn't in its interface. Re-run `wrangler types` after any `wrangler.toml` binding change.
+16. **site-worker — SESSION KV binding is auto-added by the adapter.** For the unused Astro Sessions feature. Harmless; don't rename it to `CONFIG_KV` or anything else. Confirmed 2026-04-23.
 
 ## Quick Reference — File Ownership
 
