@@ -1,0 +1,87 @@
+---
+/**
+ * Phase 2 HTML shell.
+ *
+ * Loads Google Fonts, sets theme CSS custom properties, renders the
+ * head + body slots. Inline ads, pixels, and the ad-loader.js script
+ * are intentionally absent — Phase 4 brings them back as Server Islands.
+ */
+import { getConfig } from '../lib/config';
+import '../themes/modern/styles/theme.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const config = await getConfig();
+const { theme } = config;
+
+const fontFamilies = [theme.fonts.heading, theme.fonts.body]
+  .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
+  .map((f) => f.replace(/ /g, '+'))
+  .filter((v, i, a) => a.indexOf(v) === i);
+
+const googleFontsUrl =
+  fontFamilies.length > 0
+    ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
+    : null;
+
+const cssVars = Object.entries(theme.colors)
+  .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {theme.favicon && <link rel="icon" href={theme.favicon} />}
+
+    {googleFontsUrl && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontsUrl} />
+      </>
+    )}
+
+    <slot name="head" />
+
+    <style
+      define:vars={{
+        fontHeading: theme.fonts.heading,
+        fontBody: theme.fonts.body,
+      }}
+    >
+      :root {
+        font-family: var(--fontBody), sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--fontHeading), sans-serif;
+      }
+    </style>
+
+    <style is:global>
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+    </style>
+
+    <style set:html={`:root { ${cssVars} }`}></style>
+  </head>
+
+  <body>
+    <slot />
+    {/* Ad-loader and pixel loader return as Server Islands in Phase 4. */}
+  </body>
+</html>

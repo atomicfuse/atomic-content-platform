@@ -1,0 +1,178 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../themes/modern/components/Header.astro';
+import Footer from '../themes/modern/components/Footer.astro';
+import { getConfig } from '../lib/config';
+
+interface Props {
+  title: string;
+  description: string;
+  author: string;
+  publishDate: string;
+  featuredImage?: string;
+  slug: string;
+  noindex?: boolean;
+  canonicalOverride?: string;
+}
+
+const { title, description, author, publishDate, featuredImage, slug, noindex = false, canonicalOverride } = Astro.props;
+const config = await getConfig();
+const canonicalUrl = canonicalOverride ?? `https://${config.domain}/${slug}`;
+const heights = config.ad_placeholder_heights;
+
+const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<BaseLayout title={`${title} | ${config.site_name}`} description={description}>
+  <Fragment slot="head">
+    <SEOHead
+      title={`${title} | ${config.site_name}`}
+      description={description}
+      canonicalUrl={canonicalUrl}
+      image={featuredImage}
+      siteName={config.site_name}
+      publishDate={publishDate}
+      noindex={noindex}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath={`/${slug}`} />
+
+  <main class="article-page">
+    {/* Structural ad-slot anchors. Server Islands in Phase 4 fill these on demand. */}
+    <div
+      data-slot="above-content"
+      class="ad-anchor"
+      style={`min-height:${heights['above-content']}px;display:none;`}
+    ></div>
+
+    {featuredImage && (
+      <div class="article-hero">
+        <img src={featuredImage} alt={title} loading="eager" />
+      </div>
+    )}
+
+    <div class="article-container">
+      <article class="article-content">
+        <header class="article-header">
+          <h1>{title}</h1>
+          <div class="article-meta">
+            <span class="article-author">{author}</span>
+            <time datetime={publishDate}>{formattedDate}</time>
+          </div>
+        </header>
+
+        <div class="article-body prose">
+          <slot />
+        </div>
+
+        <div data-slot="below-content" class="ad-anchor"></div>
+      </article>
+
+      <aside
+        class="article-sidebar"
+        data-slot="sidebar"
+        style={`min-height:${heights.sidebar}px;`}
+      ></aside>
+    </div>
+  </main>
+
+  <Footer config={config} />
+
+  <div
+    data-slot="sticky-bottom"
+    class="ad-sticky-bottom"
+    style={`min-height:${heights['sticky-bottom']}px;display:none;`}
+  ></div>
+</BaseLayout>
+
+<style>
+  .article-page {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem 2rem;
+  }
+  .article-hero {
+    margin-bottom: 2rem;
+    border-radius: var(--radius-lg, 12px);
+    overflow: hidden;
+  }
+  .article-hero img {
+    width: 100%;
+    max-height: 520px;
+    object-fit: cover;
+    display: block;
+  }
+  .article-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+  @media (min-width: 960px) {
+    .article-container {
+      grid-template-columns: 1fr 300px;
+    }
+  }
+  .article-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+  }
+  .article-header h1 {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-4xl, 2.25rem);
+    line-height: 1.2;
+    margin-bottom: 0.75rem;
+    color: var(--color-text, #1a1a2e);
+  }
+  .article-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--color-muted, #6b7280);
+    font-size: 0.9375rem;
+  }
+  .article-author {
+    font-weight: 600;
+    color: var(--color-text, #1a1a2e);
+  }
+  .article-meta time::before {
+    content: '\00B7';
+    margin-right: 0.75rem;
+  }
+  .article-body {
+    line-height: 1.8;
+    font-size: 1.0625rem;
+  }
+  .article-body :global(h2) { margin: 2rem 0 1rem; font-size: var(--text-2xl); }
+  .article-body :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl); }
+  .article-body :global(p)  { margin-bottom: 1.25rem; }
+  .article-body :global(ul), .article-body :global(ol) { margin: 1rem 0 1.25rem 1.5rem; }
+  .article-sidebar {
+    display: none;
+    width: 300px;
+  }
+  @media (min-width: 960px) {
+    .article-sidebar {
+      display: block;
+      position: sticky;
+      top: 80px;
+      align-self: start;
+    }
+  }
+  .ad-anchor { margin: 1.5rem 0; }
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
+  }
+</style>
