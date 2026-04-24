@@ -1,0 +1,35 @@
+---
+export const prerender = false;
+
+import { env } from 'cloudflare:workers';
+import ArticleLayout from '../../layouts/ArticleLayout.astro';
+import { getSiteId } from '../../lib/config';
+import { articleKey, type ArticleRecord } from '../../lib/kv-schema';
+import { isVisibleArticle } from '../../utils/article-status';
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  return new Response('Not found', { status: 404 });
+}
+
+const siteId = getSiteId(Astro);
+const record = (await env.CONFIG_KV.get<ArticleRecord>(articleKey(siteId, slug), 'json')) ?? null;
+
+if (!record || !isVisibleArticle(record.frontmatter.status)) {
+  return new Response('Not found', { status: 404 });
+}
+
+const { frontmatter, body } = record;
+---
+
+<ArticleLayout
+  title={frontmatter.title}
+  description={frontmatter.description ?? frontmatter.title}
+  author={frontmatter.author}
+  publishDate={new Date(frontmatter.publishDate).toISOString()}
+  featuredImage={frontmatter.featuredImage}
+  slug={frontmatter.slug}
+>
+  <Fragment set:html={body} />
+</ArticleLayout>

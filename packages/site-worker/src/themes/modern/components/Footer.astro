@@ -1,0 +1,226 @@
+---
+/**
+ * Modern theme — site footer.
+ *
+ * Three-column layout: about / quick links / newsletter.
+ * Dark background with light text.
+ */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+
+interface Props {
+  config: ResolvedConfig;
+}
+
+const { config } = Astro.props;
+const year = new Date().getFullYear();
+
+const quickLinks = [
+  { label: 'Home', href: '/' },
+  { label: 'About', href: '/about' },
+  { label: 'Privacy Policy', href: '/privacy-policy' },
+  { label: 'Terms of Service', href: '/terms' },
+  { label: 'Contact', href: '/contact' },
+  { label: 'DMCA', href: '/dmca' },
+];
+---
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    {/* Column 1: About */}
+    <div class="footer-col footer-about">
+      {config.theme.logo ? (
+        <img src={config.theme.logo} alt={config.site_name} class="footer-logo" />
+      ) : (
+        <span class="footer-logo-text">{config.site_name}</span>
+      )}
+      <p class="footer-tagline">
+        {config.site_tagline ?? config.site_name}
+      </p>
+    </div>
+
+    {/* Column 2: Quick Links */}
+    <div class="footer-col">
+      <h4 class="footer-heading">Quick Links</h4>
+      <ul class="footer-links">
+        {quickLinks.map(({ label, href }) => (
+          <li><a href={href}>{label}</a></li>
+        ))}
+      </ul>
+    </div>
+
+    {/* Column 3: Newsletter */}
+    <div class="footer-col">
+      <h4 class="footer-heading">Newsletter</h4>
+      <p class="footer-newsletter-desc">
+        Get the latest stories delivered to your inbox.
+      </p>
+      <form class="footer-newsletter" data-newsletter-form data-source="footer">
+        <input
+          type="email"
+          name="email"
+          placeholder="Your email address"
+          required
+          class="footer-email-input"
+        />
+        <button type="submit" class="footer-subscribe-btn">Subscribe</button>
+        <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" />
+      </form>
+    </div>
+  </div>
+
+  {/* Bottom bar */}
+  <div class="footer-bottom">
+    <p>&copy; {year} {config.site_name}. All rights reserved.</p>
+  </div>
+  {/* Newsletter subscribe script will come back as a Server Island in Phase 4. */}
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--color-secondary, #1a1a2e);
+    color: #d1d5db;
+    margin-top: 4rem;
+  }
+
+  .footer-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 3rem 1rem 2rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .footer-inner {
+      grid-template-columns: 1.2fr 0.8fr 1fr;
+    }
+  }
+
+  /* About column */
+  .footer-logo {
+    height: 32px;
+    width: auto;
+    margin-bottom: 0.75rem;
+  }
+
+  .footer-logo-text {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #fff;
+    display: block;
+    margin-bottom: 0.75rem;
+  }
+
+  .footer-tagline {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: #9ca3af;
+  }
+
+  /* Headings */
+  .footer-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Links */
+  .footer-links {
+    list-style: none;
+    padding: 0;
+  }
+
+  .footer-links li {
+    margin-bottom: 0.5rem;
+  }
+
+  .footer-links a {
+    color: #9ca3af;
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color var(--transition-fast, 150ms ease);
+  }
+
+  .footer-links a:hover {
+    color: #fff;
+  }
+
+  /* Newsletter */
+  .footer-newsletter-desc {
+    font-size: 0.875rem;
+    color: #9ca3af;
+    margin-bottom: 1rem;
+  }
+
+  .footer-newsletter {
+    display: flex;
+    gap: 0;
+  }
+
+  .footer-email-input {
+    flex: 1;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #374151;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #111827;
+    color: #fff;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color var(--transition-fast, 150ms ease);
+  }
+
+  .footer-email-input::placeholder {
+    color: #6b7280;
+  }
+
+  .footer-email-input:focus {
+    border-color: var(--color-primary, #0066ff);
+  }
+
+  .footer-subscribe-btn {
+    padding: 0.625rem 1.25rem;
+    background: var(--color-primary, #0066ff);
+    color: #fff;
+    border: none;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast, 150ms ease);
+    white-space: nowrap;
+  }
+
+  .footer-subscribe-btn:hover {
+    background: var(--color-accent, #00ccff);
+  }
+
+  /* Bottom bar */
+  .footer-bottom {
+    border-top: 1px solid #374151;
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: #6b7280;
+  }
+
+  :global(.newsletter-success) {
+    color: #10b981;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+
+  :global(.newsletter-error) {
+    color: #ef4444;
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+  }
+</style>

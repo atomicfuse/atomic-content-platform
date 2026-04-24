@@ -1,0 +1,127 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../themes/modern/components/Header.astro';
+import Footer from '../themes/modern/components/Footer.astro';
+import ArticleCard from '../themes/modern/components/ArticleCard.astro';
+import AdSlot from '../components/AdSlot.astro';
+import { env } from 'cloudflare:workers';
+import { getConfig, getSiteId } from '../lib/config';
+import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
+import { isVisibleArticle } from '../utils/article-status';
+
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+
+const allArticles =
+  (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+
+const articles = allArticles
+  .filter((a) => isVisibleArticle(a.status))
+  .sort(
+    (a, b) =>
+      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
+  );
+
+const latestArticles = articles.slice(0, 12);
+---
+
+<BaseLayout
+  title={config.site_name}
+  description={config.site_tagline ?? `${config.site_name} — latest articles`}
+>
+  <Fragment slot="head">
+    <SEOHead
+      title={config.site_name}
+      description={config.site_tagline ?? `${config.site_name} — latest articles`}
+      canonicalUrl={`https://${config.domain}`}
+      siteName={config.site_name}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath="/" />
+
+  <main class="homepage">
+    <div class="container">
+      <AdSlot position="homepage-top" pageType="homepage" server:defer />
+
+      <section class="section">
+        <h2 class="section-heading">Latest Articles</h2>
+        <div class="article-grid">
+          {latestArticles.map((article) => (
+            <ArticleCard
+              title={article.title}
+              slug={article.slug}
+              featuredImage={article.featuredImage}
+              description={article.description}
+              author={article.author}
+              publishDate={article.publishDate}
+              tags={article.tags}
+              type={article.type}
+            />
+          ))}
+        </div>
+
+        {articles.length === 0 && (
+          <p class="empty-state">
+            No published articles yet for <code>{config.domain}</code>.
+            Seed <code>article-index:{siteId}</code> in CONFIG_KV.
+          </p>
+        )}
+      </section>
+    </div>
+  </main>
+
+  <Footer config={config} />
+
+  <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
+</BaseLayout>
+
+<style>
+  .homepage { min-height: 60vh; }
+  .container {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .section { padding: 2.5rem 0 1rem; }
+  .section-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: var(--color-text, #1a1a2e);
+  }
+  .article-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  @media (min-width: 640px) { .article-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 960px) { .article-grid { grid-template-columns: repeat(3, 1fr); } }
+  .empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--color-muted, #9ca3af);
+    padding: 4rem 0;
+    font-size: 1.125rem;
+  }
+  .empty-state code {
+    background: var(--color-surface, #f8f9fa);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.95em;
+  }
+  .ad-anchor { margin: 1.5rem 0; }
+  .ad-sticky-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
+  }
+</style>

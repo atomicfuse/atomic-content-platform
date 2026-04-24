@@ -1,0 +1,35 @@
+{
+  "name": "@atomic-platform/site-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Astro 6 + Cloudflare Workers app — single multi-tenant runtime for the content network. Resolves per-site config from KV at request time. Runs alongside the legacy packages/site-builder during the Pages→Workers migration.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "dev:worker": "astro build && wrangler dev --config dist/server/wrangler.json --port 8788",
+    "build": "astro build",
+    "preview": "wrangler dev --config dist/server/wrangler.json --port 8788",
+    "deploy:staging": "astro build && wrangler deploy --config dist/server/wrangler.json --env staging",
+    "seed:kv": "tsx scripts/seed-kv.ts",
+    "typecheck": "astro check && tsc --noEmit",
+    "clean": "rm -rf dist .astro .wrangler/tmp"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^13.0.0",
+    "@astrojs/sitemap": "^3.3.0",
+    "@atomic-platform/shared-types": "workspace:*",
+    "astro": "^6.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^25.5.0",
+    "marked": "^14.1.4",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.77.0",
+    "yaml": "^2.7.0"
+  }
+}

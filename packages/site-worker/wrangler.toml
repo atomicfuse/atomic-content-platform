@@ -1,0 +1,43 @@
+# Cloudflare Worker configuration for the multi-tenant Astro site-worker.
+#
+# Phase 1 (scaffold) deliberately declares NO KV bindings. Phase 3 of the
+# migration plan adds `CONFIG_KV` and `CONFIG_KV_STAGING` namespaces.
+#
+# During the migration the two existing Cloudflare Pages projects
+# (coolnews-atl, scienceworld) keep serving production traffic. This Worker
+# is staging-only until Phase 6 DNS cutover.
+
+name = "atomic-site-worker-staging"
+compatibility_date = "2026-04-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Static assets — the Astro Cloudflare adapter emits the Worker entrypoint
+# + hashed asset bundle into ./dist. `run_worker_first = true` forces every
+# request through the Worker so middleware.ts can run (for SSR routes like
+# `/` that don't have a corresponding static file).
+assets = { directory = "./dist", binding = "ASSETS", run_worker_first = true }
+
+# KV namespaces — the Worker always reads from `env.CONFIG_KV`. The backing
+# namespace differs per env so staging and prod don't share state.
+# Created on Dev1 account (953511f6...) on 2026-04-23.
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING (default env)
+
+# Observability — Workers Logs (enabled by default on Workers Paid).
+[observability]
+enabled = true
+
+[env.staging]
+name = "atomic-site-worker-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "CONFIG_KV"
+id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING
+
+[env.production]
+name = "atomic-site-worker"
+
+[[env.production.kv_namespaces]]
+binding = "CONFIG_KV"
+id = "a69cb2c59507482ca5e6d114babdd098" # CONFIG_KV (prod)

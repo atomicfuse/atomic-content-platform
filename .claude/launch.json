@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@atomic-platform/dashboard", "dev"],
       "port": 3000
+    },
+    {
+      "name": "site-worker",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@atomic-platform/site-worker", "preview"],
+      "port": 8788
     }
   ]
 }

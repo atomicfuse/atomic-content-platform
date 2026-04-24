@@ -1,0 +1,62 @@
+---
+/**
+ * Outputs SEO meta tags, Open Graph, Twitter Card, and JSON-LD
+ * structured data for an article or page.
+ */
+
+interface Props {
+  title: string;
+  description: string;
+  canonicalUrl: string;
+  image?: string;
+  siteName: string;
+  publishDate?: string;
+  /** When true, emits a noindex robots meta tag. */
+  noindex?: boolean;
+}
+
+const { title, description, canonicalUrl, image, siteName, publishDate, noindex = false } = Astro.props;
+
+// Build JSON-LD Article structured data when we have a publish date
+const jsonLd = publishDate
+  ? JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: title,
+      description,
+      image: image ?? undefined,
+      datePublished: publishDate,
+      publisher: {
+        '@type': 'Organization',
+        name: siteName,
+      },
+      mainEntityOfPage: {
+        '@type': 'WebPage',
+        '@id': canonicalUrl,
+      },
+    })
+  : null;
+---
+
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonicalUrl} />
+{noindex && <meta name="robots" content="noindex, follow" />}
+
+{/* ---- Open Graph ---- */}
+<meta property="og:type" content={publishDate ? 'article' : 'website'} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+<meta property="og:url" content={canonicalUrl} />
+<meta property="og:site_name" content={siteName} />
+{image && <meta property="og:image" content={image} />}
+{publishDate && <meta property="article:published_time" content={publishDate} />}
+
+{/* ---- Twitter Card ---- */}
+<meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+{image && <meta name="twitter:image" content={image} />}
+
+{/* ---- JSON-LD ---- */}
+{jsonLd && <script is:inline type="application/ld+json" set:html={jsonLd} />}
