@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { COMPANIES } from "@/lib/constants";
-import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
+import { useAudiences } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface StepIdentityProps {
@@ -23,7 +23,6 @@ export function StepIdentity({
   onCancel,
 }: StepIdentityProps): React.ReactElement {
   const { audiences } = useAudiences();
-  const { verticals } = useVerticals();
   const canProceed = data.pagesProjectName && data.siteName;
 
   function handleProjectNameChange(value: string): void {
@@ -123,27 +122,15 @@ export function StepIdentity({
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Select
-          label="Company"
-          options={COMPANIES.map((c) => ({ value: c, label: c }))}
-          placeholder="Select..."
-          value={data.company}
-          onChange={(e): void =>
-            onChange({ company: e.target.value as WizardFormData["company"] })
-          }
-        />
-        <Select
-          label="Vertical"
-          options={verticals.map((v) => ({ value: v.id, label: v.name }))}
-          value={data.verticalId}
-          onChange={(e): void => {
-            const id = e.target.value;
-            const name = verticals.find((v) => v.id === id)?.name ?? "";
-            onChange({ verticalId: id, vertical: name });
-          }}
-        />
-      </div>
+      <Select
+        label="Company"
+        options={COMPANIES.map((c) => ({ value: c, label: c }))}
+        placeholder="Select..."
+        value={data.company}
+        onChange={(e): void =>
+          onChange({ company: e.target.value as WizardFormData["company"] })
+        }
+      />
 
       <div className="flex justify-between pt-4">
         <Button variant="ghost" onClick={onCancel}>

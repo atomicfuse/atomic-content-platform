@@ -31,9 +31,60 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 
+const AGGREGATOR_URL =
+  process.env.CONTENT_AGGREGATOR_URL ??
+  process.env.CONTENT_API_BASE_URL ??
+  "https://content-aggregator-cloudgrid.apps.cloudgrid.io";
+
 interface StagingResult {
   stagingUrl: string;
   pagesProject: string;
+}
+
+/** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)". */
+async function createBundle(
+  name: string,
+  verticalId: string,
+  categoryIds: string[],
+  tagIds: string[],
+): Promise<{ id: string; name: string } | null> {
+  const payload = {
+    name,
+    description: `Auto-created content bundle for ${name}`,
+    active: true,
+    rules: {
+      vertical_ids: [verticalId],
+      category_ids: categoryIds,
+      tag_ids: tagIds,
+    },
+  };
+
+  try {
+    let res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    // Handle 409 (duplicate name) — retry with " (2)" suffix
+    if (res.status === 409) {
+      payload.name = `${name} (2)`;
+      res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    if (res.status === 201) {
+      return (await res.json()) as { id: string; name: string };
+    }
+    console.error("[wizard] Bundle creation failed:", res.status);
+    return null;
+  } catch (err) {
+    console.error("[wizard] Bundle creation error:", err);
+    return null;
+  }
 }
 
 /** Create site files in a staging branch and set up CF Pages project. */
@@ -49,6 +100,39 @@ export async function createSiteAndBuildStaging(
   // custom domain is just an alias on the CF Pages project.
   const siteFolder = projectName;
 
+  // 0. Resolve niche targeting: existing bundle or create new
+  let bundleId: string | undefined = data.bundleId || undefined;
+  let categoryIds: string[] = data.selectedCategories.map((c) => c.id);
+  let tagIds: string[] = data.selectedTags.map((t) => t.id);
+  const iabCategoryCodes = data.selectedCategories
+    .map((c) => c.iabCode)
+    .filter(Boolean);
+
+  if (bundleId) {
+    // Existing bundle — fetch its rules for site.yaml fields
+    try {
+      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`);
+      if (res.ok) {
+        const bundle = (await res.json()) as {
+          rules?: { category_ids?: string[]; tag_ids?: string[] };
+        };
+        categoryIds = bundle.rules?.category_ids ?? categoryIds;
+        tagIds = bundle.rules?.tag_ids ?? tagIds;
+      }
+    } catch {
+      // Best-effort — proceed with what we have
+    }
+  } else if (data.verticalId && categoryIds.length > 0) {
+    // Create new bundle
+    const bundle = await createBundle(
+      data.siteName,
+      data.verticalId,
+      categoryIds,
+      tagIds,
+    );
+    if (bundle) bundleId = bundle.id;
+  }
+
   // 1. Build site.yaml content
   // domain = projectName so Astro builds with the right site URL
   // (site URL becomes https://{projectName}.pages.dev in production)
@@ -60,6 +144,10 @@ export async function createSiteAndBuildStaging(
     pages_project: projectName, // placeholder — updated after CF creation
     groups: data.groups.length > 0 ? data.groups : ["adsense-default"],
     active: true,
+    bundle_id: bundleId || undefined,
+    iab_vertical_code: data.iabVerticalCode || undefined,
+    iab_category_codes:
+      iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
       audiences: data.audiences,
@@ -78,6 +166,8 @@ export async function createSiteAndBuildStaging(
         : [],
       vertical: data.vertical || undefined,
       vertical_id: data.verticalId || undefined,
+      category_ids: categoryIds.length > 0 ? categoryIds : undefined,
+      tag_ids: tagIds.length > 0 ? tagIds : undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,

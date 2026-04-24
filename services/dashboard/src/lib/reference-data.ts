@@ -4,7 +4,7 @@ export interface ReferenceItem {
 }
 
 const CACHE_KEY_AUDIENCES = "atl:audiences";
-const CACHE_KEY_VERTICALS = "atl:verticals";
+const CACHE_KEY_VERTICALS = "atl:verticals:v2";
 
 function getCached(key: string): ReferenceItem[] | null {
   if (typeof window === "undefined") return null;
@@ -46,13 +46,142 @@ export async function getAudiences(): Promise<ReferenceItem[]> {
   return list;
 }
 
-export async function getVerticals(): Promise<ReferenceItem[]> {
+export interface VerticalItem extends ReferenceItem {
+  iab_code: string;
+}
+
+export interface CategoryItem {
+  id: string;
+  name: string;
+  iab_code: string;
+  vertical_id: string;
+}
+
+export interface TagItem {
+  id: string;
+  name: string;
+  vertical_id?: string;
+  usage_count?: number;
+}
+
+export async function getVerticals(): Promise<VerticalItem[]> {
   const cached = getCached(CACHE_KEY_VERTICALS);
-  if (cached) return cached;
+  if (cached) return cached as VerticalItem[];
   const res = await fetch("/api/verticals");
   if (!res.ok) return [];
   const data: unknown = await res.json();
-  const list = extractItems(data);
+  const items = (data as { items?: unknown[] })?.items;
+  if (!Array.isArray(items)) return [];
+  const list = items
+    .map((d: unknown) => {
+      const obj = d as { id?: string; name?: string; iab_code?: string };
+      if (obj.id && obj.name) {
+        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "" };
+      }
+      return null;
+    })
+    .filter((x): x is VerticalItem => x !== null);
   if (list.length > 0) setCache(CACHE_KEY_VERTICALS, list);
   return list;
+}
+
+/** Fetch categories for a vertical. No localStorage cache — depends on verticalId param. */
+export async function getCategories(verticalId: string): Promise<CategoryItem[]> {
+  if (!verticalId) return [];
+  const res = await fetch(`/api/categories?vertical_id=${verticalId}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: unknown[] };
+  if (!Array.isArray(data.items)) return [];
+  return data.items
+    .map((d: unknown) => {
+      const obj = d as { id?: string; name?: string; iab_code?: string; vertical_id?: string };
+      if (obj.id && obj.name) {
+        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", vertical_id: obj.vertical_id ?? "" };
+      }
+      return null;
+    })
+    .filter((x): x is CategoryItem => x !== null);
+}
+
+/** Fetch tags for a vertical. Includes usage_count. */
+export async function getTags(verticalId: string): Promise<TagItem[]> {
+  if (!verticalId) return [];
+  const res = await fetch(`/api/tags?vertical_id=${verticalId}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: unknown[] };
+  if (!Array.isArray(data.items)) return [];
+  return extractTags(data.items);
+}
+
+/** Search tags by name via API. Debounce in the caller. */
+export async function searchTags(verticalId: string, search: string): Promise<TagItem[]> {
+  if (!verticalId || !search.trim()) return [];
+  const qs = new URLSearchParams({ vertical_id: verticalId, search: search.trim(), page_size: "20" });
+  const res = await fetch(`/api/tags?${qs.toString()}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: unknown[] };
+  if (!Array.isArray(data.items)) return [];
+  return extractTags(data.items);
+}
+
+function extractTags(items: unknown[]): TagItem[] {
+  return items
+    .map((d: unknown) => {
+      const obj = d as { id?: string; name?: string; vertical_id?: string; usage_count?: number };
+      if (obj.id && obj.name) {
+        const tag: TagItem = { id: obj.id, name: obj.name };
+        if (obj.vertical_id) tag.vertical_id = obj.vertical_id;
+        if (obj.usage_count !== undefined) tag.usage_count = obj.usage_count;
+        return tag;
+      }
+      return null;
+    })
+    .filter((x): x is TagItem => x !== null);
+}
+
+// ---------------------------------------------------------------------------
+// Bundles
+// ---------------------------------------------------------------------------
+
+export interface BundleItem {
+  id: string;
+  name: string;
+  description?: string;
+  content_count?: number;
+  rules: {
+    vertical_ids: string[];
+    category_ids: string[];
+    tag_ids: string[];
+  };
+}
+
+export async function getBundles(): Promise<BundleItem[]> {
+  const res = await fetch("/api/bundles");
+  if (!res.ok) return [];
+  const data = (await res.json()) as { items?: unknown[] };
+  if (!Array.isArray(data.items)) return [];
+  return data.items
+    .map((d: unknown) => {
+      const obj = d as {
+        id?: string;
+        name?: string;
+        description?: string;
+        content_count?: number;
+        rules?: { vertical_ids?: string[]; category_ids?: string[]; tag_ids?: string[] };
+      };
+      if (!obj.id || !obj.name) return null;
+      const bundle: BundleItem = {
+        id: obj.id,
+        name: obj.name,
+        description: obj.description,
+        content_count: obj.content_count,
+        rules: {
+          vertical_ids: obj.rules?.vertical_ids ?? [],
+          category_ids: obj.rules?.category_ids ?? [],
+          tag_ids: obj.rules?.tag_ids ?? [],
+        },
+      };
+      return bundle;
+    })
+    .filter((x): x is BundleItem => x !== null);
 }
