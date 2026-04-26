@@ -59,3 +59,13 @@ export const siteConfigPrevKey = (siteId: string): string => `site-config-prev:$
 export const articleIndexKey = (siteId: string): string => `article-index:${siteId}`;
 export const articleKey = (siteId: string, slug: string): string => `article:${siteId}:${slug}`;
 export const syncStatusKey = (siteId: string): string => `sync-status:${siteId}`;
+export const sharedPageKey = (siteId: string, name: string): string => `shared-page:${siteId}:${name}`;
+
+/** Shared legal/info page rendered into KV at sync time. The Worker
+ *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca`)
+ *  via the [page] route. */
+export interface SharedPage {
+  slug: string;
+  title: string;
+  html: string;
+}

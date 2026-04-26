@@ -8,6 +8,7 @@
  */
 import { getConfig } from '../lib/config';
 import PixelLoader from '../components/PixelLoader.astro';
+import MockAdFill from '../components/MockAdFill.astro';
 import '../themes/modern/styles/theme.css';
 
 interface Props {
@@ -86,5 +87,7 @@ const cssVars = Object.entries(theme.colors)
 
   <body>
     <slot />
+    {/* Mock ad-fill loader (legacy parity). Real ad-network SDKs replace this. */}
+    <MockAdFill server:defer />
   </body>
 </html>

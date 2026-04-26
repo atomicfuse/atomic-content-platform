@@ -4,3 +4,12 @@ dist/
 node_modules/
 .DS_Store
 *.log
+
+# Auto-generated runtime types from `wrangler types`. Regenerated whenever
+# wrangler.toml bindings change.
+worker-configuration.d.ts
+
+# Per-site asset bundles produced by `scripts/seed-kv.ts`. The canonical
+# source is the network repo (atomic-labs-network/sites/<siteId>/assets/);
+# these copies are derived and don't belong in git.
+public/*/assets/
