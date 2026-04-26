@@ -57,6 +57,14 @@ Planning deliverables: `docs/migration-audit.md`, `docs/migration-gap-analysis.m
 - [ ] **Phase 6 prereq:** Verify first CI run writes `sync-status:<siteId>.ok = true` in staging KV. Document the first successful run's sha in `docs/migration-baselines.md`.
 - [ ] **Edge case:** `sync-kv.yml`'s `pages_subdomain.pages.dev` fallback relies on dashboard-index.yaml having that field. Test with a site that has `pages_subdomain: null` to confirm the workflow doesn't crash on missing hostname.
 
+### Production hot-fix follow-ups (added 2026-04-26)
+
+- [ ] **Bug:** `packages/site-worker/scripts/seed-kv.ts` writes `gitSha: "manual-seed"` literally; should read `process.env.GITHUB_SHA` (only fall back to "manual-seed" when unset). Sync-status records currently lie about which commit produced them.
+- [ ] **Pre-existing data bug:** `sites/muvizz.com/articles/best-sci-fi-movies-2026.md` fails Astro content-collection schema validation on every `deploy.yml` run. Either fix the frontmatter or delete the directory (it has no Pages project per `dashboard-index.yaml` so it's already orphaned).
+- [ ] **CI inefficiency:** `deploy.yml` `detect` job iterates every `sites/*` dir even on a `staging/<X>` push that should only target site `<X>`. This causes muvizz.com to be matrix-built on every run, producing a false-failure verdict. Filter by branch name (or by changed paths) to scope correctly.
+- [ ] **Tech debt:** `deploy.yml` installs `wrangler@^4` globally in every job. Faster: cache the install or build a small CI image. Not urgent — install is ~5 s.
+- [ ] **Documentation:** the wrangler resolution gotcha (pnpm per-package bin layout breaks implicit `npx wrangler` from a sibling workspace package) is captured in `deploy.yml`'s comment at the install step. Consider promoting to `CLAUDE.md` "Known Landmines" if any other workflow ever needs to invoke a CLI installed in a different workspace package.
+
 ### Phase-6/7/8 follow-ups (added 2026-04-23)
 
 - [ ] **Runbook execution:** Execute `docs/runbooks/phase-6-dns-cutover-pilot.md` (scienceworld, low-risk).
