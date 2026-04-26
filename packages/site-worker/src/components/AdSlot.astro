@@ -47,7 +47,8 @@ const isSticky = position === 'sticky-bottom';
     data-ad-position={position}
     data-ad-page-type={pageType}
     data-ad-device={p.device ?? 'all'}
-    data-ad-sizes={JSON.stringify(p.sizes ?? {})}
+    data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+    data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
     class={`atl-ad-slot atl-ad-${position}`}
     style={slotInlineStyle}
   ></div>
@@ -61,7 +62,8 @@ const isSticky = position === 'sticky-bottom';
         data-ad-position={position}
         data-ad-page-type={pageType}
         data-ad-device={p.device ?? 'all'}
-        data-ad-sizes={JSON.stringify(p.sizes ?? {})}
+        data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+        data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
         class={`atl-ad-slot atl-ad-${position}`}
         style={slotInlineStyle}
       ></div>
