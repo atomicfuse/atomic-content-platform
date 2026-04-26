@@ -15,10 +15,11 @@ import { workerPreviewUrl } from "@/lib/constants";
 import type { SiteStatus } from "@/types/dashboard";
 
 interface StagingTabProps {
+  /** The network-repo directory slug for this site (e.g. "coolnews-atl").
+   *  Stored in `dashboard-index.yaml` under the `domain` field — NOT the
+   *  numeric `site_id` field, which is an unrelated internal id. Used as
+   *  both the KV site config key and the `?_atl_site=` Worker override. */
   domain: string;
-  /** Network-repo siteId — used to build the Worker preview URL with
-   *  `?_atl_site=` so any seeded site can be previewed without DNS. */
-  siteId: string;
   pagesProject: string | null;
   pagesSubdomain: string | null;
   stagingBranch: string | null;
@@ -32,7 +33,6 @@ interface StagingTabProps {
 
 export function StagingTab({
   domain,
-  siteId,
   pagesProject,
   pagesSubdomain,
   stagingBranch,
@@ -48,10 +48,11 @@ export function StagingTab({
   // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
   const pagesHost = pagesSubdomain ?? pagesProject;
 
-  // Worker preview — works for any seeded site, no DNS needed. Surfaced
-  // prominently here because the staging tab is where editors gauge
-  // pre-publish state during the Pages → Workers migration.
-  const workerUrl = siteId ? workerPreviewUrl(siteId) : null;
+  // Worker preview — works for any seeded site, no DNS needed. The siteId
+  // is the network-repo directory slug, which the dashboard happens to
+  // store in `domain`. Surfaced prominently here because the staging tab
+  // is where editors gauge pre-publish state during the migration.
+  const workerUrl = domain ? workerPreviewUrl(domain) : null;
 
   // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
   const currentPreviewUrl =

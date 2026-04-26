@@ -40,10 +40,11 @@ export function SiteDetailHeader({
     stagingUrl && (site.status === "Ready" || site.status === "Live");
 
   // Worker preview — works for any seeded site, no custom domain needed.
-  // The Worker honours `?_atl_site=<id>` on workers.dev hostnames; KV is
-  // the authority on production custom domains. Always show during the
-  // migration so the team can compare Worker vs Pages output.
-  const workerUrl = site.site_id ? workerPreviewUrl(site.site_id) : null;
+  // The Worker honours `?_atl_site=<siteId>` on workers.dev hostnames;
+  // KV is the authority on production custom domains. The siteId here
+  // is the network-repo directory slug, which the dashboard stores in
+  // the `domain` field (NOT `site_id` — that's an unrelated numeric id).
+  const workerUrl = site.domain ? workerPreviewUrl(site.domain) : null;
 
   const linkIcon = (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
