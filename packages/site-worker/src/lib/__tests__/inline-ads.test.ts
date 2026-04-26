@@ -8,12 +8,27 @@ describe('injectInlineAds', () => {
     const out = injectInlineAds(html, [
       { id: 'in-content-3', position: 'after-paragraph-3' },
     ]);
-    // After the third </p> there should be a slot div.
+    // After the third </p> there should be a slot div with empty sizes
+    // arrays (none provided in this placement).
     const expected =
       '<p>One.</p><p>Two.</p><p>Three.</p>'
-      + '<div data-ad-id="in-content-3" data-ad-position="after-paragraph-3" class="atl-ad-slot atl-ad-after-paragraph-3"></div>'
+      + '<div data-ad-id="in-content-3" data-ad-position="after-paragraph-3"'
+      + ' data-sizes-desktop="[]" data-sizes-mobile="[]"'
+      + ' class="atl-ad-slot atl-ad-after-paragraph-3"></div>'
       + '<p>Four.</p><p>Five.</p>';
     expect(out).toBe(expected);
+  });
+
+  it('emits size attributes that mock-ad-fill.js reads', () => {
+    const out = injectInlineAds(html, [
+      {
+        id: 'in-content-x',
+        position: 'after-paragraph-1',
+        sizes: { desktop: [[728, 90], [970, 90]], mobile: [[320, 50]] },
+      },
+    ]);
+    expect(out).toContain('data-sizes-desktop="[[728,90],[970,90]]"');
+    expect(out).toContain('data-sizes-mobile="[[320,50]]"');
   });
 
   it('handles multiple after-paragraph placements at different positions', () => {
@@ -86,5 +101,20 @@ describe('injectInlineAds', () => {
     expect(out.match(/data-ad-id="b"/g)).toHaveLength(1);
     // Both should appear after the second </p>.
     expect(out).toMatch(/<p>Two\.<\/p><div data-ad-id="a"[^>]*><\/div><div data-ad-id="b"[^>]*><\/div>/);
+  });
+
+  it('escapes JSON quotes in size attributes', () => {
+    // sizes are numbers but verify the attribute is properly escaped if
+    // anything weird leaked through.
+    const out = injectInlineAds(html, [
+      {
+        id: 'ok',
+        position: 'after-paragraph-1',
+        sizes: { desktop: [[300, 250]], mobile: [] },
+      },
+    ]);
+    // " in JSON should be escaped to &quot;
+    expect(out).toContain('data-sizes-desktop="[[300,250]]"');
+    expect(out).not.toContain('data-sizes-desktop=""[[300,250]]""');
   });
 });

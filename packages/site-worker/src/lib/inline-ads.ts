@@ -11,6 +11,10 @@ interface InlinePlacement {
   id?: string;
   position?: string;
   device?: string;
+  sizes?: {
+    desktop?: number[][];
+    mobile?: number[][];
+  };
 }
 
 /**
@@ -27,7 +31,7 @@ interface InlinePlacement {
  * Returns the input unchanged when no inline placements match.
  */
 export function injectInlineAds(html: string, placements: readonly InlinePlacement[]): string {
-  const inline: Array<{ id: string; position: string; afterIndex: number }> = [];
+  const inline: Array<{ id: string; position: string; afterIndex: number; sizesDesktop: number[][]; sizesMobile: number[][] }> = [];
   for (const p of placements) {
     const match = /^after-paragraph-(\d+)$/.exec(p.position ?? '');
     if (!match) continue;
@@ -37,6 +41,8 @@ export function injectInlineAds(html: string, placements: readonly InlinePlaceme
       id: p.id ?? `${p.position}-anon`,
       position: p.position!,
       afterIndex: n,
+      sizesDesktop: p.sizes?.desktop ?? [],
+      sizesMobile: p.sizes?.mobile ?? [],
     });
   }
   if (inline.length === 0) return html;
@@ -52,19 +58,27 @@ export function injectInlineAds(html: string, placements: readonly InlinePlaceme
       pSeen += 1;
       const matches = inline.filter((p) => p.afterIndex === pSeen);
       for (const p of matches) {
-        out.push(renderInlineSlot(p.id, p.position));
+        out.push(renderInlineSlot(p.id, p.position, p.sizesDesktop, p.sizesMobile));
       }
     }
   }
   return out.join('');
 }
 
-function renderInlineSlot(id: string, position: string): string {
+function renderInlineSlot(
+  id: string,
+  position: string,
+  sizesDesktop: number[][],
+  sizesMobile: number[][],
+): string {
   // Same shape AdSlot.astro emits server-side, so mock-ad-fill.js picks
-  // these up identically.
+  // these up identically — including the size attributes which the
+  // mock script needs to render the correct dimensions.
   return (
     `<div data-ad-id="${escapeAttr(id)}"`
     + ` data-ad-position="${escapeAttr(position)}"`
+    + ` data-sizes-desktop="${escapeAttr(JSON.stringify(sizesDesktop))}"`
+    + ` data-sizes-mobile="${escapeAttr(JSON.stringify(sizesMobile))}"`
     + ` class="atl-ad-slot atl-ad-${escapeAttr(position)}"></div>`
   );
 }
