@@ -29,6 +29,17 @@ export interface DashboardSiteEntry {
   saved_previews: Array<{ url: string; label: string; saved_at: string }> | null;
   /** Custom domain attached to the Pages project. */
   custom_domain: string | null;
+  /**
+   * Worker-related fields populated post-migration (Phase 6+). Optional —
+   * absent on sites that haven't been touched by the Pages → Workers
+   * migration yet. Set in `dashboard-index.yaml` by the Phase-6 work and
+   * by the dashboard's own site-creation flow once that's updated.
+   */
+  worker?: string;
+  worker_kv_staging?: string;
+  worker_kv_prod?: string;
+  /** True while the site has no custom domain bound to the Worker. */
+  worker_pending_dns?: boolean;
 }
 
 export interface DeletedSiteEntry extends DashboardSiteEntry {

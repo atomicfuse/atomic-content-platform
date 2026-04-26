@@ -16,6 +16,12 @@
     "seed:kv": "tsx scripts/seed-kv.ts",
     "pretypecheck": "wrangler types",
     "typecheck": "astro check && tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:build": "vitest run --project build",
+    "test:live": "vitest run --project live",
+    "test:audit": "tsx tests/audit-environment.ts",
+    "test:all": "pnpm test && pnpm test:build",
     "clean": "rm -rf dist .astro .wrangler/tmp worker-configuration.d.ts"
   },
   "dependencies": {
@@ -33,6 +39,7 @@
     "tailwindcss": "^4.1.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
     "wrangler": "^4.77.0",
     "yaml": "^2.7.0"
   }
