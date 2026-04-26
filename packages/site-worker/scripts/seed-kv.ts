@@ -45,6 +45,10 @@ import {
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
+  selectMatchingOverrides,
+  stripModeKeys,
+  stripOverrideMetaFields,
+  type OverrideConfig,
 } from './lib/resolve';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -203,9 +207,30 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     }
   }
 
+  // Layer 3: overrides/config — targeted config exceptions (sites in
+  // specific groups, or specific sites). Sorted lowest priority first so
+  // higher-priority entries apply last.
+  const overridesDir = join(NETWORK_DATA_PATH, 'overrides', 'config');
+  const overrideFiles: OverrideConfig[] = [];
+  if (await pathExists(overridesDir)) {
+    const files = (await readdir(overridesDir)).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
+    for (const f of files) {
+      const cfg = await readYaml<OverrideConfig>(join(overridesDir, f));
+      if (cfg) overrideFiles.push(cfg);
+    }
+  }
+  const matchingOverrides = selectMatchingOverrides(overrideFiles, siteId, groups);
+  for (const o of matchingOverrides) {
+    layers.push(stripModeKeys(o) as Record<string, unknown>);
+    console.log(`[seed-kv]   merged override: ${o.override_id ?? '(unnamed)'} (priority ${o.priority ?? 0})`);
+  }
+
   layers.push(site);
 
-  const merged = layers.reduce((acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {});
+  const mergedRaw = layers.reduce((acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {});
+  // Strip override meta-fields that leaked into the merged result from
+  // the override layer (override_id, name, priority, targets).
+  const merged = stripOverrideMetaFields(mergedRaw);
 
   const config: ResolvedConfig = {
     ad_placeholder_heights: {
