@@ -82,6 +82,7 @@ export default async function SiteDetailPage({
           site.pages_project ? (
             <StagingTab
               domain={decodedDomain}
+              siteId={site.site_id}
               pagesProject={site.pages_project}
               pagesSubdomain={site.pages_subdomain}
               stagingBranch={site.staging_branch}

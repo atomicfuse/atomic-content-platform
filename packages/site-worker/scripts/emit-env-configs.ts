@@ -31,6 +31,8 @@ interface EnvOverrides {
   name: string;
   /** Per-binding overrides. Keys are binding names (e.g. CONFIG_KV). */
   kvNamespaces: Record<string, string>;
+  /** R2 bucket name overrides. Keys are binding names (e.g. ASSET_BUCKET). */
+  r2Buckets: Record<string, string>;
 }
 
 /**
@@ -44,11 +46,17 @@ const ENVS: Record<string, EnvOverrides> = {
     kvNamespaces: {
       CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848', // CONFIG_KV_STAGING
     },
+    r2Buckets: {
+      ASSET_BUCKET: 'atl-assets-staging',
+    },
   },
   production: {
     name: 'atomic-site-worker',
     kvNamespaces: {
       CONFIG_KV: 'a69cb2c59507482ca5e6d114babdd098', // CONFIG_KV (prod)
+    },
+    r2Buckets: {
+      ASSET_BUCKET: 'atl-assets-prod',
     },
   },
 };
@@ -58,9 +66,15 @@ interface KvBinding {
   id?: string;
 }
 
+interface R2Binding {
+  binding: string;
+  bucket_name?: string;
+}
+
 interface WranglerConfig {
   name?: string;
   kv_namespaces?: KvBinding[];
+  r2_buckets?: R2Binding[];
   definedEnvironments?: string[];
   topLevelName?: string;
   legacy_env?: boolean;
@@ -84,6 +98,14 @@ async function main(): Promise<void> {
       });
     }
 
+    // Same for R2 bucket names.
+    if (Array.isArray(config.r2_buckets)) {
+      config.r2_buckets = config.r2_buckets.map((b) => {
+        const name = overrides.r2Buckets[b.binding];
+        return name ? { ...b, bucket_name: name } : b;
+      });
+    }
+
     // Strip env metadata so the file is a self-contained flat config.
     delete config.definedEnvironments;
     delete config.topLevelName;
@@ -95,7 +117,10 @@ async function main(): Promise<void> {
     const kvSummary = Object.entries(overrides.kvNamespaces)
       .map(([b, id]) => `${b}=${id.slice(0, 8)}…`)
       .join(', ');
-    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}`);
+    const r2Summary = Object.entries(overrides.r2Buckets)
+      .map(([b, name]) => `${b}=${name}`)
+      .join(', ');
+    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}, ${r2Summary}`);
   }
 }
 

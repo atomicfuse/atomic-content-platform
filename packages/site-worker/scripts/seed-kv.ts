@@ -20,7 +20,7 @@
  * Phase-5 CI runs this same script. Keep the file generic — anything
  * site-specific lives in the network-repo data, not here.
  */
-import { readFile, readdir, writeFile, mkdtemp, mkdir, copyFile, rm, stat } from 'node:fs/promises';
+import { readFile, readdir, writeFile, mkdtemp, stat, rm } from 'node:fs/promises';
 import { join, dirname, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -59,6 +59,10 @@ const DEFAULT_NETWORK_PATH = join(PLATFORM_ROOT, '..', 'atomic-labs-network');
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH ?? DEFAULT_NETWORK_PATH;
 const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? '4673c82cdd7f41d49e93d938fb1c6848';
 const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
+/** R2 bucket name for per-site assets. Defaults to staging. Override
+ *  with `R2_BUCKET=atl-assets-prod pnpm seed:kv ...` for prod seeding. */
+const R2_BUCKET = process.env.R2_BUCKET ?? 'atl-assets-staging';
+const R2_REMOTE = (process.env.R2_REMOTE ?? 'true') !== 'false';
 
 /** Bundled shared-page templates from site-builder package (Phase-2 fallback). */
 const BUNDLED_SHARED_PAGES_DIR = join(PLATFORM_ROOT, 'packages', 'site-builder', 'shared-pages');
@@ -103,22 +107,63 @@ async function pathExists(p: string): Promise<boolean> {
   try { await stat(p); return true; } catch { return false; }
 }
 
-async function copyDir(src: string, dest: string): Promise<number> {
-  if (!(await pathExists(src))) return 0;
-  await mkdir(dest, { recursive: true });
+/** Walks a directory tree calling `cb(absolutePath, relativePath)` for
+ *  every file. Used by the R2 uploader. */
+async function walkFiles(
+  root: string,
+  cb: (absPath: string, relPath: string) => Promise<void>,
+  prefix = '',
+): Promise<number> {
+  if (!(await pathExists(root))) return 0;
   let count = 0;
-  const entries = await readdir(src, { withFileTypes: true });
+  const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {
-    const s = join(src, entry.name);
-    const d = join(dest, entry.name);
+    const abs = join(root, entry.name);
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      count += await copyDir(s, d);
+      count += await walkFiles(abs, cb, rel);
     } else if (entry.isFile()) {
-      await copyFile(s, d);
+      await cb(abs, rel);
       count += 1;
     }
   }
   return count;
+}
+
+/** Removes any stale `public/<siteId>/assets/` dir left over from the
+ *  pre-R2 bundling era. Idempotent: if the dir doesn't exist, no-op.
+ *  Without this, `dist/client/<siteId>/assets/` would still ship in the
+ *  Worker bundle on next build, and the build-stability test would flag
+ *  it. The canonical asset source is now R2 + the network repo. */
+async function removeStalePublicAssetsDir(siteId: string): Promise<void> {
+  const stale = join(PACKAGE_ROOT, 'public', siteId);
+  if (await pathExists(stale)) {
+    await rm(stale, { recursive: true, force: true });
+    console.log(`[seed-kv] removed stale public/${siteId}/ (pre-R2 leftover)`);
+  }
+}
+
+/** Uploads `<NETWORK>/sites/<siteId>/assets/**` to R2 under
+ *  `<siteId>/assets/<rel>` keys. Replaces the previous public-bundle
+ *  approach; new images now flow live without a Worker redeploy. */
+async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number> {
+  const src = join(NETWORK_DATA_PATH, 'sites', siteId, 'assets');
+  if (!(await pathExists(src))) {
+    console.warn(`[seed-kv] No assets dir at ${src} — skipping R2 upload`);
+    return 0;
+  }
+  return walkFiles(src, async (abs, rel) => {
+    const key = `${siteId}/assets/${rel}`;
+    runWrangler([
+      'r2',
+      'object',
+      'put',
+      `${bucket}/${key}`,
+      '--file',
+      abs,
+      R2_REMOTE ? '--remote' : '--local',
+    ]);
+  });
 }
 
 // ---------- Article loading ----------
@@ -323,16 +368,16 @@ async function main(): Promise<void> {
   }
   console.log(`[seed-kv] shared pages: ${sharedPages.map((p) => p.slug).join(', ') || '(none)'}`);
 
-  // 4. Assets — copy site's assets into the Worker's public bundle so
-  //    they're served by the ASSETS binding under /<siteId>/assets/<path>.
-  const assetSrc = join(NETWORK_DATA_PATH, 'sites', siteId, 'assets');
-  const assetDest = join(PACKAGE_ROOT, 'public', siteId, 'assets');
-  // Clean destination first to avoid stale files lingering.
-  if (await pathExists(assetDest)) {
-    await rm(assetDest, { recursive: true, force: true });
-  }
-  const assetCount = await copyDir(assetSrc, assetDest);
-  console.log(`[seed-kv] assets: copied ${assetCount} files from ${assetSrc} → ${assetDest}`);
+  // 4. Assets — upload to R2 under `<siteId>/assets/<rel>`.
+  //    The Worker's `/<siteId>/assets/[...path]` route reads from the
+  //    R2 binding at request time, so new images flow live within the
+  //    cache window WITHOUT a Worker redeploy. Replaces the previous
+  //    bundle-into-public/ approach (which required a deploy per asset
+  //    change). Also wipes any stale `public/<siteId>/` directory so
+  //    re-running on an old checkout cleans the bundle.
+  await removeStalePublicAssetsDir(siteId);
+  const assetCount = await uploadAssetsToR2(siteId, R2_BUCKET);
+  console.log(`[seed-kv] assets: uploaded ${assetCount} files to R2 bucket "${R2_BUCKET}"`);
 
   // 5. KV bulk payload
   const now = new Date().toISOString();

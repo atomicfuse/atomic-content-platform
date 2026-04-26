@@ -39,7 +39,7 @@ beforeAll(async () => {
 });
 
 describe('env config emit', () => {
-  it('emits dist/server/wrangler.staging.json with correct name + KV id', async () => {
+  it('emits dist/server/wrangler.staging.json with correct name + KV + R2 bindings', async () => {
     const raw = await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8');
     const cfg = JSON.parse(raw) as Record<string, unknown>;
 
@@ -48,9 +48,13 @@ describe('env config emit', () => {
     const kv = cfg.kv_namespaces as Array<{ binding: string; id?: string }>;
     const configKv = kv.find((b) => b.binding === 'CONFIG_KV');
     expect(configKv?.id).toBe('4673c82cdd7f41d49e93d938fb1c6848');
+
+    const r2 = cfg.r2_buckets as Array<{ binding: string; bucket_name?: string }>;
+    const assetBucket = r2.find((b) => b.binding === 'ASSET_BUCKET');
+    expect(assetBucket?.bucket_name).toBe('atl-assets-staging');
   });
 
-  it('emits dist/server/wrangler.production.json with correct name + KV id', async () => {
+  it('emits dist/server/wrangler.production.json with correct name + KV + R2 bindings', async () => {
     const raw = await readFile(join(DIST_SERVER, 'wrangler.production.json'), 'utf-8');
     const cfg = JSON.parse(raw) as Record<string, unknown>;
 
@@ -59,9 +63,13 @@ describe('env config emit', () => {
     const kv = cfg.kv_namespaces as Array<{ binding: string; id?: string }>;
     const configKv = kv.find((b) => b.binding === 'CONFIG_KV');
     expect(configKv?.id).toBe('a69cb2c59507482ca5e6d114babdd098');
+
+    const r2 = cfg.r2_buckets as Array<{ binding: string; bucket_name?: string }>;
+    const assetBucket = r2.find((b) => b.binding === 'ASSET_BUCKET');
+    expect(assetBucket?.bucket_name).toBe('atl-assets-prod');
   });
 
-  it('staging vs production are bound to DIFFERENT namespaces', async () => {
+  it('staging vs production are bound to DIFFERENT KV + R2 resources', async () => {
     // Phase-6 regression: deploy --env production was binding to staging KV.
     // This is the assertion that catches it.
     const staging = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8')) as Record<string, unknown>;
@@ -69,10 +77,15 @@ describe('env config emit', () => {
 
     const stagingKv = (staging.kv_namespaces as Array<{ binding: string; id?: string }>).find((b) => b.binding === 'CONFIG_KV');
     const prodKv = (prod.kv_namespaces as Array<{ binding: string; id?: string }>).find((b) => b.binding === 'CONFIG_KV');
-
     expect(stagingKv?.id).toBeDefined();
     expect(prodKv?.id).toBeDefined();
     expect(stagingKv?.id).not.toBe(prodKv?.id);
+
+    const stagingR2 = (staging.r2_buckets as Array<{ binding: string; bucket_name?: string }>).find((b) => b.binding === 'ASSET_BUCKET');
+    const prodR2 = (prod.r2_buckets as Array<{ binding: string; bucket_name?: string }>).find((b) => b.binding === 'ASSET_BUCKET');
+    expect(stagingR2?.bucket_name).toBeDefined();
+    expect(prodR2?.bucket_name).toBeDefined();
+    expect(stagingR2?.bucket_name).not.toBe(prodR2?.bucket_name);
   });
 
   it('emitted configs are flat — no env metadata leftover', async () => {
@@ -106,5 +119,16 @@ describe('build artefacts', () => {
 
   it('Astro adapter generated wrangler.json present (used at dev/preview time)', async () => {
     await expect(stat(join(DIST_SERVER, 'wrangler.json'))).resolves.toBeDefined();
+  });
+
+  it('does NOT bundle per-site asset directories (assets live in R2)', async () => {
+    // Pin the post-R2-migration shape: the previous architecture copied
+    // <network>/sites/<id>/assets into dist/client/<id>/assets, which
+    // required a redeploy on every new image. R2 removes that need.
+    const exists = async (p: string): Promise<boolean> => {
+      try { await stat(p); return true; } catch { return false; }
+    };
+    expect(await exists(join(DIST_CLIENT, 'coolnews-atl', 'assets'))).toBe(false);
+    expect(await exists(join(DIST_CLIENT, 'scienceworld', 'assets'))).toBe(false);
   });
 });
