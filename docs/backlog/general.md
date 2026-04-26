@@ -65,6 +65,13 @@ Planning deliverables: `docs/migration-audit.md`, `docs/migration-gap-analysis.m
 - [ ] **Tech debt:** `deploy.yml` installs `wrangler@^4` globally in every job. Faster: cache the install or build a small CI image. Not urgent — install is ~5 s.
 - [ ] **Documentation:** the wrangler resolution gotcha (pnpm per-package bin layout breaks implicit `npx wrangler` from a sibling workspace package) is captured in `deploy.yml`'s comment at the install step. Consider promoting to `CLAUDE.md` "Known Landmines" if any other workflow ever needs to invoke a CLI installed in a different workspace package.
 
+### Phase 6 readiness follow-ups (added 2026-04-26)
+
+- [ ] **Phase 7 prereq: Astro adapter env-binding gap.** `dist/server/wrangler.json` (adapter-generated) doesn't propagate `[[env.production.kv_namespaces]]` from the user wrangler.toml. Result: `wrangler deploy --env production` deploys against the top-level (staging) KV, just with a `-production` name suffix. Fix options: (a) post-build script to inject env sections into the generated config; (b) drop `legacy_env` and use service-style envs; (c) split the user wrangler.toml into per-env files and deploy each separately. **Blocks Phase 7** because real production traffic should read from `CONFIG_KV` (prod), not the staging namespace.
+- [ ] **Worker cleanup:** the `atomic-site-worker-staging-production` Worker (deployed during Phase 6 demo) is redundant — binds to staging KV due to the gap above. `wrangler delete --name atomic-site-worker-staging-production` once env-binding is fixed and a real prod Worker takes its place.
+- [ ] **Custom-domain strategy for scienceworld.** `dashboard-index.yaml` `scienceworld.zone_id` and `.custom_domain` are still null. Without a domain, Phase 6 DNS cutover is symbolic (the legacy `.pages.dev` URL stays live; nothing redirects). User-driven decision: either provision a domain for scienceworld OR accept that scienceworld stays on Pages and only coolnews-atl actually migrates.
+- [ ] **Multi-tenant cache layer.** Today the staging Worker has neither edge cache nor article-page caching configured. Phase 6 multi-tenancy demo worked partly because no caching meant the KV change was visible immediately. Real prod cutover (Phase 7) needs a cache strategy — Astro page caching headers + CF Cache Rules + KV propagation timing. Capture in a runbook before Phase 7.
+
 ### Phase-6/7/8 follow-ups (added 2026-04-23)
 
 - [ ] **Runbook execution:** Execute `docs/runbooks/phase-6-dns-cutover-pilot.md` (scienceworld, low-risk).
