@@ -4,9 +4,10 @@ export const prerender = false;
 import { env } from 'cloudflare:workers';
 import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import PageLayout from '../../layouts/PageLayout.astro';
-import { getSiteId } from '../../lib/config';
+import { getConfig, getSiteId } from '../../lib/config';
 import { articleKey, sharedPageKey, type ArticleRecord, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
+import { injectInlineAds } from '../../lib/inline-ads';
 
 const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca']);
 
@@ -32,6 +33,17 @@ const article: ArticleRecord | null = shared
 if (!shared && (!article || !isVisibleArticle(article.frontmatter.status))) {
   return new Response('Not found', { status: 404 });
 }
+
+// Inject after-paragraph-N ad slots into the article body server-side.
+// The legacy site-builder did this client-side via ad-loader.js; doing it
+// in the request path keeps the slot present in the initial HTML so it
+// caches consistently with the article shell.
+const articleBodyWithInlineAds = article
+  ? injectInlineAds(
+      article.body,
+      (getConfig(Astro).ads_config?.ad_placements as Array<{ id?: string; position?: string }> | undefined) ?? [],
+    )
+  : '';
 ---
 
 {shared && (
@@ -49,6 +61,6 @@ if (!shared && (!article || !isVisibleArticle(article.frontmatter.status))) {
     featuredImage={article.frontmatter.featuredImage}
     slug={article.frontmatter.slug}
   >
-    <Fragment set:html={article.body} />
+    <Fragment set:html={articleBodyWithInlineAds} />
   </ArticleLayout>
 )}

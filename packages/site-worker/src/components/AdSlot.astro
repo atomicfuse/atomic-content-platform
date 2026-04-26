@@ -8,18 +8,16 @@
  *
  * Real ad-network SDKs replace `mock-ad-fill.js` later (see
  * `docs/future-decisions.md`).
+ *
+ * Sticky-bottom rendering: the slot div + close button are wrapped in
+ * a position:fixed container so the close button anchors to the
+ * sticky bar (not the viewport corner) and survives mock-ad-fill.js
+ * replacing the inner ad div content.
  */
 import { getConfig } from '../lib/config';
 
 export interface Props {
-  /** Position name as defined in the resolved `ads_config.ad_placements[].position`.
-   *  Examples from groups/taboola.yaml:
-   *  `above-content` | `below-content` | `sidebar` | `sticky-bottom` |
-   *  `homepage-top` | `homepage-mid` | `category-top` | `after-paragraph-N`. */
   position: string;
-  /** Page type filter — taboola/group placements use top-level slot
-   *  conventions, but BaseLayout/articles can render different sets per
-   *  page type. Currently informational only (`data-ad-page-type`). */
   pageType: 'homepage' | 'article' | 'category';
 }
 
@@ -38,20 +36,12 @@ const placements = ((config.ads_config?.ad_placements as Placement[] | undefined
   (p) => p.position === position && (!p.pages || p.pages.includes(pageType)),
 );
 
-if (placements.length === 0) {
-  // No matching placement → render nothing.
-}
-
 const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')] ?? 0;
-const styleParts = [
-  reserved ? `min-height:${reserved}px` : '',
-  position === 'sticky-bottom'
-    ? 'position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(255,255,255,0.95);text-align:center'
-    : '',
-].filter(Boolean);
+const slotInlineStyle = reserved ? `min-height:${reserved}px` : '';
+const isSticky = position === 'sticky-bottom';
 ---
 
-{placements.map((p) => (
+{!isSticky && placements.map((p) => (
   <div
     data-ad-id={p.id ?? `${position}-${pageType}`}
     data-ad-position={position}
@@ -59,35 +49,45 @@ const styleParts = [
     data-ad-device={p.device ?? 'all'}
     data-ad-sizes={JSON.stringify(p.sizes ?? {})}
     class={`atl-ad-slot atl-ad-${position}`}
-    style={styleParts.join(';')}
+    style={slotInlineStyle}
   ></div>
 ))}
 
-{position === 'sticky-bottom' && placements.length > 0 && (
-  <button
-    class="atl-ad-close"
-    aria-label="Close advertisement"
-    data-atl-close="sticky-bottom"
-    type="button"
-  >×</button>
+{isSticky && placements.length > 0 && (
+  <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
+    {placements.map((p) => (
+      <div
+        data-ad-id={p.id ?? `${position}-${pageType}`}
+        data-ad-position={position}
+        data-ad-page-type={pageType}
+        data-ad-device={p.device ?? 'all'}
+        data-ad-sizes={JSON.stringify(p.sizes ?? {})}
+        class={`atl-ad-slot atl-ad-${position}`}
+        style={slotInlineStyle}
+      ></div>
+    ))}
+    <button
+      class="atl-ad-close"
+      aria-label="Close advertisement"
+      data-atl-close="sticky-bottom"
+      type="button"
+    >×</button>
+  </div>
 )}
 
 <script>
-  // Sticky-bottom dismiss — mirrors legacy public/ad-loader.js behaviour.
-  // Session-scoped so a closed ad stays closed for the tab's lifetime.
-  if (sessionStorage.getItem('_atl_sticky_dismissed') === '1') {
-    document.querySelectorAll('.atl-ad-sticky-bottom').forEach((el) => {
+  // Sticky-bottom dismiss — mirrors legacy public/ad-loader.js.
+  function hideSticky(): void {
+    document.querySelectorAll('[data-atl-sticky-wrapper]').forEach((el) => {
       (el as HTMLElement).style.display = 'none';
     });
   }
+  if (sessionStorage.getItem('_atl_sticky_dismissed') === '1') hideSticky();
   document.addEventListener('click', (e) => {
     const t = e.target as HTMLElement | null;
-    if (!t) return;
-    if (t.matches('[data-atl-close="sticky-bottom"]')) {
+    if (t?.matches('[data-atl-close="sticky-bottom"]')) {
       sessionStorage.setItem('_atl_sticky_dismissed', '1');
-      document.querySelectorAll('.atl-ad-sticky-bottom').forEach((el) => {
-        (el as HTMLElement).style.display = 'none';
-      });
+      hideSticky();
     }
   });
 </script>
@@ -96,6 +96,19 @@ const styleParts = [
   .atl-ad-slot {
     display: block;
     margin: 0.75rem auto;
+  }
+  .atl-ad-sticky-wrapper {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
+    /* Acts as the positioning context for .atl-ad-close. */
+  }
+  .atl-ad-sticky-wrapper .atl-ad-slot {
+    margin: 0 auto;
   }
   .atl-ad-close {
     position: absolute;
@@ -108,6 +121,15 @@ const styleParts = [
     background: rgba(255, 255, 255, 0.95);
     cursor: pointer;
     font-size: 16px;
+    line-height: 1;
     z-index: 101;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .atl-ad-close:focus-visible {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
   }
 </style>
