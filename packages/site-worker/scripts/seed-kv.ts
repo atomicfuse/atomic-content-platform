@@ -40,6 +40,12 @@ import {
   type SiteLookup,
   type SyncStatus,
 } from '../src/lib/kv-schema';
+import {
+  deepMerge,
+  splitFrontmatter,
+  rewriteAssetUrls,
+  rewriteFrontmatterUrl,
+} from './lib/resolve';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -68,22 +74,6 @@ async function readYaml<T>(path: string): Promise<T | null> {
   }
 }
 
-/** Deep-merge: arrays from `b` REPLACE arrays in `a`. Same semantics as the
- *  legacy site-builder for `ad_placements` (later layer wins).
- *  Note: `ads_txt` deserves additive merge in the legacy resolver, but this
- *  MVP keeps replacement semantics for simplicity — see `docs/backlog/general.md`. */
-function deepMerge(a: unknown, b: unknown): unknown {
-  if (b === undefined || b === null) return a;
-  if (typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b) || a === null) {
-    return b;
-  }
-  const out: Record<string, unknown> = { ...(a as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(b as Record<string, unknown>)) {
-    out[k] = deepMerge((a as Record<string, unknown>)[k], v);
-  }
-  return out;
-}
-
 function defaultTheme(): Record<string, unknown> {
   return {
     base: 'modern',
@@ -103,15 +93,7 @@ function defaultTheme(): Record<string, unknown> {
   };
 }
 
-// ---------- Frontmatter ----------
-
-function splitFrontmatter(raw: string): { front: Record<string, unknown>; body: string } {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
-  if (!match) return { front: {}, body: raw };
-  return { front: (parseYaml(match[1]!) as Record<string, unknown>) ?? {}, body: match[2] ?? '' };
-}
-
-// ---------- Asset copy + URL rewriting ----------
+// ---------- Asset copy ----------
 
 async function pathExists(p: string): Promise<boolean> {
   try { await stat(p); return true; } catch { return false; }
@@ -133,27 +115,6 @@ async function copyDir(src: string, dest: string): Promise<number> {
     }
   }
   return count;
-}
-
-/**
- * Rewrites `/assets/...` references in HTML to `/<siteId>/assets/...` so they
- * resolve against the per-site bundle dir under `public/<siteId>/assets/`.
- *
- * Targets `src=`, `href=`, and Markdown-style `(/assets/...)` to be safe — but
- * stops at non-asset URLs (already absolute, query strings, etc.).
- */
-function rewriteAssetUrls(html: string, siteId: string): string {
-  const prefix = `/${siteId}/assets/`;
-  return html
-    .replace(/(\bsrc\s*=\s*["'])\/assets\//g, `$1${prefix}`)
-    .replace(/(\bhref\s*=\s*["'])\/assets\//g, `$1${prefix}`)
-    .replace(/(\()\/assets\//g, `$1${prefix}`);
-}
-
-function rewriteFrontmatterUrl(url: string | undefined, siteId: string): string | undefined {
-  if (!url) return url;
-  if (url.startsWith('/assets/')) return `/${siteId}/assets${url.slice('/assets'.length)}`;
-  return url;
 }
 
 // ---------- Article loading ----------
@@ -269,6 +230,15 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
     pages_project: String(site.pages_project ?? siteId),
   } as unknown as ResolvedConfig;
+
+  // Rewrite theme.logo / theme.favicon `/assets/...` paths the same way
+  // article URLs are rewritten — the Header/Footer components read these
+  // and emit raw <img src=…>. Bare `/assets/logo.png` 404s on the Worker.
+  const theme = config.theme as Record<string, unknown> | undefined;
+  if (theme) {
+    if (typeof theme.logo === 'string') theme.logo = rewriteFrontmatterUrl(theme.logo, siteId);
+    if (typeof theme.favicon === 'string') theme.favicon = rewriteFrontmatterUrl(theme.favicon, siteId);
+  }
 
   return { config, site };
 }

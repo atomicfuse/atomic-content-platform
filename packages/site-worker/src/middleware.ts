@@ -92,6 +92,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
 function applyCacheHeaders(pathname: string, response: Response): void {
   if (response.headers.has('cache-control')) return;
 
+  // Never cache error responses. A cached 404 sticks for the full s-maxage
+  // even after the underlying KV is fixed — exactly what we don't want
+  // for newly-published articles or hostname-resolution edits.
+  if (response.status >= 400) {
+    response.headers.set('cache-control', 'private, no-store');
+    return;
+  }
+
   // Server Islands — Astro fetches these per request. Caching them would
   // freeze the data they render (ad placements, tracking pixels, etc.)
   // for the cache TTL, defeating the migration's "config change = next
