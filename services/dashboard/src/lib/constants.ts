@@ -77,7 +77,13 @@ export const WORKER_STAGING_URL =
 
 /** Build a Worker preview URL that forces a specific siteId via the
  *  preview-override query param. The Worker only honours this on
- *  workers.dev / localhost — production custom domains use KV. */
-export function workerPreviewUrl(siteId: string): string {
-  return `${WORKER_STAGING_URL}/?_atl_site=${encodeURIComponent(siteId)}`;
+ *  workers.dev / localhost — production custom domains use KV.
+ *
+ *  `path` is the in-site path (e.g. `/about`, `/<article-slug>`,
+ *  defaults to `/`). The siteId is appended as `?_atl_site=` so the
+ *  Worker resolves config + content from staging KV (which is what
+ *  CI writes for any push to `staging/<domain>` branches). */
+export function workerPreviewUrl(siteId: string, path = "/"): string {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  return `${WORKER_STAGING_URL}${cleanPath}?_atl_site=${encodeURIComponent(siteId)}`;
 }

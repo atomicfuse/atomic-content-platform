@@ -7,11 +7,14 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { deleteArticleFromStaging, deleteArticlesFromStaging } from "@/actions/sites";
+import { workerPreviewUrl } from "@/lib/constants";
 
 interface ContentTabProps {
   articles: ArticleEntry[];
   domain: string;
   stagingBranch: string | null;
+  /** Optional override for the preview origin. Defaults to the staging
+   *  Worker. Article preview links use `${origin}/<slug>?_atl_site=<domain>`. */
   previewUrl?: string;
 }
 
@@ -269,7 +272,7 @@ export function ContentTab({
                 </td>
                 <td className="px-4 py-3">
                   <a
-                    href={previewUrl ? `${previewUrl}/${article.slug}/` : `https://${domain}/${article.slug}`}
+                    href={workerPreviewUrl(domain, `/${article.slug}`)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-cyan hover:underline text-xs"

@@ -45,20 +45,15 @@ export function StagingTab({
 }: StagingTabProps): React.ReactElement {
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
 
-  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
-  const pagesHost = pagesSubdomain ?? pagesProject;
-
-  // Worker preview — works for any seeded site, no DNS needed. The siteId
-  // is the network-repo directory slug, which the dashboard happens to
-  // store in `domain`. Surfaced prominently here because the staging tab
-  // is where editors gauge pre-publish state during the migration.
+  // Post-migration: Pages projects no longer exist. Both the prominent
+  // "Worker Preview" block and the inline "Staging Preview" link below
+  // resolve to the same staging Worker URL — `?_atl_site=<domain>` forces
+  // the right tenant. The `pagesProject` / `pagesSubdomain` props are
+  // unused; kept on the interface for caller backward-compat.
+  void pagesProject;
+  void pagesSubdomain;
   const workerUrl = domain ? workerPreviewUrl(domain) : null;
-
-  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
-  const currentPreviewUrl =
-    currentStagingBranch && pagesHost
-      ? `https://${currentStagingBranch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
-      : previewUrl;
+  const currentPreviewUrl = currentStagingBranch ? workerUrl : previewUrl;
   const [isRefreshing, startRefresh] = useTransition();
   const [isSaving, startSave] = useTransition();
   const [isGoingLive, startGoLive] = useTransition();
@@ -73,11 +68,11 @@ export function StagingTab({
   const isLiveMode = siteStatus === "Ready" || siteStatus === "Live";
   const hasStagingBranch = !!currentStagingBranch;
 
-  const productionUrl = customDomain
-    ? `https://${customDomain}`
-    : pagesHost
-      ? `https://${pagesHost}.pages.dev`
-      : null;
+  // Live URL is the custom domain (served by the prod Worker via the
+  // `coolnews.dev` Workers Custom Domain route). Sites without a custom
+  // domain don't have a public live URL — they're only reachable via
+  // the Worker preview (above).
+  const productionUrl = customDomain ? `https://${customDomain}` : null;
 
   function handleRefreshPreview(): void {
     startRefresh(async () => {
@@ -373,10 +368,13 @@ export function StagingTab({
               Go Live
             </h3>
             <p className="text-sm text-[var(--text-secondary)]">
-              Merging staging to production will make this site live at{" "}
-              <span className="font-mono text-cyan">
-                {pagesHost}.pages.dev
-              </span>
+              Merging staging to production will sync this site&apos;s
+              content to prod KV{customDomain && (
+                <>
+                  {" "}and make it live at{" "}
+                  <span className="font-mono text-cyan">{customDomain}</span>
+                </>
+              )}.
             </p>
           </div>
           <Button
@@ -418,15 +416,13 @@ export function StagingTab({
         </div>
       )}
 
-      {/* Pages Project info */}
-      {pagesHost && (
+      {/* Footer info */}
+      {currentStagingBranch && (
         <p className="text-xs text-[var(--text-muted)]">
-          Pages project:{" "}
-          <span className="font-mono">{pagesHost}.pages.dev</span>
-          {currentStagingBranch && (
+          Branch: <span className="font-mono">{currentStagingBranch}</span>
+          {customDomain && (
             <>
-              {" "}&middot; Branch:{" "}
-              <span className="font-mono">{currentStagingBranch}</span>
+              {" "}&middot; Live: <span className="font-mono">{customDomain}</span>
             </>
           )}
         </p>
