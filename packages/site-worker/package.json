@@ -6,13 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "dev:worker": "astro build && wrangler dev --config dist/server/wrangler.json --port 8788",
-    "build": "astro build",
-    "preview": "wrangler dev --config dist/server/wrangler.json --port 8788",
-    "deploy:staging": "astro build && wrangler deploy --config dist/server/wrangler.json --env staging",
+    "dev:worker": "pnpm build && wrangler dev --config dist/server/wrangler.staging.json --port 8788",
+    "types": "wrangler types",
+    "prebuild": "wrangler types",
+    "build": "astro build && tsx scripts/emit-env-configs.ts",
+    "preview": "wrangler dev --config dist/server/wrangler.staging.json --port 8788",
+    "deploy:staging": "pnpm build && wrangler deploy --config dist/server/wrangler.staging.json",
+    "deploy:production": "pnpm build && wrangler deploy --config dist/server/wrangler.production.json",
     "seed:kv": "tsx scripts/seed-kv.ts",
+    "pretypecheck": "wrangler types",
     "typecheck": "astro check && tsc --noEmit",
-    "clean": "rm -rf dist .astro .wrangler/tmp"
+    "clean": "rm -rf dist .astro .wrangler/tmp worker-configuration.d.ts"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.0.0",
