@@ -1,0 +1,74 @@
+---
+/**
+ * Layout for shared legal/info pages (/about, /contact, /privacy, /terms,
+ * /dmca). Wraps BaseLayout with the modern theme's Header + Footer and a
+ * narrow prose container; emits an above-content ad slot for parity with
+ * the legacy site-builder's PageLayout.
+ */
+import BaseLayout from './BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../themes/modern/components/Header.astro';
+import Footer from '../themes/modern/components/Footer.astro';
+import AdSlot from '../components/AdSlot.astro';
+import { getConfig } from '../lib/config';
+
+interface Props {
+  title: string;
+  description?: string;
+  slug: string;
+}
+
+const { title, description, slug } = Astro.props;
+const config = getConfig(Astro);
+const canonicalUrl = `https://${config.domain}/${slug}`;
+---
+
+<BaseLayout title={`${title} | ${config.site_name}`} description={description ?? title}>
+  <Fragment slot="head">
+    <SEOHead
+      title={`${title} | ${config.site_name}`}
+      description={description ?? title}
+      canonicalUrl={canonicalUrl}
+      siteName={config.site_name}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath={`/${slug}`} />
+
+  <main class="page">
+    <AdSlot position="above-content" pageType="article" server:defer />
+
+    <article class="page-content prose">
+      <header class="page-header">
+        <h1>{title}</h1>
+      </header>
+      <div class="page-body">
+        <slot />
+      </div>
+    </article>
+  </main>
+
+  <Footer config={config} />
+
+  <AdSlot position="sticky-bottom" pageType="article" server:defer />
+</BaseLayout>
+
+<style>
+  .page {
+    max-width: var(--container-narrow, 800px);
+    margin: 0 auto;
+    padding: 0 1rem 4rem;
+  }
+  .page-header { margin: 2rem 0; }
+  .page-header h1 {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: var(--text-3xl, 1.875rem);
+    line-height: 1.2;
+  }
+  .page-body { line-height: 1.7; font-size: 1.0625rem; }
+  .page-body :global(h2) { margin: 2rem 0 1rem; font-size: var(--text-2xl); }
+  .page-body :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl); }
+  .page-body :global(p) { margin-bottom: 1.25rem; }
+  .page-body :global(ul), .page-body :global(ol) { margin: 1rem 0 1.25rem 1.5rem; }
+  .page-body :global(a) { color: var(--color-primary); }
+</style>

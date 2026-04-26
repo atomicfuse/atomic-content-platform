@@ -1,25 +1,27 @@
 #!/usr/bin/env tsx
 /**
- * Phase 3 manual KV seeder. Reads the network repo on disk and writes to
- * the CONFIG_KV_STAGING namespace via `wrangler kv bulk put`.
+ * Phase-3-and-beyond manual KV seeder.
+ *
+ * Reads the network repo on disk, resolves the per-site config (org +
+ * groups + site, deep-merged), copies the site's assets into the Worker
+ * bundle under `<siteId>/assets/`, rewrites image URLs in articles +
+ * frontmatter, parses + bundles shared legal pages, and writes the lot
+ * to CONFIG_KV_STAGING via `wrangler kv bulk put`.
  *
  * Usage:
  *   tsx scripts/seed-kv.ts <siteId> [hostname ...]
  *
- * Example:
- *   tsx scripts/seed-kv.ts coolnews-atl coolnews.dev coolnews-atl.pages.dev
- *
- * Env (all optional, sensible defaults):
- *   NETWORK_DATA_PATH    Path to the network repo checkout (default: sibling dir)
+ * Env (all optional):
+ *   NETWORK_DATA_PATH    Path to the network repo checkout
  *   KV_NAMESPACE_ID      Target KV namespace id (default: staging)
- *   KV_REMOTE            "true" to write to remote (default). Set "false" for local miniflare.
- *   CLOUDFLARE_ACCOUNT_ID Needed for remote writes.
+ *   KV_REMOTE            "true" to write remote (default), "false" for local
+ *   CLOUDFLARE_ACCOUNT_ID Required for remote writes.
  *
- * This script is a Phase-3 bootstrap — Phase 5's CI workflow replaces it
- * for ongoing operations. Keeping it around for local testing & recovery.
+ * Phase-5 CI runs this same script. Keep the file generic — anything
+ * site-specific lives in the network-repo data, not here.
  */
-import { readFile, readdir, writeFile, mkdtemp } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { readFile, readdir, writeFile, mkdtemp, mkdir, copyFile, rm, stat } from 'node:fs/promises';
+import { join, dirname, extname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -40,33 +42,46 @@ import {
 } from '../src/lib/kv-schema';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_NETWORK_PATH = join(__dirname, '..', '..', '..', '..', 'atomic-labs-network');
+const PACKAGE_ROOT = join(__dirname, '..');
+const PLATFORM_ROOT = join(__dirname, '..', '..', '..');
+const DEFAULT_NETWORK_PATH = join(PLATFORM_ROOT, '..', 'atomic-labs-network');
 
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH ?? DEFAULT_NETWORK_PATH;
 const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? '4673c82cdd7f41d49e93d938fb1c6848';
 const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
 
-// ---------- YAML loaders ----------
+/** Bundled shared-page templates from site-builder package (Phase-2 fallback). */
+const BUNDLED_SHARED_PAGES_DIR = join(PLATFORM_ROOT, 'packages', 'site-builder', 'shared-pages');
 
-async function readYaml<T>(path: string): Promise<T> {
-  const raw = await readFile(path, 'utf-8');
-  return parseYaml(raw) as T;
+const SHARED_PAGES = ['about', 'contact', 'privacy', 'terms', 'dmca'] as const;
+type SharedPageName = typeof SHARED_PAGES[number];
+
+// ---------- YAML / merge helpers ----------
+
+async function readYaml<T>(path: string): Promise<T | null> {
+  try {
+    const raw = await readFile(path, 'utf-8');
+    return parseYaml(raw) as T;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw err;
+  }
 }
 
-/** MVP 2-layer merge (org + site). Phase 5 uses the full 5-layer resolver. */
-function mergeConfigs(org: Record<string, unknown>, site: Record<string, unknown>): ResolvedConfig {
-  const deep = (a: unknown, b: unknown): unknown => {
-    if (b === undefined || b === null) return a;
-    if (typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b) || a === null) {
-      return b;
-    }
-    const out: Record<string, unknown> = { ...(a as Record<string, unknown>) };
-    for (const [k, v] of Object.entries(b as Record<string, unknown>)) {
-      out[k] = deep((a as Record<string, unknown>)[k], v);
-    }
-    return out;
-  };
-  return deep(org, site) as ResolvedConfig;
+/** Deep-merge: arrays from `b` REPLACE arrays in `a`. Same semantics as the
+ *  legacy site-builder for `ad_placements` (later layer wins).
+ *  Note: `ads_txt` deserves additive merge in the legacy resolver, but this
+ *  MVP keeps replacement semantics for simplicity — see `docs/backlog/general.md`. */
+function deepMerge(a: unknown, b: unknown): unknown {
+  if (b === undefined || b === null) return a;
+  if (typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b) || a === null) {
+    return b;
+  }
+  const out: Record<string, unknown> = { ...(a as Record<string, unknown>) };
+  for (const [k, v] of Object.entries(b as Record<string, unknown>)) {
+    out[k] = deepMerge((a as Record<string, unknown>)[k], v);
+  }
+  return out;
 }
 
 function defaultTheme(): Record<string, unknown> {
@@ -88,12 +103,57 @@ function defaultTheme(): Record<string, unknown> {
   };
 }
 
-// ---------- Frontmatter split ----------
+// ---------- Frontmatter ----------
 
 function splitFrontmatter(raw: string): { front: Record<string, unknown>; body: string } {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
   if (!match) return { front: {}, body: raw };
   return { front: (parseYaml(match[1]!) as Record<string, unknown>) ?? {}, body: match[2] ?? '' };
+}
+
+// ---------- Asset copy + URL rewriting ----------
+
+async function pathExists(p: string): Promise<boolean> {
+  try { await stat(p); return true; } catch { return false; }
+}
+
+async function copyDir(src: string, dest: string): Promise<number> {
+  if (!(await pathExists(src))) return 0;
+  await mkdir(dest, { recursive: true });
+  let count = 0;
+  const entries = await readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const s = join(src, entry.name);
+    const d = join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += await copyDir(s, d);
+    } else if (entry.isFile()) {
+      await copyFile(s, d);
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Rewrites `/assets/...` references in HTML to `/<siteId>/assets/...` so they
+ * resolve against the per-site bundle dir under `public/<siteId>/assets/`.
+ *
+ * Targets `src=`, `href=`, and Markdown-style `(/assets/...)` to be safe — but
+ * stops at non-asset URLs (already absolute, query strings, etc.).
+ */
+function rewriteAssetUrls(html: string, siteId: string): string {
+  const prefix = `/${siteId}/assets/`;
+  return html
+    .replace(/(\bsrc\s*=\s*["'])\/assets\//g, `$1${prefix}`)
+    .replace(/(\bhref\s*=\s*["'])\/assets\//g, `$1${prefix}`)
+    .replace(/(\()\/assets\//g, `$1${prefix}`);
+}
+
+function rewriteFrontmatterUrl(url: string | undefined, siteId: string): string | undefined {
+  if (!url) return url;
+  if (url.startsWith('/assets/')) return `/${siteId}/assets${url.slice('/assets'.length)}`;
+  return url;
 }
 
 // ---------- Article loading ----------
@@ -119,18 +179,98 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
       description: front.description ? String(front.description) : undefined,
       author: String(front.author ?? 'Editorial Team'),
       publishDate: new Date(String(front.publishDate ?? Date.now())).toISOString(),
-      featuredImage: front.featuredImage ? String(front.featuredImage) : undefined,
+      featuredImage: rewriteFrontmatterUrl(front.featuredImage ? String(front.featuredImage) : undefined, siteId),
       tags: Array.isArray(front.tags) ? front.tags.map(String) : [],
       type: (front.type as ArticleIndexEntry['type']) ?? 'standard',
       status: (front.status as ArticleIndexEntry['status']) ?? 'draft',
     };
-    const html = marked.parse(body, { async: false }) as string;
+    const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });
   }
   records.sort(
     (a, b) => new Date(b.frontmatter.publishDate).getTime() - new Date(a.frontmatter.publishDate).getTime(),
   );
   return records;
+}
+
+// ---------- Shared pages ----------
+
+interface SharedPageRecord {
+  slug: SharedPageName;
+  title: string;
+  html: string;
+}
+
+async function loadSharedPage(siteId: string, name: SharedPageName): Promise<SharedPageRecord | null> {
+  // Per-site override wins; otherwise bundled template.
+  const overridePath = join(NETWORK_DATA_PATH, 'overrides', siteId, `${name}.md`);
+  const bundledPath = join(BUNDLED_SHARED_PAGES_DIR, `${name}.md`);
+  const usePath = (await pathExists(overridePath)) ? overridePath : bundledPath;
+  if (!(await pathExists(usePath))) return null;
+
+  const raw = await readFile(usePath, 'utf-8');
+  const { front, body } = splitFrontmatter(raw);
+  const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
+  return {
+    slug: name,
+    title: String(front.title ?? name.charAt(0).toUpperCase() + name.slice(1)),
+    html,
+  };
+}
+
+// ---------- Group + site config resolution ----------
+
+async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConfig; site: Record<string, unknown> }> {
+  const org = (await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'org.yaml'))) ?? {};
+  const site = (await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'sites', siteId, 'site.yaml'))) ?? {};
+
+  const groups: string[] = Array.isArray(site.groups)
+    ? (site.groups as string[])
+    : site.group
+      ? [String(site.group)]
+      : [];
+
+  const layers: Array<Record<string, unknown>> = [{ ...org, theme: { ...defaultTheme(), ...(org.theme as Record<string, unknown> | undefined) } }];
+
+  for (const g of groups) {
+    const groupCfg = await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'groups', `${g}.yaml`));
+    if (groupCfg) {
+      layers.push(groupCfg);
+      console.log(`[seed-kv]   merged group: ${g}`);
+    } else {
+      console.warn(`[seed-kv]   group not found: ${g}`);
+    }
+  }
+
+  layers.push(site);
+
+  const merged = layers.reduce((acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {});
+
+  const config: ResolvedConfig = {
+    ad_placeholder_heights: {
+      'above-content': 90,
+      'after-paragraph': 280,
+      sidebar: 600,
+      'sticky-bottom': 50,
+    },
+    ads_config: { interstitial: false, layout: 'standard', ad_placements: [] },
+    scripts: { head: [], body_start: [], body_end: [] },
+    scripts_vars: {},
+    ads_txt: [],
+    tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] },
+    categories: { enabled: false, root_path: '/category' },
+    sidebar: { enabled: false, widgets: [] },
+    search: { enabled: false },
+    preview_page: { enabled: false },
+    active: true,
+    ...merged,
+    domain: String(site.domain ?? siteId),
+    site_name: String(site.site_name ?? siteId),
+    site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
+    pages_project: String(site.pages_project ?? siteId),
+  } as unknown as ResolvedConfig;
+
+  return { config, site };
 }
 
 // ---------- KV write ----------
@@ -168,53 +308,38 @@ async function main(): Promise<void> {
     console.error('Usage: tsx scripts/seed-kv.ts <siteId> [hostname ...]');
     process.exit(1);
   }
-  if (hostnames.length === 0) {
-    console.warn('[seed-kv] No hostnames provided — seeding config + articles only (no site:<host> lookup).');
-  }
+  console.log(`[seed-kv] siteId=${siteId}, hostnames=${hostnames.join(',') || '(none)'}`);
 
-  // 1. Org config
-  const orgPath = join(NETWORK_DATA_PATH, 'org.yaml');
-  const org = (await readYaml<Record<string, unknown>>(orgPath)) ?? {};
+  // 1. Resolve config
+  const { config } = await resolveSiteConfig(siteId);
+  const adCount = (config.ads_config?.ad_placements ?? []).length;
+  console.log(`[seed-kv] ad_placements resolved: ${adCount}`);
 
-  // 2. Site config (from the site's staging branch or main). Working-tree only.
-  const sitePath = join(NETWORK_DATA_PATH, 'sites', siteId, 'site.yaml');
-  const site = (await readYaml<Record<string, unknown>>(sitePath)) ?? {};
-
-  // 3. Merge into ResolvedConfig-ish (MVP 2-layer).
-  const merged = mergeConfigs(
-    { ...org, theme: defaultTheme() },
-    site,
-  );
-  // Ensure defaults the Worker relies on.
-  const config: ResolvedConfig = {
-    ad_placeholder_heights: {
-      'above-content': 90,
-      'after-paragraph': 280,
-      sidebar: 600,
-      'sticky-bottom': 50,
-    },
-    ads_config: { interstitial: false, layout: 'standard', ad_placements: [] },
-    scripts: { head: [], body_start: [], body_end: [] },
-    scripts_vars: {},
-    ads_txt: [],
-    tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] },
-    categories: { enabled: false, root_path: '/category' },
-    sidebar: { enabled: false, widgets: [] },
-    search: { enabled: false },
-    preview_page: { enabled: false },
-    active: true,
-    ...merged,
-    domain: String(site.domain ?? siteId),
-    site_name: String(site.site_name ?? siteId),
-    site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
-    pages_project: String(site.pages_project ?? siteId),
-  } as unknown as ResolvedConfig;
-
-  // 4. Articles.
+  // 2. Articles
   const articles = await loadArticles(siteId);
   const index: ArticleIndexEntry[] = articles.map((a) => a.frontmatter);
+  console.log(`[seed-kv] articles: ${articles.length}`);
 
-  // 5. Assemble bulk payload.
+  // 3. Shared pages
+  const sharedPages: SharedPageRecord[] = [];
+  for (const name of SHARED_PAGES) {
+    const page = await loadSharedPage(siteId, name);
+    if (page) sharedPages.push(page);
+  }
+  console.log(`[seed-kv] shared pages: ${sharedPages.map((p) => p.slug).join(', ') || '(none)'}`);
+
+  // 4. Assets — copy site's assets into the Worker's public bundle so
+  //    they're served by the ASSETS binding under /<siteId>/assets/<path>.
+  const assetSrc = join(NETWORK_DATA_PATH, 'sites', siteId, 'assets');
+  const assetDest = join(PACKAGE_ROOT, 'public', siteId, 'assets');
+  // Clean destination first to avoid stale files lingering.
+  if (await pathExists(assetDest)) {
+    await rm(assetDest, { recursive: true, force: true });
+  }
+  const assetCount = await copyDir(assetSrc, assetDest);
+  console.log(`[seed-kv] assets: copied ${assetCount} files from ${assetSrc} → ${assetDest}`);
+
+  // 5. KV bulk payload
   const now = new Date().toISOString();
   const entries: BulkEntry[] = [];
 
@@ -227,10 +352,18 @@ async function main(): Promise<void> {
   for (const record of articles) {
     entries.push({ key: articleKey(siteId, record.frontmatter.slug), value: JSON.stringify(record) });
   }
-  const status: SyncStatus = { gitSha: 'manual-seed', committedAt: now, syncedAt: now, ok: true };
+  for (const page of sharedPages) {
+    entries.push({ key: `shared-page:${siteId}:${page.slug}`, value: JSON.stringify(page) });
+  }
+  const status: SyncStatus = {
+    gitSha: process.env.GITHUB_SHA ?? 'manual-seed',
+    committedAt: now,
+    syncedAt: now,
+    ok: true,
+  };
   entries.push({ key: syncStatusKey(siteId), value: JSON.stringify(status) });
 
-  console.log(`[seed-kv] siteId=${siteId} hostnames=${hostnames.join(',') || '(none)'} articles=${articles.length} entries=${entries.length}`);
+  console.log(`[seed-kv] entries=${entries.length} (1 config + ${index.length} articles + ${sharedPages.length} shared pages + ${hostnames.length} hostnames + 1 sync-status)`);
   await bulkPut(entries);
   console.log('[seed-kv] done');
 }
