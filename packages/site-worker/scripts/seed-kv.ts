@@ -64,8 +64,10 @@ const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
 const R2_BUCKET = process.env.R2_BUCKET ?? 'atl-assets-staging';
 const R2_REMOTE = (process.env.R2_REMOTE ?? 'true') !== 'false';
 
-/** Bundled shared-page templates from site-builder package (Phase-2 fallback). */
-const BUNDLED_SHARED_PAGES_DIR = join(PLATFORM_ROOT, 'packages', 'site-builder', 'shared-pages');
+/** Bundled shared-page templates. Lived in `packages/site-builder/`
+ *  during the migration; moved into site-worker in Phase 8c when the
+ *  legacy builder was retired. */
+const BUNDLED_SHARED_PAGES_DIR = join(PACKAGE_ROOT, 'shared-pages');
 
 const SHARED_PAGES = ['about', 'contact', 'privacy', 'terms', 'dmca'] as const;
 type SharedPageName = typeof SHARED_PAGES[number];
