@@ -28,7 +28,14 @@ const DIST_SERVER = join(__dirname, '..', 'dist', 'server');
 
 interface RouteSpec {
   pattern: string;
-  zone_id: string;
+  /** Zone-scoped route. Required if `custom_domain` is not set. */
+  zone_id?: string;
+  /** Treat as a Workers Custom Domain — CF auto-manages the DNS record
+   *  and routes the hostname to this Worker. Mutually exclusive with
+   *  zone_id-style routes for the same hostname. We use this for the
+   *  apex (`coolnews.dev`) so detaching the legacy Pages project doesn't
+   *  remove the DNS record (which would knock the site offline). */
+  custom_domain?: boolean;
 }
 
 interface EnvOverrides {
@@ -69,10 +76,12 @@ const ENVS: Record<string, EnvOverrides> = {
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-prod',
     },
-    // Phase-7 cutover. coolnews.dev/* routes here. Removing this entry
-    // and redeploying restores Pages instantly (DNS rollback in seconds).
+    // Phase-7 cutover. coolnews.dev served as a Workers Custom Domain
+    // (`custom_domain = true`). CF manages the DNS record itself, so it
+    // survives the legacy Pages project being deleted (zone-scoped route
+    // syntax fails closed when the Pages-managed DNS record disappears).
     routes: [
-      { pattern: 'coolnews.dev/*', zone_id: '505b529c5928da452abb172f685d97a7' },
+      { pattern: 'coolnews.dev', custom_domain: true },
     ],
   },
 };

@@ -88,21 +88,22 @@ describe('env config emit', () => {
     expect(stagingR2?.bucket_name).not.toBe(prodR2?.bucket_name);
   });
 
-  it('production emits coolnews.dev/* route on the right zone; staging emits no routes', async () => {
-    // Phase-7 regression net: this is the assertion that catches a build
-    // where the production Worker would deploy without claiming
-    // coolnews.dev — leaving live traffic on Pages even after deploy.
+  it('production emits coolnews.dev as a Workers Custom Domain; staging emits no routes', async () => {
+    // Phase-7 regression net: catches a build that ships prod without
+    // claiming coolnews.dev. We use `custom_domain = true` so CF auto-
+    // manages the apex DNS record — necessary because the legacy Pages
+    // project owned that record and removing the Pages custom-domain
+    // attachment would otherwise knock the site offline.
     const staging = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8')) as Record<string, unknown>;
     const prod = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.production.json'), 'utf-8')) as Record<string, unknown>;
 
     expect(staging.routes).toEqual([]);
 
-    const prodRoutes = prod.routes as Array<{ pattern: string; zone_id: string }>;
+    const prodRoutes = prod.routes as Array<{ pattern: string; custom_domain?: boolean }>;
     expect(prodRoutes).toBeDefined();
-    expect(prodRoutes.find((r) => r.pattern === 'coolnews.dev/*')).toBeDefined();
-    expect(prodRoutes.find((r) => r.pattern === 'coolnews.dev/*')?.zone_id).toBe(
-      '505b529c5928da452abb172f685d97a7',
-    );
+    const coolnews = prodRoutes.find((r) => r.pattern === 'coolnews.dev');
+    expect(coolnews, 'coolnews.dev custom-domain route must be emitted in production').toBeDefined();
+    expect(coolnews?.custom_domain).toBe(true);
   });
 
   it('emitted configs are flat — no env metadata leftover', async () => {
