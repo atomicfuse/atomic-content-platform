@@ -232,7 +232,22 @@ async function loadSharedPage(siteId: string, name: SharedPageName): Promise<Sha
 
 async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConfig; site: Record<string, unknown> }> {
   const org = (await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'org.yaml'))) ?? {};
-  const site = (await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'sites', siteId, 'site.yaml'))) ?? {};
+  const sitePath = join(NETWORK_DATA_PATH, 'sites', siteId, 'site.yaml');
+  // Fail hard if the site directory doesn't exist on the current branch
+  // checkout. Without this, seed-kv would silently write a stub config
+  // (org defaults only) and the Worker would render a blank homepage —
+  // which already happened once for scienceworld when this checkout was
+  // on `staging/coolnews-atl`. Better to refuse to seed than to corrupt
+  // KV. Operator should switch branches (or use a worktree) and retry.
+  if (!(await pathExists(sitePath))) {
+    throw new Error(
+      `[seed-kv] sites/${siteId}/site.yaml not found at ${sitePath}.\n` +
+      `  Network repo is at ${NETWORK_DATA_PATH}.\n` +
+      `  Is this the right branch checkout? Try \`git worktree add\` for the\n` +
+      `  branch that owns sites/${siteId}/ and re-run with NETWORK_DATA_PATH=<that-path>.`,
+    );
+  }
+  const site = (await readYaml<Record<string, unknown>>(sitePath)) ?? {};
 
   const groups: string[] = Array.isArray(site.groups)
     ? (site.groups as string[])
