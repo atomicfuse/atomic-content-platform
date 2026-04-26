@@ -2,6 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import { siteLookupKey, siteConfigKey, type SiteLookup } from './lib/kv-schema';
+import { resolvePreview } from './lib/preview-override';
 
 /**
  * Multi-tenant site resolution.
@@ -46,22 +47,38 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   const hostname = normaliseHostname(context.url.hostname);
-  const lookup = await env.CONFIG_KV.get<SiteLookup>(siteLookupKey(hostname), 'json');
 
-  if (!lookup) {
-    return new Response(
-      `No site registered for hostname "${hostname}". Seed the KV namespace first.`,
-      {
-        status: 404,
-        headers: { 'cache-control': 'private, no-store' },
-      },
-    );
+  // Preview override: on workers.dev / localhost ONLY, `?_atl_site=<id>`
+  // (or a previously-set `atl_preview_site` cookie) forces a specific
+  // siteId. Production custom domains never honour this — the hostname
+  // → site mapping in KV is authoritative there.
+  const preview = resolvePreview({
+    hostname,
+    searchParams: context.url.searchParams,
+    cookieHeader: context.request.headers.get('cookie'),
+  });
+
+  let siteId: string;
+  if (preview.siteIdOverride) {
+    siteId = preview.siteIdOverride;
+  } else {
+    const lookup = await env.CONFIG_KV.get<SiteLookup>(siteLookupKey(hostname), 'json');
+    if (!lookup) {
+      return new Response(
+        `No site registered for hostname "${hostname}". Seed the KV namespace first.`,
+        {
+          status: 404,
+          headers: { 'cache-control': 'private, no-store' },
+        },
+      );
+    }
+    siteId = lookup.siteId;
   }
 
-  const config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(lookup.siteId), 'json');
+  const config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(siteId), 'json');
   if (!config) {
     return new Response(
-      `Hostname "${hostname}" → siteId "${lookup.siteId}" has no config in KV.`,
+      `siteId "${siteId}" has no config in KV.`,
       {
         status: 500,
         headers: { 'cache-control': 'private, no-store' },
@@ -69,14 +86,18 @@ export const onRequest = defineMiddleware(async (context, next) => {
     );
   }
 
-  context.locals.site = {
-    siteId: lookup.siteId,
-    hostname,
-    config,
-  };
+  context.locals.site = { siteId, hostname, config };
 
   const response = await next();
   applyCacheHeaders(context.url.pathname, response);
+  // Persist the preview cookie if the override resolver asked us to.
+  // Preview responses are no-cache anyway (private, no-store gets set
+  // for any path with a query param indirectly — but we make it explicit
+  // here for the override case).
+  if (preview.setCookie) {
+    response.headers.append('set-cookie', preview.setCookie);
+    response.headers.set('cache-control', 'private, no-store');
+  }
   return response;
 });
 
