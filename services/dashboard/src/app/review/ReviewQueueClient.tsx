@@ -63,7 +63,10 @@ function ScoreBreakdown({ breakdown }: { breakdown?: ReviewArticle["scoreBreakdo
 
 function buildPreviewUrl(article: ReviewArticle): string | null {
   if (!article.stagingBaseUrl) return null;
-  return `${article.stagingBaseUrl}/${article.slug}/`;
+  // Worker preview format: <worker-origin>/<slug>?_atl_site=<siteId>
+  // The override is required on workers.dev — middleware's preview
+  // resolver picks it up and renders that site's content from staging KV.
+  return `${article.stagingBaseUrl}/${article.slug}?_atl_site=${encodeURIComponent(article.domain)}`;
 }
 
 function buildGitHubUrl(article: ReviewArticle): string {
