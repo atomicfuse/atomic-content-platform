@@ -90,3 +90,74 @@ export function rewriteFrontmatterUrl(url: string | undefined, siteId: string): 
   if (url.startsWith('/assets/')) return `/${siteId}/assets${url.slice('/assets'.length)}`;
   return url;
 }
+
+// ---------- Targeted overrides (overrides/config layer) ----------
+
+/**
+ * A targeted config override loaded from `overrides/config/<id>.yaml`.
+ * The schema is the legacy site-builder's — see CLAUDE.md "Layer 3:
+ * `overrides/config/<id>.yaml` — Targeted Config Exceptions".
+ */
+export interface OverrideConfig extends Record<string, unknown> {
+  override_id?: string;
+  name?: string;
+  /** Lowest priority is applied FIRST; highest LAST (so it wins). */
+  priority?: number;
+  targets?: { groups?: string[]; sites?: string[] };
+}
+
+/**
+ * Filters the list of all overrides down to those that target the given site
+ * (by site id OR by intersection with the site's group list), then sorts
+ * lowest-priority-first (so higher-priority overrides apply on top).
+ *
+ * Per CLAUDE.md: "lowest first, highest wins."
+ */
+export function selectMatchingOverrides(
+  overrides: OverrideConfig[],
+  siteId: string,
+  siteGroups: readonly string[],
+): OverrideConfig[] {
+  const matching = overrides.filter((o) => {
+    const t = o.targets ?? {};
+    const sites = Array.isArray(t.sites) ? t.sites : [];
+    const groups = Array.isArray(t.groups) ? t.groups : [];
+    if (sites.includes(siteId)) return true;
+    if (groups.some((g) => siteGroups.includes(g))) return true;
+    return false;
+  });
+  return [...matching].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+}
+
+/**
+ * Override files use `_mode: merge|replace|add|merge_by_id|merge_placements`
+ * directives inside fields to control how the legacy resolver merges them.
+ * We do plain deep-merge (with array-replacement) which approximates
+ * `_mode: replace` for arrays and `_mode: merge` for objects — covers the
+ * common cases. The `_mode` keys themselves should NOT leak into KV; this
+ * helper strips them recursively.
+ */
+export function stripModeKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((v) => stripModeKeys(v));
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === '_mode' || k === '_values') continue;
+      out[k] = stripModeKeys(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Override layers carry meta-fields (`override_id`, `name`, `priority`,
+ * `targets`) that the merged site-config shouldn't keep. Strip them.
+ */
+export function stripOverrideMetaFields(config: Record<string, unknown>): Record<string, unknown> {
+  const { override_id, name, priority, targets, ...rest } = config;
+  // Reference the destructured names so the lint rule for unused vars
+  // doesn't fire — we genuinely want them dropped.
+  void override_id; void name; void priority; void targets;
+  return rest;
+}

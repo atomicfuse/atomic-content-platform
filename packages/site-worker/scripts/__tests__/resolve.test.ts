@@ -4,6 +4,10 @@ import {
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
+  selectMatchingOverrides,
+  stripModeKeys,
+  stripOverrideMetaFields,
+  type OverrideConfig,
 } from '../lib/resolve';
 
 describe('deepMerge', () => {
@@ -172,5 +176,109 @@ describe('rewriteFrontmatterUrl', () => {
 
   it('does NOT rewrite paths that merely contain /assets/ but do not start with it', () => {
     expect(rewriteFrontmatterUrl('/foo/assets/x.png', sid)).toBe('/foo/assets/x.png');
+  });
+});
+
+describe('selectMatchingOverrides', () => {
+  const overrides: OverrideConfig[] = [
+    { override_id: 'targets-by-site', priority: 100, targets: { sites: ['coolnews-atl'] } },
+    { override_id: 'targets-by-group', priority: 50, targets: { groups: ['taboola'] } },
+    { override_id: 'targets-other-site', priority: 200, targets: { sites: ['otherthing'] } },
+    { override_id: 'no-targets', priority: 10 },
+  ];
+
+  it('matches by sites list', () => {
+    const result = selectMatchingOverrides(overrides, 'coolnews-atl', []);
+    expect(result.map((o) => o.override_id)).toContain('targets-by-site');
+  });
+
+  it('matches by groups intersection', () => {
+    const result = selectMatchingOverrides(overrides, 'someother', ['taboola']);
+    expect(result.map((o) => o.override_id)).toContain('targets-by-group');
+  });
+
+  it('does NOT match overrides with no targets', () => {
+    const result = selectMatchingOverrides(overrides, 'anything', ['anything']);
+    expect(result.map((o) => o.override_id)).not.toContain('no-targets');
+  });
+
+  it('does NOT match overrides targeting different sites', () => {
+    const result = selectMatchingOverrides(overrides, 'coolnews-atl', []);
+    expect(result.map((o) => o.override_id)).not.toContain('targets-other-site');
+  });
+
+  it('site OR group match (UNION not intersection)', () => {
+    // Site matches (coolnews-atl) AND group matches (taboola) — both selected.
+    const result = selectMatchingOverrides(overrides, 'coolnews-atl', ['taboola']);
+    expect(result.map((o) => o.override_id)).toEqual(
+      expect.arrayContaining(['targets-by-site', 'targets-by-group']),
+    );
+  });
+
+  it('sorts by priority ascending (lowest first; highest applied LAST so it WINS)', () => {
+    const result = selectMatchingOverrides(overrides, 'coolnews-atl', ['taboola']);
+    const ps = result.map((o) => o.priority ?? 0);
+    expect(ps).toEqual([...ps].sort((a, b) => a - b));
+  });
+
+  it('handles missing targets / sites / groups gracefully', () => {
+    const messy: OverrideConfig[] = [
+      { override_id: 'a', targets: undefined },
+      { override_id: 'b', targets: {} },
+      { override_id: 'c', targets: { sites: undefined, groups: undefined } },
+    ];
+    const result = selectMatchingOverrides(messy, 'x', ['y']);
+    expect(result).toHaveLength(0);
+  });
+});
+
+describe('stripModeKeys', () => {
+  it('removes _mode from objects recursively', () => {
+    const input = {
+      ads_config: { _mode: 'replace', ad_placements: [{ id: 'x' }] },
+      tracking: { _mode: 'merge', ga4: 'G-1' },
+    };
+    expect(stripModeKeys(input)).toEqual({
+      ads_config: { ad_placements: [{ id: 'x' }] },
+      tracking: { ga4: 'G-1' },
+    });
+  });
+
+  it('removes _values directives (used by ads_txt _mode: add)', () => {
+    expect(stripModeKeys({ ads_txt: { _mode: 'add', _values: ['a', 'b'] } })).toEqual({
+      ads_txt: {},
+    });
+  });
+
+  it('preserves arrays untouched', () => {
+    expect(stripModeKeys({ list: [1, 2, 3] })).toEqual({ list: [1, 2, 3] });
+  });
+
+  it('preserves scalars untouched', () => {
+    expect(stripModeKeys('hello')).toBe('hello');
+    expect(stripModeKeys(42)).toBe(42);
+    expect(stripModeKeys(null)).toBe(null);
+  });
+});
+
+describe('stripOverrideMetaFields', () => {
+  it('strips override-only meta keys', () => {
+    const input = {
+      override_id: 'x',
+      name: 'X',
+      priority: 10,
+      targets: { sites: ['a'] },
+      ads_config: { ad_placements: [] },
+      tracking: { ga4: 'G-1' },
+    };
+    expect(stripOverrideMetaFields(input)).toEqual({
+      ads_config: { ad_placements: [] },
+      tracking: { ga4: 'G-1' },
+    });
+  });
+
+  it('preserves config when no meta fields present', () => {
+    const input = { ads_config: { ad_placements: [] } };
+    expect(stripOverrideMetaFields(input)).toEqual(input);
   });
 });
