@@ -1,11 +1,4 @@
 # Cloudflare Worker configuration for the multi-tenant Astro site-worker.
-#
-# Phase 1 (scaffold) deliberately declares NO KV bindings. Phase 3 of the
-# migration plan adds `CONFIG_KV` and `CONFIG_KV_STAGING` namespaces.
-#
-# During the migration the two existing Cloudflare Pages projects
-# (coolnews-atl, scienceworld) keep serving production traffic. This Worker
-# is staging-only until Phase 6 DNS cutover.
 
 name = "atomic-site-worker-staging"
 compatibility_date = "2026-04-23"
@@ -15,14 +8,26 @@ compatibility_flags = ["nodejs_compat"]
 # + hashed asset bundle into ./dist. `run_worker_first = true` forces every
 # request through the Worker so middleware.ts can run (for SSR routes like
 # `/` that don't have a corresponding static file).
+#
+# Note: per-site article assets (logos, hero images, etc.) live in R2,
+# NOT in this directory — see the [[r2_buckets]] binding below + the
+# /<siteId>/assets/[...path] route handler.
 assets = { directory = "./dist", binding = "ASSETS", run_worker_first = true }
 
 # KV namespaces — the Worker always reads from `env.CONFIG_KV`. The backing
 # namespace differs per env so staging and prod don't share state.
-# Created on Dev1 account (953511f6...) on 2026-04-23.
 [[kv_namespaces]]
 binding = "CONFIG_KV"
 id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING (default env)
+
+# R2 bucket for per-site assets. Keys are `<siteId>/assets/<path>`.
+# sync-kv.yml uploads on push; the /<siteId>/assets/[...path] route
+# reads on request. Bundling these into the Worker (the previous
+# approach) required a redeploy on every new image — R2 makes
+# new-asset deploys instant.
+[[r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-staging"
 
 # Observability — Workers Logs (enabled by default on Workers Paid).
 [observability]
@@ -35,9 +40,24 @@ name = "atomic-site-worker-staging"
 binding = "CONFIG_KV"
 id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING
 
+[[env.staging.r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-staging"
+
 [env.production]
 name = "atomic-site-worker"
+# Phase-7 cutover: route live coolnews.dev traffic to this Worker. The
+# `*.pages.dev` hostnames are kept in CONFIG_KV as fallback identifiers
+# but are NOT routed here (Pages-managed subdomains aren't customer-
+# routable). Removing this route restores Pages instantly on rollback.
+routes = [
+  { pattern = "coolnews.dev/*", zone_id = "505b529c5928da452abb172f685d97a7" },
+]
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_KV"
 id = "a69cb2c59507482ca5e6d114babdd098" # CONFIG_KV (prod)
+
+[[env.production.r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-prod"

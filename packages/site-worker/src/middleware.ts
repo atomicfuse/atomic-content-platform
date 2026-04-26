@@ -48,6 +48,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const hostname = normaliseHostname(context.url.hostname);
 
+  // Per-site asset routes (`/<siteId>/assets/<path>`) bypass the KV site
+  // lookup — the asset endpoint reads siteId straight from the URL and
+  // serves from R2. Site resolution would just be wasted work + an
+  // unnecessary KV read on every image request.
+  if (/^\/[a-z0-9][a-z0-9-]*\/assets\//i.test(context.url.pathname)) {
+    const response = await next();
+    // The asset route sets its own cache-control. No-op here.
+    return response;
+  }
+
   // Preview override: on workers.dev / localhost ONLY, `?_atl_site=<id>`
   // (or a previously-set `atl_preview_site` cookie) forces a specific
   // siteId. Production custom domains never honour this — the hostname

@@ -11,9 +11,14 @@ import {
   ensureStagingBranch,
 } from "@/actions/wizard";
 import { StagingEditPanel } from "./StagingEditPanel";
+import { workerPreviewUrl } from "@/lib/constants";
 import type { SiteStatus } from "@/types/dashboard";
 
 interface StagingTabProps {
+  /** The network-repo directory slug for this site (e.g. "coolnews-atl").
+   *  Stored in `dashboard-index.yaml` under the `domain` field — NOT the
+   *  numeric `site_id` field, which is an unrelated internal id. Used as
+   *  both the KV site config key and the `?_atl_site=` Worker override. */
   domain: string;
   pagesProject: string | null;
   pagesSubdomain: string | null;
@@ -42,6 +47,12 @@ export function StagingTab({
 
   // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
   const pagesHost = pagesSubdomain ?? pagesProject;
+
+  // Worker preview — works for any seeded site, no DNS needed. The siteId
+  // is the network-repo directory slug, which the dashboard happens to
+  // store in `domain`. Surfaced prominently here because the staging tab
+  // is where editors gauge pre-publish state during the migration.
+  const workerUrl = domain ? workerPreviewUrl(domain) : null;
 
   // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
   const currentPreviewUrl =
@@ -129,6 +140,39 @@ export function StagingTab({
 
   return (
     <div className="space-y-6">
+      {/* Worker preview — always available for seeded sites, no DNS needed.
+          Lives at the top so editors can compare Worker vs Pages output
+          mid-migration. */}
+      {workerUrl && (
+        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                Worker Preview
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                Preview this site on the multi-tenant Worker — works for any seeded
+                site, no DNS needed. Asset edits show up within seconds (no rebuild).
+              </p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 truncate font-mono">
+                {workerUrl}
+              </p>
+            </div>
+            <a
+              href={workerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-sm font-medium text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+            >
+              Open Worker Preview
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Header section — explains the mode */}
       {isLiveMode && (
         <div className="rounded-lg bg-blue-500/5 border border-blue-500/20 p-4">

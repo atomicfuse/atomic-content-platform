@@ -62,3 +62,22 @@ export const STATUSES: SiteStatus[] = [
 export const NETWORK_REPO_OWNER = "atomicfuse";
 export const NETWORK_REPO_NAME = "atomic-labs-network";
 export const DASHBOARD_INDEX_PATH = "dashboard-index.yaml";
+
+/**
+ * Base URL for the multi-tenant site Worker (staging deployment).
+ * Used for the per-site "Worker Preview" links during the Pages → Workers
+ * migration. Override via `NEXT_PUBLIC_WORKER_STAGING_URL` for the
+ * production dashboard. The Worker honours `?_atl_site=<site_id>` on
+ * `*.workers.dev` hostnames so any seeded site can be previewed without
+ * a custom domain.
+ */
+export const WORKER_STAGING_URL =
+  process.env.NEXT_PUBLIC_WORKER_STAGING_URL ??
+  "https://atomic-site-worker-staging.dev1-953.workers.dev";
+
+/** Build a Worker preview URL that forces a specific siteId via the
+ *  preview-override query param. The Worker only honours this on
+ *  workers.dev / localhost — production custom domains use KV. */
+export function workerPreviewUrl(siteId: string): string {
+  return `${WORKER_STAGING_URL}/?_atl_site=${encodeURIComponent(siteId)}`;
+}

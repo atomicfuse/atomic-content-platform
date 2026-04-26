@@ -106,12 +106,28 @@ describe('staging Worker — assets bundle', () => {
     expect(r.headers.get('content-type')).toMatch(/text\/javascript|application\/javascript/);
   });
 
-  it('per-site asset reachable under /<siteId>/assets/...', async () => {
+  it('per-site asset reachable under /<siteId>/assets/... (served from R2)', async () => {
     const r = await fetchHead(
       '/coolnews-atl/assets/images/lobsters-feel-pain-new-research-challenges-culinary-ethics.png',
     );
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type')).toMatch(/^image\//);
+    // Assets get a 24h cache on the edge so they're served from cache
+    // for repeat hits — see docs/runbooks/phase-7-cache-strategy.md.
+    expect(r.headers.get('cache-control')).toMatch(/max-age=86400/);
+  });
+
+  it('R2-served assets emit ETag (enables cheap 304 revalidation)', async () => {
+    const r = await fetchHead(
+      '/coolnews-atl/assets/images/lobsters-feel-pain-new-research-challenges-culinary-ethics.png',
+    );
+    expect(r.headers.get('etag')).toBeTruthy();
+  });
+
+  it('returns 404 for an asset key that does not exist in R2', async () => {
+    const r = await fetchGet('/coolnews-atl/assets/does-not-exist-' + Date.now() + '.png');
+    expect(r.status).toBe(404);
+    expect(r.headers.get('cache-control')).toBe('private, no-store');
   });
 });
 

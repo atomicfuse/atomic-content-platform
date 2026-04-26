@@ -4,14 +4,14 @@ Orientation for Claude Code sessions. Read this before touching code.
 
 ## Overview
 
-Atomic Content Network Platform — a multi-tenant content network for managing ad-monetized static websites at scale. Turborepo/pnpm monorepo with two CloudGrid services plus reusable Astro site-builder + shared-types.
+Atomic Content Network Platform — a multi-tenant content network for managing ad-monetized sites at scale. Turborepo/pnpm monorepo with two CloudGrid services plus a single multi-tenant Astro Worker (`site-worker`) that serves all sites from KV + R2. The legacy per-site `site-builder` package was retired in Phase 8 of the Pages → Workers migration (2026-04-26).
 
 ## Two-Repo Architecture
 
 | Repo | Contents |
 |------|----------|
-| **atomic-content-platform** (this repo) | All code: dashboard, content-pipeline, site-builder, shared-types, migration. Deployed to CloudGrid. |
-| **atomic-labs-network** (network data) | Pure data: `dashboard-index.yaml`, `sites/<domain>/` configs + articles, `overrides/`, `scheduler/config.yaml`. Zero code. Deployed via Cloudflare Pages per site. |
+| **atomic-content-platform** (this repo) | All code: dashboard, content-pipeline, site-worker, shared-types, migration. Deployed to CloudGrid (services) + Cloudflare Workers (site-worker). |
+| **atomic-labs-network** (network data) | Pure data: `dashboard-index.yaml`, `sites/<domain>/` configs + articles, `overrides/`, `scheduler/config.yaml`. Zero code. `sync-kv.yml` syncs commits to CONFIG_KV + R2 for the live Worker. |
 
 **Both repos live at `~/Documents/ATL-content-network/`** on the dev machine.
 
@@ -61,8 +61,7 @@ services/
 
 packages/
   shared-types/              TS interfaces: SiteConfig, SiteBrief, PublishSchedule, DashboardIndex, Article, Ads, Tracking
-  site-builder/              Astro 5.7 static site generator (themes, components, config resolver) — legacy Pages-per-site target, serves production during the Pages→Workers migration
-  site-worker/               Astro 6 + @astrojs/cloudflare SSR app (migration target, Phase 1 scaffold). One Worker serves many hostnames via KV-driven config. Lives alongside site-builder until Phase 8 cutover. See docs/migration-plan.md
+  site-worker/               Astro 6 + @astrojs/cloudflare SSR app. One Worker (`atomic-site-worker`) serves all sites — config in KV, per-site assets in R2. Multi-tenancy via hostname → KV lookup in middleware.ts. See docs/migration-plan.md for the full Pages → Workers history.
   migration/                 WordPress migration tooling (placeholder)
 
 cloudgrid.yaml               Service + cron definitions
@@ -76,7 +75,7 @@ sites/<domain>/              Per-site — ONLY exists on main after publish-to-p
   site.yaml                  Full config: domain, group, brief (vertical, topics, schedule, article_types, …)
   articles/<slug>.md         Markdown articles with YAML frontmatter (quality_score, status, …)
   theme/ assets/ …           Per-site assets
-  .build-trigger             Touched to force Cloudflare Pages rebuild
+  # (legacy `.build-trigger` removed in Phase 8 — Cloudflare Pages no longer in the path)
 overrides/
   <site_id>/<name>.yaml      Shared-page per-site overrides (content only)
   config/<id>.yaml           Config overrides — targeted exceptions with merge modes (see below)
@@ -89,7 +88,7 @@ groups/<group>.yaml          Group-level config overrides (same fields as org, a
 ### Branch conventions in the network repo
 
 - `main` — authoritative for `dashboard-index.yaml`, `scheduler/config.yaml`, `overrides/`, and published sites.
-- `staging/<domain>` — where `sites/<domain>/` lives while in development or staging. Cloudflare Pages deploys this branch to the staging URL (e.g. `staging-coolnews-atl.coolnews-atl.pages.dev`).
+- `staging/<domain>` — where `sites/<domain>/` lives while in development or staging. The dashboard's "Worker Preview" button serves any `staging/*` branch via `?_atl_site=<domain>` against the staging Worker — no per-site Pages deploy needed.
 - **Do not enumerate `sites/` on main** — it only contains published sites. Use `dashboard-index.yaml` as the source of truth.
 
 ## Services
@@ -154,7 +153,7 @@ function shouldWriteLocal(config): boolean {
 
 ## Config Inheritance — 5-Layer Resolution
 
-The site-builder resolves config at build time (`packages/site-builder/scripts/resolve-config.ts`). The full chain:
+Config is resolved at seed-time by `packages/site-worker/scripts/seed-kv.ts` (which writes the merged result into KV). Same 5-layer chain that `site-builder` used pre-migration; the layer logic moved into `packages/site-worker/scripts/lib/resolve.ts`. The full chain:
 
 ```
 org.yaml → groups[0].yaml → groups[1].yaml → … → overrides/config (by priority) → site.yaml
@@ -235,7 +234,7 @@ Not a config-inheritance layer. Carries metadata: `network_id`, `platform_versio
 
 - Shared pages (about, contact, privacy, tos…) live in the network repo.
 - Sites can override content per-site via `overrides/<site_id>/<name>.yaml` (written from dashboard `/shared-pages`).
-- Per-site overrides are on `main` of the network repo; the site-builder resolves overrides at build time.
+- Per-site overrides are on `main` of the network repo; `seed-kv.ts` resolves overrides at sync time and writes the merged shared-page bodies into KV.
 - **These are content overrides, not config overrides** — distinct from `overrides/config/` above.
 
 ## Site Detail Page — Unified Tab Architecture
@@ -261,8 +260,7 @@ See **Config Inheritance — 5-Layer Resolution** above for the full chain (`org
 
 - **Monorepo:** Turborepo + pnpm. Package names: `@atomic-platform/<name>`.
 - **Dashboard:** Next.js 15 (App Router), React 19, next-themes, NextAuth.
-- **Site builder (legacy, live traffic):** Astro 5.7 (static output), deployed to Cloudflare Pages per-site. Retires in Phase 8 of the migration.
-- **Site worker (migration target, Phase 1 scaffold):** Astro 6.1 + `@astrojs/cloudflare` 13.2 (`output: 'server'`), deployed to Cloudflare Workers. One deployment serves many hostnames.
+- **Site worker:** Astro 6.1 + `@astrojs/cloudflare` 13.2 (`output: 'server'`), deployed to Cloudflare Workers. One deployment serves all sites; per-site config + content lives in CONFIG_KV, per-site assets in the `atl-assets-prod` R2 bucket. coolnews.dev/* routes here as of 2026-04-26 (Phase 7 cutover); the legacy Pages site-builder was retired in Phase 8.
 - **Content pipeline:** Node 20, raw `http.createServer`, Octokit.
 - **Styling:** Tailwind CSS v4.
 - **Language:** TypeScript strict — no `any`, explicit return types.
@@ -287,20 +285,22 @@ cloudgrid dev             # dashboard → :3001, content-pipeline → :5000
 cd services/dashboard && pnpm dev
 cd services/content-pipeline && pnpm dev
 
-# Site builder (legacy, for debugging static output)
-cd packages/site-builder
-SITE_DOMAIN=coolnews.dev NETWORK_DATA_PATH=~/Documents/ATL-content-network/atomic-labs-network pnpm dev
-
-# Site worker (migration target — Phases 1-4 done)
+# Site worker — the only site runtime (post-migration)
 cd packages/site-worker
 pnpm dev                 # astro dev (Vite) — fast iteration, no workerd
-pnpm dev:worker          # astro build && wrangler dev --config dist/server/wrangler.json  (workerd parity)
-pnpm build               # astro build — emits dist/_worker.js + dist/server/wrangler.json
-pnpm deploy:staging      # astro build && wrangler deploy --env staging
+pnpm dev:worker          # astro build && wrangler dev --config dist/server/wrangler.staging.json  (workerd parity)
+pnpm build               # astro build + emit-env-configs (dist/server/wrangler.{staging,production}.json)
+pnpm deploy:staging      # build + wrangler deploy --config dist/server/wrangler.staging.json
+pnpm deploy:production   # build + wrangler deploy --config dist/server/wrangler.production.json
+                         # → claims coolnews.dev/* on the prod zone
 CLOUDFLARE_ACCOUNT_ID=953511f6356ff606d84ac89bba3eff50 pnpm seed:kv <siteId> [hostname ...]
-                         # Manual KV seed (Phase-3 bootstrap / local recovery).
-                         # Phase-5 CI (atomic-labs-network/.github/workflows/sync-kv.yml)
-                         # runs this automatically on commits to the network repo.
+                         # Manual KV seed. For cross-branch seeding (e.g. when
+                         # the local checkout is on staging/A but you need to
+                         # seed site B), use `git worktree` and pass
+                         # NETWORK_DATA_PATH=<worktree>. seed-kv fails hard if
+                         # sites/<siteId>/site.yaml is missing — see Landmines.
+                         # CI (atomic-labs-network/.github/workflows/sync-kv.yml)
+                         # runs this automatically on commits to network main.
 ```
 
 ## CloudGrid
@@ -327,7 +327,8 @@ Service contract (both services satisfy):
 | `CONTENT_AGENT_URL` | dashboard | `http://content-pipeline-app` in CloudGrid / cloudgrid dev; needs NODE_ENV fallback to `http://localhost:5000`. |
 | `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-cloudgrid.apps.cloudgrid.io`. |
 | `GEMINI_API_KEY` | content-pipeline | For image generation. |
-| `SITE_DOMAIN`, `NETWORK_DATA_PATH` | site-builder | For local builds/previews. |
+| `NETWORK_DATA_PATH` | site-worker (seed-kv) | Absolute path to network repo checkout. seed-kv resolves config + reads articles + uploads R2 assets from this path. Use `git worktree` for cross-branch seeding. |
+| `R2_BUCKET` | site-worker (seed-kv) | R2 bucket name. Defaults to `atl-assets-staging`. Set to `atl-assets-prod` for prod seed. |
 | `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | dashboard | Auth. |
 | `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard | Google auth + Sheets sync. |
 | `CLOUDFLARE_ACCOUNT_ID` | site-worker (dev + CI) | `953511f6356ff606d84ac89bba3eff50` for Dev1 account during migration. Required for `wrangler deploy`, `wrangler kv ...`, `pnpm seed:kv`. |
@@ -372,6 +373,10 @@ Service contract (both services satisfy):
 14. **site-worker — fail closed on unknown hostname.** If `site:<hostname>` isn't in CONFIG_KV, middleware returns 404. Do not add a default-site fallback — that has caused real incidents (serving the wrong config to a new hostname before seeding completed).
 15. **site-worker — use `wrangler types`, not `@cloudflare/workers-types`.** The generated `worker-configuration.d.ts` reflects actual bindings; the static `@cloudflare/workers-types` package lies the moment you add a binding that isn't in its interface. Re-run `wrangler types` after any `wrangler.toml` binding change.
 16. **site-worker — SESSION KV binding is auto-added by the adapter.** For the unused Astro Sessions feature. Harmless; don't rename it to `CONFIG_KV` or anything else. Confirmed 2026-04-23.
+17. **site-worker — KV/R2 are eventually consistent.** A `wrangler kv bulk put` returns success before all edge POPs see the new value (typical: <60s). After Phase 7, *don't expect a freshly-published article to appear instantly* on coolnews.dev — give it ~1 cache window (`s-maxage=300` for articles, `s-maxage=60` for the homepage). Same applies to R2 asset overwrites.
+18. **site-worker — seed-kv fails hard if `sites/<siteId>/site.yaml` is missing.** Pre-Phase 8 it would silently fall back to org defaults and write a stub config. Now it errors. For cross-branch seeding, use `git worktree add` and pass `NETWORK_DATA_PATH=<worktree>`.
+19. **site-worker — env-config emit propagates routes per env.** `scripts/emit-env-configs.ts` is the source of truth for what custom hostnames each env claims. Route changes go there, not in `wrangler.toml`'s `[env.X.routes]` (the adapter doesn't propagate that block). After editing, `pnpm deploy:production` is what registers/removes the route on Cloudflare's side.
+20. **site-worker — `routes = []` on staging is intentional.** Staging is `*.workers.dev` only by design. The "Worker Preview" button in the dashboard hits staging via `?_atl_site=<domain>`; production is the only env that claims custom domains.
 
 ## Quick Reference — File Ownership
 
@@ -395,4 +400,4 @@ Service contract (both services satisfy):
 
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
-Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-builder.
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker.

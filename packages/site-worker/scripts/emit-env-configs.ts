@@ -26,11 +26,30 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_SERVER = join(__dirname, '..', 'dist', 'server');
 
+interface RouteSpec {
+  pattern: string;
+  /** Zone-scoped route. Required if `custom_domain` is not set. */
+  zone_id?: string;
+  /** Treat as a Workers Custom Domain — CF auto-manages the DNS record
+   *  and routes the hostname to this Worker. Mutually exclusive with
+   *  zone_id-style routes for the same hostname. We use this for the
+   *  apex (`coolnews.dev`) so detaching the legacy Pages project doesn't
+   *  remove the DNS record (which would knock the site offline). */
+  custom_domain?: boolean;
+}
+
 interface EnvOverrides {
   /** Worker name as it should appear in the CF dashboard. */
   name: string;
   /** Per-binding overrides. Keys are binding names (e.g. CONFIG_KV). */
   kvNamespaces: Record<string, string>;
+  /** R2 bucket name overrides. Keys are binding names (e.g. ASSET_BUCKET). */
+  r2Buckets: Record<string, string>;
+  /** Workers Routes that this Worker should claim on deploy. The Astro
+   *  adapter doesn't propagate `[env.X.routes]` from user toml — adding
+   *  them here is what binds live custom-domain traffic to the Worker.
+   *  Empty array = no routes (workers.dev URL only). */
+  routes: RouteSpec[];
 }
 
 /**
@@ -44,12 +63,26 @@ const ENVS: Record<string, EnvOverrides> = {
     kvNamespaces: {
       CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848', // CONFIG_KV_STAGING
     },
+    r2Buckets: {
+      ASSET_BUCKET: 'atl-assets-staging',
+    },
+    routes: [], // staging is workers.dev-only
   },
   production: {
     name: 'atomic-site-worker',
     kvNamespaces: {
       CONFIG_KV: 'a69cb2c59507482ca5e6d114babdd098', // CONFIG_KV (prod)
     },
+    r2Buckets: {
+      ASSET_BUCKET: 'atl-assets-prod',
+    },
+    // Phase-7 cutover. coolnews.dev served as a Workers Custom Domain
+    // (`custom_domain = true`). CF manages the DNS record itself, so it
+    // survives the legacy Pages project being deleted (zone-scoped route
+    // syntax fails closed when the Pages-managed DNS record disappears).
+    routes: [
+      { pattern: 'coolnews.dev', custom_domain: true },
+    ],
   },
 };
 
@@ -58,9 +91,16 @@ interface KvBinding {
   id?: string;
 }
 
+interface R2Binding {
+  binding: string;
+  bucket_name?: string;
+}
+
 interface WranglerConfig {
   name?: string;
   kv_namespaces?: KvBinding[];
+  r2_buckets?: R2Binding[];
+  routes?: RouteSpec[];
   definedEnvironments?: string[];
   topLevelName?: string;
   legacy_env?: boolean;
@@ -84,6 +124,20 @@ async function main(): Promise<void> {
       });
     }
 
+    // Same for R2 bucket names.
+    if (Array.isArray(config.r2_buckets)) {
+      config.r2_buckets = config.r2_buckets.map((b) => {
+        const name = overrides.r2Buckets[b.binding];
+        return name ? { ...b, bucket_name: name } : b;
+      });
+    }
+
+    // Workers Routes — overwrite (not merge) since this is the source of
+    // truth for what the Worker claims. An empty array means no routes
+    // (workers.dev URL only); the Worker is reachable but doesn't take
+    // any custom-domain traffic.
+    config.routes = overrides.routes;
+
     // Strip env metadata so the file is a self-contained flat config.
     delete config.definedEnvironments;
     delete config.topLevelName;
@@ -95,7 +149,13 @@ async function main(): Promise<void> {
     const kvSummary = Object.entries(overrides.kvNamespaces)
       .map(([b, id]) => `${b}=${id.slice(0, 8)}…`)
       .join(', ');
-    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}`);
+    const r2Summary = Object.entries(overrides.r2Buckets)
+      .map(([b, name]) => `${b}=${name}`)
+      .join(', ');
+    const routeSummary = overrides.routes.length
+      ? `routes=[${overrides.routes.map((r) => r.pattern).join(', ')}]`
+      : 'routes=[]';
+    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}, ${r2Summary}, ${routeSummary}`);
   }
 }
 

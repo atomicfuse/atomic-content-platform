@@ -36,6 +36,7 @@ interface ExpectedKv {
 interface ExpectedWorker {
   name: string;
   expectedKv: Record<string, string>; // binding → namespace id
+  expectedR2: Record<string, string>; // binding → bucket name
 }
 
 const EXPECTED_KV: ExpectedKv[] = [
@@ -43,14 +44,21 @@ const EXPECTED_KV: ExpectedKv[] = [
   { binding: 'CONFIG_KV', id: 'a69cb2c59507482ca5e6d114babdd098', description: 'prod' },
 ];
 
+const EXPECTED_R2_BUCKETS: Array<{ name: string; description: string }> = [
+  { name: 'atl-assets-staging', description: 'staging' },
+  { name: 'atl-assets-prod', description: 'prod' },
+];
+
 const EXPECTED_WORKERS: ExpectedWorker[] = [
   {
     name: 'atomic-site-worker-staging',
     expectedKv: { CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848' },
+    expectedR2: { ASSET_BUCKET: 'atl-assets-staging' },
   },
   {
     name: 'atomic-site-worker',
     expectedKv: { CONFIG_KV: 'a69cb2c59507482ca5e6d114babdd098' },
+    expectedR2: { ASSET_BUCKET: 'atl-assets-prod' },
   },
 ];
 
@@ -123,6 +131,20 @@ async function checkKvNamespaces(): Promise<void> {
   }
 }
 
+async function checkR2Buckets(): Promise<void> {
+  const buckets = await cf<{ buckets: Array<{ name: string }> }>(
+    `/accounts/${ACCOUNT_ID}/r2/buckets`,
+  );
+  const names = new Set(buckets.buckets.map((b) => b.name));
+  for (const expected of EXPECTED_R2_BUCKETS) {
+    if (names.has(expected.name)) {
+      pass(`R2 bucket ${expected.name} (${expected.description}) present`);
+    } else {
+      fail(`R2 bucket ${expected.name} (${expected.description}) NOT FOUND on this account`);
+    }
+  }
+}
+
 async function checkWorkers(): Promise<void> {
   const scripts = await cf<Array<{ id: string }>>(`/accounts/${ACCOUNT_ID}/workers/scripts`);
   const names = new Set(scripts.map((s) => s.id));
@@ -133,7 +155,7 @@ async function checkWorkers(): Promise<void> {
 
       // Inspect bindings
       try {
-        const bindings = await cf<Array<{ type: string; name: string; namespace_id?: string }>>(`/accounts/${ACCOUNT_ID}/workers/scripts/${expected.name}/bindings`);
+        const bindings = await cf<Array<{ type: string; name: string; namespace_id?: string; bucket_name?: string }>>(`/accounts/${ACCOUNT_ID}/workers/scripts/${expected.name}/bindings`);
         for (const [binding, expectedId] of Object.entries(expected.expectedKv)) {
           const b = bindings.find((x) => x.name === binding && x.type === 'kv_namespace');
           if (!b) {
@@ -142,6 +164,16 @@ async function checkWorkers(): Promise<void> {
             fail(`  ${expected.name}: ${binding} → ${b.namespace_id?.slice(0, 8)}… (expected ${expectedId.slice(0, 8)}…)`);
           } else {
             pass(`  ${expected.name}: ${binding} → ${expectedId.slice(0, 8)}… ✓`);
+          }
+        }
+        for (const [binding, expectedBucket] of Object.entries(expected.expectedR2)) {
+          const b = bindings.find((x) => x.name === binding && x.type === 'r2_bucket');
+          if (!b) {
+            fail(`  ${expected.name}: missing R2 binding "${binding}"`);
+          } else if (b.bucket_name !== expectedBucket) {
+            fail(`  ${expected.name}: ${binding} → ${b.bucket_name} (expected ${expectedBucket})`);
+          } else {
+            pass(`  ${expected.name}: ${binding} → ${expectedBucket} ✓`);
           }
         }
       } catch (err) {
@@ -196,6 +228,7 @@ async function main(): Promise<void> {
   const authed = await checkAuth();
   if (authed) {
     await checkKvNamespaces();
+    await checkR2Buckets();
     await checkWorkers();
   }
 
