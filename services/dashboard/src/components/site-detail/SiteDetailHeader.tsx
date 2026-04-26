@@ -22,6 +22,13 @@ export function SiteDetailHeader({
   const liveUrl = site.custom_domain ? `https://${site.custom_domain}` : null;
   const workerUrl = site.domain ? workerPreviewUrl(site.domain) : null;
 
+  // Worker preview — works for any seeded site, no custom domain needed.
+  // The Worker honours `?_atl_site=<siteId>` on workers.dev hostnames;
+  // KV is the authority on production custom domains. The siteId here
+  // is the network-repo directory slug, which the dashboard stores in
+  // the `domain` field (NOT `site_id` — that's an unrelated numeric id).
+  const workerUrl = site.domain ? workerPreviewUrl(site.domain) : null;
+
   const linkIcon = (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
