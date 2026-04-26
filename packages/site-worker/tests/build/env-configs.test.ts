@@ -88,6 +88,23 @@ describe('env config emit', () => {
     expect(stagingR2?.bucket_name).not.toBe(prodR2?.bucket_name);
   });
 
+  it('production emits coolnews.dev/* route on the right zone; staging emits no routes', async () => {
+    // Phase-7 regression net: this is the assertion that catches a build
+    // where the production Worker would deploy without claiming
+    // coolnews.dev — leaving live traffic on Pages even after deploy.
+    const staging = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8')) as Record<string, unknown>;
+    const prod = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.production.json'), 'utf-8')) as Record<string, unknown>;
+
+    expect(staging.routes).toEqual([]);
+
+    const prodRoutes = prod.routes as Array<{ pattern: string; zone_id: string }>;
+    expect(prodRoutes).toBeDefined();
+    expect(prodRoutes.find((r) => r.pattern === 'coolnews.dev/*')).toBeDefined();
+    expect(prodRoutes.find((r) => r.pattern === 'coolnews.dev/*')?.zone_id).toBe(
+      '505b529c5928da452abb172f685d97a7',
+    );
+  });
+
   it('emitted configs are flat — no env metadata leftover', async () => {
     for (const env of ['staging', 'production']) {
       const cfg = JSON.parse(await readFile(join(DIST_SERVER, `wrangler.${env}.json`), 'utf-8')) as Record<string, unknown>;

@@ -26,6 +26,11 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_SERVER = join(__dirname, '..', 'dist', 'server');
 
+interface RouteSpec {
+  pattern: string;
+  zone_id: string;
+}
+
 interface EnvOverrides {
   /** Worker name as it should appear in the CF dashboard. */
   name: string;
@@ -33,6 +38,11 @@ interface EnvOverrides {
   kvNamespaces: Record<string, string>;
   /** R2 bucket name overrides. Keys are binding names (e.g. ASSET_BUCKET). */
   r2Buckets: Record<string, string>;
+  /** Workers Routes that this Worker should claim on deploy. The Astro
+   *  adapter doesn't propagate `[env.X.routes]` from user toml — adding
+   *  them here is what binds live custom-domain traffic to the Worker.
+   *  Empty array = no routes (workers.dev URL only). */
+  routes: RouteSpec[];
 }
 
 /**
@@ -49,6 +59,7 @@ const ENVS: Record<string, EnvOverrides> = {
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-staging',
     },
+    routes: [], // staging is workers.dev-only
   },
   production: {
     name: 'atomic-site-worker',
@@ -58,6 +69,11 @@ const ENVS: Record<string, EnvOverrides> = {
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-prod',
     },
+    // Phase-7 cutover. coolnews.dev/* routes here. Removing this entry
+    // and redeploying restores Pages instantly (DNS rollback in seconds).
+    routes: [
+      { pattern: 'coolnews.dev/*', zone_id: '505b529c5928da452abb172f685d97a7' },
+    ],
   },
 };
 
@@ -75,6 +91,7 @@ interface WranglerConfig {
   name?: string;
   kv_namespaces?: KvBinding[];
   r2_buckets?: R2Binding[];
+  routes?: RouteSpec[];
   definedEnvironments?: string[];
   topLevelName?: string;
   legacy_env?: boolean;
@@ -106,6 +123,12 @@ async function main(): Promise<void> {
       });
     }
 
+    // Workers Routes — overwrite (not merge) since this is the source of
+    // truth for what the Worker claims. An empty array means no routes
+    // (workers.dev URL only); the Worker is reachable but doesn't take
+    // any custom-domain traffic.
+    config.routes = overrides.routes;
+
     // Strip env metadata so the file is a self-contained flat config.
     delete config.definedEnvironments;
     delete config.topLevelName;
@@ -120,7 +143,10 @@ async function main(): Promise<void> {
     const r2Summary = Object.entries(overrides.r2Buckets)
       .map(([b, name]) => `${b}=${name}`)
       .join(', ');
-    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}, ${r2Summary}`);
+    const routeSummary = overrides.routes.length
+      ? `routes=[${overrides.routes.map((r) => r.pattern).join(', ')}]`
+      : 'routes=[]';
+    console.log(`[emit-env-configs] ${envName}: name=${overrides.name}, ${kvSummary}, ${r2Summary}, ${routeSummary}`);
   }
 }
 

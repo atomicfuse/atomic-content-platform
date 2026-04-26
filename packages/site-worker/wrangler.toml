@@ -46,6 +46,13 @@ bucket_name = "atl-assets-staging"
 
 [env.production]
 name = "atomic-site-worker"
+# Phase-7 cutover: route live coolnews.dev traffic to this Worker. The
+# `*.pages.dev` hostnames are kept in CONFIG_KV as fallback identifiers
+# but are NOT routed here (Pages-managed subdomains aren't customer-
+# routable). Removing this route restores Pages instantly on rollback.
+routes = [
+  { pattern = "coolnews.dev/*", zone_id = "505b529c5928da452abb172f685d97a7" },
+]
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_KV"
