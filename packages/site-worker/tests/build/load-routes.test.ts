@@ -69,4 +69,26 @@ deleted:
       expect(routes).toEqual([{ pattern: 'live.example.com', custom_domain: true }]);
     });
   });
+
+  it('throws when dashboard-index.yaml parses to a non-object root', async () => {
+    // YAML where the root is a scalar (string), not a mapping.
+    await withFakeNetwork('"just a string"\n', async (dir) => {
+      await expect(loadCustomDomains(dir)).rejects.toThrow(/did not parse to an object/);
+    });
+  });
+
+  it('throws when `sites:` is present but not an array', async () => {
+    const yaml = `
+sites: oh-no-this-should-be-a-list
+`;
+    await withFakeNetwork(yaml, async (dir) => {
+      await expect(loadCustomDomains(dir)).rejects.toThrow(/sites.*not an array/);
+    });
+  });
+
+  it('returns [] for an empty file', async () => {
+    await withFakeNetwork('', async (dir) => {
+      expect(await loadCustomDomains(dir)).toEqual([]);
+    });
+  });
 });

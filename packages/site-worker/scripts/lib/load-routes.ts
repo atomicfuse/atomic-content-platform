@@ -8,18 +8,17 @@ export interface CustomDomainRoute {
 }
 
 interface IndexEntry {
-  domain: string;
   custom_domain?: string | null;
 }
 
 interface DashboardIndex {
   sites?: IndexEntry[];
-  deleted?: IndexEntry[];
 }
 
 /** Read `<networkPath>/dashboard-index.yaml` and return a route entry for
- *  every active site whose `custom_domain` is set. Used by emit-env-configs.ts
- *  to register Workers Custom Domains at production build time. */
+ *  every entry in `sites:` whose `custom_domain` is set. Used by
+ *  emit-env-configs.ts to register Workers Custom Domains at production
+ *  build time. */
 export async function loadCustomDomains(networkPath: string): Promise<CustomDomainRoute[]> {
   const filePath = join(networkPath, 'dashboard-index.yaml');
   let raw: string;
@@ -28,9 +27,24 @@ export async function loadCustomDomains(networkPath: string): Promise<CustomDoma
   } catch (err) {
     throw new Error(`Failed to read dashboard-index.yaml at ${filePath}: ${(err as Error).message}`);
   }
-  const index = parseYaml(raw) as DashboardIndex | null;
-  const sites = index?.sites ?? [];
-  return sites
+  const parsed = parseYaml(raw);
+  if (parsed !== null && parsed !== undefined) {
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error(
+        `dashboard-index.yaml at ${filePath} did not parse to an object ` +
+        `(got ${Array.isArray(parsed) ? 'array' : typeof parsed}). ` +
+        `The file may be corrupted.`,
+      );
+    }
+  }
+  const index = parsed as DashboardIndex | null;
+  const sites = index?.sites;
+  if (sites !== undefined && !Array.isArray(sites)) {
+    throw new Error(
+      `dashboard-index.yaml at ${filePath} has a \`sites\` field but it's not an array.`,
+    );
+  }
+  return (sites ?? [])
     .filter((s): s is IndexEntry & { custom_domain: string } =>
       typeof s.custom_domain === 'string' && s.custom_domain.length > 0,
     )

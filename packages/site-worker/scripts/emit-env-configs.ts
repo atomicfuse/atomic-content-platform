@@ -106,15 +106,19 @@ interface WranglerConfig {
   [key: string]: unknown;
 }
 
+/**
+ * Resolve production custom-domain routes from the network repo's
+ * `dashboard-index.yaml`. Defaults to the standard side-by-side checkout
+ * layout (`<platform-root>/../atomic-labs-network`), matching `seed-kv.ts`.
+ * Operators can override via `NETWORK_DATA_PATH` for worktree or
+ * non-standard layouts. If the network repo isn't at the default path
+ * AND `NETWORK_DATA_PATH` isn't set, `loadCustomDomains` will throw with
+ * a clear filepath error.
+ */
 async function resolveProductionRoutes(): Promise<RouteSpec[]> {
-  const networkPath = process.env.NETWORK_DATA_PATH;
-  if (!networkPath) {
-    throw new Error(
-      '[emit-env-configs] NETWORK_DATA_PATH must be set for production builds ' +
-      '(used to read dashboard-index.yaml and derive custom-domain routes). ' +
-      'Set it to the absolute path of an atomic-labs-network checkout.',
-    );
-  }
+  const networkPath =
+    process.env.NETWORK_DATA_PATH ??
+    join(__dirname, '..', '..', '..', '..', 'atomic-labs-network');
   return loadCustomDomains(networkPath);
 }
 
