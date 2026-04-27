@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { marked } from 'marked';
 
-import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import type { LayoutConfig, ResolvedConfig } from '@atomic-platform/shared-types';
 import {
   siteLookupKey,
   siteConfigKey,
@@ -53,6 +53,7 @@ import {
   type MergeModes,
   type OverrideConfig,
 } from './lib/resolve';
+import { resolveLayout } from './lib/resolve-layout';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -367,6 +368,11 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     preview_page: { enabled: false },
     active: true,
     ...merged,
+    layout: resolveLayout(merged.layout as LayoutConfig | undefined),
+    theme: {
+      ...(merged.theme as Record<string, unknown> | undefined ?? {}),
+      layout_v2: Boolean((merged.theme as Record<string, unknown> | undefined)?.layout_v2),
+    } as ResolvedConfig['theme'],
     domain: String(site.domain ?? siteId),
     site_name: String(site.site_name ?? siteId),
     site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
