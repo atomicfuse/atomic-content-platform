@@ -21,10 +21,9 @@ interface RebuildConfirmModalProps {
 
 const REBUILD_NOW_TOOLTIP = (
   <span className="block space-y-1">
-    <span className="block">This will trigger a Cloudflare Pages rebuild for all affected sites.</span>
-    <span className="block">Each site rebuilds independently and takes 2-3 minutes.</span>
-    <span className="block">Once complete, your changes will be live on the staging/production URL.</span>
-    <span className="block text-[var(--text-muted)]">This is the same as manually pushing a .build-trigger commit.</span>
+    <span className="block">This will trigger a KV sync for all affected sites.</span>
+    <span className="block">Each site syncs independently and takes about 1 minute.</span>
+    <span className="block">Once complete, your changes will be live on the Worker.</span>
   </span>
 );
 
@@ -32,10 +31,10 @@ const REBUILD_LATER_TOOLTIP = (
   <span className="block space-y-1">
     <span className="block">Your changes are saved in git but won&apos;t appear on the live site yet.</span>
     <span className="block">The site will pick up your changes when any of these happen:</span>
-    <span className="block pl-2">&bull; You click &quot;Rebuild now&quot; from the site detail page</span>
+    <span className="block pl-2">&bull; You click &quot;Sync now&quot; from the site detail page</span>
     <span className="block pl-2">&bull; A new article is published by the content pipeline</span>
-    <span className="block pl-2">&bull; Someone edits the site.yaml from the dashboard</span>
-    <span className="block pl-2">&bull; You manually push a .build-trigger commit</span>
+    <span className="block pl-2">&bull; Someone edits the site config from the dashboard</span>
+    <span className="block pl-2">&bull; A push to the staging branch triggers the sync-kv workflow</span>
     <span className="block text-[var(--text-muted)]">Until one of these happens, visitors see the previous version.</span>
   </span>
 );
@@ -68,7 +67,7 @@ export function RebuildConfirmModal({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast(
-        `Rebuilding ${count} site(s) — changes will be live in 2-3 minutes`,
+        `Syncing ${count} site(s) — changes will be live in ~1 minute`,
         "success",
       );
       onClose();
@@ -80,7 +79,7 @@ export function RebuildConfirmModal({
   }
 
   function handleSkip(): void {
-    toast("Saved to git. Sites will update on next rebuild.", "info");
+    toast("Saved to git. Sites will sync on next push.", "info");
     onClose();
   }
 
@@ -96,10 +95,10 @@ export function RebuildConfirmModal({
       : `${count} site(s) affected: ${displayDomains.join(", ")}${overflow > 0 ? `, +${overflow} more` : ""}`;
 
   return (
-    <Modal open={open} onClose={onClose} title="Changes saved — trigger rebuild?" size="sm">
+    <Modal open={open} onClose={onClose} title="Changes saved — sync to Worker?" size="sm">
       <div className="space-y-4">
         <p className="text-sm text-[var(--text-secondary)]">
-          Your changes are saved to git. To see them on the live site, affected sites need to rebuild.
+          Your changes are saved to git. To see them on the live site, affected sites need to sync.
         </p>
 
         <p className="text-sm text-[var(--text-primary)] font-medium">
@@ -114,7 +113,7 @@ export function RebuildConfirmModal({
               autoFocus
               className="flex-1"
             >
-              Rebuild now
+              Sync now
             </Button>
             <InfoTooltip content={REBUILD_NOW_TOOLTIP} maxWidth={320} />
           </div>
@@ -126,7 +125,7 @@ export function RebuildConfirmModal({
               disabled={rebuilding}
               className="flex-1"
             >
-              I&apos;ll rebuild later
+              I&apos;ll sync later
             </Button>
             <InfoTooltip content={REBUILD_LATER_TOOLTIP} maxWidth={320} />
           </div>
