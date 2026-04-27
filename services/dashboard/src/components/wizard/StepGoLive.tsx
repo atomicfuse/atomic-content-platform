@@ -4,20 +4,21 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import type { WizardFormData } from "@/types/dashboard";
 
-interface StepReviewProps {
+interface StepGoLiveProps {
   data: WizardFormData;
-  stagingResult: { stagingUrl: string; pagesProject: string } | null;
+  stagingResult: { stagingUrl: string; siteFolder: string } | null;
   onBack: () => void;
 }
 
-export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): React.ReactElement {
+export function StepGoLive({
+  data,
+  stagingResult,
+  onBack,
+}: StepGoLiveProps): React.ReactElement {
   const router = useRouter();
 
-  const pagesProject = stagingResult?.pagesProject ?? data.pagesProjectName;
-  const siteSlug = data.pagesProjectName;
-  // Branch slug uses the site slug (folder name); domain uses the actual CF Pages project name
-  const stagingUrl = stagingResult?.stagingUrl ?? `https://staging-${siteSlug}.${pagesProject}.pages.dev`;
-  const siteFolder = siteSlug; // folder name = user-chosen name
+  const siteFolder = stagingResult?.siteFolder ?? data.pagesProjectName;
+  const stagingUrl = stagingResult?.stagingUrl ?? null;
 
   return (
     <div className="space-y-6">
@@ -26,8 +27,8 @@ export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): Re
       <div className="rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] p-6 space-y-4">
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <p className="text-[var(--text-muted)]">Pages Project</p>
-            <p className="font-medium font-mono">{pagesProject}.pages.dev</p>
+            <p className="text-[var(--text-muted)]">Site Slug</p>
+            <p className="font-medium font-mono">{siteFolder}</p>
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Site Name</p>
@@ -54,21 +55,23 @@ export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): Re
 
       <div className="rounded-lg border border-cyan/30 bg-cyan/5 p-4 space-y-2">
         <p className="text-sm font-medium text-[var(--text-primary)]">
-          Your site is being staged!
+          Your site is staged on the multi-tenant Worker.
         </p>
-        <p className="text-sm text-[var(--text-secondary)]">
-          The staging build is running on Cloudflare Pages. It will be ready in ~1-2 minutes at:{" "}
-          <a
-            href={stagingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-cyan underline underline-offset-2"
-          >
-            {stagingUrl}
-          </a>
-        </p>
+        {stagingUrl && (
+          <p className="text-sm text-[var(--text-secondary)]">
+            Worker preview:{" "}
+            <a
+              href={stagingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-cyan underline underline-offset-2"
+            >
+              {stagingUrl}
+            </a>
+          </p>
+        )}
         <p className="text-xs text-[var(--text-muted)]">
-          When you are ready to go live, visit the site detail page and use the Staging tab to promote to production.
+          Open the site detail page to attach a custom domain (optional) and publish to production.
         </p>
       </div>
 
@@ -77,15 +80,10 @@ export function StepGoLive({ data, stagingResult, onBack }: StepReviewProps): Re
           &larr; Back
         </Button>
         <div className="flex gap-3">
-          <Button
-            variant="secondary"
-            onClick={(): void => router.push("/")}
-          >
+          <Button variant="secondary" onClick={(): void => router.push("/")}>
             Back to Dashboard
           </Button>
-          <Button
-            onClick={(): void => router.push(`/sites/${encodeURIComponent(siteFolder)}`)}
-          >
+          <Button onClick={(): void => router.push(`/sites/${encodeURIComponent(siteFolder)}`)}>
             View Site Details
           </Button>
         </div>

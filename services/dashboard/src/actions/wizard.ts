@@ -20,6 +20,7 @@ import {
   listDeployments,
   listZones,
 } from "@/lib/cloudflare";
+import { workerPreviewUrl } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
@@ -35,7 +36,8 @@ const AGGREGATOR_URL =
 
 interface StagingResult {
   stagingUrl: string;
-  pagesProject: string;
+  /** The network-repo folder name and dashboard-index `domain` for the new site. */
+  siteFolder: string;
 }
 
 /** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)". */
@@ -84,17 +86,17 @@ async function createBundle(
   }
 }
 
-/** Create site files in a staging branch and set up CF Pages project. */
+/** Create site files in a staging branch and trigger sync-kv to seed
+ *  CONFIG_KV_STAGING + R2 for the multi-tenant site-worker. */
 export async function createSiteAndBuildStaging(
   data: WizardFormData
 ): Promise<StagingResult> {
   const projectName = data.pagesProjectName;
 
   // The site folder in the network repo uses the project name as identifier.
-  // deploy.yml iterates sites/*/ and uses basename as SITE_DOMAIN.
-  // For pages-only sites (no real domain yet), the project name IS the domain.
-  // When a real domain is attached later, the folder stays the same — the
-  // custom domain is just an alias on the CF Pages project.
+  // sync-kv.yml iterates sites/*/ on commits to staging/** and main, and
+  // writes CONFIG_KV under `site:<folder-name>` so the worker middleware
+  // can resolve the right config when the hostname matches.
   const siteFolder = projectName;
 
   // 0. Resolve niche targeting: existing bundle or create new
@@ -130,15 +132,12 @@ export async function createSiteAndBuildStaging(
     if (bundle) bundleId = bundle.id;
   }
 
-  // 1. Build site.yaml content
-  // domain = projectName so Astro builds with the right site URL
-  // (site URL becomes https://{projectName}.pages.dev in production)
-  // Build config — pages_project is set later after CF project creation
+  // 1. Build site.yaml content. `domain` is the site folder identifier
+  // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
   const siteConfig = {
     domain: projectName,
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
-    pages_project: projectName, // placeholder — updated after CF creation
     groups: data.groups.length > 0 ? data.groups : ["adsense-default"],
     active: true,
     bundle_id: bundleId || undefined,
@@ -265,42 +264,32 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     siteConfig.theme.favicon = "/assets/favicon.png";
   }
 
-  // 5. Create CF Pages project on Cloudflare
-  // CF may rename the project (e.g. "travel" → "travel-6jj" if name is reserved)
-  // The `name` field is used for API calls (listing deployments, etc.)
-  // The `subdomain` field is the actual *.pages.dev subdomain (e.g. "travel-test-3pa.pages.dev")
-  const cfProject = await createPagesProject(projectName);
-  const actualProjectName = cfProject.name;
-  // subdomain from CF is like "travel-test-3pa.pages.dev" — extract the prefix
-  const cfSubdomain = cfProject.subdomain?.replace(".pages.dev", "") ?? actualProjectName;
+  // 5. Compute the staging URL up-front. The site folder = projectName.
+  const previewUrl = workerPreviewUrl(siteFolder);
 
-  // Update site.yaml with the actual CF project name (so deploy workflow can read it)
-  siteConfig.pages_project = actualProjectName;
-
-  // Re-generate site.yaml with final values (logo refs + actual project name)
+  // Re-serialize site.yaml so any theme.logo / theme.favicon mutations
+  // applied above (after the initial files[] build) make it into the commit.
   files[0] = {
     path: `sites/${siteFolder}/site.yaml`,
     content: stringifyYaml(siteConfig, { lineWidth: 0 }),
   };
 
-  // 6. Create staging branch in git
+  // 6. Create staging branch in git, branched from main.
   const stagingBranch = `staging/${projectName}`;
   await createBranch(stagingBranch);
 
-  // 7. Commit site files to the staging branch
-  // Use siteFolder as the "domain" parameter for the commit message
+  // 7. Commit site files to the staging branch via the Git Data API.
   await commitSiteFiles(siteFolder, files, "create site", stagingBranch);
 
-  // 6b. Trigger the deploy workflow via a Contents API push.
-  // Git Data API commits don't trigger GitHub Actions — only the Contents API does.
+  // 8. Fire sync-kv.yml. The Git Data API push above does NOT trigger
+  // GitHub Actions; only a Contents-API push does. triggerWorkflowViaPush
+  // writes a .build-trigger file via the Contents API to wake up sync-kv,
+  // which then seeds CONFIG_KV_STAGING + R2 for the new site.
+  // (workflow_dispatch would be cleaner but the token lacks actions:write.)
   await triggerWorkflowViaPush(stagingBranch, siteFolder);
 
-  // 7. Create site entry in dashboard index
-  // Use siteFolder as domain so the dashboard can find the site by its folder name
-  // Preview URL uses the actual CF subdomain (may differ from project name)
-  // CF subdomain format: {branch-slug}.{subdomain}.pages.dev
-  const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${cfSubdomain}.pages.dev`;
+  // 9. Create / update dashboard-index entry. Pages-related fields are
+  // null post-migration (kept on the type for backwards compat).
   const now = new Date().toISOString();
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
@@ -315,8 +304,8 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     fixed_ad: false,
     last_updated: now,
     created_at: now,
-    pages_project: actualProjectName,
-    pages_subdomain: cfSubdomain,
+    pages_project: null,
+    pages_subdomain: null,
     zone_id: null,
     staging_branch: stagingBranch,
     preview_url: previewUrl,
@@ -324,7 +313,6 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     custom_domain: null,
   };
 
-  // Check if site already exists (e.g. from domain sync), update it; otherwise create new
   const index = await readDashboardIndex();
   const existing = index.sites.find((s) => s.domain === siteFolder);
   if (existing) {
@@ -332,8 +320,6 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       status: "Staging",
       company: data.company,
       vertical: data.vertical,
-      pages_project: actualProjectName,
-      pages_subdomain: cfSubdomain,
       staging_branch: stagingBranch,
       preview_url: previewUrl,
     });
@@ -343,8 +329,8 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   revalidatePath("/");
 
-  // 8. Return result
-  return { stagingUrl: previewUrl, pagesProject: actualProjectName };
+  // 10. Return result
+  return { stagingUrl: previewUrl, siteFolder };
 }
 
 /**
