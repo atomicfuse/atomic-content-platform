@@ -54,6 +54,7 @@ import {
   type OverrideConfig,
 } from './lib/resolve';
 import { resolveLayout } from './lib/resolve-layout';
+import { parseFeatured } from './lib/parse-featured';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -199,6 +200,7 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
       tags: Array.isArray(front.tags) ? front.tags.map(String) : [],
       type: (front.type as ArticleIndexEntry['type']) ?? 'standard',
       status: (front.status as ArticleIndexEntry['status']) ?? 'draft',
+      featured: parseFeatured(front.featured),
     };
     const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });
