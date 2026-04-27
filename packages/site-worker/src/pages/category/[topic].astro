@@ -1,0 +1,296 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SEOHead from '../../components/SEOHead.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
+import FeedCard from '../../themes/modern/components/FeedCard.astro';
+import AdSlot from '../../components/AdSlot.astro';
+import { env } from 'cloudflare:workers';
+import { getConfig, getSiteId } from '../../lib/config';
+import { articleIndexKey, type ArticleIndexEntry } from '../../lib/kv-schema';
+import { isVisibleArticle } from '../../utils/article-status';
+
+const { topic: topicSlug } = Astro.params;
+if (!topicSlug) return new Response('Not found', { status: 404 });
+
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+
+// Redirect to home if categories are disabled
+if (!config.categories.enabled) {
+  return Astro.redirect('/', 302);
+}
+
+// Resolve display name from brief.topics (case-insensitive slug match)
+const allTopics: string[] = config.brief?.topics ?? [];
+const displayName =
+  allTopics.find((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()) ??
+  topicSlug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Fetch & filter articles by tag
+const allArticles =
+  (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+
+const matching = allArticles
+  .filter((a) => isVisibleArticle(a.status))
+  .filter((a) => a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()))
+  .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
+
+if (matching.length === 0) {
+  return new Response('Not found', { status: 404 });
+}
+
+// Pagination
+const url = new URL(Astro.request.url);
+const perPage = config.categories.per_page;
+const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
+const totalPages = Math.ceil(matching.length / perPage);
+const start = (page - 1) * perPage;
+const slice = matching.slice(start, start + perPage);
+
+const pageTitle = `${displayName} — ${config.site_name}`;
+const pageDesc = `Browse ${displayName} articles on ${config.site_name}`;
+const canonicalUrl = `https://${config.domain}/category/${topicSlug}`;
+---
+
+<BaseLayout title={pageTitle} description={pageDesc}>
+  <Fragment slot="head">
+    <SEOHead
+      title={pageTitle}
+      description={pageDesc}
+      canonicalUrl={page > 1 ? `${canonicalUrl}?page=${page}` : canonicalUrl}
+      siteName={config.site_name}
+    />
+    {page > 1 && (
+      <link rel="prev" href={page === 2 ? canonicalUrl : `${canonicalUrl}?page=${page - 1}`} />
+    )}
+    {page < totalPages && (
+      <link rel="next" href={`${canonicalUrl}?page=${page + 1}`} />
+    )}
+  </Fragment>
+
+  <Header config={config} currentPath={`/category/${topicSlug}`} />
+
+  <main class="category-page">
+    <div class="category-header">
+      <div class="category-header-inner">
+        <div class="category-rule" />
+        <h1 class="category-title">{displayName}</h1>
+        <div class="category-rule" />
+      </div>
+    </div>
+
+    <AdSlot position="category-top" pageType="category" server:defer />
+
+    <section class="category-grid-wrap">
+      <div class="category-grid">
+        {slice.map((article) => (
+          <article class="category-card">
+            <a class="category-card-thumb" href={`/${article.slug}`}>
+              {article.featuredImage && (
+                <img src={article.featuredImage} alt="" loading="lazy" />
+              )}
+            </a>
+            <div class="category-card-body">
+              <a class="category-card-link" href={`/${article.slug}`}>
+                <h2 class="category-card-title">{article.title}</h2>
+              </a>
+              {article.description && (
+                <p class="category-card-desc">{article.description}</p>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    {/* Numbered pagination */}
+    {totalPages > 1 && (
+      <nav class="category-pagination" aria-label="Category pages">
+        {page > 1 && (
+          <a
+            href={page === 2 ? `/category/${topicSlug}` : `/category/${topicSlug}?page=${page - 1}`}
+            class="pagination-link pagination-prev"
+          >
+            &laquo; Previous
+          </a>
+        )}
+        {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+          <a
+            href={p === 1 ? `/category/${topicSlug}` : `/category/${topicSlug}?page=${p}`}
+            class:list={['pagination-link', { 'pagination-current': p === page }]}
+            aria-current={p === page ? 'page' : undefined}
+          >
+            {p}
+          </a>
+        ))}
+        {page < totalPages && (
+          <a
+            href={`/category/${topicSlug}?page=${page + 1}`}
+            class="pagination-link pagination-next"
+          >
+            Next &raquo;
+          </a>
+        )}
+      </nav>
+    )}
+  </main>
+
+  <Footer config={config} />
+</BaseLayout>
+
+<style>
+  .category-page {
+    min-height: 60vh;
+  }
+
+  /* ---- Heading with accent-colored rules ---- */
+  .category-header {
+    padding: 2.5rem 1rem 1.5rem;
+  }
+
+  .category-header-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  .category-rule {
+    flex: 1;
+    height: 3px;
+    background: var(--color-accent, #f4c542);
+  }
+
+  .category-title {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text, #1a1a2e);
+    white-space: nowrap;
+  }
+
+  /* ---- 2-column article grid ---- */
+  .category-grid-wrap {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem 2rem;
+  }
+
+  .category-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  @media (min-width: 768px) {
+    .category-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 2.5rem;
+    }
+  }
+
+  /* ---- Card ---- */
+  .category-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .category-card-thumb {
+    display: block;
+    aspect-ratio: 16/10;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface, #f8f9fa);
+  }
+
+  .category-card-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 300ms ease;
+  }
+
+  .category-card-thumb:hover img {
+    transform: scale(1.03);
+  }
+
+  .category-card-body {
+    padding: 0.75rem 0 0;
+  }
+
+  .category-card-link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .category-card-title {
+    font-size: var(--text-xl, 1.25rem);
+    font-weight: 700;
+    line-height: 1.3;
+    margin: 0 0 0.5rem;
+  }
+
+  .category-card-link:hover .category-card-title {
+    color: var(--color-accent, #f4c542);
+  }
+
+  .category-card-desc {
+    font-size: var(--text-base, 1rem);
+    color: var(--color-muted, #6b7280);
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* ---- Numbered pagination ---- */
+  .category-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem 3rem;
+    flex-wrap: wrap;
+  }
+
+  .pagination-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    padding: 0 0.75rem;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: var(--radius-md, 8px);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text, #1a1a2e);
+    text-decoration: none;
+    transition: background 150ms ease, border-color 150ms ease;
+  }
+
+  .pagination-link:hover {
+    background: var(--color-surface, #f8f9fa);
+    border-color: var(--color-accent, #f4c542);
+  }
+
+  .pagination-current {
+    background: var(--color-primary, #1a1a2e);
+    color: #fff;
+    border-color: var(--color-primary, #1a1a2e);
+    pointer-events: none;
+  }
+
+  .pagination-prev,
+  .pagination-next {
+    font-weight: 600;
+  }
+</style>
