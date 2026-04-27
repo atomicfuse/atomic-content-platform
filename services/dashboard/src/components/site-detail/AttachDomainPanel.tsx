@@ -21,7 +21,7 @@ export function AttachDomainPanel({
   const [selectedZone, setSelectedZone] = useState("");
   const [zones, setZones] = useState<Array<{ domain: string; zoneId: string }>>([]);
   const [loadingZones, setLoadingZones] = useState(false);
-  const [redeployHint, setRedeployHint] = useState(false);
+  const [redeployHint, setRedeployHint] = useState<'attached' | 'detached' | null>(null);
 
   useEffect(() => {
     if (customDomain) return;
@@ -38,7 +38,7 @@ export function AttachDomainPanel({
       try {
         await attachCustomDomain(domain, selectedZone);
         setSelectedZone("");
-        setRedeployHint(true);
+        setRedeployHint('attached');
         toast("Custom domain attached", "success");
       } catch {
         toast("Failed to attach domain", "error");
@@ -50,7 +50,7 @@ export function AttachDomainPanel({
     startTransition(async () => {
       try {
         await detachCustomDomain(domain);
-        setRedeployHint(true);
+        setRedeployHint('detached');
         toast("Custom domain disconnected", "success");
       } catch {
         toast("Failed to disconnect domain", "error");
@@ -59,8 +59,10 @@ export function AttachDomainPanel({
   }
 
   function copyCmd(): void {
-    void navigator.clipboard.writeText(REDEPLOY_CMD);
-    toast("Command copied", "success");
+    navigator.clipboard
+      .writeText(REDEPLOY_CMD)
+      .then(() => toast("Command copied", "success"))
+      .catch(() => toast("Copy failed — select and copy manually", "error"));
   }
 
   return (
@@ -101,10 +103,11 @@ export function AttachDomainPanel({
         </div>
       )}
 
-      {redeployHint && (
+      {redeployHint !== null && (
         <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
           <p className="text-xs text-[var(--text-secondary)]">
-            Domain change saved. The production worker only claims the route on its next deploy.
+            {redeployHint === 'attached' ? 'Domain attached.' : 'Domain disconnected.'}{' '}
+            The production worker only claims the route on its next deploy.
             Run this from the platform repo:
           </p>
           <div className="flex items-center gap-2">
