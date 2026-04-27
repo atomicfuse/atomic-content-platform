@@ -34,6 +34,10 @@ const DEFAULT_FORM: WizardFormData = {
   articlesPerDay: 1,
   preferredDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   contentGuidelines: "",
+  primaryColor: "#1a1a2e",
+  accentColor: "#f4c542",
+  fontHeading: "Inter",
+  fontBody: "Inter",
   scriptsVars: {},
 };
 

@@ -169,6 +169,15 @@ export async function createSiteAndBuildStaging(
     },
     theme: {
       base: data.themeBase,
+      layout_v2: true,
+      colors: {
+        primary: data.primaryColor,
+        accent: data.accentColor,
+      },
+      fonts: {
+        heading: data.fontHeading,
+        body: data.fontBody,
+      },
     } as Record<string, unknown>,
   };
 
