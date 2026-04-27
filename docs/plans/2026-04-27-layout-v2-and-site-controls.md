@@ -44,7 +44,8 @@
 | 3.4 | Site Settings Theme sub-tab | ✅ done | `53094bd` |
 | 3.5 | Org Settings defaults | ✅ done | `98f4c42` |
 | 3.6 | Guide page | ✅ done | `7ba9f4b` |
-| 4.x | Phase 4 rollout + cleanup | ⏸ not started | — |
+| 4.1 | Flip remaining sites to layout_v2 | ✅ done | `60b7902` `94db000` `b4c7132` (network repo) |
+| 4.2 | Remove toggle + delete legacy templates | ✅ done | `18ecbbe` |
 
 **Test surface after Phase 2:** 113 unit tests passing in `packages/site-worker` (was 109 after Phase 1; net +4 from `sliceForPage` tests). `pnpm typecheck` clean (0 errors) in shared-types and site-worker.
 
@@ -52,7 +53,9 @@
 
 **Phase 2 complete.** All 11 component + wiring tasks done. 20 new Astro components + 1 API endpoint + 1 pagination helper + 1 render helper created. Homepage and article page both have v2 paths gated behind `theme.layout_v2: true`. MoreOn.astro was intentionally omitted per the plan's own correction (What's New feed is the load-more target).
 
-**Phase 3 complete.** All 6 dashboard tasks done. Font registry (12 fonts), ColorPickerField + FontPickerField pickers, wizard extension (brand colors + fonts + layout_v2:true for new sites), SiteThemeTab (colors, fonts, layout knobs), Org Settings Defaults tab, and Theme & Layout guide page. `pnpm typecheck` clean; 113 unit tests passing. Phase 4 (rollout + cleanup) next.
+**Phase 3 complete.** All 6 dashboard tasks done. Font registry (12 fonts), ColorPickerField + FontPickerField pickers, wizard extension (brand colors + fonts for new sites), SiteThemeTab (colors, fonts, layout knobs), Org Settings Defaults tab, and Theme & Layout guide page. `pnpm typecheck` clean; 113 unit tests passing.
+
+**Phase 4 complete.** All 3 staging branches flipped (coolnews-atl, scienceworld, pink-life). `layout_v2` toggle removed from shared-types, seed-kv, wizard action, page templates, and guide. Legacy ArticleCard.astro deleted. v1 template branches stripped from homepage and article page. 113 unit tests passing; `pnpm typecheck` clean across all packages.
 
 **Remaining tech debt (in backlog/general.md):**
 - `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup.
