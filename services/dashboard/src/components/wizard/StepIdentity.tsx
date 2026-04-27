@@ -34,13 +34,15 @@ export function StepIdentity({
 
       <div className="space-y-1.5">
         <Input
-          label="Pages Project Name"
+          label="Site Slug"
           placeholder="coolnews-dev-v2"
           value={data.pagesProjectName}
           onChange={(e): void => handleProjectNameChange(e.target.value)}
         />
         <p className="text-xs text-[var(--text-muted)]">
-          This creates <span className="font-mono text-cyan">{data.pagesProjectName || "your-project"}.pages.dev</span> on Cloudflare Pages
+          Used as the network-repo folder name. Creates a staging branch{" "}
+          <span className="font-mono text-cyan">staging/{data.pagesProjectName || "your-project"}</span>{" "}
+          and a preview on the multi-tenant Worker.
         </p>
       </div>
 

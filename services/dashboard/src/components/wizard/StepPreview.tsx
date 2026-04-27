@@ -98,32 +98,39 @@ export function StepPreview({
 
         const pollUrl = result.stagingUrl;
         const startedAt = Date.now();
-        const TIMEOUT_MS = 60_000;
+        const TIMEOUT_MS = 120_000;
 
+        let pollInFlight = false;
         pollRef.current = setInterval(async () => {
+          if (pollInFlight) return;
+          pollInFlight = true;
           try {
-            const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
-            if (res.status !== 404) {
+            try {
+              const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
+              if (res.status !== 404) {
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                }
+                setWaitingForBuild(false);
+                setPreviewUrl(pollUrl);
+                toast("Staging site is live!", "success");
+                return;
+              }
+            } catch {
+              // network blip — keep polling
+            }
+            if (Date.now() - startedAt > TIMEOUT_MS) {
               if (pollRef.current) {
                 clearInterval(pollRef.current);
                 pollRef.current = null;
               }
               setWaitingForBuild(false);
               setPreviewUrl(pollUrl);
-              toast("Staging site is live!", "success");
-              return;
+              toast("Sync is taking longer than usual — your preview will be at the link in another minute or so. Refresh after ~1 min.", "info");
             }
-          } catch {
-            // network blip — keep polling
-          }
-          if (Date.now() - startedAt > TIMEOUT_MS) {
-            if (pollRef.current) {
-              clearInterval(pollRef.current);
-              pollRef.current = null;
-            }
-            setWaitingForBuild(false);
-            setPreviewUrl(pollUrl);
-            toast("Sync taking longer than usual — try the preview link in a moment.", "info");
+          } finally {
+            pollInFlight = false;
           }
         }, 5000);
       } catch (error) {
