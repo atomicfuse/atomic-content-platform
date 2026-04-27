@@ -5,12 +5,19 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
+import HeroGrid from '../themes/modern/components/HeroGrid.astro';
+import ArticleFeed from '../themes/modern/components/ArticleFeed.astro';
+import Sidebar from '../themes/modern/components/Sidebar.astro';
+import MustReads from '../themes/modern/components/MustReads.astro';
+import LoadMoreButton from '../themes/modern/components/LoadMoreButton.astro';
 import ArticleCard from '../themes/modern/components/ArticleCard.astro';
 import AdSlot from '../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
 import { getConfig, getSiteId } from '../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
 import { isVisibleArticle } from '../utils/article-status';
+import { selectFeatured } from '../lib/featured';
+import { sliceForPage } from '../lib/articles-pagination';
 
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
@@ -18,14 +25,28 @@ const siteId = getSiteId(Astro);
 const allArticles =
   (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
 
-const articles = allArticles
+const visible = allArticles
   .filter((a) => isVisibleArticle(a.status))
-  .sort(
-    (a, b) =>
-      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
-  );
+  .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
 
-const latestArticles = articles.slice(0, 12);
+const useV2 = config.theme.layout_v2 === true;
+
+const url = new URL(Astro.request.url);
+const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
+const pageSize = config.layout.load_more.page_size;
+const initialCount = pageSize * 2;
+
+const heroArticles = useV2
+  ? selectFeatured(visible, 'hero', config.layout.hero.count)
+  : [];
+const heroSlugs = new Set(heroArticles.map((a) => a.slug));
+
+const mustReadArticles = useV2 && config.layout.must_reads.enabled
+  ? selectFeatured(visible, 'must-read', config.layout.must_reads.count, heroSlugs)
+  : [];
+
+const feedSlice = sliceForPage(visible, page, pageSize);
+const hasMore = visible.length > initialCount + (page - 1) * pageSize;
 ---
 
 <BaseLayout
@@ -43,48 +64,73 @@ const latestArticles = articles.slice(0, 12);
 
   <Header config={config} currentPath="/" />
 
-  <main class="homepage">
-    <div class="container">
+  {useV2 ? (
+    <main class="homepage-v2">
+      {config.layout.hero.enabled && <HeroGrid articles={heroArticles} />}
       <AdSlot position="homepage-top" pageType="homepage" server:defer />
-
-      <section class="section">
-        <h2 class="section-heading">Latest Articles</h2>
-        <div class="article-grid">
-          {latestArticles.map((article) => (
-            <ArticleCard
-              title={article.title}
-              slug={article.slug}
-              featuredImage={article.featuredImage}
-              description={article.description}
-              author={article.author}
-              publishDate={article.publishDate}
-              tags={article.tags}
-              type={article.type}
-            />
-          ))}
+      <section class="whats-new">
+        <div class="whats-new-inner">
+          <ArticleFeed articles={feedSlice} />
+          <Sidebar variant="home" config={config} />
         </div>
-
-        {articles.length === 0 && (
-          <p class="empty-state">
-            No published articles yet for <code>{config.domain}</code>.
-            Seed <code>article-index:{siteId}</code> in CONFIG_KV.
-          </p>
-        )}
       </section>
-    </div>
-  </main>
+      {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
+      <LoadMoreButton nextPage={page + 1} hasMore={hasMore} />
+    </main>
+  ) : (
+    <main class="homepage">
+      <div class="container">
+        <AdSlot position="homepage-top" pageType="homepage" server:defer />
+        <section class="section">
+          <h2 class="section-heading">Latest Articles</h2>
+          <div class="article-grid">
+            {visible.slice(0, 12).map((article) => (
+              <ArticleCard
+                title={article.title}
+                slug={article.slug}
+                featuredImage={article.featuredImage}
+                description={article.description}
+                author={article.author}
+                publishDate={article.publishDate}
+                tags={article.tags}
+                type={article.type}
+              />
+            ))}
+          </div>
+          {visible.length === 0 && (
+            <p class="empty-state">
+              No published articles yet for <code>{config.domain}</code>.
+            </p>
+          )}
+        </section>
+      </div>
+    </main>
+  )}
 
   <Footer config={config} />
-
   <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
 </BaseLayout>
 
 <style>
-  .homepage { min-height: 60vh; }
+  .homepage, .homepage-v2 { min-height: 60vh; }
   .container {
     max-width: var(--container-max, 1200px);
     margin: 0 auto;
     padding: 0 1rem;
+  }
+  .whats-new {
+    padding: 2.5rem 0;
+  }
+  .whats-new-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  @media (min-width: 960px) {
+    .whats-new-inner { grid-template-columns: 1fr 320px; }
   }
   .section { padding: 2.5rem 0 1rem; }
   .section-heading {
@@ -107,21 +153,5 @@ const latestArticles = articles.slice(0, 12);
     color: var(--color-muted, #9ca3af);
     padding: 4rem 0;
     font-size: 1.125rem;
-  }
-  .empty-state code {
-    background: var(--color-surface, #f8f9fa);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 0.95em;
-  }
-  .ad-anchor { margin: 1.5rem 0; }
-  .ad-sticky-bottom {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    background: rgba(255, 255, 255, 0.95);
-    text-align: center;
   }
 </style>

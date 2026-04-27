@@ -6,11 +6,12 @@ import CategoryList from './CategoryList.astro';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import type { ArticleIndexEntry } from '../../../lib/kv-schema';
 
-type Props =
-  | { variant: 'home'; config: ResolvedConfig }
-  | { variant: 'article'; config: ResolvedConfig; categories: { topic: string; articles: ArticleIndexEntry[] }[] };
-const props = Astro.props as Props;
-const { config, variant } = props;
+interface Props {
+  variant: 'home' | 'article';
+  config: ResolvedConfig;
+  categories?: { topic: string; articles: ArticleIndexEntry[] }[];
+}
+const { config, variant, categories = [] } = Astro.props;
 ---
 
 <aside class="sidebar">
@@ -24,7 +25,7 @@ const { config, variant } = props;
     <>
       <AdSlot position="article-sidebar" pageType="article" server:defer />
       <FollowUs config={config} />
-      {(props as Extract<Props, { variant: 'article' }>).categories.map((c) => (
+      {categories.map((c) => (
         <CategoryList topic={c.topic} articles={c.articles} />
       ))}
     </>
