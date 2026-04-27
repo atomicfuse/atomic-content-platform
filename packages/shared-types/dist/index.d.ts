@@ -2,6 +2,7 @@ export type { NetworkManifest } from "./network.js";
 export type { CustomTrackingScript, TrackingConfig, } from "./tracking.js";
 export type { ScriptEntry, AdPlacementSizes, AdPlacement, AdsConfig, } from "./ads.js";
 export type { ArticleType, ArticleFrontmatter, QualityScoreBreakdown, } from "./article.js";
-export type { QualityWeights, PublishSchedule, SiteBrief, PreviewPageConfig, CategoryConfig, SidebarWidget, SidebarConfig, SearchConfig, ThemeConfig, ResolvedThemeConfig, ScriptsConfig, OrgConfig, GroupConfig, SiteConfig, ResolvedConfig, DeepPartial, } from "./config.js";
+export type { QualityWeights, PublishSchedule, SiteBrief, PreviewPageConfig, CategoryConfig, SidebarWidget, SidebarConfig, SearchConfig, ThemeConfig, ResolvedThemeConfig, ScriptsConfig, HeroLayoutConfig, MustReadsLayoutConfig, SidebarTopicsConfig, LoadMoreConfig, LayoutConfig, ResolvedLayoutConfig, OrgConfig, GroupConfig, SiteConfig, ResolvedConfig, DeepPartial, } from "./config.js";
+export { LAYOUT_DEFAULTS } from "./config.js";
 export type { AdPlaceholderHeights, OverrideConfig, InlineAdConfig, SimpleMergeMode, ScriptsMergeMode, AdsConfigMergeMode, AdsTxtMergeMode, MergeMode, } from "./monetization.js";
 //# sourceMappingURL=index.d.ts.map

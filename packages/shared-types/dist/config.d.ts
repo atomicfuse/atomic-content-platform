@@ -85,6 +85,8 @@ export interface ThemeConfig {
         /** Font family for body text. */
         body?: string;
     };
+    /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
+    layout_v2?: boolean;
 }
 /**
  * Fully-resolved theme where every field is required.
@@ -104,7 +106,90 @@ export interface ResolvedThemeConfig {
         heading: string;
         body: string;
     };
+    /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
+    layout_v2: boolean;
 }
+/**
+ * Configuration for the homepage hero block in the v2 magazine layout.
+ */
+export interface HeroLayoutConfig {
+    /** Whether the hero block is rendered. Default: true. */
+    enabled?: boolean;
+    /** Number of hero cards to display. Default: 4. */
+    count?: 3 | 4;
+}
+/**
+ * Configuration for the must-reads strip in the v2 magazine layout.
+ */
+export interface MustReadsLayoutConfig {
+    /** Whether the must-reads strip is rendered. Default: true. */
+    enabled?: boolean;
+    /** Number of must-reads (>= 1; values < 1 are clamped at runtime). Default: 5. */
+    count?: number;
+}
+/**
+ * Configuration for the sidebar topics list in the v2 magazine layout.
+ */
+export interface SidebarTopicsConfig {
+    /** Whether topics are auto-derived from site brief topics. Default: true. */
+    auto?: boolean;
+    /** Explicit ordered list of topic slugs. Default: []. */
+    explicit?: string[];
+}
+/**
+ * Configuration for the homepage "load more" pagination in the v2 magazine layout.
+ */
+export interface LoadMoreConfig {
+    /** Articles per page (>= 1; values < 1 are clamped at runtime). Default: 10. */
+    page_size?: number;
+}
+/**
+ * Layout knobs for the v2 magazine layout.
+ * All fields are optional partials that get merged across the
+ * org -> group -> site inheritance chain and then resolved against
+ * `LAYOUT_DEFAULTS`.
+ */
+export interface LayoutConfig {
+    /** Hero block configuration. */
+    hero?: HeroLayoutConfig;
+    /** Must-reads strip configuration. */
+    must_reads?: MustReadsLayoutConfig;
+    /** Sidebar topics list configuration. */
+    sidebar_topics?: SidebarTopicsConfig;
+    /** Homepage "load more" pagination configuration. */
+    load_more?: LoadMoreConfig;
+}
+/**
+ * Fully-resolved layout configuration where every field is required.
+ * Produced by `resolveLayout()` after merging org -> group -> site layers
+ * over `LAYOUT_DEFAULTS`.
+ */
+export interface ResolvedLayoutConfig {
+    /** Resolved hero block configuration. */
+    hero: {
+        enabled: boolean;
+        count: 3 | 4;
+    };
+    /** Resolved must-reads strip configuration (count clamped to >= 1). */
+    must_reads: {
+        enabled: boolean;
+        count: number;
+    };
+    /** Resolved sidebar topics configuration. */
+    sidebar_topics: {
+        auto: boolean;
+        explicit: string[];
+    };
+    /** Resolved load-more pagination configuration (page_size clamped to >= 1). */
+    load_more: {
+        page_size: number;
+    };
+}
+/**
+ * Baseline defaults for the v2 magazine layout. Used as the starting point
+ * by `resolveLayout()` before merging org/group/site overrides.
+ */
+export declare const LAYOUT_DEFAULTS: ResolvedLayoutConfig;
 /**
  * Configuration for the preview/intermediate article page.
  * When enabled, clicking an article shows an excerpt with a "Continue Reading"
@@ -188,6 +273,11 @@ export interface OrgConfig {
         heading: string;
         body: string;
     };
+    /** Default colours applied to new sites (flow through inheritance). */
+    default_colors?: {
+        primary?: string;
+        accent?: string;
+    };
     /**
      * Default group IDs applied to sites that don't specify their own `groups:`.
      * References files at `groups/<id>.yaml`.
@@ -222,6 +312,8 @@ export interface OrgConfig {
     sidebar?: Partial<SidebarConfig>;
     /** Default search configuration. */
     search?: Partial<SearchConfig>;
+    /** Layout knobs for the new magazine-style layout. */
+    layout?: LayoutConfig;
 }
 /**
  * Group-level configuration that overrides org defaults for a cluster of sites.
@@ -253,6 +345,8 @@ export interface GroupConfig {
     sidebar?: Partial<SidebarConfig>;
     /** Group-level search overrides. */
     search?: Partial<SearchConfig>;
+    /** Layout knobs for the new magazine-style layout. */
+    layout?: LayoutConfig;
 }
 /**
  * Per-site configuration — the leaf of the config hierarchy.
@@ -310,6 +404,8 @@ export interface SiteConfig {
     sidebar?: Partial<SidebarConfig>;
     /** Site-level search overrides. */
     search?: Partial<SearchConfig>;
+    /** Layout knobs for the new magazine-style layout. */
+    layout?: LayoutConfig;
 }
 /**
  * The fully-resolved site configuration produced by `resolve-config.ts`.
@@ -353,6 +449,8 @@ export interface ResolvedConfig {
     ads_config: AdsConfig;
     /** Fully-resolved theme configuration (all fields required). */
     theme: ResolvedThemeConfig;
+    /** Fully-resolved layout configuration (all fields required). */
+    layout: ResolvedLayoutConfig;
     /** Editorial brief for the site. */
     brief: SiteBrief;
     /** Merged legal pages. */
