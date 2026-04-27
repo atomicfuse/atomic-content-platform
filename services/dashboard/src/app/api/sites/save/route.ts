@@ -122,11 +122,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       if (configUpdates.ads_config !== undefined) {
         const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
-        existing.ads_config = { ...prev, ...configUpdates.ads_config };
+        const merged = { ...prev, ...configUpdates.ads_config } as Record<string, unknown>;
+        // Don't persist an empty ad_placements array — it shadows inherited
+        // placements from org/group/override layers during deepMerge in
+        // seed-kv. Same rationale as the scripts filter above.
+        const placements = merged.ad_placements;
+        if (Array.isArray(placements) && placements.length === 0) {
+          delete merged.ad_placements;
+        }
+        existing.ads_config = merged;
       }
-      if (configUpdates.merge_modes !== undefined) {
-        existing.merge_modes = configUpdates.merge_modes;
-      }
+      // merge_modes is a feature-branch directive — the main-branch
+      // seed-kv.ts ignores it. Don't persist until it ships on main.
+      // if (configUpdates.merge_modes !== undefined) {
+      //   existing.merge_modes = configUpdates.merge_modes;
+      // }
       if (configUpdates.quality_threshold !== undefined) {
         brief.quality_threshold = configUpdates.quality_threshold;
       }
