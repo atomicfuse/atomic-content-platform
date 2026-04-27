@@ -118,14 +118,6 @@ export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
 export async function getPagesProjectDomains(
   projectName: string
 ): Promise<string[]> {
-  const result = await getPagesProjectDomainsDetailed(projectName);
-  return result.map((d) => d.name);
-}
-
-/** Get custom domains with IDs for a specific Pages project. */
-export async function getPagesProjectDomainsDetailed(
-  projectName: string
-): Promise<Array<{ id: string; name: string; status: string }>> {
   const accountId = getAccountId();
   try {
     const response = await fetch(
@@ -136,7 +128,7 @@ export async function getPagesProjectDomainsDetailed(
       Array<{ id: string; name: string; status: string }>
     >;
     if (!data.success) return [];
-    return data.result;
+    return data.result.map((d) => d.name);
   } catch {
     return [];
   }
@@ -280,28 +272,6 @@ export async function getAPOStatus(zoneId: string): Promise<boolean> {
 
 // --- Pages Project Management ---
 
-/** Create a new Cloudflare Pages project. */
-export async function createPagesProject(
-  name: string
-): Promise<CloudflarePagesProject> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects`,
-    {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ name, production_branch: "main" }),
-    }
-  );
-  const data = (await response.json()) as CloudflareResponse<CloudflarePagesProject>;
-  if (!data.success) {
-    throw new Error(
-      `Failed to create Pages project: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-  return data.result;
-}
-
 /** Delete a Cloudflare Pages project. */
 export async function deletePagesProject(name: string): Promise<void> {
   const accountId = getAccountId();
@@ -320,87 +290,3 @@ export async function deletePagesProject(name: string): Promise<void> {
   }
 }
 
-/** Add a custom domain to a Pages project. */
-export async function addCustomDomainToProject(
-  projectName: string,
-  domain: string
-): Promise<{ id: string; name: string; status: string }> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains`,
-    {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ name: domain }),
-    }
-  );
-  const data = (await response.json()) as CloudflareResponse<{
-    id: string;
-    name: string;
-    status: string;
-  }>;
-  if (!data.success) {
-    throw new Error(
-      `Failed to add custom domain: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-  return data.result;
-}
-
-/** Remove a custom domain from a Pages project. CF deletes by domain name. */
-export async function removeCustomDomainFromProject(
-  projectName: string,
-  domainName: string
-): Promise<void> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains/${domainName}`,
-    {
-      method: "DELETE",
-      headers: getHeaders(),
-    }
-  );
-  const data = (await response.json()) as CloudflareResponse<null>;
-  if (!data.success) {
-    throw new Error(
-      `Failed to remove custom domain: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-}
-
-/** List deployments for a Pages project. */
-export async function listDeployments(
-  projectName: string,
-  env?: "preview" | "production"
-): Promise<
-  Array<{
-    id: string;
-    url: string;
-    environment: string;
-    created_on: string;
-    aliases?: string[];
-    deployment_trigger?: { metadata?: { branch?: string } };
-  }>
-> {
-  const accountId = getAccountId();
-  const url = env
-    ? `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments?env=${env}`
-    : `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`;
-  const response = await fetch(url, { headers: getHeaders() });
-  const data = (await response.json()) as CloudflareResponse<
-    Array<{
-      id: string;
-      url: string;
-      environment: string;
-      created_on: string;
-      aliases?: string[];
-      deployment_trigger?: { metadata?: { branch?: string } };
-    }>
-  >;
-  if (!data.success) {
-    throw new Error(
-      `Failed to list deployments: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-  return data.result;
-}

@@ -15,14 +15,8 @@ import {
   triggerWorkflowViaPush,
   readFileBase64,
 } from "@/lib/github";
-import {
-  createPagesProject,
-  addCustomDomainToProject,
-  removeCustomDomainFromProject,
-  getPagesProjectDomainsDetailed,
-  listDeployments,
-  listZones,
-} from "@/lib/cloudflare";
+import { listZones } from "@/lib/cloudflare";
+import { workerPreviewUrl } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
@@ -38,7 +32,8 @@ const AGGREGATOR_URL =
 
 interface StagingResult {
   stagingUrl: string;
-  pagesProject: string;
+  /** The network-repo folder name and dashboard-index `domain` for the new site. */
+  siteFolder: string;
 }
 
 /** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)". */
@@ -87,17 +82,17 @@ async function createBundle(
   }
 }
 
-/** Create site files in a staging branch and set up CF Pages project. */
+/** Create site files in a staging branch and trigger sync-kv to seed
+ *  CONFIG_KV_STAGING + R2 for the multi-tenant site-worker. */
 export async function createSiteAndBuildStaging(
   data: WizardFormData
 ): Promise<StagingResult> {
   const projectName = data.pagesProjectName;
 
   // The site folder in the network repo uses the project name as identifier.
-  // deploy.yml iterates sites/*/ and uses basename as SITE_DOMAIN.
-  // For pages-only sites (no real domain yet), the project name IS the domain.
-  // When a real domain is attached later, the folder stays the same — the
-  // custom domain is just an alias on the CF Pages project.
+  // sync-kv.yml iterates sites/*/ on commits to staging/** and main, and
+  // writes CONFIG_KV under `site:<folder-name>` so the worker middleware
+  // can resolve the right config when the hostname matches.
   const siteFolder = projectName;
 
   // 0. Resolve niche targeting: existing bundle or create new
@@ -133,15 +128,12 @@ export async function createSiteAndBuildStaging(
     if (bundle) bundleId = bundle.id;
   }
 
-  // 1. Build site.yaml content
-  // domain = projectName so Astro builds with the right site URL
-  // (site URL becomes https://{projectName}.pages.dev in production)
-  // Build config — pages_project is set later after CF project creation
+  // 1. Build site.yaml content. `domain` is the site folder identifier
+  // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
   const siteConfig = {
     domain: projectName,
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
-    pages_project: projectName, // placeholder — updated after CF creation
     groups: data.groups.length > 0 ? data.groups : ["adsense-default"],
     active: true,
     bundle_id: bundleId || undefined,
@@ -268,42 +260,32 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     siteConfig.theme.favicon = "/assets/favicon.png";
   }
 
-  // 5. Create CF Pages project on Cloudflare
-  // CF may rename the project (e.g. "travel" → "travel-6jj" if name is reserved)
-  // The `name` field is used for API calls (listing deployments, etc.)
-  // The `subdomain` field is the actual *.pages.dev subdomain (e.g. "travel-test-3pa.pages.dev")
-  const cfProject = await createPagesProject(projectName);
-  const actualProjectName = cfProject.name;
-  // subdomain from CF is like "travel-test-3pa.pages.dev" — extract the prefix
-  const cfSubdomain = cfProject.subdomain?.replace(".pages.dev", "") ?? actualProjectName;
+  // 5. Compute the staging URL up-front. The site folder = projectName.
+  const previewUrl = workerPreviewUrl(siteFolder);
 
-  // Update site.yaml with the actual CF project name (so deploy workflow can read it)
-  siteConfig.pages_project = actualProjectName;
-
-  // Re-generate site.yaml with final values (logo refs + actual project name)
+  // Re-serialize site.yaml so any theme.logo / theme.favicon mutations
+  // applied above (after the initial files[] build) make it into the commit.
   files[0] = {
     path: `sites/${siteFolder}/site.yaml`,
     content: stringifyYaml(siteConfig, { lineWidth: 0 }),
   };
 
-  // 6. Create staging branch in git
+  // 6. Create staging branch in git, branched from main.
   const stagingBranch = `staging/${projectName}`;
   await createBranch(stagingBranch);
 
-  // 7. Commit site files to the staging branch
-  // Use siteFolder as the "domain" parameter for the commit message
+  // 7. Commit site files to the staging branch via the Git Data API.
   await commitSiteFiles(siteFolder, files, "create site", stagingBranch);
 
-  // 6b. Trigger the deploy workflow via a Contents API push.
-  // Git Data API commits don't trigger GitHub Actions — only the Contents API does.
+  // 8. Fire sync-kv.yml. The Git Data API push above does NOT trigger
+  // GitHub Actions; only a Contents-API push does. triggerWorkflowViaPush
+  // writes a .build-trigger file via the Contents API to wake up sync-kv,
+  // which then seeds CONFIG_KV_STAGING + R2 for the new site.
+  // (workflow_dispatch would be cleaner but the token lacks actions:write.)
   await triggerWorkflowViaPush(stagingBranch, siteFolder);
 
-  // 7. Create site entry in dashboard index
-  // Use siteFolder as domain so the dashboard can find the site by its folder name
-  // Preview URL uses the actual CF subdomain (may differ from project name)
-  // CF subdomain format: {branch-slug}.{subdomain}.pages.dev
-  const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${cfSubdomain}.pages.dev`;
+  // 9. Create / update dashboard-index entry. Pages-related fields are
+  // null post-migration (kept on the type for backwards compat).
   const now = new Date().toISOString();
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
@@ -318,8 +300,8 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     fixed_ad: false,
     last_updated: now,
     created_at: now,
-    pages_project: actualProjectName,
-    pages_subdomain: cfSubdomain,
+    pages_project: null,
+    pages_subdomain: null,
     zone_id: null,
     staging_branch: stagingBranch,
     preview_url: previewUrl,
@@ -327,7 +309,6 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     custom_domain: null,
   };
 
-  // Check if site already exists (e.g. from domain sync), update it; otherwise create new
   const index = await readDashboardIndex();
   const existing = index.sites.find((s) => s.domain === siteFolder);
   if (existing) {
@@ -335,8 +316,6 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       status: "Staging",
       company: data.company,
       vertical: data.vertical,
-      pages_project: actualProjectName,
-      pages_subdomain: cfSubdomain,
       staging_branch: stagingBranch,
       preview_url: previewUrl,
     });
@@ -346,8 +325,8 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   revalidatePath("/");
 
-  // 8. Return result
-  return { stagingUrl: previewUrl, pagesProject: actualProjectName };
+  // 10. Return result
+  return { stagingUrl: previewUrl, siteFolder };
 }
 
 /**
@@ -422,38 +401,33 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   const site = index.sites.find((s) => s.domain === domain);
   if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
 
-  // If we already have a staging branch recorded, check it exists
+  // If a branch is already recorded, keep it (or recreate from main if it
+  // was deleted externally).
   if (site.staging_branch) {
     const exists = await branchExists(site.staging_branch);
     if (exists) return site.staging_branch;
-    // Branch was deleted externally — recreate it
     await createBranch(site.staging_branch, "main");
     return site.staging_branch;
   }
 
-  // No staging branch recorded — create one.
-  // Branch name uses the domain (site folder), NOT pages_project (CF may have renamed it).
-  const pagesHost = site.pages_subdomain ?? site.pages_project ?? domain;
+  // No branch recorded — branch from main using the domain as the slug.
+  // Folder name = domain, NOT pages_project (CF may have renamed legacy
+  // ones; not relevant post-migration).
   const stagingBranch = `staging/${domain}`;
   const exists = await branchExists(stagingBranch);
-  if (!exists) {
-    await createBranch(stagingBranch, "main");
-  }
-
-  // Construct preview URL — branch slug from branch name, domain from CF subdomain
-  const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
+  if (!exists) await createBranch(stagingBranch, "main");
 
   await updateSiteInIndex(domain, {
     staging_branch: stagingBranch,
-    preview_url: previewUrl,
+    preview_url: workerPreviewUrl(domain),
   });
 
   revalidatePath(`/sites/${domain}`);
   return stagingBranch;
 }
 
-/** Fetch Cloudflare zones not already used as a site domain or custom_domain. */
+/** Fetch Cloudflare zones not already used as a site identifier or as
+ *  another site's custom_domain. */
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
@@ -462,88 +436,89 @@ export async function getAvailableZones(): Promise<
     readDashboardIndex(),
   ]);
 
-  const usedByPagesProject = new Set(
-    index.sites.filter((s) => s.pages_project).map((s) => s.domain)
-  );
+  const usedAsSite = new Set(index.sites.map((s) => s.domain));
   const usedCustomDomains = new Set(
-    index.sites.map((s) => s.custom_domain).filter(Boolean)
+    index.sites.map((s) => s.custom_domain).filter((d): d is string => Boolean(d)),
   );
 
   return zones
-    .filter(
-      (z) => !usedByPagesProject.has(z.name) && !usedCustomDomains.has(z.name)
-    )
+    .filter((z) => !usedAsSite.has(z.name) && !usedCustomDomains.has(z.name))
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
-/** Attach a custom domain to the site's CF Pages project. */
+/** Attach a custom domain to a site by writing it to dashboard-index.yaml.
+ *  Post-migration this is just a data change — the production worker only
+ *  picks up the route on the next `pnpm deploy:production` run (which feeds
+ *  emit-env-configs.ts). The UI surfaces a "redeploy required" callout to
+ *  the operator. Best-effort email-routing setup happens here too since it's
+ *  zone-level and unrelated to the legacy Pages flow. */
 export async function attachCustomDomain(
   domain: string,
-  customDomain: string
-): Promise<void> {
+  customDomain: string,
+): Promise<{ redeployRequired: true }> {
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project) throw new Error(`No Pages project for ${domain}`);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
 
-  // Attach domain on Cloudflare Pages
-  await addCustomDomainToProject(site.pages_project, customDomain);
-
-  // Check for a duplicate zone entry and merge its zone_id before removing
+  // Merge a duplicate zone-only entry's zone_id into this site, then drop the dupe.
   const dupeIndex = index.sites.findIndex((s) => s.domain === customDomain);
   if (dupeIndex !== -1) {
     const dupe = index.sites[dupeIndex]!;
-    if (dupe.zone_id) {
-      site.zone_id = dupe.zone_id;
-    }
+    if (dupe.zone_id) site.zone_id = dupe.zone_id;
     index.sites.splice(dupeIndex, 1);
   }
 
-  // Best-effort: enable email routing + create contact@ forwarding rule.
-  // Failures here must NOT abort the attach — the Pages domain is already live.
+  // Best-effort zone-level setup. Failures here must NOT abort the attach
+  // — the data write is the contract; email routing is a nicety.
   if (site.zone_id) {
     try {
       await enableEmailRouting(site.zone_id);
       await createEmailRoutingRule(site.zone_id, customDomain);
     } catch (err) {
-      console.error("[attachCustomDomain] email routing setup failed", err);
+      console.error('[attachCustomDomain] email routing setup failed', err);
     }
   }
 
-  // Update the real site entry
   site.custom_domain = customDomain;
-  site.status = "Live";
+  site.status = 'Live';
   site.last_updated = new Date().toISOString();
 
-  await writeDashboardIndex(index, `dashboard: attach ${customDomain} to ${domain}`);
+  await writeDashboardIndex(
+    index,
+    `dashboard: attach ${customDomain} to ${domain}`,
+  );
 
-  revalidatePath("/");
+  revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
+
+  return { redeployRequired: true };
 }
 
-/** Detach (disconnect) a custom domain from the site's CF Pages project. */
-export async function detachCustomDomain(domain: string): Promise<void> {
+/** Detach a custom domain from a site (clears the field; reverts status).
+ *  Post-migration: pure data change. Production deploy must be re-run for
+ *  the prod worker to actually drop the route. */
+export async function detachCustomDomain(
+  domain: string,
+): Promise<{ redeployRequired: true }> {
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project || !site.custom_domain)
+  if (!site?.custom_domain) {
     throw new Error(`No custom domain to detach for ${domain}`);
-
-  // Remove the custom domain from the Pages project.
-  // The CF Pages API deletes by domain NAME, not ID: DELETE /pages/projects/{project}/domains/{name}
-  const cfDomains = await getPagesProjectDomainsDetailed(site.pages_project);
-  const cfDomain = cfDomains.find((d) => d.name === site.custom_domain);
-  if (cfDomain) {
-    await removeCustomDomainFromProject(site.pages_project, cfDomain.name);
   }
 
-  // Clear custom_domain and revert status
   site.custom_domain = null;
-  site.status = "Ready";
+  site.status = 'Ready';
   site.last_updated = new Date().toISOString();
 
-  await writeDashboardIndex(index, `dashboard: detach custom domain from ${domain}`);
+  await writeDashboardIndex(
+    index,
+    `dashboard: detach custom domain from ${domain}`,
+  );
 
-  revalidatePath("/");
+  revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
+
+  return { redeployRequired: true };
 }
 
 /** Save a staging preview URL for later reference. */
@@ -561,33 +536,6 @@ export async function saveStagingPreview(
 
   await updateSiteInIndex(domain, { saved_previews: previews });
   revalidatePath(`/sites/${domain}`);
-}
-
-/** Refresh the preview URL from the latest CF Pages preview deployment. */
-export async function refreshPreviewUrl(domain: string): Promise<string | null> {
-  const index = await readDashboardIndex();
-  const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project) return null;
-
-  const deployments = await listDeployments(site.pages_project, "preview");
-  if (deployments.length === 0) return null;
-
-  const deployment = deployments[0]!;
-  let latestUrl = deployment.url;
-  
-  if (deployment.aliases && deployment.aliases.length > 0) {
-    latestUrl = deployment.aliases[0]!;
-  } else if (site.staging_branch) {
-    const branchSlug = site.staging_branch.replace(/\//g, "-");
-    const pagesHost = site.pages_subdomain ?? site.pages_project;
-    latestUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
-  }
-
-  const previewUrl = latestUrl.startsWith("https://") ? latestUrl : `https://${latestUrl}`;
-  await updateSiteInIndex(domain, { preview_url: previewUrl });
-
-  revalidatePath(`/sites/${domain}`);
-  return previewUrl;
 }
 
 // ---------------------------------------------------------------------------

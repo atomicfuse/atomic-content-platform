@@ -22,6 +22,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadCustomDomains } from './lib/load-routes';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DIST_SERVER = join(__dirname, '..', 'dist', 'server');
@@ -76,13 +77,11 @@ const ENVS: Record<string, EnvOverrides> = {
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-prod',
     },
-    // Phase-7 cutover. coolnews.dev served as a Workers Custom Domain
-    // (`custom_domain = true`). CF manages the DNS record itself, so it
-    // survives the legacy Pages project being deleted (zone-scoped route
-    // syntax fails closed when the Pages-managed DNS record disappears).
-    routes: [
-      { pattern: 'coolnews.dev', custom_domain: true },
-    ],
+    // Routes are derived from dashboard-index.yaml at build time
+    // (see resolveProductionRoutes() below). Hardcoded entries removed
+    // post Phase-7/8: the wizard now writes `custom_domain` to the
+    // dashboard-index entry; this script picks them up.
+    routes: [],
   },
 };
 
@@ -107,9 +106,27 @@ interface WranglerConfig {
   [key: string]: unknown;
 }
 
+/**
+ * Resolve production custom-domain routes from the network repo's
+ * `dashboard-index.yaml`. Defaults to the standard side-by-side checkout
+ * layout (`<platform-root>/../atomic-labs-network`), matching `seed-kv.ts`.
+ * Operators can override via `NETWORK_DATA_PATH` for worktree or
+ * non-standard layouts. If the network repo isn't at the default path
+ * AND `NETWORK_DATA_PATH` isn't set, `loadCustomDomains` will throw with
+ * a clear filepath error.
+ */
+async function resolveProductionRoutes(): Promise<RouteSpec[]> {
+  const networkPath =
+    process.env.NETWORK_DATA_PATH ??
+    join(__dirname, '..', '..', '..', '..', 'atomic-labs-network');
+  return loadCustomDomains(networkPath);
+}
+
 async function main(): Promise<void> {
   const baseRaw = await readFile(join(DIST_SERVER, 'wrangler.json'), 'utf-8');
   const base = JSON.parse(baseRaw) as WranglerConfig;
+
+  ENVS.production.routes = await resolveProductionRoutes();
 
   for (const [envName, overrides] of Object.entries(ENVS)) {
     const config: WranglerConfig = JSON.parse(JSON.stringify(base));

@@ -5,7 +5,13 @@ export const dynamic = "force-dynamic";
 
 export default async function SitesPage(): Promise<React.ReactElement> {
   const index = await readDashboardIndex();
-  const sites = index.sites.filter((s) => s.pages_project !== null);
+  // Excludes zone-only entries from syncDomainsFromCloudflare. Wizard-created
+  // sites have null pages_project post-migration, so we gate on staging_branch
+  // (which the wizard always sets) and keep pages_project as a backward-compat
+  // fallback for legacy entries.
+  const sites = index.sites.filter(
+    (s) => s.staging_branch !== null || s.pages_project !== null,
+  );
 
   return (
     <div className="space-y-6">
