@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { attachCustomDomain, detachCustomDomain, getAvailableZones } from "@/actions/wizard";
@@ -18,6 +19,7 @@ export function AttachDomainPanel({
 }: AttachDomainPanelProps): React.ReactElement {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
+  const router = useRouter();
   const [selectedZone, setSelectedZone] = useState("");
   const [zones, setZones] = useState<Array<{ domain: string; zoneId: string }>>([]);
   const [loadingZones, setLoadingZones] = useState(false);
@@ -39,6 +41,7 @@ export function AttachDomainPanel({
         await attachCustomDomain(domain, selectedZone);
         setSelectedZone("");
         setRedeployHint('attached');
+        router.refresh();
         toast("Custom domain attached", "success");
       } catch {
         toast("Failed to attach domain", "error");
@@ -51,6 +54,7 @@ export function AttachDomainPanel({
       try {
         await detachCustomDomain(domain);
         setRedeployHint('detached');
+        router.refresh();
         toast("Custom domain disconnected", "success");
       } catch {
         toast("Failed to disconnect domain", "error");

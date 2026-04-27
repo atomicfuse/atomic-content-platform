@@ -80,7 +80,7 @@ export default async function SiteDetailPage({
       <SiteDetailTabs
         domain={decodedDomain}
         stagingTab={
-          site.pages_project ? (
+          site.staging_branch || site.pages_project ? (
             <StagingTab
               domain={decodedDomain}
               stagingBranch={site.staging_branch}
