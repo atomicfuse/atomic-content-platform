@@ -17,7 +17,6 @@ import {
 } from "@/lib/github";
 import {
   createPagesProject,
-  listDeployments,
   listZones,
 } from "@/lib/cloudflare";
 import { workerPreviewUrl } from "@/lib/constants";
@@ -405,31 +404,25 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   const site = index.sites.find((s) => s.domain === domain);
   if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
 
-  // If we already have a staging branch recorded, check it exists
+  // If a branch is already recorded, keep it (or recreate from main if it
+  // was deleted externally).
   if (site.staging_branch) {
     const exists = await branchExists(site.staging_branch);
     if (exists) return site.staging_branch;
-    // Branch was deleted externally — recreate it
     await createBranch(site.staging_branch, "main");
     return site.staging_branch;
   }
 
-  // No staging branch recorded — create one.
-  // Branch name uses the domain (site folder), NOT pages_project (CF may have renamed it).
-  const pagesHost = site.pages_subdomain ?? site.pages_project ?? domain;
+  // No branch recorded — branch from main using the domain as the slug.
+  // Folder name = domain, NOT pages_project (CF may have renamed legacy
+  // ones; not relevant post-migration).
   const stagingBranch = `staging/${domain}`;
   const exists = await branchExists(stagingBranch);
-  if (!exists) {
-    await createBranch(stagingBranch, "main");
-  }
-
-  // Construct preview URL — branch slug from branch name, domain from CF subdomain
-  const branchSlug = stagingBranch.replace(/\//g, "-");
-  const previewUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
+  if (!exists) await createBranch(stagingBranch, "main");
 
   await updateSiteInIndex(domain, {
     staging_branch: stagingBranch,
-    preview_url: previewUrl,
+    preview_url: workerPreviewUrl(domain),
   });
 
   revalidatePath(`/sites/${domain}`);
@@ -546,33 +539,6 @@ export async function saveStagingPreview(
 
   await updateSiteInIndex(domain, { saved_previews: previews });
   revalidatePath(`/sites/${domain}`);
-}
-
-/** Refresh the preview URL from the latest CF Pages preview deployment. */
-export async function refreshPreviewUrl(domain: string): Promise<string | null> {
-  const index = await readDashboardIndex();
-  const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project) return null;
-
-  const deployments = await listDeployments(site.pages_project, "preview");
-  if (deployments.length === 0) return null;
-
-  const deployment = deployments[0]!;
-  let latestUrl = deployment.url;
-  
-  if (deployment.aliases && deployment.aliases.length > 0) {
-    latestUrl = deployment.aliases[0]!;
-  } else if (site.staging_branch) {
-    const branchSlug = site.staging_branch.replace(/\//g, "-");
-    const pagesHost = site.pages_subdomain ?? site.pages_project;
-    latestUrl = `https://${branchSlug}.${pagesHost}.pages.dev`;
-  }
-
-  const previewUrl = latestUrl.startsWith("https://") ? latestUrl : `https://${latestUrl}`;
-  await updateSiteInIndex(domain, { preview_url: previewUrl });
-
-  revalidatePath(`/sites/${domain}`);
-  return previewUrl;
 }
 
 // ---------------------------------------------------------------------------

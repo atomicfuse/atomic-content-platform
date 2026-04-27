@@ -7,7 +7,6 @@ import {
   goLive,
   publishStagingToProduction,
   saveStagingPreview,
-  refreshPreviewUrl,
   ensureStagingBranch,
 } from "@/actions/wizard";
 import { StagingEditPanel } from "./StagingEditPanel";
@@ -20,8 +19,6 @@ interface StagingTabProps {
    *  numeric `site_id` field, which is an unrelated internal id. Used as
    *  both the KV site config key and the `?_atl_site=` Worker override. */
   domain: string;
-  pagesProject: string | null;
-  pagesSubdomain: string | null;
   stagingBranch: string | null;
   previewUrl: string | null;
   savedPreviews: Array<{ url: string; label: string; saved_at: string }> | null;
@@ -33,8 +30,6 @@ interface StagingTabProps {
 
 export function StagingTab({
   domain,
-  pagesProject,
-  pagesSubdomain,
   stagingBranch,
   previewUrl,
   savedPreviews,
@@ -45,16 +40,11 @@ export function StagingTab({
 }: StagingTabProps): React.ReactElement {
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
 
-  // Post-migration: Pages projects no longer exist. Both the prominent
-  // "Worker Preview" block and the inline "Staging Preview" link below
-  // resolve to the same staging Worker URL — `?_atl_site=<domain>` forces
-  // the right tenant. The `pagesProject` / `pagesSubdomain` props are
-  // unused; kept on the interface for caller backward-compat.
-  void pagesProject;
-  void pagesSubdomain;
+  // Post-migration: site preview URL is the static workerPreviewUrl(domain).
+  // Both the Worker Preview block and the inline Staging Preview link below
+  // resolve to the same URL — `?_atl_site=<domain>` forces the right tenant.
   const workerUrl = domain ? workerPreviewUrl(domain) : null;
   const currentPreviewUrl = currentStagingBranch ? workerUrl : previewUrl;
-  const [isRefreshing, startRefresh] = useTransition();
   const [isSaving, startSave] = useTransition();
   const [isGoingLive, startGoLive] = useTransition();
   const [isPublishing, startPublish] = useTransition();
@@ -73,17 +63,6 @@ export function StagingTab({
   // domain don't have a public live URL — they're only reachable via
   // the Worker preview (above).
   const productionUrl = customDomain ? `https://${customDomain}` : null;
-
-  function handleRefreshPreview(): void {
-    startRefresh(async () => {
-      try {
-        await refreshPreviewUrl(domain);
-        toast("Preview URL refreshed", "success");
-      } catch {
-        toast("Failed to refresh preview URL", "error");
-      }
-    });
-  }
 
   function handleSavePreview(): void {
     if (!currentPreviewUrl || !saveLabel.trim()) return;
@@ -249,14 +228,6 @@ export function StagingTab({
 
           {/* Actions row */}
           <div className="flex items-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={isRefreshing}
-              onClick={handleRefreshPreview}
-            >
-              Refresh Preview
-            </Button>
             <Button
               variant="secondary"
               size="sm"
