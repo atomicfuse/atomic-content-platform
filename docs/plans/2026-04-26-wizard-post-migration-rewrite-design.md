@@ -18,7 +18,7 @@ These will fail or create dead artifacts. The wizard needs to be rewritten end-t
 
 ## Constraints / Inputs
 
-- `sync-kv.yml` (in the network repo) already triggers on push to both `staging/**` and `main`, so the wizard does not need to "trigger" any deploy — committing to the right branch is enough.
+- `sync-kv.yml` (in the network repo) triggers on push to both `staging/**` and `main`, BUT not all pushes wake it up: commits made via the GitHub Git Data API (which `commitSiteFiles` uses) do not fire workflow events — only Contents-API pushes do. The existing `triggerWorkflowViaPush` helper writes a `.build-trigger` file via the Contents API to fire sync-kv after a staging-branch commit. `workflow_dispatch` is not an option because the platform-repo `GITHUB_TOKEN` lacks `actions:write` scope (see commit `7690d90`).
 - The platform repo has no CI deploy for `site-worker` on push to main; production rollouts of the worker are run manually via `pnpm deploy:production` from `packages/site-worker` (auto-deploy is a follow-up, out of scope here).
 - The Worker preview URL is `https://atomic-site-worker-staging.dev1-953.workers.dev/?_atl_site=<domain>` and is already exposed via `workerPreviewUrl(siteId)` in `services/dashboard/src/lib/constants.ts`.
 - `coolnews.dev` is currently routed via the production worker as a Workers Custom Domain (`custom_domain: true` in `emit-env-configs.ts`). Detaching the legacy Pages DNS record was the incident behind Landmine #19 — DNS auto-management is what kept the site recoverable.
@@ -63,7 +63,9 @@ StepPreview            createSiteAndBuildStaging():
                            preview_url = workerPreviewUrl(slug),
                            pages_project=null, pages_subdomain=null,
                            zone_id=null, custom_domain=null
-                       (no CF Pages API; no triggerWorkflowViaPush)
+                       (no CF Pages API; triggerWorkflowViaPush still
+                        called — Git Data API doesn't fire workflows;
+                        Contents-API push of .build-trigger does)
                        Poll Worker preview URL until non-404 (or 60s timeout).
 
 StepGoLive             "Your site is staged" review screen
@@ -93,7 +95,7 @@ sync.ts:123            stops writing pages_subdomain / pages_project on
 
 - `createSiteAndBuildStaging(data)`:
   - Remove `createPagesProject`.
-  - Remove `triggerWorkflowViaPush` (sync-kv.yml fires on push to `staging/**`).
+  - **Keep** `triggerWorkflowViaPush(stagingBranch, siteFolder)` after `commitSiteFiles`. Its purpose is now to fire `sync-kv.yml` (instead of the retired `deploy.yml`); the underlying mechanism — `.build-trigger` push via Contents API — is still required because Git Data API commits don't trigger Actions and the token can't `workflow_dispatch`. (Updated comments on both helpers in `services/dashboard/src/lib/github.ts` after commit `7690d90` describe this.)
   - Remove `pages_project` from site.yaml (legacy field).
   - `previewUrl = workerPreviewUrl(siteFolder)`.
   - dashboard-index entry: `pages_project: null`, `pages_subdomain: null`, `zone_id: null`, `custom_domain: null`.

@@ -726,7 +726,7 @@ interface StagingResult {
 In particular:
 - Remove the `cfProject` / `actualProjectName` / `cfSubdomain` block (lines ~271–278).
 - Remove the `pages_project: actualProjectName` and `files[0]` regeneration that depends on it.
-- Remove the `await triggerWorkflowViaPush(...)` call (line ~299).
+- **Keep** the `await triggerWorkflowViaPush(...)` call (line ~299) — it's still required to fire `sync-kv.yml`. The Git Data API path used by `commitSiteFiles` does NOT trigger Actions; only Contents-API pushes do, and `workflow_dispatch` is unavailable because the platform `GITHUB_TOKEN` lacks `actions:write`. Update the inline comment to reflect that it now triggers sync-kv (not the retired deploy.yml).
 - `previewUrl` becomes `workerPreviewUrl(siteFolder)`.
 - The new `DashboardSiteEntry` literal sets `pages_project: null`, `pages_subdomain: null`, `zone_id: null`.
 - The site.yaml `pages_project` field is removed entirely from `siteConfig` (line ~144).
@@ -748,10 +748,15 @@ const previewUrl = workerPreviewUrl(siteFolder);
 const stagingBranch = `staging/${projectName}`;
 await createBranch(stagingBranch);
 
-// 7. Commit site files to the staging branch.
-// sync-kv.yml fires automatically on push to `staging/**`, so no
-// triggerWorkflowViaPush is needed.
+// 7. Commit site files to the staging branch via the Git Data API.
 await commitSiteFiles(siteFolder, files, "create site", stagingBranch);
+
+// 8. Fire sync-kv.yml. The Git Data API push above does NOT trigger
+// GitHub Actions; only a Contents-API push does. triggerWorkflowViaPush
+// writes a .build-trigger file via the Contents API to wake up sync-kv,
+// which then seeds CONFIG_KV_STAGING + R2 for the new site.
+// (workflow_dispatch would be cleaner but the token lacks actions:write.)
+await triggerWorkflowViaPush(stagingBranch, siteFolder);
 
 // 8. Create / update dashboard-index entry. Pages-related fields are
 // null post-migration (kept on the type for backwards compat).
@@ -797,13 +802,15 @@ revalidatePath("/");
 return { stagingUrl: previewUrl, siteFolder };
 ```
 
-**Step 5: Drop the `triggerWorkflowViaPush` import if no other caller exists**
+**Step 5: Confirm `triggerWorkflowViaPush` import stays**
+
+The import is still needed (and other callers — `updateStagingSite`, `uploadStagingLogo`, `/api/sites/rebuild` — already rely on it). Just verify it's still imported in `wizard.ts`:
 
 ```bash
-grep -rn 'triggerWorkflowViaPush' services/dashboard/src
+grep -n 'triggerWorkflowViaPush' services/dashboard/src/actions/wizard.ts
 ```
 
-If only `wizard.ts` imports it AND only the now-deleted call uses it, remove from the import too. Otherwise leave it. (`updateStagingSite`, `uploadStagingLogo`, etc. still use it for staging-branch edit flows — those are correct and stay.)
+Expected: at least the import line + the call inside `createSiteAndBuildStaging`.
 
 **Step 6: Typecheck**
 
@@ -1108,12 +1115,15 @@ git add services/dashboard/src/actions/wizard.ts \
 git commit -m "$(cat <<'EOF'
 feat(dashboard): rewrite new-site wizard for post-migration architecture
 
-createSiteAndBuildStaging no longer creates a Cloudflare Pages project
-or triggers deploy.yml. It writes the site files to staging/<slug>;
-sync-kv.yml fires on push to staging/** and seeds the staging KV. The
-preview URL becomes workerPreviewUrl(slug). Pages-specific dashboard-
-index fields (pages_project, pages_subdomain, zone_id) are written as
-null on new entries.
+createSiteAndBuildStaging no longer creates a Cloudflare Pages project.
+It commits site files to staging/<slug> via the Git Data API, then
+fires sync-kv.yml via triggerWorkflowViaPush (Contents-API push of a
+.build-trigger file — Git Data API commits don't wake up Actions and
+the platform GITHUB_TOKEN lacks actions:write for workflow_dispatch).
+sync-kv seeds CONFIG_KV_STAGING + R2. Preview URL becomes
+workerPreviewUrl(slug). Pages-specific dashboard-index fields
+(pages_project, pages_subdomain, zone_id) are written as null on new
+entries.
 
 StepPreview swaps the /api/agent/deployment poll for a HEAD-poll
 against the worker URL itself (middleware returns 404 until KV has the
@@ -1300,15 +1310,61 @@ Expected: pass. (`cfInfo` fields may show as unused — that's OK; they're part 
 
 ---
 
-### Task E3: Commit Phase E
+### Task E3: Deprecate `/api/agent/deployment` to 410 Gone
+
+After Phase C, `StepPreview` no longer polls `/api/agent/deployment`. With no remaining caller, follow the same pattern commit `7690d90` used for `/api/agent/build`: replace the route with a 410 stub. This keeps the symmetry and avoids a stray live route hitting the Cloudflare Pages deployments API.
+
+**Files:**
+- Modify: `services/dashboard/src/app/api/agent/deployment/route.ts`
+
+**Step 1: Replace file contents**
+
+```ts
+import { NextResponse } from "next/server";
+
+/**
+ * GET /api/agent/deployment — DEPRECATED
+ * Polled CF Pages deployment status during the legacy wizard staging
+ * flow. Retired in the post-migration wizard rewrite — the Worker URL
+ * is static so there's nothing to poll. Frontend now HEAD-polls the
+ * worker preview URL directly until middleware returns non-404.
+ */
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json(
+    { status: "error", message: "Deprecated — Worker preview URL is static; HEAD-poll it directly" },
+    { status: 410 },
+  );
+}
+```
+
+**Step 2: Verify nothing still calls it**
+
+```bash
+grep -rn '/api/agent/deployment' services/dashboard/src
+```
+
+Expected: only matches inside the route file itself.
+
+**Step 3: Typecheck**
+
+```bash
+pnpm typecheck
+```
+
+Expected: pass.
+
+---
+
+### Task E4: Commit Phase E
 
 ```bash
 cd /Users/michal/Documents/ATL-content-network/atomic-content-platform
 git add services/dashboard/src/lib/cloudflare.ts \
-        services/dashboard/src/actions/sync.ts
+        services/dashboard/src/actions/sync.ts \
+        services/dashboard/src/app/api/agent/deployment/route.ts
 
 git commit -m "$(cat <<'EOF'
-chore(dashboard): delete dead Pages-API helpers; null Pages fields on synced sites
+chore(dashboard): delete dead Pages-API helpers; deprecate /api/agent/deployment
 
 Removes createPagesProject, addCustomDomainToProject,
 removeCustomDomainFromProject, getPagesProjectDomainsDetailed,
@@ -1318,6 +1374,10 @@ getAPOStatus retained (used by AttachDomainPanel and CF zone sync).
 sync.ts now writes pages_project/pages_subdomain/zone_id as null on
 new entries (matches what the wizard does). Existing entries on disk
 are not migrated — left as-is, harmless.
+
+/api/agent/deployment is replaced with a 410 Gone stub, matching the
+pattern set by /api/agent/build's deprecation in 7690d90. The wizard's
+StepPreview now HEAD-polls the worker preview URL directly.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
