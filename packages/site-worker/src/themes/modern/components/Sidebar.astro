@@ -1,0 +1,39 @@
+---
+import AdSlot from '../../../components/AdSlot.astro';
+import NewsletterBox from './NewsletterBox.astro';
+import FollowUs from './FollowUs.astro';
+import CategoryList from './CategoryList.astro';
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+type Props =
+  | { variant: 'home'; config: ResolvedConfig }
+  | { variant: 'article'; config: ResolvedConfig; categories: { topic: string; articles: ArticleIndexEntry[] }[] };
+const props = Astro.props as Props;
+const { config, variant } = props;
+---
+
+<aside class="sidebar">
+  {variant === 'home' && (
+    <>
+      <AdSlot position="homepage-sidebar" pageType="homepage" server:defer />
+      <NewsletterBox domain={config.domain} />
+    </>
+  )}
+  {variant === 'article' && (
+    <>
+      <AdSlot position="article-sidebar" pageType="article" server:defer />
+      <FollowUs config={config} />
+      {(props as Extract<Props, { variant: 'article' }>).categories.map((c) => (
+        <CategoryList topic={c.topic} articles={c.articles} />
+      ))}
+    </>
+  )}
+</aside>
+
+<style>
+  .sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
+  @media (min-width: 960px) {
+    .sidebar { position: sticky; top: calc(64px + 1rem); }
+  }
+</style>

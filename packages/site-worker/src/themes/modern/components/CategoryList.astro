@@ -1,0 +1,50 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { topic: string; articles: ArticleIndexEntry[]; }
+const { topic, articles } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="category-list">
+    <h3 class="category-list-heading">{topic}</h3>
+    <ul class="category-list-items">
+      {articles.map((article) => (
+        <li>
+          <a href={`/${article.slug}`} class="category-list-link">
+            {article.featuredImage && (
+              <img src={article.featuredImage} alt="" loading="lazy" />
+            )}
+            <span>{article.title}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </section>
+)}
+
+<style>
+  .category-list { margin-top: 1.5rem; }
+  .category-list-heading {
+    background: var(--color-primary, #1a1a2e);
+    color: #fff;
+    text-align: center;
+    padding: 0.75rem;
+    margin: 0 0 1rem;
+    font-size: var(--text-base, 1rem);
+    border-radius: var(--radius-sm, 4px);
+  }
+  .category-list-items { list-style: none; padding: 0; margin: 0; }
+  .category-list-items li { margin-bottom: 0.75rem; }
+  .category-list-link {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 0.75rem;
+    color: inherit; text-decoration: none;
+    font-size: 0.875rem;
+  }
+  .category-list-link img {
+    width: 100%; aspect-ratio: 1; object-fit: cover;
+    border-radius: var(--radius-sm, 4px);
+  }
+</style>
