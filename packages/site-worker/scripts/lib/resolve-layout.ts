@@ -42,7 +42,7 @@ export function resolveLayout(input: LayoutConfig | undefined): ResolvedLayoutCo
     },
     sidebar_topics: {
       auto: input?.sidebar_topics?.auto ?? LAYOUT_DEFAULTS.sidebar_topics.auto,
-      explicit: input?.sidebar_topics?.explicit ?? [],
+      explicit: input?.sidebar_topics?.explicit ?? LAYOUT_DEFAULTS.sidebar_topics.explicit,
     },
     load_more: {
       page_size: Math.max(1, input?.load_more?.page_size ?? LAYOUT_DEFAULTS.load_more.page_size),

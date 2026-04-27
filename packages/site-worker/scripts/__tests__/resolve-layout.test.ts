@@ -16,6 +16,11 @@ describe('resolveLayout', () => {
     expect(out.must_reads.enabled).toBe(true);
   });
 
+  it('clamps must_reads.count to a sane minimum', () => {
+    const out = resolveLayout({ must_reads: { count: 0 } });
+    expect(out.must_reads.count).toBe(1);
+  });
+
   it('clamps page_size to a sane minimum', () => {
     const out = resolveLayout({ load_more: { page_size: 0 } });
     expect(out.load_more.page_size).toBe(1);
