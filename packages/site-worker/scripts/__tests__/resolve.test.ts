@@ -419,3 +419,31 @@ describe('mergeAdPlacementLayers', () => {
     expect(result[0].id).toBe('sidebar');
   });
 });
+
+describe('layout merge across layers', () => {
+  it('site layout deep-merges over org', () => {
+    const org = { layout: { hero: { count: 4 }, must_reads: { enabled: true, count: 5 } } };
+    const site = { layout: { hero: { count: 3 } } };
+    const merged = deepMerge(org, site);
+    expect(merged).toEqual({
+      layout: {
+        hero: { count: 3 },
+        must_reads: { enabled: true, count: 5 },
+      },
+    });
+  });
+
+  it('group layer overrides org but is overridden by site', () => {
+    const org = { layout: { load_more: { page_size: 10 } } };
+    const group = { layout: { load_more: { page_size: 20 } } };
+    const site = { layout: { load_more: { page_size: 5 } } };
+    const merged = deepMerge(deepMerge(org, group), site);
+    expect(merged).toEqual({ layout: { load_more: { page_size: 5 } } });
+  });
+
+  it('null in site does not erase org layout', () => {
+    const org = { layout: { hero: { count: 4 } } };
+    const site = { layout: null };
+    expect(deepMerge(org, site)).toEqual({ layout: { hero: { count: 4 } } });
+  });
+});
