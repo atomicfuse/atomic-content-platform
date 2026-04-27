@@ -38,19 +38,21 @@
 | 2.9 | Header restyle | ✅ done | `f3d523e` |
 | 2.10 | Wire homepage to layout v2 | ✅ done | `33680ad` |
 | 2.11 | Wire article page to layout v2 | ✅ done | `66f4f8e` |
-| 3.1 | Font registry | ⏸ not started | — |
-| 3.2 | ColorPickerField + FontPickerField | ⏸ not started | — |
-| 3.3 | Extend StepTheme + wizard action | ⏸ not started | — |
-| 3.4 | Site Settings Theme sub-tab | ⏸ not started | — |
-| 3.5 | Org Settings defaults | ⏸ not started | — |
-| 3.6 | Guide page | ⏸ not started | — |
+| 3.1 | Font registry | ✅ done | `2206982` |
+| 3.2 | ColorPickerField + FontPickerField | ✅ done | `6d9e2d7` |
+| 3.3 | Extend StepTheme + wizard action | ✅ done | `e670cb1` |
+| 3.4 | Site Settings Theme sub-tab | ✅ done | `53094bd` |
+| 3.5 | Org Settings defaults | ✅ done | `98f4c42` |
+| 3.6 | Guide page | ✅ done | `7ba9f4b` |
 | 4.x | Phase 4 rollout + cleanup | ⏸ not started | — |
 
 **Test surface after Phase 2:** 113 unit tests passing in `packages/site-worker` (was 109 after Phase 1; net +4 from `sliceForPage` tests). `pnpm typecheck` clean (0 errors) in shared-types and site-worker.
 
 **Phase 1 complete.** Task 1.8 pushed to network main (`32bd856`). Stale `dist/` rebuilt and committed (`4800bd3`). Co-Author trailer resolved to `Claude Opus 4.6` going forward.
 
-**Phase 2 complete.** All 11 component + wiring tasks done. 20 new Astro components + 1 API endpoint + 1 pagination helper + 1 render helper created. Homepage and article page both have v2 paths gated behind `theme.layout_v2: true`. MoreOn.astro was intentionally omitted per the plan's own correction (What's New feed is the load-more target). Phase 3 next.
+**Phase 2 complete.** All 11 component + wiring tasks done. 20 new Astro components + 1 API endpoint + 1 pagination helper + 1 render helper created. Homepage and article page both have v2 paths gated behind `theme.layout_v2: true`. MoreOn.astro was intentionally omitted per the plan's own correction (What's New feed is the load-more target).
+
+**Phase 3 complete.** All 6 dashboard tasks done. Font registry (12 fonts), ColorPickerField + FontPickerField pickers, wizard extension (brand colors + fonts + layout_v2:true for new sites), SiteThemeTab (colors, fonts, layout knobs), Org Settings Defaults tab, and Theme & Layout guide page. `pnpm typecheck` clean; 113 unit tests passing. Phase 4 (rollout + cleanup) next.
 
 **Remaining tech debt (in backlog/general.md):**
 - `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup.
