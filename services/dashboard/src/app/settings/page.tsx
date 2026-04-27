@@ -219,7 +219,7 @@ export default function OrgSettingsPage(): React.ReactElement {
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Layout</h3>
         <p className="text-xs text-[var(--text-muted)]">
-          Layout knobs inherited by all sites with layout_v2 enabled.
+          Layout knobs inherited by all sites.
         </p>
         <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
           <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">

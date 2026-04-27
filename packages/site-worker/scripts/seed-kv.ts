@@ -373,7 +373,6 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     layout: resolveLayout(merged.layout as LayoutConfig | undefined),
     theme: {
       ...(merged.theme as Record<string, unknown> | undefined ?? {}),
-      layout_v2: Boolean((merged.theme as Record<string, unknown> | undefined)?.layout_v2),
     } as ResolvedConfig['theme'],
     domain: String(site.domain ?? siteId),
     site_name: String(site.site_name ?? siteId),

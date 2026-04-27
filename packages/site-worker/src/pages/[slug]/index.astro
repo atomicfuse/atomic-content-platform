@@ -4,7 +4,6 @@ export const prerender = false;
 import { env } from 'cloudflare:workers';
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import SEOHead from '../../components/SEOHead.astro';
-import ArticleLayout from '../../layouts/ArticleLayout.astro';
 import PageLayout from '../../layouts/PageLayout.astro';
 import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
@@ -50,13 +49,11 @@ const articleBodyWithInlineAds = article
     )
   : '';
 
-const useV2 = config.theme.layout_v2 === true;
-
-// V2: compute related articles and category-list articles
+// Compute related articles and category-list articles
 let related: ArticleIndexEntry[] = [];
 let categoryLists: { topic: string; articles: ArticleIndexEntry[] }[] = [];
 
-if (useV2 && article) {
+if (article) {
   const allArticles =
     (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
   const visibleOthers = allArticles
@@ -90,7 +87,7 @@ if (useV2 && article) {
   </PageLayout>
 )}
 
-{article && useV2 && (
+{article && (
   <BaseLayout
     title={`${article.frontmatter.title} | ${config.site_name}`}
     description={article.frontmatter.description ?? article.frontmatter.title}
@@ -109,7 +106,7 @@ if (useV2 && article) {
     <Header config={config} currentPath={`/${slug}`} />
     <ArticleHero article={article.frontmatter} />
 
-    <main class="article-page-v2">
+    <main class="article-page">
       <div class="article-page-inner">
         <article class="article-prose prose">
           <Fragment set:html={articleBodyWithInlineAds} />
@@ -126,19 +123,6 @@ if (useV2 && article) {
     <Footer config={config} />
     <AdSlot position="sticky-bottom" pageType="article" server:defer />
   </BaseLayout>
-)}
-
-{article && !useV2 && (
-  <ArticleLayout
-    title={article.frontmatter.title}
-    description={article.frontmatter.description ?? article.frontmatter.title}
-    author={article.frontmatter.author}
-    publishDate={new Date(article.frontmatter.publishDate).toISOString()}
-    featuredImage={article.frontmatter.featuredImage}
-    slug={article.frontmatter.slug}
-  >
-    <Fragment set:html={articleBodyWithInlineAds} />
-  </ArticleLayout>
 )}
 
 <style>

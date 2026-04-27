@@ -64,23 +64,6 @@ Valid values: `hero`, `must-read`, or an array like `[hero, must-read]`.
 
 When there aren't enough articles with `featured` frontmatter, `selectFeatured()` auto-fills from the most recent articles. This means the layout always looks full even on a fresh site with no manually-featured content.
 
-## Enabling Layout v2 on Existing Sites
-
-New sites created via the wizard automatically get `layout_v2: true`. For existing sites:
-
-1. Open the site's staging branch `sites/<domain>/site.yaml`
-2. Add under `theme:`:
-   ```yaml
-   theme:
-     layout_v2: true
-     colors:
-       primary: "#1a1a2e"
-       accent: "#f4c542"
-   ```
-3. Commit and push. The sync-kv workflow will update CONFIG_KV.
-4. Preview via the Worker Preview button in the dashboard.
-5. When satisfied, publish staging to production.
-
 ## Config Inheritance
 
 Theme colours, fonts, and layout knobs follow the standard 5-layer inheritance:
@@ -92,10 +75,6 @@ org.yaml > groups > overrides/config > site.yaml
 Org defaults are set in Settings > Defaults. Per-site values always win.
 
 ## Troubleshooting
-
-**Layout looks like the old design**
-- Check `theme.layout_v2` is `true` in the site's config (CONFIG_KV).
-- Run `pnpm seed:kv <siteId>` to re-seed if needed.
 
 **Colours don't appear**
 - Verify `theme.colors.primary` and `theme.colors.accent` are valid hex values.

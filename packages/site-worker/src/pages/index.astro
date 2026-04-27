@@ -10,7 +10,6 @@ import ArticleFeed from '../themes/modern/components/ArticleFeed.astro';
 import Sidebar from '../themes/modern/components/Sidebar.astro';
 import MustReads from '../themes/modern/components/MustReads.astro';
 import LoadMoreButton from '../themes/modern/components/LoadMoreButton.astro';
-import ArticleCard from '../themes/modern/components/ArticleCard.astro';
 import AdSlot from '../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
 import { getConfig, getSiteId } from '../lib/config';
@@ -29,19 +28,15 @@ const visible = allArticles
   .filter((a) => isVisibleArticle(a.status))
   .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
 
-const useV2 = config.theme.layout_v2 === true;
-
 const url = new URL(Astro.request.url);
 const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
 const pageSize = config.layout.load_more.page_size;
 const initialCount = pageSize * 2;
 
-const heroArticles = useV2
-  ? selectFeatured(visible, 'hero', config.layout.hero.count)
-  : [];
+const heroArticles = selectFeatured(visible, 'hero', config.layout.hero.count);
 const heroSlugs = new Set(heroArticles.map((a) => a.slug));
 
-const mustReadArticles = useV2 && config.layout.must_reads.enabled
+const mustReadArticles = config.layout.must_reads.enabled
   ? selectFeatured(visible, 'must-read', config.layout.must_reads.count, heroSlugs)
   : [];
 
@@ -64,60 +59,25 @@ const hasMore = visible.length > initialCount + (page - 1) * pageSize;
 
   <Header config={config} currentPath="/" />
 
-  {useV2 ? (
-    <main class="homepage-v2">
-      {config.layout.hero.enabled && <HeroGrid articles={heroArticles} />}
-      <AdSlot position="homepage-top" pageType="homepage" server:defer />
-      <section class="whats-new">
-        <div class="whats-new-inner">
-          <ArticleFeed articles={feedSlice} />
-          <Sidebar variant="home" config={config} />
-        </div>
-      </section>
-      {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
-      <LoadMoreButton nextPage={page + 1} hasMore={hasMore} />
-    </main>
-  ) : (
-    <main class="homepage">
-      <div class="container">
-        <AdSlot position="homepage-top" pageType="homepage" server:defer />
-        <section class="section">
-          <h2 class="section-heading">Latest Articles</h2>
-          <div class="article-grid">
-            {visible.slice(0, 12).map((article) => (
-              <ArticleCard
-                title={article.title}
-                slug={article.slug}
-                featuredImage={article.featuredImage}
-                description={article.description}
-                author={article.author}
-                publishDate={article.publishDate}
-                tags={article.tags}
-                type={article.type}
-              />
-            ))}
-          </div>
-          {visible.length === 0 && (
-            <p class="empty-state">
-              No published articles yet for <code>{config.domain}</code>.
-            </p>
-          )}
-        </section>
+  <main class="homepage">
+    {config.layout.hero.enabled && <HeroGrid articles={heroArticles} />}
+    <AdSlot position="homepage-top" pageType="homepage" server:defer />
+    <section class="whats-new">
+      <div class="whats-new-inner">
+        <ArticleFeed articles={feedSlice} />
+        <Sidebar variant="home" config={config} />
       </div>
-    </main>
-  )}
+    </section>
+    {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
+    <LoadMoreButton nextPage={page + 1} hasMore={hasMore} />
+  </main>
 
   <Footer config={config} />
   <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
 </BaseLayout>
 
 <style>
-  .homepage, .homepage-v2 { min-height: 60vh; }
-  .container {
-    max-width: var(--container-max, 1200px);
-    margin: 0 auto;
-    padding: 0 1rem;
-  }
+  .homepage { min-height: 60vh; }
   .whats-new {
     padding: 2.5rem 0;
   }
@@ -131,27 +91,5 @@ const hasMore = visible.length > initialCount + (page - 1) * pageSize;
   }
   @media (min-width: 960px) {
     .whats-new-inner { grid-template-columns: 1fr 320px; }
-  }
-  .section { padding: 2.5rem 0 1rem; }
-  .section-heading {
-    font-family: var(--fontHeading, sans-serif);
-    font-size: var(--text-2xl, 1.5rem);
-    font-weight: 700;
-    margin-bottom: 1.5rem;
-    color: var(--color-text, #1a1a2e);
-  }
-  .article-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-  }
-  @media (min-width: 640px) { .article-grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (min-width: 960px) { .article-grid { grid-template-columns: repeat(3, 1fr); } }
-  .empty-state {
-    grid-column: 1 / -1;
-    text-align: center;
-    color: var(--color-muted, #9ca3af);
-    padding: 4rem 0;
-    font-size: 1.125rem;
   }
 </style>

@@ -169,7 +169,6 @@ export async function createSiteAndBuildStaging(
     },
     theme: {
       base: data.themeBase,
-      layout_v2: true,
       colors: {
         primary: data.primaryColor,
         accent: data.accentColor,

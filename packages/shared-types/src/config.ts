@@ -120,9 +120,6 @@ export interface ThemeConfig {
     /** Font family for body text. */
     body?: string;
   };
-
-  /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
-  layout_v2?: boolean;
 }
 
 /**
@@ -147,9 +144,6 @@ export interface ResolvedThemeConfig {
     heading: string;
     body: string;
   };
-
-  /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
-  layout_v2: boolean;
 }
 
 // ---------------------------------------------------------------------------
