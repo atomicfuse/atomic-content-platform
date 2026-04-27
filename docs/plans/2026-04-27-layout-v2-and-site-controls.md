@@ -25,23 +25,34 @@
 | 1.5 | Wire `resolveLayout` into seed-kv | ✅ done | `a69203f` |
 | 1.6 | Parse `featured` frontmatter | ✅ done | `56c6620` |
 | 1.7 | `selectFeatured()` helper with auto-fallback | ✅ done | `964302d` |
-| 1.8 | Org defaults — extend `org.yaml` | ⏸ paused | — |
-| 2.x | Phase 2 components | ⏸ not started | — |
-| 3.x | Phase 3 wizard + site settings UI | ⏸ not started | — |
+| 1.8 | Org defaults — extend `org.yaml` | ✅ done | `32bd856` (network repo) |
+| — | Rebuild shared-types dist | ✅ done | `4800bd3` |
+| 2.1 | Theme registry | ✅ done | `b505e37` |
+| 2.2 | Card components (4) | ✅ done | `3e1b772` |
+| 2.3 | HeroGrid + MustReads | ✅ done | `b65338d` |
+| 2.4 | ArticleFeed (MoreOn removed per plan note) | ✅ done | `133420d` |
+| 2.5 | Newsletter form unification | ✅ done | `d1427f7` |
+| 2.6 | Sidebar (home + article variants) | ✅ done | `d00bf2a` |
+| 2.7 | LoadMoreButton + `/api/articles` | ✅ done | `9955d85` |
+| 2.8 | ArticleHero + RelatedPosts | ✅ done | `ecfe0bc` |
+| 2.9 | Header restyle | ✅ done | `f3d523e` |
+| 2.10 | Wire homepage to layout v2 | ✅ done | `33680ad` |
+| 2.11 | Wire article page to layout v2 | ✅ done | `66f4f8e` |
+| 3.1 | Font registry | ⏸ not started | — |
+| 3.2 | ColorPickerField + FontPickerField | ⏸ not started | — |
+| 3.3 | Extend StepTheme + wizard action | ⏸ not started | — |
+| 3.4 | Site Settings Theme sub-tab | ⏸ not started | — |
+| 3.5 | Org Settings defaults | ⏸ not started | — |
+| 3.6 | Guide page | ⏸ not started | — |
 | 4.x | Phase 4 rollout + cleanup | ⏸ not started | — |
 
-**Test surface after Phase 1:** 109 unit tests passing in `packages/site-worker` (was 91 pre-Phase-1; net +18). `pnpm typecheck` clean in shared-types and site-worker. Pre-existing dashboard typecheck failure (vite version mismatch in `vitest.config.ts`) is unrelated and predates this work.
+**Test surface after Phase 2:** 113 unit tests passing in `packages/site-worker` (was 109 after Phase 1; net +4 from `sliceForPage` tests). `pnpm typecheck` clean (0 errors) in shared-types and site-worker.
 
-**Why 1.8 is paused:** Task 1.8 edits `~/Documents/ATL-content-network/atomic-labs-network/org.yaml` and pushes to `main` of the **network** repo, which triggers `sync-kv.yml` → re-seeds production CONFIG_KV. The new fields are additive and the production Worker ignores unknown keys, so it should be safe — but it's a prod data change that needs explicit user authorization to proceed.
+**Phase 1 complete.** Task 1.8 pushed to network main (`32bd856`). Stale `dist/` rebuilt and committed (`4800bd3`). Co-Author trailer resolved to `Claude Opus 4.6` going forward.
 
-**To resume:**
-1. Run Task 1.8 (or skip and start Phase 2 — Phase 2 doesn't depend on the org.yaml defaults; sites without org defaults still resolve via `LAYOUT_DEFAULTS` in code).
-2. Continue with Task 2.1 (theme registry) → 2.2 (card components) → … → 2.11.
-3. Phase 3 (wizard / site settings UI) → Phase 4 (rollout).
+**Phase 2 complete.** All 11 component + wiring tasks done. 20 new Astro components + 1 API endpoint + 1 pagination helper + 1 render helper created. Homepage and article page both have v2 paths gated behind `theme.layout_v2: true`. MoreOn.astro was intentionally omitted per the plan's own correction (What's New feed is the load-more target). Phase 3 next.
 
-**Issues discovered during Phase 1 (in backlog/general.md):**
-- `packages/shared-types/dist/*` is checked into git but stale relative to `src/`. Implementer subagents had to `pnpm build` locally to pass tests. Either rebuild + commit on every src change, or add `dist/` to `.gitignore`. Standalone cleanup.
-- Project `CLAUDE.md` says `Co-Authored-By: Claude Opus 4.6` but design+plan+Phase-1 commits use `Claude Opus 4.7 (1M context)`. Reconcile in either direction.
+**Remaining tech debt (in backlog/general.md):**
 - `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup.
 
 **Audit log:** [docs/audit-logs/2026-04-27-1400-layout-v2-phase-1.md](../audit-logs/2026-04-27-1400-layout-v2-phase-1.md)
