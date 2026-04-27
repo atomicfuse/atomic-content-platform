@@ -12,6 +12,41 @@
 
 **Branch:** Continue on `feat/wizard-post-migration-rewrite` (current). All commits use the conventional format and `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 
+---
+
+## Progress (as of 2026-04-27)
+
+| # | Task | Status | Commit(s) |
+|---|------|--------|-----------|
+| 1.1 | Add `LayoutConfig` to shared-types | ✅ done | `ee2b3c4` + `7a1269b` (review fix) |
+| 1.2 | Add `featured` to `ArticleIndexEntry` | ✅ done | `807a42c` |
+| 1.3 | Resolver test — layout merge across layers | ✅ done | `d985125` |
+| 1.4 | `resolveLayout()` helper with defaults | ✅ done | `0db5180` + `98bc111` (review fix) |
+| 1.5 | Wire `resolveLayout` into seed-kv | ✅ done | `a69203f` |
+| 1.6 | Parse `featured` frontmatter | ✅ done | `56c6620` |
+| 1.7 | `selectFeatured()` helper with auto-fallback | ✅ done | `964302d` |
+| 1.8 | Org defaults — extend `org.yaml` | ⏸ paused | — |
+| 2.x | Phase 2 components | ⏸ not started | — |
+| 3.x | Phase 3 wizard + site settings UI | ⏸ not started | — |
+| 4.x | Phase 4 rollout + cleanup | ⏸ not started | — |
+
+**Test surface after Phase 1:** 109 unit tests passing in `packages/site-worker` (was 91 pre-Phase-1; net +18). `pnpm typecheck` clean in shared-types and site-worker. Pre-existing dashboard typecheck failure (vite version mismatch in `vitest.config.ts`) is unrelated and predates this work.
+
+**Why 1.8 is paused:** Task 1.8 edits `~/Documents/ATL-content-network/atomic-labs-network/org.yaml` and pushes to `main` of the **network** repo, which triggers `sync-kv.yml` → re-seeds production CONFIG_KV. The new fields are additive and the production Worker ignores unknown keys, so it should be safe — but it's a prod data change that needs explicit user authorization to proceed.
+
+**To resume:**
+1. Run Task 1.8 (or skip and start Phase 2 — Phase 2 doesn't depend on the org.yaml defaults; sites without org defaults still resolve via `LAYOUT_DEFAULTS` in code).
+2. Continue with Task 2.1 (theme registry) → 2.2 (card components) → … → 2.11.
+3. Phase 3 (wizard / site settings UI) → Phase 4 (rollout).
+
+**Issues discovered during Phase 1 (in backlog/general.md):**
+- `packages/shared-types/dist/*` is checked into git but stale relative to `src/`. Implementer subagents had to `pnpm build` locally to pass tests. Either rebuild + commit on every src change, or add `dist/` to `.gitignore`. Standalone cleanup.
+- Project `CLAUDE.md` says `Co-Authored-By: Claude Opus 4.6` but design+plan+Phase-1 commits use `Claude Opus 4.7 (1M context)`. Reconcile in either direction.
+- `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup.
+
+**Audit log:** [docs/audit-logs/2026-04-27-1400-layout-v2-phase-1.md](../audit-logs/2026-04-27-1400-layout-v2-phase-1.md)
+**Session summary:** [docs/sessions/2026-04-27-layout-v2-phase-1.md](../sessions/2026-04-27-layout-v2-phase-1.md)
+
 **Test patterns in this repo:**
 - Site-worker pure-function unit tests live at `packages/site-worker/{scripts,src}/__tests__/*.test.ts`. Run with `cd packages/site-worker && pnpm vitest run --project unit`.
 - Snapshot tests for Astro components: render through a small harness in `__tests__/`; we'll create the harness in Task 2.4.

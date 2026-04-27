@@ -78,3 +78,15 @@ Planning deliverables: `docs/migration-audit.md`, `docs/migration-gap-analysis.m
 - [ ] **Runbook execution:** Execute `docs/runbooks/phase-7-dns-cutover-coolnews-atl.md` (coolnews.dev, live + revenue monitoring).
 - [ ] **Runbook execution:** Execute `docs/runbooks/phase-8-decommission.md` after ≥ 14 days stable on Worker.
 - [ ] **Dashboard UX:** "Force rebuild" button — today writes to `.build-trigger`. After Phase 8, rewire to call `https://api.cloudflare.com/client/v4/zones/<zone_id>/purge_cache`. Capture the zone IDs from dashboard-index.yaml. (Moved from earlier backlog; operator confirmed.)
+
+### Layout v2 follow-ups (added 2026-04-27)
+
+Phase 1 of the layout v2 plan landed (commits `d3a43cf`–`964302d` on `feat/wizard-post-migration-rewrite`). Plan: `docs/plans/2026-04-27-layout-v2-and-site-controls.md`. Audit: `docs/audit-logs/2026-04-27-1400-layout-v2-phase-1.md`. Session: `docs/sessions/2026-04-27-layout-v2-phase-1.md`.
+
+- [ ] **Phase 1 finish:** Run Task 1.8 (`org.yaml` defaults — adds `default_colors`, `layout` block, `homepage-sidebar` + `article-sidebar` ad placements). Cross-repo: edits + pushes to `main` of the network repo, triggers `sync-kv.yml`. Needs explicit user authorization.
+- [ ] **Phase 2:** 11 component / page-wiring tasks (HeroCard / FeedCard / ThumbCard / MustReadHeroCard / HeroGrid / MustReads / ArticleFeed / Sidebar / FollowUs / CategoryList / NewsletterBox / NewsletterBand / LoadMoreButton / `/api/articles` / ArticleHero / RelatedPosts / Header restyle / homepage wire / article-page wire). All gated by `theme.layout_v2: true`. None deployed until a site explicitly opts in.
+- [ ] **Phase 3:** Wizard StepTheme upgrade (color + font pickers); new Site Settings → Theme sub-tab; Org Settings defaults; guide page.
+- [ ] **Phase 4:** Per-site `layout_v2: true` flips, then remove the toggle and delete legacy `index.astro` / `[slug]/index.astro` branches.
+- [ ] **Tech debt:** `packages/shared-types/dist/*` is checked into git but stale relative to `src/`. Phase 1 implementer subagents had to `pnpm build` locally to make tests pass. Either rebuild + commit on every src change, or add `dist/` to `.gitignore`. Standalone cleanup.
+- [ ] **Tech debt / convention:** Project `CLAUDE.md` says `Co-Authored-By: Claude Opus 4.6` but the design + plan + Phase-1 commits use `Claude Opus 4.7 (1M context)`. Reconcile in either direction.
+- [ ] **Tech debt:** `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup: remove the cast and rely on real types so missing fields surface at typecheck.
