@@ -1,0 +1,47 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const href = `/${article.slug}`;
+---
+
+<a class="hero-card" href={href} aria-label={article.title}>
+  {article.featuredImage && (
+    <img class="hero-card-image" src={article.featuredImage} alt="" loading="lazy" />
+  )}
+  <div class="hero-card-overlay" aria-hidden="true"></div>
+  <h2 class="hero-card-title">{article.title}</h2>
+</a>
+
+<style>
+  .hero-card {
+    position: relative;
+    display: block;
+    aspect-ratio: 3/4;
+    overflow: hidden;
+    text-decoration: none;
+    background: var(--color-secondary, #1a1a2e);
+  }
+  .hero-card-image {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transition: transform 400ms ease;
+  }
+  .hero-card:hover .hero-card-image { transform: scale(1.04); }
+  .hero-card-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%);
+  }
+  .hero-card-title {
+    position: absolute; left: 1.25rem; right: 1.25rem; bottom: 1.25rem;
+    color: #fff;
+    font-family: var(--fontHeading, sans-serif);
+    font-size: clamp(1.25rem, 1.6vw, 1.875rem);
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+</style>

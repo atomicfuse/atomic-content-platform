@@ -1,0 +1,50 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const href = `/${article.slug}`;
+---
+
+<a class="mr-hero" href={href}>
+  {article.featuredImage && (
+    <img class="mr-hero-image" src={article.featuredImage} alt="" loading="lazy" />
+  )}
+  <div class="mr-hero-body">
+    <h3 class="mr-hero-title">{article.title}</h3>
+    {article.description && <p class="mr-hero-desc">{article.description}</p>}
+  </div>
+</a>
+
+<style>
+  .mr-hero {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
+    text-decoration: none;
+    color: #fff;
+    background: rgba(0,0,0,0.2);
+    height: 100%;
+  }
+  .mr-hero-image { width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+  .mr-hero-body { padding: 1.25rem; }
+  .mr-hero-title {
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0 0 0.5rem;
+    color: #fff;
+  }
+  .mr-hero-desc {
+    font-size: var(--text-base, 1rem);
+    line-height: 1.5;
+    color: rgba(255,255,255,0.85);
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

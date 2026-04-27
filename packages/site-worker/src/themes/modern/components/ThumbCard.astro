@@ -1,0 +1,44 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const href = `/${article.slug}`;
+---
+
+<a class="thumb-card" href={href}>
+  {article.featuredImage && (
+    <img class="thumb-card-image" src={article.featuredImage} alt="" loading="lazy" />
+  )}
+  <div class="thumb-card-overlay" aria-hidden="true"></div>
+  <h4 class="thumb-card-title">{article.title}</h4>
+</a>
+
+<style>
+  .thumb-card {
+    position: relative;
+    display: block;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
+    text-decoration: none;
+    background: var(--color-secondary, #1a1a2e);
+  }
+  .thumb-card-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb-card-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%);
+  }
+  .thumb-card-title {
+    position: absolute; left: 0.875rem; right: 0.875rem; bottom: 0.875rem;
+    color: #fff;
+    font-size: var(--text-base, 1rem);
+    font-weight: 600;
+    line-height: 1.25;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

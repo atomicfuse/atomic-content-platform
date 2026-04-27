@@ -1,0 +1,66 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const href = `/${article.slug}`;
+const dateLabel = new Date(article.publishDate).toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
+---
+
+<article class="feed-card">
+  <a class="feed-card-thumb" href={href} aria-hidden="true" tabindex="-1">
+    {article.featuredImage && <img src={article.featuredImage} alt="" loading="lazy" />}
+  </a>
+  <div class="feed-card-body">
+    <a class="feed-card-title-link" href={href}>
+      <h3 class="feed-card-title">{article.title}</h3>
+    </a>
+    <p class="feed-card-date">{dateLabel}</p>
+    {article.description && <p class="feed-card-snippet">{article.description}</p>}
+  </div>
+</article>
+
+<style>
+  .feed-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+  }
+  @media (min-width: 640px) {
+    .feed-card { grid-template-columns: 240px 1fr; gap: 1.5rem; }
+  }
+  .feed-card-thumb {
+    display: block;
+    aspect-ratio: 16/10;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface, #f8f9fa);
+  }
+  .feed-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .feed-card-title-link { color: inherit; text-decoration: none; }
+  .feed-card-title {
+    font-size: var(--text-xl, 1.25rem);
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0 0 0.5rem;
+  }
+  .feed-card-date {
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--color-muted, #6b7280);
+    margin: 0 0 0.5rem;
+  }
+  .feed-card-snippet {
+    font-size: var(--text-base, 1rem);
+    color: var(--color-text, #1a1a2e);
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
