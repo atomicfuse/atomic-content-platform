@@ -15,10 +15,7 @@ import {
   triggerWorkflowViaPush,
   readFileBase64,
 } from "@/lib/github";
-import {
-  createPagesProject,
-  listZones,
-} from "@/lib/cloudflare";
+import { listZones } from "@/lib/cloudflare";
 import { workerPreviewUrl } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";

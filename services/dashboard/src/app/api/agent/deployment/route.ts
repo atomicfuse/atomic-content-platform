@@ -1,93 +1,15 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getLatestDeployment } from "@/lib/cloudflare";
+import { NextResponse } from "next/server";
 
 /**
- * Get the latest deployment URL for a Cloudflare Pages project.
- * GET /api/agent/deployment?project=coolnews-dev
+ * GET /api/agent/deployment — DEPRECATED
+ * Polled CF Pages deployment status during the legacy wizard staging
+ * flow. Retired in the post-migration wizard rewrite — the Worker URL
+ * is static so there's nothing to poll. Frontend now HEAD-polls the
+ * worker preview URL directly until middleware returns non-404.
  */
-export async function GET(req: NextRequest): Promise<NextResponse> {
-  const project = req.nextUrl.searchParams.get("project");
-
-  if (!project) {
-    return NextResponse.json(
-      { status: "error", message: "project query param is required" },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const deployment = await getLatestDeployment(project);
-    if (!deployment) {
-      return NextResponse.json({ status: "no_deployment" });
-    }
-    // CF deployment stages: "queued" | "initialize" | "clone_repo" | "build" | "deploy" | "active"
-    // Status: "idle" | "active" | "success" | "failure"
-    const stageStatus = deployment.latest_stage?.status ?? "unknown";
-    const deployReady = stageStatus === "success";
-
-    // CF reports "success" when files are deployed, but SSL certs for new
-    // branch subdomains take an extra 1-2 min. Verify the URL actually
-    // responds before telling the client it's safe to show in an iframe.
-    // Use the ACTUAL deployment URL from CF (not our constructed one) for the probe.
-    let sslReady = false;
-    const actualDeployUrl = deployment.url?.startsWith("http")
-      ? deployment.url
-      : deployment.url
-        ? `https://${deployment.url}`
-        : null;
-    // Also accept a client-provided URL to check (the staging branch alias)
-    const checkUrl = req.nextUrl.searchParams.get("url") ?? actualDeployUrl;
-
-    if (deployReady) {
-      if (checkUrl) {
-        try {
-          const probe = await fetch(checkUrl, {
-            method: "HEAD",
-            redirect: "follow",
-            signal: AbortSignal.timeout(5000),
-          });
-          sslReady = probe.ok || probe.status === 304;
-        } catch {
-          // SSL not ready yet or timeout — try the CF deployment URL as fallback
-          if (actualDeployUrl && checkUrl !== actualDeployUrl) {
-            try {
-              const fallbackProbe = await fetch(actualDeployUrl, {
-                method: "HEAD",
-                redirect: "follow",
-                signal: AbortSignal.timeout(5000),
-              });
-              sslReady = fallbackProbe.ok || fallbackProbe.status === 304;
-            } catch {
-              sslReady = false;
-            }
-          } else {
-            sslReady = false;
-          }
-        }
-      } else {
-        // No URL to check — trust the CF API
-        sslReady = true;
-      }
-    }
-
-    return NextResponse.json({
-      status: "success",
-      id: deployment.id,
-      url: deployment.url,
-      environment: deployment.environment,
-      created_on: deployment.created_on,
-      stage: deployment.latest_stage?.name ?? "unknown",
-      stage_status: stageStatus,
-      is_ready: deployReady && sslReady,
-      deploy_ready: deployReady,
-      ssl_ready: sslReady,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to fetch deployment";
-    return NextResponse.json(
-      { status: "error", message },
-      { status: 500 }
-    );
-  }
+export async function GET(): Promise<NextResponse> {
+  return NextResponse.json(
+    { status: "error", message: "Deprecated — Worker preview URL is static; HEAD-poll it directly" },
+    { status: 410 },
+  );
 }
