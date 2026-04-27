@@ -641,11 +641,16 @@ export async function commitSiteFiles(
 }
 
 /**
- * Trigger a workflow run by pushing a build-trigger file via the Contents API.
+ * Trigger the sync-kv workflow by pushing a .build-trigger file via the
+ * Contents API. The push event on `sites/**` fires `sync-kv.yml`, which
+ * seeds CONFIG_KV + R2 for the site.
  *
  * Git Data API commits (createTree → createCommit → updateRef) do NOT trigger
  * GitHub Actions. The Contents API (createOrUpdateFileContents) DOES. So after
  * committing site files, we push a small trigger file to fire the workflow.
+ *
+ * NOTE: workflow_dispatch would be cleaner but requires `actions:write` scope
+ * which the current GITHUB_TOKEN does not have.
  */
 export async function triggerWorkflowViaPush(
   branch: string,
@@ -674,7 +679,7 @@ export async function triggerWorkflowViaPush(
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
     path: triggerPath,
-    message: `ci: trigger staging build for ${siteFolder}`,
+    message: `ci: trigger KV sync for ${siteFolder}`,
     content: Buffer.from(new Date().toISOString()).toString("base64"),
     sha: existingSha,
     branch,
