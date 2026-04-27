@@ -89,6 +89,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         theme.base = configUpdates.themeBase;
         existing.theme = theme;
       }
+      if (configUpdates.theme_colors !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.colors = configUpdates.theme_colors;
+        existing.theme = theme;
+      }
+      if (configUpdates.theme_fonts !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.fonts = configUpdates.theme_fonts;
+        existing.theme = theme;
+      }
+      if (configUpdates.layout !== undefined) {
+        existing.layout = configUpdates.layout;
+      }
 
       // Phase 1 config fields
       if (configUpdates.groups !== undefined) {
