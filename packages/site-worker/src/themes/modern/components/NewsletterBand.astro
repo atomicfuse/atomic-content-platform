@@ -1,0 +1,45 @@
+---
+import NewsletterForm from './_newsletter-form.astro';
+interface Props { domain: string; }
+const { domain } = Astro.props;
+---
+
+<section class="newsletter-band">
+  <div class="newsletter-band-inner">
+    <h2 class="newsletter-band-heading">Sign up to our Newsletter</h2>
+    <NewsletterForm source="article" domain={domain} buttonLabel="Subscribe" />
+    <p class="newsletter-band-status" data-newsletter-status></p>
+  </div>
+</section>
+
+<style>
+  .newsletter-band {
+    background: var(--color-accent, #f4c542);
+    padding: 4rem 1rem;
+    color: var(--color-secondary, #1a1a2e);
+    text-align: center;
+  }
+  .newsletter-band-inner {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .newsletter-band-heading {
+    font-size: var(--text-3xl, 1.875rem);
+    margin: 0 0 1.5rem;
+    font-weight: 700;
+  }
+  .newsletter-band :global(.atl-newsletter-form) {
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .newsletter-band :global(.atl-newsletter-email) {
+    padding: 0.875rem; border: 0; background: #fff;
+    font-size: 1rem; border-radius: 4px;
+  }
+  .newsletter-band :global(.atl-newsletter-submit) {
+    padding: 0.875rem; border: 0; cursor: pointer;
+    background: var(--color-secondary, #1a1a2e); color: #fff;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    border-radius: 4px;
+  }
+  .newsletter-band-status:empty { display: none; }
+</style>

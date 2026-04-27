@@ -1,0 +1,42 @@
+---
+import NewsletterForm from './_newsletter-form.astro';
+interface Props { domain: string; }
+const { domain } = Astro.props;
+---
+
+<aside class="newsletter-box">
+  <h3 class="newsletter-box-heading">Subscribe to our newsletter</h3>
+  <NewsletterForm source="homepage" domain={domain} />
+  <p class="newsletter-box-status" data-newsletter-status></p>
+</aside>
+
+<style>
+  .newsletter-box {
+    background: var(--color-accent, #f4c542);
+    padding: 1.5rem;
+    border-radius: var(--radius-md, 8px);
+    color: var(--color-secondary, #1a1a2e);
+  }
+  .newsletter-box-heading {
+    font-size: var(--text-base, 1rem);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    margin: 0 0 0.75rem;
+  }
+  .newsletter-box :global(.atl-newsletter-form) {
+    display: flex; flex-direction: column; gap: 0.5rem;
+  }
+  .newsletter-box :global(.atl-newsletter-email) {
+    padding: 0.75rem; border: 0; border-radius: var(--radius-sm, 4px);
+    background: #fff; font-size: 0.9375rem;
+  }
+  .newsletter-box :global(.atl-newsletter-submit) {
+    padding: 0.75rem; border: 0; cursor: pointer;
+    background: var(--color-secondary, #1a1a2e); color: #fff;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    border-radius: var(--radius-sm, 4px);
+  }
+  .newsletter-box-status:empty { display: none; }
+  .newsletter-box-status { margin: 0.5rem 0 0; font-size: 0.8125rem; }
+</style>

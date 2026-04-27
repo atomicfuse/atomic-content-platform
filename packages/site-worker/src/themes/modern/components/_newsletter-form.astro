@@ -1,0 +1,22 @@
+---
+interface Props {
+  source: 'homepage' | 'article' | 'footer';
+  domain: string;
+  buttonLabel?: string;
+  inputClass?: string;
+  buttonClass?: string;
+}
+const { source, domain, buttonLabel = 'Subscribe', inputClass = '', buttonClass = '' } = Astro.props;
+---
+
+<form class="atl-newsletter-form" data-newsletter-form data-source={source} data-domain={domain}>
+  <input
+    type="email"
+    name="email"
+    placeholder="Your email address"
+    required
+    class={`atl-newsletter-email ${inputClass}`}
+  />
+  <button type="submit" class={`atl-newsletter-submit ${buttonClass}`}>{buttonLabel}</button>
+  <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true" />
+</form>

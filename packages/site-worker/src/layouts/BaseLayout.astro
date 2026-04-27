@@ -117,5 +117,42 @@ const cssVars = Object.entries(theme.colors)
           ? <script is:inline set:html={s.inline} />
           : null
     )}
+
+    {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
+    <script is:inline>
+      (function() {
+        document.querySelectorAll('form[data-newsletter-form]').forEach(function(form) {
+          form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var hp = form.querySelector('input[name="_hp"]');
+            if (hp && hp.value) return;
+            var emailEl = form.querySelector('input[type="email"]');
+            var status = form.parentElement.querySelector('[data-newsletter-status]');
+            var email = emailEl && emailEl.value && emailEl.value.trim();
+            if (!email) return;
+            if (status) status.textContent = 'Subscribing…';
+            try {
+              var res = await fetch('https://atomic-content-platform.apps.cloudgrid.io/api/subscribe', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  email: email,
+                  domain: form.dataset.domain,
+                  source: form.dataset.source,
+                }),
+              });
+              if (res.ok) {
+                if (status) status.textContent = 'Thanks — check your inbox.';
+                form.reset();
+              } else {
+                if (status) status.textContent = 'Hmm, that didn\'t work. Please try again.';
+              }
+            } catch {
+              if (status) status.textContent = 'Network error. Please try again.';
+            }
+          });
+        });
+      })();
+    </script>
   </body>
 </html>
