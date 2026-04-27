@@ -8,6 +8,8 @@ import { GeneralForm } from "@/components/settings/GeneralForm";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import { ColorPickerField } from "@/components/wizard/ColorPickerField";
+import { FontPickerField } from "@/components/wizard/FontPickerField";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -147,6 +149,156 @@ export default function OrgSettingsPage(): React.ReactElement {
     legal: (config.legal ?? {}) as Record<string, string>,
   };
 
+  // Defaults tab data
+  const defaultColors = (config.default_colors ?? {}) as Record<string, string>;
+  const defaultFonts = (config.default_fonts ?? {}) as Record<string, string>;
+  const layoutConfig = (config.layout ?? {}) as Record<string, unknown>;
+  const layoutHero = (layoutConfig.hero ?? {}) as Record<string, unknown>;
+  const layoutMustReads = (layoutConfig.must_reads ?? {}) as Record<string, unknown>;
+  const layoutLoadMore = (layoutConfig.load_more ?? {}) as Record<string, unknown>;
+
+  const defaultsContent = (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Colors</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Inherited by all sites unless overridden at group or site level.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ColorPickerField
+            label="Primary color"
+            value={defaultColors.primary ?? "#1a1a2e"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_colors: { ...defaultColors, primary: v },
+              });
+            }}
+            helperText="Header, navigation, dark sections"
+          />
+          <ColorPickerField
+            label="Accent color"
+            value={defaultColors.accent ?? "#f4c542"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_colors: { ...defaultColors, accent: v },
+              });
+            }}
+            helperText="CTAs, newsletter band, highlights"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Fonts</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FontPickerField
+            label="Heading font"
+            value={defaultFonts.heading ?? "Inter"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_fonts: { ...defaultFonts, heading: v },
+              });
+            }}
+          />
+          <FontPickerField
+            label="Body font"
+            value={defaultFonts.body ?? "Inter"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_fonts: { ...defaultFonts, body: v },
+              });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Layout</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Layout knobs inherited by all sites with layout_v2 enabled.
+        </p>
+        <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={(layoutHero.enabled as boolean) ?? true}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    hero: { ...layoutHero, enabled: e.target.checked },
+                  },
+                });
+              }}
+              className="accent-cyan"
+            />
+            Hero grid enabled
+          </label>
+          <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
+            <span>Hero count:</span>
+            <select
+              value={(layoutHero.count as number) ?? 4}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    hero: { ...layoutHero, count: parseInt(e.target.value, 10) },
+                  },
+                });
+              }}
+              className="px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+            >
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={(layoutMustReads.enabled as boolean) ?? true}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    must_reads: { ...layoutMustReads, enabled: e.target.checked },
+                  },
+                });
+              }}
+              className="accent-cyan"
+            />
+            Must Reads enabled
+          </label>
+          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <span>Load more page size:</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={(layoutLoadMore.page_size as number) ?? 10}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    load_more: { page_size: parseInt(e.target.value, 10) || 10 },
+                  },
+                });
+              }}
+              className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const tabs = [
     {
       id: "general",
@@ -170,6 +322,11 @@ export default function OrgSettingsPage(): React.ReactElement {
           }}
         />
       ),
+    },
+    {
+      id: "defaults",
+      label: "Defaults",
+      content: defaultsContent,
     },
     {
       id: "config",
