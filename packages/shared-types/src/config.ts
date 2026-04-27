@@ -120,6 +120,9 @@ export interface ThemeConfig {
     /** Font family for body text. */
     body?: string;
   };
+
+  /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
+  layout_v2?: boolean;
 }
 
 /**
@@ -144,7 +147,54 @@ export interface ResolvedThemeConfig {
     heading: string;
     body: string;
   };
+
+  /** Toggle for the v2 magazine layout. Once all sites are migrated, this field is removed. */
+  layout_v2: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+export interface HeroLayoutConfig {
+  enabled?: boolean;
+  count?: 3 | 4;
+}
+
+export interface MustReadsLayoutConfig {
+  enabled?: boolean;
+  count?: number;
+}
+
+export interface SidebarTopicsConfig {
+  auto?: boolean;
+  explicit?: string[];
+}
+
+export interface LoadMoreConfig {
+  page_size?: number;
+}
+
+export interface LayoutConfig {
+  hero?: HeroLayoutConfig;
+  must_reads?: MustReadsLayoutConfig;
+  sidebar_topics?: SidebarTopicsConfig;
+  load_more?: LoadMoreConfig;
+}
+
+export interface ResolvedLayoutConfig {
+  hero: { enabled: boolean; count: 3 | 4 };
+  must_reads: { enabled: boolean; count: number };
+  sidebar_topics: { auto: boolean; explicit: string[] };
+  load_more: { page_size: number };
+}
+
+export const LAYOUT_DEFAULTS: ResolvedLayoutConfig = {
+  hero: { enabled: true, count: 4 },
+  must_reads: { enabled: true, count: 5 },
+  sidebar_topics: { auto: true, explicit: [] },
+  load_more: { page_size: 10 },
+};
 
 // ---------------------------------------------------------------------------
 // Preview page
@@ -274,6 +324,12 @@ export interface OrgConfig {
     body: string;
   };
 
+  /** Default colours applied to new sites (flow through inheritance). */
+  default_colors?: {
+    primary?: string;
+    accent?: string;
+  };
+
   /**
    * Default group IDs applied to sites that don't specify their own `groups:`.
    * References files at `groups/<id>.yaml`.
@@ -319,6 +375,9 @@ export interface OrgConfig {
 
   /** Default search configuration. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +426,9 @@ export interface GroupConfig {
 
   /** Group-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +508,9 @@ export interface SiteConfig {
 
   /** Site-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +576,9 @@ export interface ResolvedConfig {
 
   /** Fully-resolved theme configuration (all fields required). */
   theme: ResolvedThemeConfig;
+
+  /** Fully-resolved layout configuration (all fields required). */
+  layout: ResolvedLayoutConfig;
 
   /** Editorial brief for the site. */
   brief: SiteBrief;
