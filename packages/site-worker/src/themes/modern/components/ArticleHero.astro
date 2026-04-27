@@ -1,0 +1,56 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const date = new Date(article.publishDate).toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
+---
+
+<section class="article-hero">
+  <div class="article-hero-inner">
+    <div class="article-hero-text">
+      <h1 class="article-hero-title">{article.title}</h1>
+      <p class="article-hero-date">{date}</p>
+    </div>
+    {article.featuredImage && (
+      <div class="article-hero-image-wrap">
+        <img src={article.featuredImage} alt="" />
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .article-hero {
+    background: var(--color-primary, #1a1a2e);
+    padding: 4rem 1rem;
+  }
+  .article-hero-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    align-items: center;
+  }
+  @media (min-width: 960px) {
+    .article-hero-inner { grid-template-columns: 1fr 1fr; }
+  }
+  .article-hero-title {
+    color: #fff;
+    font-size: clamp(1.875rem, 3vw, 3rem);
+    line-height: 1.15;
+    margin: 0 0 1rem;
+  }
+  .article-hero-date {
+    color: var(--color-accent, #f4c542);
+    font-weight: 600;
+    margin: 0;
+  }
+  .article-hero-image-wrap img {
+    width: 100%; height: auto;
+    border-radius: var(--radius-md, 8px);
+  }
+</style>
