@@ -1,6 +1,6 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { readFile, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { readFile, stat, mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,31 +10,41 @@ const PACKAGE_ROOT = join(__dirname, '..', '..');
 const DIST_SERVER = join(PACKAGE_ROOT, 'dist', 'server');
 const DIST_CLIENT = join(PACKAGE_ROOT, 'dist', 'client');
 
+let FIXTURE_NETWORK_DIR: string;
+
 /**
- * Spawns `pnpm build` if `dist/` is missing or out-of-date, then asserts on
- * its outputs. The post-build env-config emitter is the regression net for
- * the Astro adapter env-binding gap that surfaced in Phase 6 — a config
- * shape change in either the adapter or our emitter trips this test before
- * a deploy ever happens.
+ * Spawns `pnpm build` with a fixture NETWORK_DATA_PATH so the production
+ * route emit is exercised against a known dashboard-index. The post-build
+ * env-config emitter is the regression net for the Astro adapter env-binding
+ * gap that surfaced in Phase 6.
  */
 beforeAll(async () => {
-  const stagingPath = join(DIST_SERVER, 'wrangler.staging.json');
-  const needsBuild = !existsSync(stagingPath);
-  if (needsBuild) {
-    // Run via pnpm (not npm) so the workspace-root config is honoured.
-    // stdio: 'inherit' surfaces build failures directly.
-    execFileSync('pnpm', ['build'], { cwd: PACKAGE_ROOT, stdio: 'inherit' });
-  } else {
-    // Touch-check: if dist is older than seed-kv.ts or astro.config.mjs,
-    // re-build. Cheap insurance against stale artefacts.
-    const distStat = await stat(stagingPath);
-    const sentinels = ['scripts/seed-kv.ts', 'astro.config.mjs', 'package.json'];
-    const shouldRebuild = await Promise.all(
-      sentinels.map((p) => stat(join(PACKAGE_ROOT, p)).then((s) => s.mtimeMs > distStat.mtimeMs)),
-    );
-    if (shouldRebuild.some(Boolean)) {
-      execFileSync('pnpm', ['build'], { cwd: PACKAGE_ROOT, stdio: 'inherit' });
-    }
+  FIXTURE_NETWORK_DIR = await mkdtemp(join(tmpdir(), 'atl-env-configs-'));
+  // Mirror the real network's coolnews entry plus a second domain so the
+  // multi-domain path is exercised.
+  const fixture = `
+sites:
+  - domain: coolnews-atl
+    custom_domain: coolnews.dev
+  - domain: science-test
+    custom_domain: null
+  - domain: example-test
+    custom_domain: example.test
+`.trimStart();
+  await writeFile(join(FIXTURE_NETWORK_DIR, 'dashboard-index.yaml'), fixture, 'utf-8');
+
+  // Always rebuild — env-config emit is now a pure function of NETWORK_DATA_PATH
+  // contents, and we want our fixture to drive the assertions below.
+  execFileSync('pnpm', ['build'], {
+    cwd: PACKAGE_ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, NETWORK_DATA_PATH: FIXTURE_NETWORK_DIR },
+  });
+});
+
+afterAll(async () => {
+  if (FIXTURE_NETWORK_DIR) {
+    await rm(FIXTURE_NETWORK_DIR, { recursive: true, force: true });
   }
 });
 
@@ -88,12 +98,7 @@ describe('env config emit', () => {
     expect(stagingR2?.bucket_name).not.toBe(prodR2?.bucket_name);
   });
 
-  it('production emits coolnews.dev as a Workers Custom Domain; staging emits no routes', async () => {
-    // Phase-7 regression net: catches a build that ships prod without
-    // claiming coolnews.dev. We use `custom_domain = true` so CF auto-
-    // manages the apex DNS record — necessary because the legacy Pages
-    // project owned that record and removing the Pages custom-domain
-    // attachment would otherwise knock the site offline.
+  it('production routes are derived from dashboard-index.yaml; staging emits no routes', async () => {
     const staging = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8')) as Record<string, unknown>;
     const prod = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.production.json'), 'utf-8')) as Record<string, unknown>;
 
@@ -101,9 +106,13 @@ describe('env config emit', () => {
 
     const prodRoutes = prod.routes as Array<{ pattern: string; custom_domain?: boolean }>;
     expect(prodRoutes).toBeDefined();
-    const coolnews = prodRoutes.find((r) => r.pattern === 'coolnews.dev');
-    expect(coolnews, 'coolnews.dev custom-domain route must be emitted in production').toBeDefined();
-    expect(coolnews?.custom_domain).toBe(true);
+
+    // Both fixtures with custom_domain set → routes; the null one → skipped.
+    const patterns = prodRoutes.map((r) => r.pattern).sort();
+    expect(patterns).toEqual(['coolnews.dev', 'example.test']);
+    for (const r of prodRoutes) {
+      expect(r.custom_domain).toBe(true);
+    }
   });
 
   it('emitted configs are flat — no env metadata leftover', async () => {
