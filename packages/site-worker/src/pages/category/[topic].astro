@@ -38,10 +38,6 @@ const matching = allArticles
   .filter((a) => a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()))
   .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
 
-if (matching.length === 0) {
-  return new Response('Not found', { status: 404 });
-}
-
 // Pagination
 const url = new URL(Astro.request.url);
 const perPage = config.categories.per_page;
@@ -84,27 +80,35 @@ const canonicalUrl = `https://${config.domain}/category/${topicSlug}`;
 
     <AdSlot position="category-top" pageType="category" server:defer />
 
-    <section class="category-grid-wrap">
-      <div class="category-grid">
-        {slice.map((article) => (
-          <article class="category-card">
-            <a class="category-card-thumb" href={`/${article.slug}`}>
-              {article.featuredImage && (
-                <img src={article.featuredImage} alt="" loading="lazy" />
-              )}
-            </a>
-            <div class="category-card-body">
-              <a class="category-card-link" href={`/${article.slug}`}>
-                <h2 class="category-card-title">{article.title}</h2>
+    {matching.length === 0 && (
+      <section class="category-empty">
+        <p>No articles in this category yet. Check back soon.</p>
+      </section>
+    )}
+
+    {matching.length > 0 && (
+      <section class="category-grid-wrap">
+        <div class="category-grid">
+          {slice.map((a) => (
+            <article class="category-card">
+              <a class="category-card-thumb" href={`/${a.slug}`}>
+                {a.featuredImage && (
+                  <img src={a.featuredImage} alt="" loading="lazy" />
+                )}
               </a>
-              {article.description && (
-                <p class="category-card-desc">{article.description}</p>
-              )}
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
+              <div class="category-card-body">
+                <a class="category-card-link" href={`/${a.slug}`}>
+                  <h2 class="category-card-title">{a.title}</h2>
+                </a>
+                {a.description && (
+                  <p class="category-card-desc">{a.description}</p>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    )}
 
     {/* Numbered pagination */}
     {totalPages > 1 && (
@@ -144,6 +148,15 @@ const canonicalUrl = `https://${config.domain}/category/${topicSlug}`;
 <style>
   .category-page {
     min-height: 60vh;
+  }
+
+  .category-empty {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 3rem 1rem;
+    text-align: center;
+    color: var(--color-muted, #6b7280);
+    font-size: 1.0625rem;
   }
 
   /* ---- Heading with accent-colored rules ---- */
