@@ -1,0 +1,23 @@
+---
+import HeroCard from './HeroCard.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { articles: ArticleIndexEntry[]; }
+const { articles } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="hero-grid" aria-label="Top stories">
+    {articles.map((article) => <HeroCard article={article} />)}
+  </section>
+)}
+
+<style>
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  @media (min-width: 640px) { .hero-grid { grid-template-columns: 1fr 1fr; } }
+  @media (min-width: 1024px) { .hero-grid { grid-template-columns: repeat(4, 1fr); } }
+</style>

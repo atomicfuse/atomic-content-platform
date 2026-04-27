@@ -1,0 +1,53 @@
+---
+import MustReadHeroCard from './MustReadHeroCard.astro';
+import ThumbCard from './ThumbCard.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { articles: ArticleIndexEntry[]; }
+const { articles } = Astro.props;
+const [hero, ...rest] = articles;
+const thumbs = rest.slice(0, 4);
+---
+
+{hero && (
+  <section class="must-reads" aria-label="Must reads">
+    <div class="must-reads-inner">
+      <h2 class="must-reads-heading">Must Reads</h2>
+      <div class="must-reads-grid">
+        <div class="must-reads-hero"><MustReadHeroCard article={hero} /></div>
+        <div class="must-reads-thumbs">
+          {thumbs.map((article) => <ThumbCard article={article} />)}
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+<style>
+  .must-reads {
+    background: var(--color-secondary, #1a1a2e);
+    color: #fff;
+    padding: 3rem 0;
+  }
+  .must-reads-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .must-reads-heading {
+    color: #fff;
+    font-size: var(--text-2xl, 1.5rem);
+    margin-bottom: 1.5rem;
+  }
+  .must-reads-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  @media (min-width: 960px) { .must-reads-grid { grid-template-columns: 1.4fr 1fr; } }
+  .must-reads-thumbs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+</style>
