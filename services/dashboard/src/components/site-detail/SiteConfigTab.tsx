@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
-import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import { UnifiedConfigForm, DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
+import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
 import {
   normalizeTracking,
   normalizeScripts,
@@ -30,6 +30,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formConfig, setFormConfig] = useState<Partial<UnifiedConfigFields>>({});
+  const [mergeModes, setMergeModes] = useState<OverrideMergeModes>({ ...DEFAULT_MERGE_MODES });
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -50,6 +51,12 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         theme: (raw.theme ?? {}) as Record<string, unknown>,
         legal: (raw.legal ?? {}) as Record<string, string>,
       });
+
+      // Restore persisted merge modes from site.yaml (if any)
+      const modes = raw.merge_modes as Partial<OverrideMergeModes> | undefined;
+      if (modes && typeof modes === "object") {
+        setMergeModes({ ...DEFAULT_MERGE_MODES, ...modes });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load config");
     } finally {
@@ -76,6 +83,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
             scripts: formConfig.scripts,
             scripts_vars: formConfig.scripts_vars,
             ads_config: formConfig.ads_config,
+            merge_modes: mergeModes,
           },
         }),
       });
@@ -110,6 +118,8 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         config={formConfig}
         onChange={setFormConfig}
         mode="site"
+        mergeModes={mergeModes}
+        onMergeModesChange={setMergeModes}
       />
       <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
         <Button onClick={handleSave} loading={saving}>

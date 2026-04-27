@@ -99,7 +99,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         existing.tracking = { ...prev, ...configUpdates.tracking };
       }
       if (configUpdates.scripts !== undefined) {
-        existing.scripts = configUpdates.scripts;
+        // Only persist non-empty position arrays. Empty arrays mean "no
+        // site-level override" and should not be written — they would
+        // shadow inherited scripts from org/group/override layers during
+        // the merge-by-id resolution in seed-kv.
+        const scripts = configUpdates.scripts as Record<string, unknown[]>;
+        const filtered: Record<string, unknown[]> = {};
+        for (const [pos, entries] of Object.entries(scripts)) {
+          if (Array.isArray(entries) && entries.length > 0) {
+            filtered[pos] = entries;
+          }
+        }
+        if (Object.keys(filtered).length > 0) {
+          existing.scripts = filtered;
+        } else {
+          delete (existing as Record<string, unknown>).scripts;
+        }
       }
       if (configUpdates.scripts_vars !== undefined) {
         const prev = (existing.scripts_vars ?? {}) as Record<string, string>;
@@ -108,6 +123,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.ads_config !== undefined) {
         const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
         existing.ads_config = { ...prev, ...configUpdates.ads_config };
+      }
+      if (configUpdates.merge_modes !== undefined) {
+        existing.merge_modes = configUpdates.merge_modes;
       }
       if (configUpdates.quality_threshold !== undefined) {
         brief.quality_threshold = configUpdates.quality_threshold;

@@ -41,6 +41,146 @@ export function deepMerge(a: unknown, b: unknown): unknown {
   return out;
 }
 
+// ---------- Merge modes ----------
+
+/** Merge modes that a site or override layer can declare. */
+export interface MergeModes {
+  tracking?: 'merge' | 'replace';
+  scripts?: 'merge_by_id' | 'replace';
+  scripts_vars?: 'merge' | 'replace';
+  ads_config?: 'add' | 'replace' | 'merge_placements';
+  ads_txt?: 'add' | 'replace';
+  theme?: 'merge' | 'replace';
+  legal?: 'merge' | 'replace';
+}
+
+// ---------- Scripts merge-by-id ----------
+
+interface ScriptEntryLike {
+  id: string;
+  [k: string]: unknown;
+}
+
+interface ScriptsLike {
+  head?: ScriptEntryLike[];
+  body_start?: ScriptEntryLike[];
+  body_end?: ScriptEntryLike[];
+}
+
+const SCRIPT_POSITIONS = ['head', 'body_start', 'body_end'] as const;
+
+/**
+ * Merges `scripts` across config layers using merge-by-id semantics:
+ *   - Same `id` in a later layer replaces the earlier entry.
+ *   - New `id` is appended.
+ *   - Layers without `scripts` (or with empty/missing position arrays) are skipped.
+ *
+ * This replaces the generic deepMerge array-replacement behaviour specifically
+ * for the `scripts` field, matching the documented convention:
+ *   "Scripts merge by ID across layers. Same ID = replace, new ID = append."
+ *
+ * If the **last layer** (the site) declares `merge_modes.scripts = 'replace'`,
+ * only the site-layer scripts are returned (all inherited scripts are discarded).
+ */
+export function mergeScriptLayers(
+  layers: ReadonlyArray<Record<string, unknown>>,
+): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] } {
+  // Check if the final layer wants "replace" mode.
+  const last = layers[layers.length - 1];
+  const lastModes = last?.merge_modes as MergeModes | undefined;
+  if (lastModes?.scripts === 'replace') {
+    const scripts = last.scripts as ScriptsLike | undefined;
+    return {
+      head: Array.isArray(scripts?.head) ? scripts.head : [],
+      body_start: Array.isArray(scripts?.body_start) ? scripts.body_start : [],
+      body_end: Array.isArray(scripts?.body_end) ? scripts.body_end : [],
+    };
+  }
+
+  const result: Record<string, ScriptEntryLike[]> = {
+    head: [],
+    body_start: [],
+    body_end: [],
+  };
+  for (const layer of layers) {
+    const scripts = layer.scripts as ScriptsLike | undefined;
+    if (!scripts || typeof scripts !== 'object') continue;
+    for (const pos of SCRIPT_POSITIONS) {
+      const entries = scripts[pos];
+      if (!Array.isArray(entries) || entries.length === 0) continue;
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object' || !entry.id) continue;
+        const idx = result[pos].findIndex((e) => e.id === entry.id);
+        if (idx >= 0) {
+          result[pos][idx] = entry; // same ID → replace
+        } else {
+          result[pos].push(entry); // new ID → append
+        }
+      }
+    }
+  }
+  return result as { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] };
+}
+
+// ---------- Ads config merge ----------
+
+interface AdPlacement {
+  id: string;
+  [k: string]: unknown;
+}
+
+/**
+ * Merges `ads_config.ad_placements` across layers, respecting the site
+ * layer's `merge_modes.ads_config`:
+ *   - `'add'` (default): append site placements to inherited ones.
+ *   - `'merge_placements'`: merge by id (same id → replace, new → append).
+ *   - `'replace'`: only the site layer's placements are used.
+ *
+ * Non-placement fields (`interstitial`, `layout`) are always deep-merged
+ * by the generic `deepMerge`; this function only handles the array.
+ */
+export function mergeAdPlacementLayers(
+  layers: ReadonlyArray<Record<string, unknown>>,
+): AdPlacement[] {
+  const last = layers[layers.length - 1];
+  const lastModes = last?.merge_modes as MergeModes | undefined;
+  const mode = lastModes?.ads_config ?? 'add';
+
+  // Collect placements from all layers except the last (site).
+  const inherited: AdPlacement[] = [];
+  for (let i = 0; i < layers.length - 1; i++) {
+    const cfg = layers[i].ads_config as { ad_placements?: AdPlacement[] } | undefined;
+    const placements = cfg?.ad_placements;
+    if (!Array.isArray(placements)) continue;
+    // Each non-site layer replaces inherited (deepMerge semantics for groups/overrides).
+    inherited.length = 0;
+    inherited.push(...placements);
+  }
+
+  const siteCfg = last?.ads_config as { ad_placements?: AdPlacement[] } | undefined;
+  const sitePlacements = Array.isArray(siteCfg?.ad_placements) ? siteCfg.ad_placements : [];
+
+  if (mode === 'replace') {
+    return sitePlacements;
+  }
+
+  if (mode === 'merge_placements') {
+    const result = [...inherited];
+    for (const p of sitePlacements) {
+      const idx = result.findIndex((r) => r.id === p.id);
+      if (idx >= 0) {
+        result[idx] = p;
+      } else {
+        result.push(p);
+      }
+    }
+    return result;
+  }
+
+  // 'add' (default): append — even duplicate IDs.
+  return [...inherited, ...sitePlacements];
+}
+
 // ---------- Frontmatter ----------
 
 export interface FrontmatterSplit {

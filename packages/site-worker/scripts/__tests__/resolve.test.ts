@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   deepMerge,
+  mergeScriptLayers,
+  mergeAdPlacementLayers,
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
@@ -280,5 +282,140 @@ describe('stripOverrideMetaFields', () => {
   it('preserves config when no meta fields present', () => {
     const input = { ads_config: { ad_placements: [] } };
     expect(stripOverrideMetaFields(input)).toEqual(input);
+  });
+});
+
+describe('mergeScriptLayers', () => {
+  it('appends new script IDs across layers', () => {
+    const org = { scripts: { head: [{ id: 'gtag', src: 'https://gtag.js' }] } };
+    const site = { scripts: { head: [{ id: 'bg-test', inline: 'document.body.style.backgroundColor="red"' }] } };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.head).toHaveLength(2);
+    expect(result.head[0].id).toBe('gtag');
+    expect(result.head[1].id).toBe('bg-test');
+  });
+
+  it('same ID in later layer replaces earlier entry', () => {
+    const org = { scripts: { head: [{ id: 'gtag', src: 'https://gtag-old.js' }] } };
+    const site = { scripts: { head: [{ id: 'gtag', src: 'https://gtag-new.js' }] } };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.head).toHaveLength(1);
+    expect(result.head[0].src).toBe('https://gtag-new.js');
+  });
+
+  it('skips layers without scripts', () => {
+    const org = { scripts: { head: [{ id: 'a', inline: 'a()' }] } };
+    const group = { tracking: { ga4: 'G-1' } }; // no scripts
+    const site = { scripts: { head: [{ id: 'b', inline: 'b()' }] } };
+    const result = mergeScriptLayers([org, group, site]);
+    expect(result.head).toHaveLength(2);
+    expect(result.head.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+
+  it('empty array in a layer does NOT wipe inherited scripts', () => {
+    const org = { scripts: { head: [{ id: 'gtag', src: 'https://gtag.js' }] } };
+    const site = { scripts: { head: [] } };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.head).toHaveLength(1);
+    expect(result.head[0].id).toBe('gtag');
+  });
+
+  it('merges across all three positions independently', () => {
+    const org = {
+      scripts: {
+        head: [{ id: 'h1', inline: 'h1()' }],
+        body_start: [{ id: 'bs1', inline: 'bs1()' }],
+        body_end: [{ id: 'be1', inline: 'be1()' }],
+      },
+    };
+    const site = {
+      scripts: {
+        head: [{ id: 'h2', inline: 'h2()' }],
+        body_end: [{ id: 'be1', inline: 'be1_v2()' }],
+      },
+    };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.head.map((s) => s.id)).toEqual(['h1', 'h2']);
+    expect(result.body_start.map((s) => s.id)).toEqual(['bs1']);
+    expect(result.body_end).toHaveLength(1);
+    expect(result.body_end[0].inline).toBe('be1_v2()'); // replaced by site
+  });
+
+  it('returns empty arrays when no layers have scripts', () => {
+    const result = mergeScriptLayers([{ tracking: {} }, { ads_config: {} }]);
+    expect(result).toEqual({ head: [], body_start: [], body_end: [] });
+  });
+
+  it('handles org → group → override → site (4-layer chain)', () => {
+    const org = { scripts: { head: [{ id: 'analytics', inline: 'org()' }] } };
+    const group = { scripts: { head: [{ id: 'group-tag', inline: 'grp()' }] } };
+    const override = { scripts: { head: [{ id: 'analytics', inline: 'override()' }] } };
+    const site = { scripts: { head: [{ id: 'bg-test', inline: 'bg()' }] } };
+    const result = mergeScriptLayers([org, group, override, site]);
+    expect(result.head).toHaveLength(3);
+    expect(result.head[0]).toEqual({ id: 'analytics', inline: 'override()' }); // override replaced org
+    expect(result.head[1]).toEqual({ id: 'group-tag', inline: 'grp()' });
+    expect(result.head[2]).toEqual({ id: 'bg-test', inline: 'bg()' });
+  });
+
+  it('replace mode: last layer with merge_modes.scripts="replace" discards inherited', () => {
+    const org = { scripts: { head: [{ id: 'analytics', inline: 'org()' }] } };
+    const site = {
+      scripts: { head: [{ id: 'custom', inline: 'custom()' }] },
+      merge_modes: { scripts: 'replace' },
+    };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.head).toHaveLength(1);
+    expect(result.head[0].id).toBe('custom');
+  });
+});
+
+describe('mergeAdPlacementLayers', () => {
+  it('add mode (default): appends site placements to inherited', () => {
+    const org = { ads_config: { ad_placements: [{ id: 'sidebar', position: 'left' }] } };
+    const site = { ads_config: { ad_placements: [{ id: 'banner', position: 'top' }] } };
+    const result = mergeAdPlacementLayers([org, site]);
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe('sidebar');
+    expect(result[1].id).toBe('banner');
+  });
+
+  it('add mode: duplicate IDs result in both entries', () => {
+    const org = { ads_config: { ad_placements: [{ id: 'sidebar', position: 'left' }] } };
+    const site = { ads_config: { ad_placements: [{ id: 'sidebar', position: 'right' }] } };
+    const result = mergeAdPlacementLayers([org, site]);
+    expect(result).toHaveLength(2);
+  });
+
+  it('merge_placements mode: same ID replaced, new ID appended', () => {
+    const org = { ads_config: { ad_placements: [{ id: 'sidebar', w: 300 }, { id: 'sticky', w: 100 }] } };
+    const site = {
+      ads_config: { ad_placements: [{ id: 'sidebar', w: 600 }, { id: 'banner', w: 728 }] },
+      merge_modes: { ads_config: 'merge_placements' },
+    };
+    const result = mergeAdPlacementLayers([org, site]);
+    expect(result).toHaveLength(3);
+    expect(result.find((p) => p.id === 'sidebar')?.w).toBe(600); // replaced
+    expect(result.find((p) => p.id === 'sticky')).toBeDefined(); // kept
+    expect(result.find((p) => p.id === 'banner')).toBeDefined(); // added
+  });
+
+  it('replace mode: only site placements remain', () => {
+    const org = { ads_config: { ad_placements: [{ id: 'sidebar', w: 300 }] } };
+    const site = {
+      ads_config: { ad_placements: [{ id: 'banner', w: 728 }] },
+      merge_modes: { ads_config: 'replace' },
+    };
+    const result = mergeAdPlacementLayers([org, site]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('banner');
+  });
+
+  it('handles empty site placements with add mode', () => {
+    const org = { ads_config: { ad_placements: [{ id: 'sidebar', w: 300 }] } };
+    const site = { ads_config: {} };
+    const result = mergeAdPlacementLayers([org, site]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('sidebar');
   });
 });
