@@ -17,9 +17,6 @@ import {
 } from "@/lib/github";
 import {
   createPagesProject,
-  addCustomDomainToProject,
-  removeCustomDomainFromProject,
-  getPagesProjectDomainsDetailed,
   listDeployments,
   listZones,
 } from "@/lib/cloudflare";
@@ -453,7 +450,8 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   return stagingBranch;
 }
 
-/** Fetch Cloudflare zones not already used as a site domain or custom_domain. */
+/** Fetch Cloudflare zones not already used as a site identifier or as
+ *  another site's custom_domain. */
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
@@ -462,88 +460,89 @@ export async function getAvailableZones(): Promise<
     readDashboardIndex(),
   ]);
 
-  const usedByPagesProject = new Set(
-    index.sites.filter((s) => s.pages_project).map((s) => s.domain)
-  );
+  const usedAsSite = new Set(index.sites.map((s) => s.domain));
   const usedCustomDomains = new Set(
-    index.sites.map((s) => s.custom_domain).filter(Boolean)
+    index.sites.map((s) => s.custom_domain).filter((d): d is string => Boolean(d)),
   );
 
   return zones
-    .filter(
-      (z) => !usedByPagesProject.has(z.name) && !usedCustomDomains.has(z.name)
-    )
+    .filter((z) => !usedAsSite.has(z.name) && !usedCustomDomains.has(z.name))
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
-/** Attach a custom domain to the site's CF Pages project. */
+/** Attach a custom domain to a site by writing it to dashboard-index.yaml.
+ *  Post-migration this is just a data change — the production worker only
+ *  picks up the route on the next `pnpm deploy:production` run (which feeds
+ *  emit-env-configs.ts). The UI surfaces a "redeploy required" callout to
+ *  the operator. Best-effort email-routing setup happens here too since it's
+ *  zone-level and unrelated to the legacy Pages flow. */
 export async function attachCustomDomain(
   domain: string,
-  customDomain: string
-): Promise<void> {
+  customDomain: string,
+): Promise<{ redeployRequired: true }> {
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project) throw new Error(`No Pages project for ${domain}`);
+  if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
 
-  // Attach domain on Cloudflare Pages
-  await addCustomDomainToProject(site.pages_project, customDomain);
-
-  // Check for a duplicate zone entry and merge its zone_id before removing
+  // Merge a duplicate zone-only entry's zone_id into this site, then drop the dupe.
   const dupeIndex = index.sites.findIndex((s) => s.domain === customDomain);
   if (dupeIndex !== -1) {
     const dupe = index.sites[dupeIndex]!;
-    if (dupe.zone_id) {
-      site.zone_id = dupe.zone_id;
-    }
+    if (dupe.zone_id) site.zone_id = dupe.zone_id;
     index.sites.splice(dupeIndex, 1);
   }
 
-  // Best-effort: enable email routing + create contact@ forwarding rule.
-  // Failures here must NOT abort the attach — the Pages domain is already live.
+  // Best-effort zone-level setup. Failures here must NOT abort the attach
+  // — the data write is the contract; email routing is a nicety.
   if (site.zone_id) {
     try {
       await enableEmailRouting(site.zone_id);
       await createEmailRoutingRule(site.zone_id, customDomain);
     } catch (err) {
-      console.error("[attachCustomDomain] email routing setup failed", err);
+      console.error('[attachCustomDomain] email routing setup failed', err);
     }
   }
 
-  // Update the real site entry
   site.custom_domain = customDomain;
-  site.status = "Live";
+  site.status = 'Live';
   site.last_updated = new Date().toISOString();
 
-  await writeDashboardIndex(index, `dashboard: attach ${customDomain} to ${domain}`);
+  await writeDashboardIndex(
+    index,
+    `dashboard: attach ${customDomain} to ${domain}`,
+  );
 
-  revalidatePath("/");
+  revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
+
+  return { redeployRequired: true };
 }
 
-/** Detach (disconnect) a custom domain from the site's CF Pages project. */
-export async function detachCustomDomain(domain: string): Promise<void> {
+/** Detach a custom domain from a site (clears the field; reverts status).
+ *  Post-migration: pure data change. Production deploy must be re-run for
+ *  the prod worker to actually drop the route. */
+export async function detachCustomDomain(
+  domain: string,
+): Promise<{ redeployRequired: true }> {
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.pages_project || !site.custom_domain)
+  if (!site?.custom_domain) {
     throw new Error(`No custom domain to detach for ${domain}`);
-
-  // Remove the custom domain from the Pages project.
-  // The CF Pages API deletes by domain NAME, not ID: DELETE /pages/projects/{project}/domains/{name}
-  const cfDomains = await getPagesProjectDomainsDetailed(site.pages_project);
-  const cfDomain = cfDomains.find((d) => d.name === site.custom_domain);
-  if (cfDomain) {
-    await removeCustomDomainFromProject(site.pages_project, cfDomain.name);
   }
 
-  // Clear custom_domain and revert status
   site.custom_domain = null;
-  site.status = "Ready";
+  site.status = 'Ready';
   site.last_updated = new Date().toISOString();
 
-  await writeDashboardIndex(index, `dashboard: detach custom domain from ${domain}`);
+  await writeDashboardIndex(
+    index,
+    `dashboard: detach custom domain from ${domain}`,
+  );
 
-  revalidatePath("/");
+  revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
+
+  return { redeployRequired: true };
 }
 
 /** Save a staging preview URL for later reference. */

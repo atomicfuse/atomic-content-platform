@@ -316,13 +316,10 @@ export function ContentAgentTab({
         </div>
         <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
       </div>
-      {pagesProject && (
-        <AttachDomainPanel
-          domain={domain}
-          pagesProject={pagesProject}
-          customDomain={customDomain ?? null}
-        />
-      )}
+      <AttachDomainPanel
+        domain={domain}
+        customDomain={customDomain ?? null}
+      />
       <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
         <Button onClick={saveIdentity} loading={savingIdentity}>Save Identity</Button>
       </div>
