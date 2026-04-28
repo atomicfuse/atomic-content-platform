@@ -118,6 +118,8 @@ export function ContentAgentTab({
   );
   const [seoKeywordInput, setSeoKeywordInput] = useState("");
   const [bundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
+  const [verticalSearch, setVerticalSearch] = useState("");
+  const [verticalDropdownOpen, setVerticalDropdownOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
 
   const { verticals } = useVerticals();
@@ -424,6 +426,11 @@ export function ContentAgentTab({
     </div>
   );
 
+  const selectedVerticalName = verticals.find((v) => v.id === verticalId)?.name ?? "";
+  const filteredVerticals = verticalSearch
+    ? verticals.filter((v) => v.name.toLowerCase().includes(verticalSearch.toLowerCase()))
+    : verticals;
+
   const filteredCategories = categoryFilter
     ? categories.filter((c) => c.name.toLowerCase().includes(categoryFilter.toLowerCase()))
     : categories;
@@ -442,23 +449,83 @@ export function ContentAgentTab({
         </p>
 
         {/* Vertical */}
-        <Select
-          label="Vertical"
-          options={verticals.map((v) => ({ value: v.id, label: v.name }))}
-          placeholder="Select vertical..."
-          value={verticalId}
-          onChange={(e): void => {
-            const newId = e.target.value;
-            if (newId !== verticalId) {
-              setVerticalId(newId);
-              setSelectedCategoryIds([]);
-              setSelectedTagIds([]);
-              setSelectedTagNames(new Map());
-              setTagSearch("");
-              setCategoryFilter("");
-            }
-          }}
-        />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Vertical
+          </label>
+          <div className="relative">
+            <input
+              className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+              placeholder="Search verticals..."
+              value={verticalDropdownOpen ? verticalSearch : selectedVerticalName || verticalSearch}
+              onChange={(e): void => {
+                setVerticalSearch(e.target.value);
+                setVerticalDropdownOpen(true);
+              }}
+              onFocus={(): void => {
+                setVerticalDropdownOpen(true);
+                setVerticalSearch("");
+              }}
+              onBlur={(): void => {
+                // Delay so click on option registers before close
+                setTimeout(() => setVerticalDropdownOpen(false), 200);
+              }}
+            />
+            {verticalId && !verticalDropdownOpen && (
+              <button
+                type="button"
+                onClick={(): void => {
+                  setVerticalId("");
+                  setVerticalSearch("");
+                  setSelectedCategoryIds([]);
+                  setSelectedTagIds([]);
+                  setSelectedTagNames(new Map());
+                  setTagSearch("");
+                  setCategoryFilter("");
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-red-400 transition-colors"
+                title="Clear vertical"
+              >
+                &times;
+              </button>
+            )}
+            {verticalDropdownOpen && (
+              <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg max-h-48 overflow-y-auto">
+                {filteredVerticals.length === 0 ? (
+                  <p className="text-xs text-[var(--text-muted)] px-3 py-2">No verticals found</p>
+                ) : (
+                  filteredVerticals.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onMouseDown={(e): void => e.preventDefault()}
+                      onClick={(): void => {
+                        if (v.id !== verticalId) {
+                          setVerticalId(v.id);
+                          setSelectedCategoryIds([]);
+                          setSelectedTagIds([]);
+                          setSelectedTagNames(new Map());
+                          setTagSearch("");
+                          setCategoryFilter("");
+                        }
+                        setVerticalSearch("");
+                        setVerticalDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] flex items-center justify-between ${
+                        v.id === verticalId ? "text-cyan font-medium" : "text-[var(--text-primary)]"
+                      }`}
+                    >
+                      <span>{v.name}</span>
+                      {v.iab_code && (
+                        <span className="text-[10px] text-[var(--text-muted)]">{v.iab_code}</span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Categories */}
         <div className="space-y-1.5">
