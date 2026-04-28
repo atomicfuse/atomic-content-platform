@@ -34,3 +34,4 @@ pnpm-debug.log*
 # CloudGrid local-dev runtime state (pid + ports). Regenerated on each
 # `cloudgrid dev` invocation; never feature-relevant.
 .cloudgrid-dev.lock
+.superpowers/
