@@ -8,7 +8,6 @@ import { StepNicheTargeting } from "@/components/wizard/StepNicheTargeting";
 import { StepGroups } from "@/components/wizard/StepGroups";
 import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
-import { StepScriptVars } from "@/components/wizard/StepScriptVars";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
 import type { WizardFormData } from "@/types/dashboard";
@@ -110,15 +109,6 @@ export default function WizardPage(): React.ReactElement {
             );
           case 5:
             return (
-              <StepScriptVars
-                data={formData}
-                onChange={updateForm}
-                onNext={goNext}
-                onBack={goBack}
-              />
-            );
-          case 6:
-            return (
               <StepPreview
                 data={formData}
                 onNext={goNext}
@@ -127,7 +117,7 @@ export default function WizardPage(): React.ReactElement {
                 existingResult={stagingResult}
               />
             );
-          case 7:
+          case 6:
             return (
               <StepGoLive
                 data={formData}
