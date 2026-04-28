@@ -495,6 +495,42 @@ export function StepTheme({
         </div>
       </div>
 
+      {/* Brand Colors */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Brand Colors</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ColorPickerField
+            label="Main color (header / nav)"
+            value={data.primaryColor}
+            onChange={(v): void => onChange({ primaryColor: v })}
+            helperText="Used for the header band and accents"
+          />
+          <ColorPickerField
+            label="Accent color (CTA / newsletter)"
+            value={data.accentColor}
+            onChange={(v): void => onChange({ accentColor: v })}
+            helperText="Used for the subscribe band and call-to-action buttons"
+          />
+        </div>
+      </div>
+
+      {/* Typography */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Typography</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FontPickerField
+            label="Heading font"
+            value={data.fontHeading}
+            onChange={(v): void => onChange({ fontHeading: v })}
+          />
+          <FontPickerField
+            label="Body font"
+            value={data.fontBody}
+            onChange={(v): void => onChange({ fontBody: v })}
+          />
+        </div>
+      </div>
+
       {/* Assets (optional) */}
       <div className="space-y-3">
         <div>
