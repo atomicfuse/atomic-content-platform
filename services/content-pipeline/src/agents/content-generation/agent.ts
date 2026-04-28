@@ -450,6 +450,7 @@ async function processItem(
         articleDescription: generated.description,
         articleSummary: item.summary,
         vertical: item.vertical?.name ?? "General",
+        sourceThumbnailUrl: item.thumbnail?.url,
       });
 
       if (imageResult) {
@@ -583,13 +584,16 @@ async function processWithConcurrency<T, R>(
   let nextIndex = 0;
   const inFlight = new Set<Promise<void>>();
 
-  function canProcess(): boolean {
-    return successCount < targetCount && nextIndex < items.length;
+  /** Whether we need AND can launch more items. */
+  function shouldLaunch(): boolean {
+    // Don't launch if we already have enough successes + pending to hit target
+    if (successCount + inFlight.size >= targetCount) return false;
+    // Don't launch if we ran out of items
+    if (nextIndex >= items.length) return false;
+    return true;
   }
 
   async function processNext(): Promise<void> {
-    if (!canProcess()) return;
-
     const idx = nextIndex++;
     const item = items[idx]!;
 
@@ -601,9 +605,9 @@ async function processWithConcurrency<T, R>(
     }
   }
 
-  while (canProcess() || inFlight.size > 0) {
-    // Fill up to maxConcurrency
-    while (canProcess() && inFlight.size < maxConcurrency) {
+  while ((successCount < targetCount && nextIndex < items.length) || inFlight.size > 0) {
+    // Fill up to maxConcurrency, but only if we still need more
+    while (shouldLaunch() && inFlight.size < maxConcurrency) {
       const p = processNext().then(() => {
         inFlight.delete(p);
       });
@@ -657,8 +661,6 @@ export async function runContentGeneration(
     const fetchLimit = targetCount * 2;
     console.log(`[agent] Fetching ${fetchLimit} items from aggregator (target: ${targetCount})`);
 
-    const audienceTypeId = brief.audience_type_ids?.[0] ?? brief.audience_type_id;
-
     const [items, settings] = await Promise.all([
       getContent({
         limit: fetchLimit,
@@ -666,7 +668,6 @@ export async function runContentGeneration(
         vertical_id: brief.vertical_id,
         category_ids: brief.category_ids,
         tag_ids: tagIds,
-        audience_type_id: audienceTypeId,
       }),
       getSettings(),
     ]);
@@ -725,8 +726,8 @@ export async function runContentGeneration(
       );
     }
 
-    // Step 6: Batch-write all created articles in a SINGLE commit
-    const created = results.filter((r) => r.status === "created");
+    // Step 6: Batch-write all created articles in a SINGLE commit (cap to targetCount)
+    const created = results.filter((r) => r.status === "created").slice(0, targetCount);
     if (created.length > 0) {
       const pendingArticles = created
         .map((r) => r._pendingArticle)

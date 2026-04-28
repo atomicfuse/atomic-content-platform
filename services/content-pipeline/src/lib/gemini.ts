@@ -6,22 +6,40 @@
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
+export interface GeminiImageInput {
+  /** Base64-encoded image data. */
+  data: string;
+  /** MIME type (e.g. "image/jpeg", "image/png"). */
+  mimeType: string;
+}
+
 /**
  * Generate an image for the given prompt using Gemini.
+ * Optionally accepts a reference image that Gemini can see when generating.
  * Returns a PNG Buffer or null if generation fails or key is absent.
  */
 export async function generateImageWithGemini(
   apiKey: string,
   prompt: string,
+  referenceImage?: GeminiImageInput,
 ): Promise<Buffer | null> {
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
     console.log(`[gemini] POST ${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent`);
+
+    const parts: Array<Record<string, unknown>> = [];
+    if (referenceImage) {
+      parts.push({
+        inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.data },
+      });
+    }
+    parts.push({ text: prompt });
+
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
       }),
       signal: AbortSignal.timeout(60_000), // 60s timeout for image generation
