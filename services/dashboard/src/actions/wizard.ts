@@ -563,6 +563,19 @@ export interface StagingSiteConfig {
   preferredDays: string[];
   themeBase: string;
   logoBase64: string | null;
+  // Niche targeting fields
+  /** Content Aggregator vertical ID. */
+  verticalId?: string;
+  /** Display name of the vertical. */
+  vertical?: string;
+  /** Content Aggregator category IDs. */
+  categoryIds?: string[];
+  /** Content Aggregator tag IDs. */
+  tagIds?: string[];
+  /** SEO keywords focus list. */
+  seoKeywords?: string[];
+  /** Content bundle ID. */
+  bundleId?: string;
   // Phase 1 config fields
   groups?: string[];
   tracking?: Record<string, unknown>;

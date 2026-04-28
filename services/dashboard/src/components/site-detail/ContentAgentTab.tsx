@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-import { useAudiences } from "@/hooks/useReferenceData";
+import { useAudiences, useVerticals, useCategories, useTagSearch } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
@@ -102,6 +102,95 @@ export function ContentAgentTab({
     keyword_relevance: brief?.quality_weights?.keyword_relevance ?? 20,
   });
   const weightsTotal = Object.values(qualityWeights).reduce((a, b) => a + b, 0);
+
+  // --- Niche Targeting state ---
+  const [verticalId, setVerticalId] = useState<string>((briefRaw?.vertical_id as string) ?? "");
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(
+    (briefRaw?.category_ids as string[]) ?? [],
+  );
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
+    (briefRaw?.tag_ids as string[]) ?? [],
+  );
+  const [selectedTagNames, setSelectedTagNames] = useState<Map<string, string>>(new Map());
+  const [tagSearch, setTagSearch] = useState("");
+  const [seoKeywords, setSeoKeywords] = useState<string[]>(
+    (briefRaw?.seo_keywords_focus as string[]) ?? [],
+  );
+  const [seoKeywordInput, setSeoKeywordInput] = useState("");
+  const [bundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
+  const [categoryFilter, setCategoryFilter] = useState("");
+
+  const { verticals } = useVerticals();
+  const { categories } = useCategories(verticalId);
+  const { results: tagResults, loading: tagSearchLoading } = useTagSearch(verticalId, tagSearch);
+  const [creatingTag, setCreatingTag] = useState(false);
+
+  function toggleCategory(id: string): void {
+    setSelectedCategoryIds((prev) =>
+      prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id],
+    );
+  }
+
+  function addTag(id: string, name: string): void {
+    if (!selectedTagIds.includes(id)) {
+      setSelectedTagIds((prev) => [...prev, id]);
+      setSelectedTagNames((prev) => new Map(prev).set(id, name));
+    }
+    setTagSearch("");
+  }
+
+  function removeTag(id: string): void {
+    setSelectedTagIds((prev) => prev.filter((t) => t !== id));
+    setSelectedTagNames((prev) => { const m = new Map(prev); m.delete(id); return m; });
+  }
+
+  async function createAndAddTag(name: string): Promise<void> {
+    setCreatingTag(true);
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, vertical_id: verticalId || undefined }),
+      });
+      if (res.ok || res.status === 201) {
+        const tag = (await res.json()) as { id: string; name: string };
+        addTag(tag.id, tag.name);
+      } else if (res.status === 409) {
+        // Duplicate — search and add
+        const existing = tagResults.find(
+          (t) => t.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (existing) addTag(existing.id, existing.name);
+      }
+    } catch { /* ignore */ }
+    setCreatingTag(false);
+  }
+
+  function addSeoKeyword(raw: string): void {
+    const kw = raw.trim();
+    if (kw && !seoKeywords.includes(kw)) setSeoKeywords([...seoKeywords, kw]);
+    setSeoKeywordInput("");
+  }
+  function removeSeoKeyword(kw: string): void {
+    setSeoKeywords(seoKeywords.filter((k) => k !== kw));
+  }
+  function handleSeoKeywordKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addSeoKeyword(seoKeywordInput);
+    } else if (e.key === "Backspace" && seoKeywordInput === "" && seoKeywords.length > 0) {
+      removeSeoKeyword(seoKeywords[seoKeywords.length - 1]!);
+    }
+  }
+
+  // Populate tag names from search results for display
+  useEffect(() => {
+    for (const t of tagResults) {
+      if (selectedTagIds.includes(t.id) && !selectedTagNames.has(t.id)) {
+        setSelectedTagNames((prev) => new Map(prev).set(t.id, t.name));
+      }
+    }
+  }, [tagResults, selectedTagIds, selectedTagNames]);
 
   // --- Groups state ---
   const [savingGroups, setSavingGroups] = useState(false);
@@ -228,6 +317,12 @@ export function ContentAgentTab({
             preferredDays,
             quality_threshold: qualityThreshold,
             quality_weights: qualityWeights,
+            verticalId,
+            vertical: verticals.find((v) => v.id === verticalId)?.name,
+            categoryIds: selectedCategoryIds,
+            tagIds: selectedTagIds,
+            seoKeywords,
+            bundleId: bundleId || undefined,
           },
         }),
       });
@@ -327,10 +422,192 @@ export function ContentAgentTab({
     </div>
   );
 
+  const filteredCategories = categoryFilter
+    ? categories.filter((c) => c.name.toLowerCase().includes(categoryFilter.toLowerCase()))
+    : categories;
+
   const contentBriefContent = (
     <div className="space-y-6">
-      {/* Topics, schedule, guidelines */}
+      {/* Niche Targeting */}
       <div className="space-y-4">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Niche Targeting</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Controls which content the aggregator returns for article generation.
+        </p>
+
+        {/* Vertical */}
+        <Select
+          label="Vertical"
+          options={verticals.map((v) => ({ value: v.id, label: v.name }))}
+          placeholder="Select vertical..."
+          value={verticalId}
+          onChange={(e): void => {
+            const newId = e.target.value;
+            if (newId !== verticalId) {
+              setVerticalId(newId);
+              setSelectedCategoryIds([]);
+              setSelectedTagIds([]);
+              setSelectedTagNames(new Map());
+              setTagSearch("");
+              setCategoryFilter("");
+            }
+          }}
+        />
+
+        {/* Categories */}
+        {verticalId && (
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Categories
+              {selectedCategoryIds.length > 0 && (
+                <span className="ml-1.5 text-cyan font-mono">({selectedCategoryIds.length})</span>
+              )}
+            </label>
+            {categories.length > 8 && (
+              <input
+                className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+                placeholder="Filter categories..."
+                value={categoryFilter}
+                onChange={(e): void => setCategoryFilter(e.target.value)}
+              />
+            )}
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
+              {filteredCategories.length === 0 ? (
+                <p className="text-xs text-[var(--text-muted)] py-1 px-2">No categories found</p>
+              ) : (
+                filteredCategories.map((cat) => (
+                  <label
+                    key={cat.id}
+                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-surface)] cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCategoryIds.includes(cat.id)}
+                      onChange={(): void => toggleCategory(cat.id)}
+                      className="accent-cyan"
+                    />
+                    <span className="text-sm text-[var(--text-primary)]">{cat.name}</span>
+                    {cat.iab_code && (
+                      <span className="text-[10px] text-[var(--text-muted)] ml-auto">{cat.iab_code}</span>
+                    )}
+                  </label>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tags */}
+        {verticalId && (
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Tags
+            </label>
+            {selectedTagIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1">
+                {selectedTagIds.map((id) => (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                  >
+                    {selectedTagNames.get(id) ?? id}
+                    <button type="button" onClick={(): void => removeTag(id)} className="hover:text-red-400 transition-colors">
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <input
+                className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+                placeholder="Search tags..."
+                value={tagSearch}
+                onChange={(e): void => setTagSearch(e.target.value)}
+              />
+              {tagSearch.trim() && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg max-h-48 overflow-y-auto">
+                  {tagSearchLoading ? (
+                    <p className="text-xs text-[var(--text-muted)] px-3 py-2">Searching...</p>
+                  ) : (
+                    <>
+                      {tagResults
+                        .filter((t) => !selectedTagIds.includes(t.id))
+                        .map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={(): void => addTag(t.id, t.name)}
+                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] text-[var(--text-primary)] flex items-center justify-between"
+                          >
+                            <span>{t.name}</span>
+                            {t.usage_count !== undefined && (
+                              <span className="text-[10px] text-[var(--text-muted)]">{t.usage_count} items</span>
+                            )}
+                          </button>
+                        ))}
+                      {!tagResults.some((t) => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) && (
+                        <button
+                          type="button"
+                          onClick={(): void => void createAndAddTag(tagSearch.trim())}
+                          disabled={creatingTag}
+                          className="w-full text-left px-3 py-1.5 text-sm text-cyan hover:bg-[var(--bg-surface)] font-medium"
+                        >
+                          {creatingTag ? "Creating..." : `+ Create "${tagSearch.trim()}"`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Bundle */}
+        {bundleId && (
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Content Bundle
+            </label>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)]">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <span className="text-sm text-[var(--text-primary)] font-mono">{bundleId}</span>
+            </div>
+          </div>
+        )}
+
+        {/* SEO Keywords */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            SEO Keywords
+          </label>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors">
+            {seoKeywords.map((kw) => (
+              <span
+                key={kw}
+                className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 text-emerald-400 px-2 py-0.5 text-xs font-semibold"
+              >
+                {kw}
+                <button type="button" onClick={(): void => removeSeoKeyword(kw)} className="hover:text-red-400 transition-colors">
+                  &times;
+                </button>
+              </span>
+            ))}
+            <input
+              className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+              placeholder={seoKeywords.length === 0 ? "Type a keyword and press Enter..." : "Add more..."}
+              value={seoKeywordInput}
+              onChange={(e): void => setSeoKeywordInput(e.target.value)}
+              onKeyDown={handleSeoKeywordKeyDown}
+              onBlur={(): void => { if (seoKeywordInput.trim()) addSeoKeyword(seoKeywordInput); }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Topics, schedule, guidelines */}
+      <div className="border-t border-[var(--border-primary)] pt-4 space-y-4">
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Topics

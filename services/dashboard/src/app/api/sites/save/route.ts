@@ -156,6 +156,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.quality_weights !== undefined) {
         brief.quality_weights = configUpdates.quality_weights;
       }
+
+      // Niche targeting fields
+      if (configUpdates.verticalId !== undefined) brief.vertical_id = configUpdates.verticalId;
+      if (configUpdates.vertical !== undefined) brief.vertical = configUpdates.vertical;
+      if (configUpdates.categoryIds !== undefined) brief.category_ids = configUpdates.categoryIds;
+      if (configUpdates.tagIds !== undefined) brief.tag_ids = configUpdates.tagIds;
+      if (configUpdates.seoKeywords !== undefined) brief.seo_keywords_focus = configUpdates.seoKeywords;
+      if (configUpdates.bundleId !== undefined) {
+        (existing as Record<string, unknown>).bundle_id = configUpdates.bundleId || undefined;
+      }
     }
 
     // Set theme references for logo/favicon
