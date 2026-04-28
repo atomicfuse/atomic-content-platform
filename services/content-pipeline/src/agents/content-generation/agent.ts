@@ -24,7 +24,7 @@ import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
 
 // v2 pipeline modules
-import { getContent, getSettings } from "./api-client.js";
+import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
@@ -643,14 +643,30 @@ export async function runContentGeneration(
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);
 
-    // Step 3: Fetch enriched items — LIGHTWEIGHT: only targetCount * 2
+    // Step 3: Resolve tag IDs from topics if the brief doesn't have them
+    let tagIds = brief.tag_ids;
+    if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
+      console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
+      tagIds = await resolveTopicTagIds(brief.topics, brief.vertical_id);
+      if (tagIds.length > 0) {
+        console.log(`[agent] Resolved ${tagIds.length} tag ID(s): ${tagIds.join(", ")}`);
+      }
+    }
+
+    // Step 4: Fetch enriched items — LIGHTWEIGHT: only targetCount * 2
     const fetchLimit = targetCount * 2;
     console.log(`[agent] Fetching ${fetchLimit} items from aggregator (target: ${targetCount})`);
+
+    const audienceTypeId = brief.audience_type_ids?.[0] ?? brief.audience_type_id;
 
     const [items, settings] = await Promise.all([
       getContent({
         limit: fetchLimit,
         language: brief.language ?? "EN",
+        vertical_id: brief.vertical_id,
+        category_ids: brief.category_ids,
+        tag_ids: tagIds,
+        audience_type_id: audienceTypeId,
       }),
       getSettings(),
     ]);
