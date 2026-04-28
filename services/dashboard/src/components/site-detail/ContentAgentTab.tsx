@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-import { useAudiences, useVerticals, useCategories, useTagSearch } from "@/hooks/useReferenceData";
+import { useAudiences, useVerticals, useCategories, useTags } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
@@ -122,7 +122,7 @@ export function ContentAgentTab({
 
   const { verticals } = useVerticals();
   const { categories } = useCategories(verticalId);
-  const { results: tagResults, loading: tagSearchLoading } = useTagSearch(verticalId, tagSearch);
+  const { tags: allTags, loading: tagsLoading, refetch: refetchTags } = useTags(verticalId);
   const [creatingTag, setCreatingTag] = useState(false);
 
   function toggleCategory(id: string): void {
@@ -155,15 +155,17 @@ export function ContentAgentTab({
       if (res.ok || res.status === 201) {
         const tag = (await res.json()) as { id: string; name: string };
         addTag(tag.id, tag.name);
+        refetchTags();
       } else if (res.status === 409) {
-        // Duplicate — search and add
-        const existing = tagResults.find(
+        // Duplicate — find in loaded tags and add
+        const existing = allTags.find(
           (t) => t.name.toLowerCase() === name.toLowerCase(),
         );
         if (existing) addTag(existing.id, existing.name);
       }
     } catch { /* ignore */ }
     setCreatingTag(false);
+    setTagSearch("");
   }
 
   function addSeoKeyword(raw: string): void {
@@ -183,14 +185,14 @@ export function ContentAgentTab({
     }
   }
 
-  // Populate tag names from search results for display
+  // Populate tag names from loaded tags for display
   useEffect(() => {
-    for (const t of tagResults) {
+    for (const t of allTags) {
       if (selectedTagIds.includes(t.id) && !selectedTagNames.has(t.id)) {
         setSelectedTagNames((prev) => new Map(prev).set(t.id, t.name));
       }
     }
-  }, [tagResults, selectedTagIds, selectedTagNames]);
+  }, [allTags, selectedTagIds, selectedTagNames]);
 
   // --- Groups state ---
   const [savingGroups, setSavingGroups] = useState(false);
@@ -426,6 +428,10 @@ export function ContentAgentTab({
     ? categories.filter((c) => c.name.toLowerCase().includes(categoryFilter.toLowerCase()))
     : categories;
 
+  const filteredTags = tagSearch
+    ? allTags.filter((t) => t.name.toLowerCase().includes(tagSearch.toLowerCase()))
+    : allTags;
+
   const contentBriefContent = (
     <div className="space-y-6">
       {/* Niche Targeting */}
@@ -505,68 +511,64 @@ export function ContentAgentTab({
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Tags
+            {selectedTagIds.length > 0 && (
+              <span className="ml-1.5 text-cyan font-mono">({selectedTagIds.length})</span>
+            )}
           </label>
-          {selectedTagIds.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-1">
-              {selectedTagIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
-                >
-                  {selectedTagNames.get(id) ?? id}
-                  <button type="button" onClick={(): void => removeTag(id)} className="hover:text-red-400 transition-colors">
-                    &times;
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
           {!verticalId ? (
-            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to search tags.</p>
+            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to browse tags.</p>
           ) : (
-            <div className="relative">
+            <>
               <input
                 className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
-                placeholder="Search tags..."
+                placeholder="Filter or create tags..."
                 value={tagSearch}
                 onChange={(e): void => setTagSearch(e.target.value)}
               />
-              {tagSearch.trim() && (
-                <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg max-h-48 overflow-y-auto">
-                  {tagSearchLoading ? (
-                    <p className="text-xs text-[var(--text-muted)] px-3 py-2">Searching...</p>
-                  ) : (
-                    <>
-                      {tagResults
-                        .filter((t) => !selectedTagIds.includes(t.id))
-                        .map((t) => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={(): void => addTag(t.id, t.name)}
-                            className="w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--bg-surface)] text-[var(--text-primary)] flex items-center justify-between"
-                          >
-                            <span>{t.name}</span>
-                            {t.usage_count !== undefined && (
-                              <span className="text-[10px] text-[var(--text-muted)]">{t.usage_count} items</span>
-                            )}
-                          </button>
-                        ))}
-                      {!tagResults.some((t) => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) && (
-                        <button
-                          type="button"
-                          onClick={(): void => void createAndAddTag(tagSearch.trim())}
-                          disabled={creatingTag}
-                          className="w-full text-left px-3 py-1.5 text-sm text-cyan hover:bg-[var(--bg-surface)] font-medium"
-                        >
-                          {creatingTag ? "Creating..." : `+ Create "${tagSearch.trim()}"`}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
+                {tagsLoading ? (
+                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">Loading tags...</p>
+                ) : filteredTags.length === 0 && !tagSearch.trim() ? (
+                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">No tags found for this vertical</p>
+                ) : (
+                  <>
+                    {filteredTags.map((tag) => (
+                      <label
+                        key={tag.id}
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-surface)] cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedTagIds.includes(tag.id)}
+                          onChange={(): void => {
+                            if (selectedTagIds.includes(tag.id)) {
+                              removeTag(tag.id);
+                            } else {
+                              addTag(tag.id, tag.name);
+                            }
+                          }}
+                          className="accent-cyan"
+                        />
+                        <span className="text-sm text-[var(--text-primary)]">{tag.name}</span>
+                        {tag.usage_count !== undefined && (
+                          <span className="text-[10px] text-[var(--text-muted)] ml-auto">{tag.usage_count} items</span>
+                        )}
+                      </label>
+                    ))}
+                    {tagSearch.trim() && !allTags.some((t) => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) && (
+                      <button
+                        type="button"
+                        onClick={(): void => void createAndAddTag(tagSearch.trim())}
+                        disabled={creatingTag}
+                        className="w-full text-left px-2 py-1.5 text-sm text-cyan hover:bg-[var(--bg-surface)] font-medium rounded"
+                      >
+                        {creatingTag ? "Creating..." : `+ Create "${tagSearch.trim()}"`}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </>
           )}
         </div>
 
