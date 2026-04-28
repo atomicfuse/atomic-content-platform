@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -30,6 +30,9 @@ export function StepNicheTargeting({
   const { categories, loading: categoriesLoading } = useCategories(data.verticalId);
 
   const [mode, setMode] = useState<"existing" | "new">(data.bundleId ? "existing" : "new");
+  const [verticalSearch, setVerticalSearch] = useState("");
+  const [verticalOpen, setVerticalOpen] = useState(false);
+  const verticalRef = useRef<HTMLDivElement>(null);
   const [categorySearch, setCategorySearch] = useState("");
   const [tagSearch, setTagSearch] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
@@ -43,6 +46,22 @@ export function StepNicheTargeting({
   );
   const filteredTagResults = tagResults.filter(
     (t) => !data.selectedTags.some((st) => st.id === t.id),
+  );
+
+  // Close vertical dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent): void {
+      if (verticalRef.current && !verticalRef.current.contains(e.target as Node)) {
+        setVerticalOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return (): void => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Filtered verticals for search
+  const filteredVerticals = verticals.filter((v) =>
+    v.name.toLowerCase().includes(verticalSearch.toLowerCase()),
   );
 
   const categoryIds = data.selectedCategories.map((c) => c.id);
@@ -268,16 +287,70 @@ export function StepNicheTargeting({
       {/* === Create New Bundle === */}
       {mode === "new" && (
         <>
-          {/* Vertical */}
-          <div>
-            <Select
-              label="Vertical"
-              options={verticals.map((v) => ({ value: v.id, label: v.name }))}
-              value={data.verticalId}
-              placeholder="Select a vertical..."
-              onChange={(e): void => handleVerticalChange(e.target.value)}
-            />
-            {data.verticalId && data.iabVerticalCode && (
+          {/* Vertical — searchable combobox */}
+          <div ref={verticalRef} className="relative">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+              Vertical
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search verticals..."
+                value={verticalOpen ? verticalSearch : (data.vertical || verticalSearch)}
+                onFocus={(): void => {
+                  setVerticalOpen(true);
+                  setVerticalSearch("");
+                }}
+                onChange={(e): void => {
+                  setVerticalSearch(e.target.value);
+                  setVerticalOpen(true);
+                }}
+                className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
+              />
+              {data.verticalId && !verticalOpen && (
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    handleVerticalChange("");
+                    setVerticalSearch("");
+                    setVerticalOpen(true);
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+            {verticalOpen && (
+              <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+                {filteredVerticals.length === 0 ? (
+                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No verticals found</p>
+                ) : (
+                  filteredVerticals.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={(): void => {
+                        handleVerticalChange(v.id);
+                        setVerticalSearch("");
+                        setVerticalOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] flex items-center justify-between ${
+                        v.id === data.verticalId ? "bg-cyan/10 text-cyan" : ""
+                      }`}
+                    >
+                      <span>{v.name}</span>
+                      {v.iab_code && (
+                        <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                          IAB {v.iab_code}
+                        </span>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+            {data.verticalId && data.iabVerticalCode && !verticalOpen && (
               <p className="text-xs text-[var(--text-muted)] mt-1">
                 IAB: {data.vertical} ({data.iabVerticalCode})
               </p>

@@ -8,7 +8,6 @@ import { StepNicheTargeting } from "@/components/wizard/StepNicheTargeting";
 import { StepGroups } from "@/components/wizard/StepGroups";
 import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
-import { StepScriptVars } from "@/components/wizard/StepScriptVars";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
 import type { WizardFormData } from "@/types/dashboard";
@@ -22,7 +21,21 @@ const DEFAULT_FORM: WizardFormData = {
   vertical: "",
   verticalId: "",
   groups: [],
-  themeBase: "modern",
+  themePreset: "classic",
+  themeColors: {
+    primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
+    text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
+    footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
+    hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+    feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
+    prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+  },
+  themeLayout: {
+    hero: { enabled: true, count: 4 },
+    must_reads: { enabled: true, count: 5 },
+    sidebar_topics: { auto: true, explicit: [] },
+    load_more: { page_size: 10 },
+  },
   audiences: [],
   audienceIds: [],
   selectedCategories: [],
@@ -110,15 +123,6 @@ export default function WizardPage(): React.ReactElement {
             );
           case 5:
             return (
-              <StepScriptVars
-                data={formData}
-                onChange={updateForm}
-                onNext={goNext}
-                onBack={goBack}
-              />
-            );
-          case 6:
-            return (
               <StepPreview
                 data={formData}
                 onNext={goNext}
@@ -127,7 +131,7 @@ export default function WizardPage(): React.ReactElement {
                 existingResult={stagingResult}
               />
             );
-          case 7:
+          case 6:
             return (
               <StepGoLive
                 data={formData}

@@ -97,7 +97,16 @@ export interface WizardFormData {
   verticalId: string;
   /** Group IDs this site belongs to (merged left-to-right). */
   groups: string[];
-  themeBase: "modern" | "editorial" | "bold" | "classic";
+  themePreset: string;
+  /** Full theme color state (all 19 color keys). */
+  themeColors: Record<string, string>;
+  /** Layout configuration for homepage sections. */
+  themeLayout: {
+    hero: { enabled: boolean; count: 3 | 4 };
+    must_reads: { enabled: boolean; count: number };
+    sidebar_topics: { auto: boolean; explicit: string[] };
+    load_more: { page_size: number };
+  };
   /** Audience display names. */
   audiences: string[];
   /** Audience type IDs from the Content Aggregator API. */
@@ -115,9 +124,9 @@ export interface WizardFormData {
   articlesPerDay: number;
   preferredDays: string[];
   contentGuidelines: string;
-  /** Brand primary color (hex). */
+  /** @deprecated Use themeColors.primary instead. Kept for backwards compat with preview API. */
   primaryColor: string;
-  /** Brand accent color (hex). */
+  /** @deprecated Use themeColors.accent instead. Kept for backwards compat with preview API. */
   accentColor: string;
   /** Google Font family for headings. */
   fontHeading: string;

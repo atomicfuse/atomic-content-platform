@@ -4,8 +4,8 @@
  * Staging builds include both "published" and "review" articles so reviewers
  * can preview them. Production builds only include "published" articles.
  *
- * Staging is detected via CF_PAGES_BRANCH (set by Cloudflare Pages) or the
- * explicit STAGING env var — both resolved at build time in astro.config.mjs.
+ * IS_STAGING is set at build time in astro.config.mjs via process.env.IS_STAGING.
+ * The deploy:staging script sets IS_STAGING=true; deploy:production does not.
  */
 
 const isStaging: boolean = import.meta.env.IS_STAGING === true || import.meta.env.IS_STAGING === 'true';

@@ -44,7 +44,7 @@ export function StepGoLive({
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Theme</p>
-            <p className="font-medium capitalize">{data.themeBase}</p>
+            <p className="font-medium capitalize">{data.themePreset}</p>
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Articles/Day</p>
