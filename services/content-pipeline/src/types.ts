@@ -61,6 +61,10 @@ export interface SiteBrief {
   vertical?: string;
   /** Content Aggregator vertical ID — preferred over name for API queries. */
   vertical_id?: string;
+  /** Content Aggregator category IDs — all categories the site targets. */
+  category_ids?: string[];
+  /** Content Aggregator tag IDs — all tags the site targets. */
+  tag_ids?: string[];
   audience_type?: string;
   /** Content Aggregator audience type IDs — preferred over name for API queries. */
   audience_type_ids?: string[];
