@@ -78,20 +78,39 @@ const isSticky = position === 'sticky-bottom';
 )}
 
 <script>
-  // Sticky-bottom dismiss — mirrors legacy public/ad-loader.js.
-  function hideSticky(): void {
+  // Sticky-bottom dismiss + auto-hide when Must Reads section is in view.
+  let dismissed = sessionStorage.getItem('_atl_sticky_dismissed') === '1';
+
+  function setSticky(visible: boolean): void {
     document.querySelectorAll('[data-atl-sticky-wrapper]').forEach((el) => {
-      (el as HTMLElement).style.display = 'none';
+      (el as HTMLElement).style.display = visible ? '' : 'none';
     });
   }
-  if (sessionStorage.getItem('_atl_sticky_dismissed') === '1') hideSticky();
+
+  if (dismissed) setSticky(false);
+
+  // Manual close — permanent for the session.
   document.addEventListener('click', (e) => {
     const t = e.target as HTMLElement | null;
     if (t?.matches('[data-atl-close="sticky-bottom"]')) {
+      dismissed = true;
       sessionStorage.setItem('_atl_sticky_dismissed', '1');
-      hideSticky();
+      setSticky(false);
     }
   });
+
+  // Auto-hide once the user scrolls to the Must Reads section.
+  const mustReads = document.querySelector('.must-reads');
+  if (mustReads && !dismissed) {
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (dismissed) return;
+        setSticky(!entry.isIntersecting);
+      },
+      { threshold: 0 },
+    );
+    obs.observe(mustReads);
+  }
 </script>
 
 <style is:global>

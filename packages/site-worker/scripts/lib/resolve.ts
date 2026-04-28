@@ -290,6 +290,46 @@ export function stripModeKeys(value: unknown): unknown {
   return value;
 }
 
+// ---------- Script variable substitution ----------
+
+/**
+ * Resolves `{{placeholder}}` tokens in all inline scripts using the
+ * merged `scripts_vars` dictionary.  Runs after `mergeScriptLayers` so
+ * all layers have been flattened.
+ *
+ * Per convention: "Script vars: shallow merge, then `{{placeholder}}`
+ * tokens resolved in all scripts; unresolved tokens throw."
+ */
+export function resolveScriptVars(
+  scripts: { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] },
+  vars: Record<string, string>,
+): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] } {
+  function substituteEntry(entry: ScriptEntryLike): ScriptEntryLike {
+    if (typeof entry.inline !== 'string') return entry;
+    let resolved = entry.inline;
+    for (const [key, value] of Object.entries(vars)) {
+      resolved = resolved.replaceAll(`{{${key}}}`, value);
+    }
+    // Check for unresolved tokens
+    const unresolved = resolved.match(/\{\{[^}]+\}\}/g);
+    if (unresolved) {
+      throw new Error(
+        `Unresolved script variable(s) in script "${entry.id}": ${unresolved.join(', ')}. ` +
+        `Available vars: ${Object.keys(vars).join(', ') || '(none)'}`,
+      );
+    }
+    return { ...entry, inline: resolved };
+  }
+
+  return {
+    head: scripts.head.map(substituteEntry),
+    body_start: scripts.body_start.map(substituteEntry),
+    body_end: scripts.body_end.map(substituteEntry),
+  };
+}
+
+// ---------- Override meta-fields ----------
+
 /**
  * Override layers carry meta-fields (`override_id`, `name`, `priority`,
  * `targets`) that the merged site-config shouldn't keep. Strip them.

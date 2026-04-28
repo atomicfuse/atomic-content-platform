@@ -44,6 +44,7 @@ import {
   deepMerge,
   mergeScriptLayers,
   mergeAdPlacementLayers,
+  resolveScriptVars,
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
@@ -303,7 +304,12 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
   // ads_config defaults to add. These post-merge fixups override what
   // the generic deepMerge did for array fields.
   const siteModes = (site.merge_modes ?? {}) as MergeModes;
-  mergedRaw.scripts = mergeScriptLayers(layers);
+  const mergedScripts = mergeScriptLayers(layers);
+  // Resolve {{placeholder}} tokens in inline scripts using the merged
+  // scripts_vars dictionary. Must run after mergeScriptLayers (which
+  // flattens all layers) and after scripts_vars merge (deepMerge above).
+  const scriptVars = (mergedRaw.scripts_vars ?? {}) as Record<string, string>;
+  mergedRaw.scripts = resolveScriptVars(mergedScripts, scriptVars);
   const mergedPlacements = mergeAdPlacementLayers(layers);
   if (mergedRaw.ads_config && typeof mergedRaw.ads_config === 'object') {
     (mergedRaw.ads_config as Record<string, unknown>).ad_placements = mergedPlacements;

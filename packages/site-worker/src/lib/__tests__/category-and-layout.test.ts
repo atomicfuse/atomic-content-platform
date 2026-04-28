@@ -22,8 +22,15 @@ import { resolveLayout } from '../../../scripts/lib/resolve-layout';
 import { parseFeatured } from '../../../scripts/lib/parse-featured';
 import {
   deepMerge,
+  mergeScriptLayers,
+  mergeAdPlacementLayers,
+  resolveScriptVars,
+  selectMatchingOverrides,
+  stripModeKeys,
+  stripOverrideMetaFields,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
+  type OverrideConfig,
 } from '../../../scripts/lib/resolve';
 import { LAYOUT_DEFAULTS } from '@atomic-platform/shared-types';
 
@@ -554,5 +561,486 @@ describe('KV keys — category routing dependencies', () => {
     expect(articleKey('coolnews-atl', 'best-movies-2026')).toBe(
       'article:coolnews-atl:best-movies-2026',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 13. mergeScriptLayers — 3-layer merge cycle (group → override → site)
+// ---------------------------------------------------------------------------
+
+describe('mergeScriptLayers — multi-layer merge', () => {
+  it('merges scripts from org + group + override via merge-by-id', () => {
+    const org: Record<string, unknown> = {
+      scripts: { head: [{ id: 'analytics', src: '/analytics.js' }], body_start: [], body_end: [] },
+    };
+    const group: Record<string, unknown> = {
+      scripts: {
+        head: [
+          { id: 'analytics', src: '/analytics-v2.js' }, // replaces org
+          { id: 'gpt', src: '/gpt.js', async: true },
+        ],
+        body_start: [],
+        body_end: [{ id: 'interstitial', inline: 'console.log("inter")' }],
+      },
+    };
+    const override: Record<string, unknown> = {
+      scripts: {
+        head: [], // empty — does NOT erase inherited
+        body_start: [{ id: 'bgcolor', inline: "document.body.style.backgroundColor = 'red';" }],
+        body_end: [{ id: 'mock-fill', src: '/mock.js' }],
+      },
+    };
+    const site: Record<string, unknown> = {}; // no scripts
+
+    const result = mergeScriptLayers([org, group, override, site]);
+    // head: analytics replaced by group, gpt added by group, override's empty head skipped
+    expect(result.head).toEqual([
+      { id: 'analytics', src: '/analytics-v2.js' },
+      { id: 'gpt', src: '/gpt.js', async: true },
+    ]);
+    // body_start: only override contributes bgcolor
+    expect(result.body_start).toEqual([
+      { id: 'bgcolor', inline: "document.body.style.backgroundColor = 'red';" },
+    ]);
+    // body_end: interstitial from group + mock-fill appended from override
+    expect(result.body_end).toEqual([
+      { id: 'interstitial', inline: 'console.log("inter")' },
+      { id: 'mock-fill', src: '/mock.js' },
+    ]);
+  });
+
+  it('site-layer scripts replace override when same id', () => {
+    const org: Record<string, unknown> = { scripts: { head: [], body_start: [], body_end: [] } };
+    const override: Record<string, unknown> = {
+      scripts: { head: [{ id: 'tag', src: '/old.js' }], body_start: [], body_end: [] },
+    };
+    const site: Record<string, unknown> = {
+      scripts: { head: [{ id: 'tag', src: '/new.js', async: true }], body_start: [], body_end: [] },
+    };
+    const result = mergeScriptLayers([org, override, site]);
+    expect(result.head).toEqual([{ id: 'tag', src: '/new.js', async: true }]);
+  });
+
+  it('empty script arrays never erase inherited entries', () => {
+    const group: Record<string, unknown> = {
+      scripts: { head: [{ id: 'a', src: '/a.js' }], body_start: [{ id: 'b', inline: 'B' }], body_end: [] },
+    };
+    const override: Record<string, unknown> = {
+      scripts: { head: [], body_start: [], body_end: [] },
+    };
+    const result = mergeScriptLayers([group, override]);
+    expect(result.head).toEqual([{ id: 'a', src: '/a.js' }]);
+    expect(result.body_start).toEqual([{ id: 'b', inline: 'B' }]);
+  });
+
+  it('replace mode on site layer discards all inherited scripts', () => {
+    const group: Record<string, unknown> = {
+      scripts: { head: [{ id: 'a', src: '/a.js' }, { id: 'b', src: '/b.js' }], body_start: [], body_end: [] },
+    };
+    const site: Record<string, unknown> = {
+      merge_modes: { scripts: 'replace' },
+      scripts: { head: [{ id: 'c', src: '/c.js' }], body_start: [], body_end: [] },
+    };
+    const result = mergeScriptLayers([group, site]);
+    expect(result.head).toEqual([{ id: 'c', src: '/c.js' }]);
+  });
+
+  it('layers without scripts field are silently skipped', () => {
+    const org: Record<string, unknown> = {
+      scripts: { head: [{ id: 'x', src: '/x.js' }], body_start: [], body_end: [] },
+    };
+    const noScripts: Record<string, unknown> = { theme: { colors: {} } };
+    const result = mergeScriptLayers([org, noScripts, noScripts]);
+    expect(result.head).toEqual([{ id: 'x', src: '/x.js' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14. resolveScriptVars — {{placeholder}} substitution
+// ---------------------------------------------------------------------------
+
+describe('resolveScriptVars — placeholder substitution', () => {
+  it('replaces {{key}} tokens with scripts_vars values', () => {
+    const scripts = {
+      head: [{ id: 'init', inline: "init('{{site_id}}', '{{zone}}')" }],
+      body_start: [],
+      body_end: [],
+    };
+    const vars = { site_id: 'my-site-001', zone: 'news' };
+    const result = resolveScriptVars(scripts, vars);
+    expect(result.head[0].inline).toBe("init('my-site-001', 'news')");
+  });
+
+  it('replaces multiple occurrences of the same token', () => {
+    const scripts = {
+      head: [{ id: 'dup', inline: '{{x}} and {{x}} again' }],
+      body_start: [],
+      body_end: [],
+    };
+    const result = resolveScriptVars(scripts, { x: 'VALUE' });
+    expect(result.head[0].inline).toBe('VALUE and VALUE again');
+  });
+
+  it('throws on unresolved tokens', () => {
+    const scripts = {
+      head: [{ id: 'bad', inline: "load('{{unknown_var}}')" }],
+      body_start: [],
+      body_end: [],
+    };
+    expect(() => resolveScriptVars(scripts, {})).toThrowError(/unresolved/i);
+  });
+
+  it('leaves src-only scripts untouched', () => {
+    const scripts = {
+      head: [{ id: 'ext', src: '/external.js' }],
+      body_start: [],
+      body_end: [],
+    };
+    const result = resolveScriptVars(scripts, {});
+    expect(result.head[0]).toEqual({ id: 'ext', src: '/external.js' });
+  });
+
+  it('resolves vars across all three positions', () => {
+    const scripts = {
+      head: [{ id: 'h', inline: 'H={{v}}' }],
+      body_start: [{ id: 'bs', inline: 'BS={{v}}' }],
+      body_end: [{ id: 'be', inline: 'BE={{v}}' }],
+    };
+    const result = resolveScriptVars(scripts, { v: '42' });
+    expect(result.head[0].inline).toBe('H=42');
+    expect(result.body_start[0].inline).toBe('BS=42');
+    expect(result.body_end[0].inline).toBe('BE=42');
+  });
+
+  it('handles empty vars with no templates (no-op)', () => {
+    const scripts = {
+      head: [{ id: 'plain', inline: 'console.log("hello")' }],
+      body_start: [],
+      body_end: [],
+    };
+    const result = resolveScriptVars(scripts, {});
+    expect(result.head[0].inline).toBe('console.log("hello")');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 15. mergeAdPlacementLayers — replacement and add semantics
+// ---------------------------------------------------------------------------
+
+describe('mergeAdPlacementLayers — ad placement merge', () => {
+  it('non-site layers replace inherited (last group wins)', () => {
+    const org: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'org-ad', position: 'sidebar' }] },
+    };
+    const group: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'group-ad', position: 'above-content' }] },
+    };
+    const site: Record<string, unknown> = {};
+    const result = mergeAdPlacementLayers([org, group, site]);
+    expect(result).toEqual([{ id: 'group-ad', position: 'above-content' }]);
+  });
+
+  it('site layer defaults to add mode (appends to inherited)', () => {
+    const group: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'inherited', position: 'sidebar' }] },
+    };
+    const site: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'site-only', position: 'sticky-bottom' }] },
+    };
+    const result = mergeAdPlacementLayers([group, site]);
+    expect(result.length).toBe(2);
+    expect(result[0].id).toBe('inherited');
+    expect(result[1].id).toBe('site-only');
+  });
+
+  it('site replace mode discards all inherited placements', () => {
+    const group: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'a' }, { id: 'b' }] },
+    };
+    const site: Record<string, unknown> = {
+      merge_modes: { ads_config: 'replace' },
+      ads_config: { ad_placements: [{ id: 'c' }] },
+    };
+    const result = mergeAdPlacementLayers([group, site]);
+    expect(result).toEqual([{ id: 'c' }]);
+  });
+
+  it('merge_placements mode merges by id', () => {
+    const group: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'top', position: 'above-content', device: 'all' }] },
+    };
+    const site: Record<string, unknown> = {
+      merge_modes: { ads_config: 'merge_placements' },
+      ads_config: { ad_placements: [
+        { id: 'top', position: 'above-content', device: 'desktop' }, // replaces
+        { id: 'bottom', position: 'sticky-bottom' }, // new
+      ] },
+    };
+    const result = mergeAdPlacementLayers([group, site]);
+    expect(result.length).toBe(2);
+    expect(result.find((p: any) => p.id === 'top')?.device).toBe('desktop');
+    expect(result.find((p: any) => p.id === 'bottom')).toBeTruthy();
+  });
+
+  it('override layer replaces group placements', () => {
+    const org: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'org-sidebar', position: 'sidebar' }] },
+    };
+    const group: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'group-top', position: 'above-content' }] },
+    };
+    const override: Record<string, unknown> = {
+      ads_config: { ad_placements: [
+        { id: 'override-top', position: 'above-content' },
+        { id: 'override-sidebar', position: 'sidebar' },
+      ] },
+    };
+    const site: Record<string, unknown> = {};
+    const result = mergeAdPlacementLayers([org, group, override, site]);
+    // override replaces group, site is empty (adds nothing)
+    expect(result.map((p: any) => p.id)).toEqual(['override-top', 'override-sidebar']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16. selectMatchingOverrides — targeting logic
+// ---------------------------------------------------------------------------
+
+describe('selectMatchingOverrides — targeting', () => {
+  const overrides: OverrideConfig[] = [
+    { override_id: 'a', priority: 10, targets: { sites: ['site-1'] } },
+    { override_id: 'b', priority: 5, targets: { groups: ['entertainment'] } },
+    { override_id: 'c', priority: 20, targets: { sites: ['site-2'] } },
+    { override_id: 'd', priority: 15, targets: { groups: ['taboola'], sites: ['site-1'] } },
+  ];
+
+  it('matches by site id', () => {
+    const result = selectMatchingOverrides(overrides, 'site-1', []);
+    expect(result.map((o) => o.override_id)).toEqual(['b', 'a', 'd'].filter((id) =>
+      ['a', 'd'].includes(id),
+    ));
+    // Only a (sites: [site-1]) and d (sites: [site-1]) match
+    const ids = result.map((o) => o.override_id);
+    expect(ids).toContain('a');
+    expect(ids).toContain('d');
+    expect(ids).not.toContain('c'); // targets site-2
+  });
+
+  it('matches by group membership', () => {
+    const result = selectMatchingOverrides(overrides, 'unknown-site', ['entertainment']);
+    expect(result.map((o) => o.override_id)).toEqual(['b']);
+  });
+
+  it('sorts by priority ascending (lowest first)', () => {
+    const result = selectMatchingOverrides(overrides, 'site-1', ['taboola']);
+    const priorities = result.map((o) => o.priority ?? 0);
+    for (let i = 1; i < priorities.length; i++) {
+      expect(priorities[i]).toBeGreaterThanOrEqual(priorities[i - 1]);
+    }
+  });
+
+  it('returns empty when nothing matches', () => {
+    expect(selectMatchingOverrides(overrides, 'no-match', ['no-group'])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 17. stripModeKeys — _mode / _values removal
+// ---------------------------------------------------------------------------
+
+describe('stripModeKeys', () => {
+  it('removes _mode from nested objects', () => {
+    const input = { tracking: { _mode: 'merge', ga4: 'G-123' } };
+    expect(stripModeKeys(input)).toEqual({ tracking: { ga4: 'G-123' } });
+  });
+
+  it('removes _values from arrays-in-objects', () => {
+    const input = { ads_txt: { _mode: 'add', _values: ['a', 'b'] } };
+    expect(stripModeKeys(input)).toEqual({ ads_txt: {} });
+  });
+
+  it('preserves scripts arrays including body_start entries', () => {
+    const input = {
+      scripts: {
+        head: [],
+        body_start: [{ id: 'bgcolor', inline: "document.body.style.backgroundColor = 'red';" }],
+        body_end: [{ id: 'mock', src: '/mock.js' }],
+      },
+    };
+    const result = stripModeKeys(input) as typeof input;
+    expect(result.scripts.body_start).toEqual([
+      { id: 'bgcolor', inline: "document.body.style.backgroundColor = 'red';" },
+    ]);
+    expect(result.scripts.body_end).toEqual([{ id: 'mock', src: '/mock.js' }]);
+  });
+
+  it('is recursive through nested objects', () => {
+    const input = { a: { b: { _mode: 'replace', c: { _mode: 'merge', d: 1 } } } };
+    expect(stripModeKeys(input)).toEqual({ a: { b: { c: { d: 1 } } } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 18. Full 3-layer merge cycle — theme changes across group + override + site
+// ---------------------------------------------------------------------------
+
+describe('Full merge cycle — theme across 3 layers', () => {
+  it('group overrides org colors, site overrides one group color', () => {
+    const org = { theme: { colors: { primary: '#000', accent: '#111', text: '#222' } } };
+    const group = { theme: { colors: { primary: '#E50914', accent: '#B81D24' } } };
+    const site = { theme: { colors: { accent: '#CUSTOM' } } };
+    const m1 = deepMerge(org, group) as typeof org;
+    const m2 = deepMerge(m1, site) as typeof org;
+    expect(m2.theme.colors.primary).toBe('#E50914'); // from group
+    expect(m2.theme.colors.accent).toBe('#CUSTOM');  // site wins
+    expect(m2.theme.colors.text).toBe('#222');        // inherited from org
+  });
+
+  it('override layer injects between group and site', () => {
+    const org = { theme: { base: 'modern', colors: { primary: '#000' } } };
+    const group = { theme: { colors: { primary: '#AAA' } } };
+    const override = { theme: { colors: { primary: '#BBB', accent: '#CCC' } } };
+    const site = { theme: { colors: { accent: '#DDD' } } };
+    const merged = [org, group, override, site].reduce(
+      (acc, layer) => deepMerge(acc, layer) as Record<string, unknown>,
+      {} as Record<string, unknown>,
+    );
+    const colors = (merged as any).theme.colors;
+    expect(colors.primary).toBe('#BBB'); // override wins over group
+    expect(colors.accent).toBe('#DDD');  // site wins over override
+  });
+
+  it('null values in later layers do NOT erase inherited', () => {
+    const org = { theme: { colors: { primary: '#000' } } };
+    const site = { theme: { colors: { primary: null } } };
+    const merged = deepMerge(org, site) as typeof org;
+    expect(merged.theme.colors.primary).toBe('#000'); // null doesn't override
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 19. Full merge cycle — scripts across all 4 layers
+// ---------------------------------------------------------------------------
+
+describe('Full merge cycle — scripts across org → group → override → site', () => {
+  it('simulates the coolnews-atl layer chain', () => {
+    const org: Record<string, unknown> = {
+      scripts: { head: [], body_start: [], body_end: [] },
+      scripts_vars: {},
+    };
+    const group: Record<string, unknown> = {
+      scripts: {
+        head: [
+          { id: 'gpt', src: 'https://gpt.example.com/gpt.js', async: true },
+          { id: 'alpha-init', inline: "window.init('{{alpha_id}}')" },
+        ],
+        body_start: [],
+        body_end: [{ id: 'interstitial', inline: "if('{{inter_enabled}}'==='true') run()" }],
+      },
+      scripts_vars: { alpha_id: '', inter_enabled: 'false' },
+    };
+    const override: Record<string, unknown> = {
+      scripts: {
+        head: [],
+        body_start: [{ id: 'bgcolor', inline: "document.body.style.backgroundColor='red'" }],
+        body_end: [{ id: 'mock', src: '/mock.js' }],
+      },
+      scripts_vars: {},
+    };
+    const site: Record<string, unknown> = {
+      scripts_vars: { alpha_id: 'cool-001', inter_enabled: 'false' },
+    };
+
+    // Step 1: merge scripts via mergeScriptLayers
+    const layers = [org, group, override, site];
+    const scripts = mergeScriptLayers(layers);
+
+    expect(scripts.head.length).toBe(2); // gpt + alpha-init from group
+    expect(scripts.body_start.length).toBe(1); // bgcolor from override
+    expect(scripts.body_end.length).toBe(2); // interstitial + mock
+
+    // Step 2: merge scripts_vars via deepMerge
+    const mergedVars = layers.reduce(
+      (acc, l) => deepMerge(acc, l.scripts_vars ?? {}) as Record<string, string>,
+      {} as Record<string, string>,
+    );
+    expect(mergedVars).toEqual({ alpha_id: 'cool-001', inter_enabled: 'false' });
+
+    // Step 3: resolve placeholders
+    const resolved = resolveScriptVars(scripts, mergedVars);
+    expect(resolved.head[1].inline).toBe("window.init('cool-001')");
+    expect(resolved.body_end[0].inline).toBe("if('false'==='true') run()");
+    expect(resolved.body_start[0].inline).toBe("document.body.style.backgroundColor='red'");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 20. Full merge cycle — ads across group → override → site
+// ---------------------------------------------------------------------------
+
+describe('Full merge cycle — ads across org → group → override → site', () => {
+  it('override replaces group placements, site adds nothing', () => {
+    const org: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'org-banner', position: 'above-content' }] },
+    };
+    const group: Record<string, unknown> = {
+      ads_config: {
+        ad_placements: [
+          { id: 'group-top', position: 'above-content' },
+          { id: 'group-sidebar', position: 'sidebar' },
+        ],
+      },
+    };
+    const override: Record<string, unknown> = {
+      ads_config: {
+        ad_placements: [
+          { id: 'ov-top', position: 'above-content' },
+          { id: 'ov-sidebar', position: 'sidebar' },
+          { id: 'ov-sticky', position: 'sticky-bottom' },
+        ],
+      },
+    };
+    const site: Record<string, unknown> = {};
+
+    const placements = mergeAdPlacementLayers([org, group, override, site]);
+    expect(placements.map((p: any) => p.id)).toEqual(['ov-top', 'ov-sidebar', 'ov-sticky']);
+  });
+
+  it('site in add mode appends its placements to override result', () => {
+    const org: Record<string, unknown> = {};
+    const override: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'ov-1', position: 'sidebar' }] },
+    };
+    const site: Record<string, unknown> = {
+      ads_config: { ad_placements: [{ id: 'site-extra', position: 'after-paragraph-4' }] },
+    };
+    const placements = mergeAdPlacementLayers([org, override, site]);
+    expect(placements.length).toBe(2);
+    expect(placements[0].id).toBe('ov-1');
+    expect(placements[1].id).toBe('site-extra');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 21. stripOverrideMetaFields
+// ---------------------------------------------------------------------------
+
+describe('stripOverrideMetaFields', () => {
+  it('removes override_id, name, priority, targets', () => {
+    const input = {
+      override_id: 'test',
+      name: 'Test',
+      priority: 100,
+      targets: { sites: ['a'] },
+      tracking: { ga4: 'G-123' },
+      scripts: { head: [] },
+    };
+    const result = stripOverrideMetaFields(input);
+    expect(result).not.toHaveProperty('override_id');
+    expect(result).not.toHaveProperty('name');
+    expect(result).not.toHaveProperty('priority');
+    expect(result).not.toHaveProperty('targets');
+    expect(result).toHaveProperty('tracking');
+    expect(result).toHaveProperty('scripts');
   });
 });

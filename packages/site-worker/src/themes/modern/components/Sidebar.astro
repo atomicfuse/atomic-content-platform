@@ -17,13 +17,13 @@ const { config, variant, categories = [] } = Astro.props;
 <aside class="sidebar">
   {variant === 'home' && (
     <>
-      <AdSlot position="homepage-sidebar" pageType="homepage" server:defer />
+      <AdSlot position="sidebar" pageType="homepage" server:defer />
       <NewsletterBox domain={config.domain} />
     </>
   )}
   {variant === 'article' && (
     <>
-      <AdSlot position="article-sidebar" pageType="article" server:defer />
+      <AdSlot position="sidebar" pageType="article" server:defer />
       <FollowUs config={config} />
       {categories.map((c) => (
         <CategoryList topic={c.topic} articles={c.articles} />
