@@ -331,8 +331,8 @@ Service contract (both services satisfy):
 | `R2_BUCKET` | site-worker (seed-kv) | R2 bucket name. Defaults to `atl-assets-staging`. Set to `atl-assets-prod` for prod seed. |
 | `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | dashboard | Auth. |
 | `GOOGLE_CLIENT_ID/SECRET`, `GOOGLE_SHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard | Google auth + Sheets sync. |
-| `CLOUDFLARE_ACCOUNT_ID` | site-worker (dev + CI) | `953511f6356ff606d84ac89bba3eff50` for Dev1 account during migration. Required for `wrangler deploy`, `wrangler kv ...`, `pnpm seed:kv`. |
-| `CLOUDFLARE_API_TOKEN` | CI only | Needed by the sync-kv.yml workflow. Required scopes: Workers Scripts:Edit, Workers KV Storage:Edit. Not needed for local dev (uses OAuth via `wrangler login`). |
+| `CLOUDFLARE_ACCOUNT_ID` | dashboard, site-worker (dev + CI) | `953511f6356ff606d84ac89bba3eff50` for Dev1 account. Required for `wrangler deploy`, `wrangler kv ...`, `pnpm seed:kv`, and dashboard domain management. |
+| `CLOUDFLARE_API_TOKEN` | dashboard, CI | Needed by dashboard (domain attach/detach, zone listing) and sync-kv.yml workflow. Required scopes: Zone:Read, DNS:Edit, Workers Scripts:Edit, Workers KV Storage:Edit. Set in `.env.local` for local dev, CloudGrid secrets for production. |
 | `KV_NAMESPACE_ID` | seed-kv.ts | Defaults to CONFIG_KV_STAGING (`4673c82cdd7f41d49e93d938fb1c6848`). Set to `a69cb2c59507482ca5e6d114babdd098` for CONFIG_KV (prod). |
 
 ## Conventions
