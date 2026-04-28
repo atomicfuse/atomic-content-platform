@@ -455,69 +455,75 @@ export function ContentAgentTab({
         />
 
         {/* Categories */}
-        {verticalId && (
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Categories
-              {selectedCategoryIds.length > 0 && (
-                <span className="ml-1.5 text-cyan font-mono">({selectedCategoryIds.length})</span>
-              )}
-            </label>
-            {categories.length > 8 && (
-              <input
-                className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
-                placeholder="Filter categories..."
-                value={categoryFilter}
-                onChange={(e): void => setCategoryFilter(e.target.value)}
-              />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Categories
+            {selectedCategoryIds.length > 0 && (
+              <span className="ml-1.5 text-cyan font-mono">({selectedCategoryIds.length})</span>
             )}
-            <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
-              {filteredCategories.length === 0 ? (
-                <p className="text-xs text-[var(--text-muted)] py-1 px-2">No categories found</p>
-              ) : (
-                filteredCategories.map((cat) => (
-                  <label
-                    key={cat.id}
-                    className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-surface)] cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedCategoryIds.includes(cat.id)}
-                      onChange={(): void => toggleCategory(cat.id)}
-                      className="accent-cyan"
-                    />
-                    <span className="text-sm text-[var(--text-primary)]">{cat.name}</span>
-                    {cat.iab_code && (
-                      <span className="text-[10px] text-[var(--text-muted)] ml-auto">{cat.iab_code}</span>
-                    )}
-                  </label>
-                ))
+          </label>
+          {!verticalId ? (
+            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to browse categories.</p>
+          ) : (
+            <>
+              {categories.length > 8 && (
+                <input
+                  className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+                  placeholder="Filter categories..."
+                  value={categoryFilter}
+                  onChange={(e): void => setCategoryFilter(e.target.value)}
+                />
               )}
-            </div>
-          </div>
-        )}
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
+                {filteredCategories.length === 0 ? (
+                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">No categories found</p>
+                ) : (
+                  filteredCategories.map((cat) => (
+                    <label
+                      key={cat.id}
+                      className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-surface)] cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCategoryIds.includes(cat.id)}
+                        onChange={(): void => toggleCategory(cat.id)}
+                        className="accent-cyan"
+                      />
+                      <span className="text-sm text-[var(--text-primary)]">{cat.name}</span>
+                      {cat.iab_code && (
+                        <span className="text-[10px] text-[var(--text-muted)] ml-auto">{cat.iab_code}</span>
+                      )}
+                    </label>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Tags */}
-        {verticalId && (
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Tags
-            </label>
-            {selectedTagIds.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-1">
-                {selectedTagIds.map((id) => (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
-                  >
-                    {selectedTagNames.get(id) ?? id}
-                    <button type="button" onClick={(): void => removeTag(id)} className="hover:text-red-400 transition-colors">
-                      &times;
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Tags
+          </label>
+          {selectedTagIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1">
+              {selectedTagIds.map((id) => (
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                >
+                  {selectedTagNames.get(id) ?? id}
+                  <button type="button" onClick={(): void => removeTag(id)} className="hover:text-red-400 transition-colors">
+                    &times;
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {!verticalId ? (
+            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to search tags.</p>
+          ) : (
             <div className="relative">
               <input
                 className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
@@ -561,21 +567,23 @@ export function ContentAgentTab({
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Bundle */}
-        {bundleId && (
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Content Bundle
-            </label>
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Content Bundle
+          </label>
+          {bundleId ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)]">
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <span className="text-sm text-[var(--text-primary)] font-mono">{bundleId}</span>
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-xs text-[var(--text-muted)] py-2">No content bundle assigned.</p>
+          )}
+        </div>
 
         {/* SEO Keywords */}
         <div className="space-y-1.5">
