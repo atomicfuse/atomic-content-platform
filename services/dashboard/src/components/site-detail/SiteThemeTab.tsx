@@ -13,11 +13,31 @@ interface LayoutState {
   load_more: { page_size: number };
 }
 
+interface ColorState {
+  primary: string;
+  accent: string;
+  background: string;
+  secondary: string;
+  text: string;
+  muted: string;
+  surface: string;
+  border: string;
+  footer_bg: string;
+  must_reads_bg: string;
+  hero_title: string;
+  must_reads_title: string;
+  article_hero_title: string;
+  feed_title: string;
+  feed_desc: string;
+  feed_date: string;
+  prose_heading: string;
+  prose_body: string;
+  category_header_text: string;
+}
+
 interface ThemeState {
-  primaryColor: string;
-  accentColor: string;
-  footerBg: string;
-  mustReadsBg: string;
+  colors: ColorState;
+  preset: string;
   fontHeading: string;
   fontBody: string;
   layout: LayoutState;
@@ -29,6 +49,97 @@ const DEFAULT_LAYOUT: LayoutState = {
   sidebar_topics: { auto: true, explicit: [] },
   load_more: { page_size: 10 },
 };
+
+const PRESETS: Record<string, { name: string; colors: ColorState }> = {
+  classic: {
+    name: "Classic News",
+    colors: {
+      primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
+      text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
+      footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
+      hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
+      prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+    },
+  },
+  bold: {
+    name: "Bold Dark",
+    colors: {
+      primary: "#E50914", accent: "#B81D24", background: "#141414", secondary: "#1a1a2e",
+      text: "#ffffff", muted: "#8C8C8C", surface: "#2a2a2a", border: "#333333",
+      footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
+      hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      feed_title: "#ffffff", feed_desc: "#e0e0e0", feed_date: "#8C8C8C",
+      prose_heading: "#ffffff", prose_body: "#e0e0e0", category_header_text: "#ffffff",
+    },
+  },
+  ocean: {
+    name: "Ocean Editorial",
+    colors: {
+      primary: "#0f4c81", accent: "#10b981", background: "#f8fafc", secondary: "#0f172a",
+      text: "#0f172a", muted: "#64748b", surface: "#e2e8f0", border: "#cbd5e1",
+      footer_bg: "#0f172a", must_reads_bg: "#0f172a",
+      hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      feed_title: "#0f172a", feed_desc: "#0f172a", feed_date: "#64748b",
+      prose_heading: "#0f172a", prose_body: "#1e293b", category_header_text: "#ffffff",
+    },
+  },
+  warm: {
+    name: "Warm Magazine",
+    colors: {
+      primary: "#7c2d12", accent: "#ea580c", background: "#fffbeb", secondary: "#1c1917",
+      text: "#1c1917", muted: "#78716c", surface: "#fef3c7", border: "#d6d3d1",
+      footer_bg: "#1c1917", must_reads_bg: "#1c1917",
+      hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      feed_title: "#1c1917", feed_desc: "#1c1917", feed_date: "#78716c",
+      prose_heading: "#1c1917", prose_body: "#292524", category_header_text: "#ffffff",
+    },
+  },
+  slate: {
+    name: "Elegant Slate",
+    colors: {
+      primary: "#334155", accent: "#6366f1", background: "#ffffff", secondary: "#1e293b",
+      text: "#1e293b", muted: "#94a3b8", surface: "#f1f5f9", border: "#e2e8f0",
+      footer_bg: "#1e293b", must_reads_bg: "#1e293b",
+      hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      feed_title: "#1e293b", feed_desc: "#334155", feed_date: "#94a3b8",
+      prose_heading: "#1e293b", prose_body: "#334155", category_header_text: "#ffffff",
+    },
+  },
+  midnight: {
+    name: "Midnight Purple",
+    colors: {
+      primary: "#581c87", accent: "#a855f7", background: "#0f0720", secondary: "#1e1038",
+      text: "#f0e6ff", muted: "#a78bfa", surface: "#1e1038", border: "#2e1a50",
+      footer_bg: "#1e1038", must_reads_bg: "#1e1038",
+      hero_title: "#ffffff", must_reads_title: "#f0e6ff", article_hero_title: "#ffffff",
+      feed_title: "#f0e6ff", feed_desc: "#d8c8f0", feed_date: "#a78bfa",
+      prose_heading: "#f0e6ff", prose_body: "#d8c8f0", category_header_text: "#ffffff",
+    },
+  },
+};
+
+const ALL_COLOR_KEYS: (keyof ColorState)[] = [
+  "primary", "accent", "background", "secondary", "text", "muted", "surface", "border",
+  "footer_bg", "must_reads_bg",
+  "hero_title", "must_reads_title", "article_hero_title",
+  "feed_title", "feed_desc", "feed_date",
+  "prose_heading", "prose_body", "category_header_text",
+];
+
+function detectPreset(colors: ColorState): string {
+  for (const [id, preset] of Object.entries(PRESETS)) {
+    const match = ALL_COLOR_KEYS.every(
+      (k) => colors[k].toLowerCase() === preset.colors[k].toLowerCase(),
+    );
+    if (match) return id;
+  }
+  return "custom";
+}
+
+function defaultColors(): ColorState {
+  return { ...PRESETS.classic.colors };
+}
 
 interface SiteThemeTabProps {
   domain: string;
@@ -63,11 +174,10 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [state, setState] = useState<ThemeState>({
-    primaryColor: "#1a1a2e",
-    accentColor: "#f4c542",
-    footerBg: "#1a1a2e",
-    mustReadsBg: "#1a1a2e",
+    colors: defaultColors(),
+    preset: "classic",
     fontHeading: "Inter",
     fontBody: "Inter",
     layout: { ...DEFAULT_LAYOUT },
@@ -84,11 +194,16 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         const colors = (theme.colors ?? {}) as Record<string, string>;
         const fonts = (theme.fonts ?? {}) as Record<string, string>;
         const layout = data.config.layout as Record<string, unknown> | undefined;
+
+        const base = defaultColors();
+        const resolved: ColorState = { ...base };
+        for (const key of ALL_COLOR_KEYS) {
+          if (colors[key]) resolved[key] = colors[key];
+        }
+
         setState({
-          primaryColor: colors.primary ?? "#1a1a2e",
-          accentColor: colors.accent ?? "#f4c542",
-          footerBg: colors.footer_bg ?? colors.secondary ?? "#1a1a2e",
-          mustReadsBg: colors.must_reads_bg ?? colors.secondary ?? "#1a1a2e",
+          colors: resolved,
+          preset: detectPreset(resolved),
           fontHeading: fonts.heading ?? "Inter",
           fontBody: fonts.body ?? "Inter",
           layout: parseLayout(layout),
@@ -102,6 +217,20 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     void load();
   }, [domain]);
 
+  function applyPreset(id: string): void {
+    const preset = PRESETS[id];
+    if (!preset) return;
+    setState((s) => ({ ...s, colors: { ...preset.colors }, preset: id }));
+  }
+
+  function setColor(key: keyof ColorState, value: string): void {
+    setState((s) => {
+      const next = { ...s, colors: { ...s.colors, [key]: value } };
+      next.preset = detectPreset(next.colors);
+      return next;
+    });
+  }
+
   async function save(): Promise<void> {
     setSaving(true);
     try {
@@ -113,12 +242,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           logoBase64: null,
           faviconBase64: null,
           configUpdates: {
-            theme_colors: {
-              primary: state.primaryColor,
-              accent: state.accentColor,
-              footer_bg: state.footerBg,
-              must_reads_bg: state.mustReadsBg,
-            },
+            theme_colors: state.colors,
             theme_fonts: { heading: state.fontHeading, body: state.fontBody },
             layout: state.layout,
           },
@@ -170,42 +294,140 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
 
   return (
     <div className="space-y-6">
+      {/* Theme Presets */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Theme Preset</h3>
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(PRESETS).map(([id, preset]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={(): void => applyPreset(id)}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                state.preset === id
+                  ? "border-cyan bg-cyan/10 text-cyan"
+                  : "border-[var(--border-secondary)] text-[var(--text-primary)] hover:border-[var(--border-primary)]"
+              }`}
+            >
+              <span className="flex gap-0.5">
+                <span className="inline-block h-3.5 w-3.5 rounded-full" style={{ background: preset.colors.primary }} />
+                <span className="inline-block h-3.5 w-3.5 rounded-full" style={{ background: preset.colors.accent }} />
+                <span className="inline-block h-3.5 w-3.5 rounded-full border border-[var(--border-secondary)]" style={{ background: preset.colors.background }} />
+              </span>
+              {preset.name}
+            </button>
+          ))}
+          <span
+            className={`flex items-center rounded-lg border px-3 py-2 text-xs font-medium ${
+              state.preset === "custom"
+                ? "border-amber-500 bg-amber-500/10 text-amber-600"
+                : "border-[var(--border-secondary)] text-[var(--text-muted)]"
+            }`}
+          >
+            Custom
+          </span>
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          Selecting a preset fills all colors below. Tweak individual colors to customize.
+        </p>
+      </div>
+
       {/* Brand Colors */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Brand Colors</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <ColorPickerField
             label="Main color (header / nav)"
-            value={state.primaryColor}
-            onChange={(v): void => setState((s) => ({ ...s, primaryColor: v }))}
+            value={state.colors.primary}
+            onChange={(v): void => setColor("primary", v)}
             helperText="Used for the header band and accents"
           />
           <ColorPickerField
             label="Accent color (CTA / newsletter)"
-            value={state.accentColor}
-            onChange={(v): void => setState((s) => ({ ...s, accentColor: v }))}
+            value={state.colors.accent}
+            onChange={(v): void => setColor("accent", v)}
             helperText="Used for the subscribe band and call-to-action buttons"
           />
         </div>
       </div>
 
-      {/* Section Colors */}
+      {/* Section Backgrounds */}
       <div className="space-y-3">
-        <h3 className="text-sm font-bold text-[var(--text-primary)]">Section Colors</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Section Backgrounds</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ColorPickerField
+            label="Page background"
+            value={state.colors.background}
+            onChange={(v): void => setColor("background", v)}
+            helperText="Main content area"
+          />
           <ColorPickerField
             label="Footer background"
-            value={state.footerBg}
-            onChange={(v): void => setState((s) => ({ ...s, footerBg: v }))}
-            helperText="Background color for the site footer"
+            value={state.colors.footer_bg}
+            onChange={(v): void => setColor("footer_bg", v)}
+            helperText="Footer section"
           />
           <ColorPickerField
             label="Must Reads background"
-            value={state.mustReadsBg}
-            onChange={(v): void => setState((s) => ({ ...s, mustReadsBg: v }))}
-            helperText="Background color for the Must Reads section"
+            value={state.colors.must_reads_bg}
+            onChange={(v): void => setColor("must_reads_bg", v)}
+            helperText="Must Reads section"
           />
         </div>
+      </div>
+
+      {/* Text Colors */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Text Colors</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <ColorPickerField label="Headings & body" value={state.colors.text} onChange={(v): void => setColor("text", v)} helperText="Primary text color" />
+          <ColorPickerField label="Muted (dates, meta)" value={state.colors.muted} onChange={(v): void => setColor("muted", v)} helperText="Secondary text" />
+          <ColorPickerField label="Borders" value={state.colors.border} onChange={(v): void => setColor("border", v)} helperText="Dividers and outlines" />
+          <ColorPickerField label="Surface (card bg)" value={state.colors.surface} onChange={(v): void => setColor("surface", v)} helperText="Card backgrounds" />
+          <ColorPickerField label="Secondary (dark sections)" value={state.colors.secondary} onChange={(v): void => setColor("secondary", v)} helperText="Dark section fallback" />
+        </div>
+      </div>
+
+      {/* Advanced Text Colors */}
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={(): void => setShowAdvanced((v) => !v)}
+          className="text-sm font-semibold text-cyan hover:underline"
+        >
+          {showAdvanced ? "▼" : "▶"} Advanced text colors (per-element overrides)
+        </button>
+        {showAdvanced && (
+          <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-surface)] p-4 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">On dark overlays</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <ColorPickerField label="Hero card title" value={state.colors.hero_title} onChange={(v): void => setColor("hero_title", v)} helperText="Default: white" />
+                <ColorPickerField label="Must Reads card title" value={state.colors.must_reads_title} onChange={(v): void => setColor("must_reads_title", v)} helperText="Default: white" />
+                <ColorPickerField label="Article hero title" value={state.colors.article_hero_title} onChange={(v): void => setColor("article_hero_title", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Feed cards</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <ColorPickerField label="Feed card title" value={state.colors.feed_title} onChange={(v): void => setColor("feed_title", v)} helperText="Default: text color" />
+                <ColorPickerField label="Feed card description" value={state.colors.feed_desc} onChange={(v): void => setColor("feed_desc", v)} helperText="Default: text color" />
+                <ColorPickerField label="Feed card date" value={state.colors.feed_date} onChange={(v): void => setColor("feed_date", v)} helperText="Default: muted color" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Article page</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <ColorPickerField label="Prose headings (h2, h3)" value={state.colors.prose_heading} onChange={(v): void => setColor("prose_heading", v)} helperText="Default: text color" />
+                <ColorPickerField label="Prose body text" value={state.colors.prose_body} onChange={(v): void => setColor("prose_body", v)} helperText="Default: text color" />
+                <ColorPickerField label="Category header text" value={state.colors.category_header_text} onChange={(v): void => setColor("category_header_text", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] border-t border-[var(--border-secondary)] pt-2">
+              These default to the global text color above, or white for elements on dark backgrounds. Only change if you need per-element control.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Typography */}

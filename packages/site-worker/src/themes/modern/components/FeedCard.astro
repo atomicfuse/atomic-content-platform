@@ -47,15 +47,16 @@ const dateLabel = new Date(article.publishDate).toLocaleDateString('en-US', {
     font-weight: 700;
     line-height: 1.25;
     margin: 0 0 0.5rem;
+    color: var(--color-feed_title, var(--color-text, #1a1a2e));
   }
   .feed-card-date {
     font-size: var(--text-sm, 0.875rem);
-    color: var(--color-muted, #6b7280);
+    color: var(--color-feed_date, var(--color-muted, #6b7280));
     margin: 0 0 0.5rem;
   }
   .feed-card-snippet {
     font-size: var(--text-base, 1rem);
-    color: var(--color-text, #1a1a2e);
+    color: var(--color-feed_desc, var(--color-text, #1a1a2e));
     line-height: 1.6;
     margin: 0;
     display: -webkit-box;

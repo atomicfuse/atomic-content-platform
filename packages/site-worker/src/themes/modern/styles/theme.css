@@ -24,6 +24,15 @@
     --color-border: #e5e7eb;
     --color-footer_bg: var(--color-secondary, #1a1a2e);
     --color-must_reads_bg: var(--color-secondary, #1a1a2e);
+    --color-hero_title: #ffffff;
+    --color-must_reads_title: #ffffff;
+    --color-article_hero_title: #ffffff;
+    --color-feed_title: var(--color-text, #1a1a2e);
+    --color-feed_desc: var(--color-text, #1a1a2e);
+    --color-feed_date: var(--color-muted, #6b7280);
+    --color-prose_heading: var(--color-text, #1a1a2e);
+    --color-prose_body: var(--color-text, #1a1a2e);
+    --color-category_header_text: #ffffff;
   }
 }
 
@@ -179,17 +188,20 @@ img {
   font-size: var(--text-2xl);
   margin-top: 2rem;
   margin-bottom: 0.75rem;
+  color: var(--color-prose_heading, var(--color-text, #1a1a2e));
 }
 
 .prose h3 {
   font-size: var(--text-xl);
   margin-top: 1.5rem;
   margin-bottom: 0.5rem;
+  color: var(--color-prose_heading, var(--color-text, #1a1a2e));
 }
 
 .prose p {
   margin-bottom: 1.25em;
   line-height: 1.8;
+  color: var(--color-prose_body, var(--color-text, #1a1a2e));
 }
 
 .prose img {

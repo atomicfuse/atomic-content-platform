@@ -39,7 +39,7 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
     .article-hero-inner { grid-template-columns: 1fr 1fr; }
   }
   .article-hero-title {
-    color: #fff;
+    color: var(--color-article_hero_title, #fff);
     font-size: clamp(1.875rem, 3vw, 3rem);
     line-height: 1.15;
     margin: 0 0 1rem;
