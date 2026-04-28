@@ -174,16 +174,14 @@ export async function createSiteAndBuildStaging(
       },
     },
     theme: {
-      base: data.themeBase,
-      colors: {
-        primary: data.primaryColor,
-        accent: data.accentColor,
-      },
+      base: data.themePreset,
+      colors: data.themeColors,
       fonts: {
         heading: data.fontHeading,
         body: data.fontBody,
       },
     } as Record<string, unknown>,
+    layout: data.themeLayout,
   };
 
   // 2. Build skill.md content
