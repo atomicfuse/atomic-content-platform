@@ -11,8 +11,6 @@ interface AttachDomainPanelProps {
   customDomain: string | null;
 }
 
-const REDEPLOY_CMD = "cd packages/site-worker && pnpm deploy:production";
-
 export function AttachDomainPanel({
   domain,
   customDomain,
@@ -20,17 +18,21 @@ export function AttachDomainPanel({
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
   const router = useRouter();
-  const [selectedZone, setSelectedZone] = useState("");
+  const [selectedZone, setSelectedZone] = useState<{ domain: string; zoneId: string } | null>(null);
   const [zones, setZones] = useState<Array<{ domain: string; zoneId: string }>>([]);
   const [loadingZones, setLoadingZones] = useState(false);
-  const [redeployHint, setRedeployHint] = useState<'attached' | 'detached' | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (customDomain) return;
     setLoadingZones(true);
+    setError(null);
     getAvailableZones()
       .then(setZones)
-      .catch(() => setZones([]))
+      .catch((err) => {
+        setZones([]);
+        setError(err instanceof Error ? err.message : "Failed to load domains");
+      })
       .finally(() => setLoadingZones(false));
   }, [customDomain]);
 
@@ -38,13 +40,12 @@ export function AttachDomainPanel({
     if (!selectedZone) return;
     startTransition(async () => {
       try {
-        await attachCustomDomain(domain, selectedZone);
-        setSelectedZone("");
-        setRedeployHint('attached');
+        await attachCustomDomain(domain, selectedZone.domain, selectedZone.zoneId);
+        setSelectedZone(null);
         router.refresh();
-        toast("Custom domain attached", "success");
-      } catch {
-        toast("Failed to attach domain", "error");
+        toast("Domain connected — live in ~60 seconds", "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Failed to attach domain", "error");
       }
     });
   }
@@ -53,20 +54,12 @@ export function AttachDomainPanel({
     startTransition(async () => {
       try {
         await detachCustomDomain(domain);
-        setRedeployHint('detached');
         router.refresh();
-        toast("Custom domain disconnected", "success");
-      } catch {
-        toast("Failed to disconnect domain", "error");
+        toast("Domain disconnected", "success");
+      } catch (err) {
+        toast(err instanceof Error ? err.message : "Failed to disconnect domain", "error");
       }
     });
-  }
-
-  function copyCmd(): void {
-    navigator.clipboard
-      .writeText(REDEPLOY_CMD)
-      .then(() => toast("Command copied", "success"))
-      .catch(() => toast("Copy failed — select and copy manually", "error"));
   }
 
   return (
@@ -87,46 +80,34 @@ export function AttachDomainPanel({
           </Button>
         </div>
       ) : (
-        <div className="flex items-center gap-3">
-          <select
-            value={selectedZone}
-            onChange={(e): void => setSelectedZone(e.target.value)}
-            disabled={loadingZones || zones.length === 0}
-            className="flex-1 px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] text-[var(--text-primary)] outline-none focus:border-cyan"
-          >
-            <option value="">
-              {loadingZones ? "Loading domains..." : zones.length === 0 ? "No available domains" : "Select a domain"}
-            </option>
-            {zones.map((z) => (
-              <option key={z.zoneId} value={z.domain}>{z.domain}</option>
-            ))}
-          </select>
-          <Button size="sm" loading={isPending} disabled={!selectedZone} onClick={handleAttach}>
-            Attach Domain
-          </Button>
-        </div>
-      )}
-
-      {redeployHint !== null && (
-        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2">
-          <p className="text-xs text-[var(--text-secondary)]">
-            {redeployHint === 'attached' ? 'Domain attached.' : 'Domain disconnected.'}{' '}
-            The production worker only claims the route on its next deploy.
-            Run this from the platform repo:
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-xs font-mono px-2 py-1 rounded bg-[var(--bg-surface)] text-[var(--text-primary)] truncate">
-              {REDEPLOY_CMD}
-            </code>
-            <button
-              onClick={copyCmd}
-              className="text-xs px-2 py-1 rounded border border-[var(--border-secondary)] hover:bg-[var(--bg-surface)] transition-colors"
-              type="button"
+        <>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedZone?.domain ?? ""}
+              onChange={(e): void => {
+                const zone = zones.find((z) => z.domain === e.target.value) ?? null;
+                setSelectedZone(zone);
+              }}
+              disabled={loadingZones || zones.length === 0}
+              className="flex-1 px-3 py-2 text-sm rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] text-[var(--text-primary)] outline-none focus:border-cyan"
             >
-              Copy
-            </button>
+              <option value="">
+                {loadingZones ? "Loading domains..." : zones.length === 0 ? "No available domains" : "Select a domain"}
+              </option>
+              {zones.map((z) => (
+                <option key={z.zoneId} value={z.domain}>{z.domain}</option>
+              ))}
+            </select>
+            <Button size="sm" loading={isPending} disabled={!selectedZone} onClick={handleAttach}>
+              Attach Domain
+            </Button>
           </div>
-        </div>
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+              <p className="text-xs text-red-400">{error}</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
