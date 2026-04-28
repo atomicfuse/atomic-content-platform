@@ -50,6 +50,8 @@ return zones.filter((z) => !usedCustomDomains.has(z.name));
 
 Drop the `usedAsSite` filter entirely. The `attachCustomDomain()` dupe-merge logic already handles zones that match an existing site domain.
 
+**Trade-off acknowledged:** This means a zone whose name coincidentally matches a site's internal identifier (e.g., zone `coolnews-atl.com` with site `domain: coolnews-atl`) would appear as available. In practice, site identifiers (e.g., `coolnews-atl`) are not valid domain names and never match zone names (e.g., `coolnews.dev`). The dupe-merge code in `attachCustomDomain` remains as a safety net for any edge case where they do overlap.
+
 ### 2. Bug Fix: Error visibility in `AttachDomainPanel`
 
 Add `error` state. When `getAvailableZones()` rejects, display the error message in the UI instead of silently showing an empty dropdown.
@@ -73,15 +75,16 @@ registerWorkerCustomDomain(hostname: string, zoneId: string): Promise<{ id: stri
 ```typescript
 deregisterWorkerCustomDomain(hostname: string): Promise<void>
 ```
-- `GET /accounts/{account_id}/workers/domains` filtered by hostname to find domain ID.
-- `DELETE /accounts/{account_id}/workers/domains/{domain_id}`
-- No-op if domain not found (already removed).
+- `GET /accounts/{account_id}/workers/domains?hostname={hostname}&service={WORKER_NAME_PROD}` — use the `hostname` query parameter for server-side filtering (avoids client-side pagination).
+- If no match returned, treat as no-op (domain already removed).
+- If match found, `DELETE /accounts/{account_id}/workers/domains/{domain_id}`.
 
 ```typescript
 listWorkerCustomDomains(): Promise<WorkerCustomDomain[]>
 ```
-- `GET /accounts/{account_id}/workers/domains`
-- Returns all registered custom domains. Used by Settings > Domains page for drift detection (nice-to-have).
+- `GET /accounts/{account_id}/workers/domains?service={WORKER_NAME_PROD}`
+- Handles pagination (same pattern as `listZones` — loop while results === page size).
+- Returns all registered custom domains for the production worker. Used by Settings > Domains page for drift detection (nice-to-have).
 
 #### KV Direct Write
 
@@ -112,19 +115,26 @@ These values are already in `wrangler.toml` and `emit-env-configs.ts`. Centraliz
 
 Signature changes: adds `zoneId` parameter (the dropdown already has it).
 
+**Key data mapping:** The `domain` parameter is the dashboard-index `domain` field (the site identifier / network-repo folder name, e.g., `coolnews-atl`). The `customDomain` parameter is the Cloudflare zone hostname (e.g., `coolnews.dev`). The KV entry maps `site:<customDomain>` → `{ siteId: domain }` — matching exactly what `seed-kv.ts` writes.
+
+**Dupe-merge logic retained:** The existing code that finds a dashboard-index entry with `domain === customDomain`, absorbs its `zone_id`, and deletes the duplicate entry — this stays. With the `usedAsSite` filter removed from `getAvailableZones()`, zones that match synced placeholder entries can now be selected, making this merge path reachable.
+
+**Zone status pre-check:** Before registering, verify the zone is `active` (not `pending`). If pending, return a clear error: "Domain DNS is not yet delegated to Cloudflare. Complete DNS setup first." This avoids an opaque CF API error.
+
 **Orchestration:**
 
 ```
-Step 1: Write custom_domain + zone_id to dashboard-index.yaml
+Step 1: Write custom_domain + zone_id to dashboard-index.yaml, set status → "Live"
+        Set worker_pending_dns → false
 Step 2: Register custom domain on CF worker via API
-Step 3: Seed KV entry: site:<customDomain> → { siteId } in prod KV namespace
+Step 3: Seed KV entry: site:<customDomain> → JSON.stringify({ siteId: domain }) in prod KV namespace
 Step 4: Best-effort email routing setup (existing, unchanged)
 Return: { success: true }
 ```
 
 **Rollback on failure:**
 - Step 1 fails → abort, surface error.
-- Step 2 fails → roll back step 1 (clear custom_domain from index), surface CF error.
+- Step 2 fails → roll back step 1 (clear custom_domain from index, revert status), surface CF error.
 - Step 3 fails → log warning, do NOT roll back. KV will be seeded on next sync-kv CI run. Surface warning to user.
 
 **Redeploy hint removed.** Return type changes from `{ redeployRequired: true }` to `{ success: true }`.
@@ -134,17 +144,19 @@ Return: { success: true }
 **Orchestration:**
 
 ```
-Step 1: Read current custom_domain from dashboard-index
-Step 2: Deregister custom domain from CF worker via API
-Step 3: Delete KV entry: site:<customDomain> from prod KV namespace
-Step 4: Clear custom_domain in dashboard-index.yaml, set status → "Ready"
+Step 1: Read current custom_domain + zone_id from dashboard-index
+Step 2: Clear custom_domain in dashboard-index.yaml, set status → "Ready", worker_pending_dns → true
+Step 3: Deregister custom domain from CF worker via API
+Step 4: Delete KV entry: site:<customDomain> from prod KV namespace
 Return: { success: true }
 ```
 
+**Critical ordering:** The dashboard-index write (Step 2) happens BEFORE CF/KV cleanup (Steps 3-4). This ensures that if Steps 3-4 fail, the index is already correct (no custom domain). The orphaned CF route and KV entry are harmless and self-healing: `emit-env-configs` on the next build will not register a domain absent from the index; stale KV entries point to valid config and become unreachable once the CF route is removed.
+
 **Error handling:**
-- Step 2 fails (not found on CF) → warn, continue. Domain may already be gone.
-- Step 3 fails → warn, continue. Stale KV entry is harmless.
-- Step 4 fails → abort, surface error.
+- Step 2 fails → abort, surface error. Nothing was changed yet.
+- Step 3 fails (not found on CF) → warn, continue. Domain may already be gone.
+- Step 4 fails → warn, continue. Stale KV entry is harmless (points to valid config, unreachable without route).
 
 ### 7. UI changes (`AttachDomainPanel.tsx`)
 
@@ -172,12 +184,21 @@ cloudgrid secrets set atomic-content-platform CLOUDFLARE_ACCOUNT_ID=953511f6356f
 - Account: Workers Scripts: Edit (new — custom domain registration)
 - Account: Workers KV Storage: Edit (new — direct KV writes)
 
+## Staging vs Production
+
+This feature is **production-only** by design. Rationale:
+
+- **Staging worker** (`atomic-site-worker-staging`) has `routes = []` — it runs on `*.workers.dev` only (Landmine #20). Custom domain registration targets the production worker name and environment.
+- **Staging KV** is not seeded by the dashboard. The staging hostname lookup uses `?_atl_site=` override (preview flow), never hostname-based resolution. Writing to staging KV is unnecessary.
+- **`KV_NAMESPACE_STAGING`** is included in constants for potential future use (e.g., a "preview on custom domain" feature) but is not used by attach/detach.
+
 ## What is NOT changing
 
 - **`emit-env-configs.ts` / `load-routes.ts`** — build-time route registration stays as safety net. Registering an already-registered domain is idempotent on CF.
 - **`seed-kv.ts` / `sync-kv.yml`** — CI still seeds KV on commits. Dashboard writes the same entry at attach-time; CI overwrites with same value (harmless).
 - **`middleware.ts`** — hostname → KV lookup already works, no changes.
 - **`preview-override.ts`** — staging preview flow unaffected.
+- **`syncDomainsFromCloudflare()`** — still creates placeholder entries for new zones. The filter fix makes this benign (placeholders no longer block zone selection).
 
 ## Files touched
 
@@ -188,6 +209,7 @@ cloudgrid secrets set atomic-content-platform CLOUDFLARE_ACCOUNT_ID=953511f6356f
 | `services/dashboard/src/components/site-detail/AttachDomainPanel.tsx` | Add error state, pass zoneId, remove redeploy banner, update toasts |
 | `services/dashboard/src/lib/constants.ts` | Add `WORKER_NAME_PROD`, `KV_NAMESPACE_PROD`, `KV_NAMESPACE_STAGING` |
 | `cloudgrid.yaml` | Document `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in secrets comment |
+| `CLAUDE.md` | Update Key Environment Variables table — `CLOUDFLARE_API_TOKEN` is no longer "CI only", now also used by dashboard |
 
 ## Testing
 
