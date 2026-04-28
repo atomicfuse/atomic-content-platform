@@ -18,6 +18,7 @@ const SITE_TAGLINE = process.env.SITE_TAGLINE || '';
 
 const DEFAULT_NETWORK_PATH = join(__dirname, '..', '..', '..', 'atomic-labs-network');
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH || DEFAULT_NETWORK_PATH;
+const IS_STAGING = process.env.IS_STAGING === 'true';
 
 export default defineConfig({
   output: 'server',
@@ -36,6 +37,7 @@ export default defineConfig({
       'import.meta.env.SITE_NAME': JSON.stringify(SITE_NAME),
       'import.meta.env.SITE_TAGLINE': JSON.stringify(SITE_TAGLINE || null),
       'import.meta.env.NETWORK_DATA_PATH': JSON.stringify(NETWORK_DATA_PATH),
+      'import.meta.env.IS_STAGING': JSON.stringify(IS_STAGING),
     },
   },
 });
