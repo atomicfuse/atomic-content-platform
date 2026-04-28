@@ -1,0 +1,37 @@
+---
+import FeedCard from './FeedCard.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { articles: ArticleIndexEntry[]; }
+const { articles } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="related-posts">
+    <div class="related-posts-inner">
+      <h2 class="related-posts-heading">Related Posts</h2>
+      <div class="related-posts-grid">
+        {articles.map((a) => <FeedCard article={a} />)}
+      </div>
+    </div>
+  </section>
+)}
+
+<style>
+  .related-posts { padding: 3rem 0; }
+  .related-posts-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .related-posts-heading {
+    font-size: var(--text-2xl, 1.5rem);
+    margin: 0 0 1rem;
+  }
+  .related-posts-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    column-gap: 2rem;
+  }
+  @media (min-width: 768px) { .related-posts-grid { grid-template-columns: 1fr 1fr; } }
+</style>

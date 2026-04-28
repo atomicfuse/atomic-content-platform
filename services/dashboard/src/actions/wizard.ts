@@ -169,6 +169,14 @@ export async function createSiteAndBuildStaging(
     },
     theme: {
       base: data.themeBase,
+      colors: {
+        primary: data.primaryColor,
+        accent: data.accentColor,
+      },
+      fonts: {
+        heading: data.fontHeading,
+        body: data.fontBody,
+      },
     } as Record<string, unknown>,
   };
 
@@ -563,6 +571,10 @@ export interface StagingSiteConfig {
   ads_config?: Record<string, unknown>;
   quality_threshold?: number;
   quality_weights?: Record<string, number>;
+  // Layout v2 theme fields
+  theme_colors?: Record<string, string>;
+  theme_fonts?: { heading: string; body: string };
+  layout?: Record<string, unknown>;
 }
 
 /** Read the current site config from the staging branch. */

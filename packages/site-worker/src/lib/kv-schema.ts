@@ -32,6 +32,8 @@ export interface ArticleIndexEntry {
   tags: string[];
   type: 'listicle' | 'how-to' | 'review' | 'standard';
   status: 'draft' | 'review' | 'published';
+  /** Editorial featured flags. Empty/missing = not featured (auto-fallback fills the slot). */
+  featured?: ('hero' | 'must-read')[];
 }
 
 /** Article stored body (markdown, already parsed-out frontmatter).

@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { marked } from 'marked';
 
-import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import type { LayoutConfig, ResolvedConfig } from '@atomic-platform/shared-types';
 import {
   siteLookupKey,
   siteConfigKey,
@@ -42,14 +42,20 @@ import {
 } from '../src/lib/kv-schema';
 import {
   deepMerge,
+  mergeScriptLayers,
+  mergeAdPlacementLayers,
+  resolveScriptVars,
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
   selectMatchingOverrides,
   stripModeKeys,
   stripOverrideMetaFields,
+  type MergeModes,
   type OverrideConfig,
 } from './lib/resolve';
+import { resolveLayout } from './lib/resolve-layout';
+import { parseFeatured } from './lib/parse-featured';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -195,6 +201,7 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
       tags: Array.isArray(front.tags) ? front.tags.map(String) : [],
       type: (front.type as ArticleIndexEntry['type']) ?? 'standard',
       status: (front.status as ArticleIndexEntry['status']) ?? 'draft',
+      featured: parseFeatured(front.featured),
     };
     const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });
@@ -290,6 +297,63 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
   layers.push(site);
 
   const mergedRaw = layers.reduce((acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {});
+
+  // --- Per-field merge modes ---
+  // The site layer (last) may declare `merge_modes` to control how its
+  // values combine with inherited config. Scripts default to merge-by-id;
+  // ads_config defaults to add. These post-merge fixups override what
+  // the generic deepMerge did for array fields.
+  const siteModes = (site.merge_modes ?? {}) as MergeModes;
+  const mergedScripts = mergeScriptLayers(layers);
+  // Resolve {{placeholder}} tokens in inline scripts using the merged
+  // scripts_vars dictionary. Must run after mergeScriptLayers (which
+  // flattens all layers) and after scripts_vars merge (deepMerge above).
+  const scriptVars = (mergedRaw.scripts_vars ?? {}) as Record<string, string>;
+  mergedRaw.scripts = resolveScriptVars(mergedScripts, scriptVars);
+  const mergedPlacements = mergeAdPlacementLayers(layers);
+  if (mergedRaw.ads_config && typeof mergedRaw.ads_config === 'object') {
+    (mergedRaw.ads_config as Record<string, unknown>).ad_placements = mergedPlacements;
+  }
+
+  // scripts_vars: merge (default) or replace
+  if (siteModes.scripts_vars === 'replace' && site.scripts_vars) {
+    mergedRaw.scripts_vars = site.scripts_vars;
+  }
+
+  // tracking: merge (default via deepMerge) or replace
+  if (siteModes.tracking === 'replace' && site.tracking) {
+    mergedRaw.tracking = site.tracking;
+  }
+
+  // ads_txt: add (default) or replace
+  if (siteModes.ads_txt !== 'replace') {
+    // Additive: collect from all layers, dedup.
+    const all: string[] = [];
+    for (const layer of layers) {
+      const entries = layer.ads_txt;
+      if (Array.isArray(entries)) {
+        for (const e of entries) if (typeof e === 'string') all.push(e);
+      }
+    }
+    mergedRaw.ads_txt = [...new Set(all)];
+  } else if (site.ads_txt) {
+    mergedRaw.ads_txt = site.ads_txt;
+  }
+
+  // theme: merge (default via deepMerge) or replace
+  if (siteModes.theme === 'replace' && site.theme) {
+    mergedRaw.theme = site.theme;
+  }
+
+  // legal: merge (default via deepMerge) or replace
+  if (siteModes.legal === 'replace' && site.legal) {
+    mergedRaw.legal = site.legal;
+  }
+
+  // Don't persist merge_modes in the resolved KV config — it's a
+  // build-time directive, not a runtime value.
+  delete mergedRaw.merge_modes;
+
   // Strip override meta-fields that leaked into the merged result from
   // the override layer (override_id, name, priority, targets).
   const merged = stripOverrideMetaFields(mergedRaw);
@@ -312,6 +376,10 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     preview_page: { enabled: false },
     active: true,
     ...merged,
+    layout: resolveLayout(merged.layout as LayoutConfig | undefined),
+    theme: {
+      ...(merged.theme as Record<string, unknown> | undefined ?? {}),
+    } as ResolvedConfig['theme'],
     domain: String(site.domain ?? siteId),
     site_name: String(site.site_name ?? siteId),
     site_tagline: site.site_tagline == null ? null : String(site.site_tagline),

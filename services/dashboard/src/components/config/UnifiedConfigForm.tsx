@@ -8,7 +8,6 @@ import { AdsConfigForm } from "../settings/AdsConfigForm";
 import { AdsTxtEditor } from "../settings/AdsTxtEditor";
 import { LegalForm } from "../settings/LegalForm";
 import { ThemeForm } from "../groups/ThemeForm";
-import { InfoTooltip } from "../ui/Tooltip";
 
 import type { AdsConfigFormValue } from "../settings/AdsConfigForm";
 
@@ -80,9 +79,9 @@ export interface UnifiedConfigFormProps {
   config: Partial<UnifiedConfigFields>;
   onChange: (config: Partial<UnifiedConfigFields>) => void;
   mode: "org" | "group" | "override" | "site";
-  /** Current merge modes per field (only used when mode='override'). */
+  /** Current merge modes per field (used when mode='override' or mode='site'). */
   mergeModes?: OverrideMergeModes;
-  /** Callback when a merge mode changes (only used when mode='override'). */
+  /** Callback when a merge mode changes (used when mode='override' or mode='site'). */
   onMergeModesChange?: (modes: OverrideMergeModes) => void;
 }
 
@@ -462,6 +461,8 @@ export function UnifiedConfigForm({
   );
 
   const isOverride = mode === "override";
+  const isSite = mode === "site";
+  const showMergeModes = isOverride || isSite;
   const modes = externalMergeModes ?? DEFAULT_MERGE_MODES;
 
   const updateMode = useCallback(
@@ -482,7 +483,7 @@ export function UnifiedConfigForm({
       {/* 1. Tracking */}
       <section>
         <SectionHeader title="Tracking" />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="tracking"
@@ -490,7 +491,7 @@ export function UnifiedConfigForm({
               value={modes.tracking}
               onChange={(v): void => updateMode("tracking", v as "merge" | "replace")}
             />
-            {isReplaceMode("tracking") && <ReplaceWarningBanner fieldName="tracking" />}
+            {showMergeModes && isReplaceMode("tracking") && <ReplaceWarningBanner fieldName="tracking" />}
           </>
         )}
         <TrackingForm
@@ -504,12 +505,12 @@ export function UnifiedConfigForm({
         <SectionHeader
           title="Scripts"
           description={
-            !isOverride
+            !showMergeModes
               ? "Scripts merge by ID across layers. Same ID = replace, new ID = append."
               : undefined
           }
         />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="scripts"
@@ -529,7 +530,7 @@ export function UnifiedConfigForm({
       {/* 3. Script Variables */}
       <section>
         <SectionHeader title="Script Variables" />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="scripts_vars"
@@ -551,12 +552,12 @@ export function UnifiedConfigForm({
         <SectionHeader
           title="Ads Config"
           description={
-            !isOverride
+            !showMergeModes
               ? "Ad placements replace parent entirely; other fields merge."
               : undefined
           }
         />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="ads_config"
@@ -592,12 +593,12 @@ export function UnifiedConfigForm({
         <SectionHeader
           title="ads.txt"
           description={
-            !isOverride
+            !showMergeModes
               ? "Entries accumulate additively across org + groups + site."
               : undefined
           }
         />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="ads_txt"
@@ -618,7 +619,7 @@ export function UnifiedConfigForm({
       {/* 7. Theme */}
       <section>
         <SectionHeader title="Theme" />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="theme"
@@ -638,7 +639,7 @@ export function UnifiedConfigForm({
       {/* 8. Legal */}
       <section>
         <SectionHeader title="Legal" />
-        {isOverride && (
+        {showMergeModes && (
           <>
             <MergeModeSelector
               fieldName="legal"

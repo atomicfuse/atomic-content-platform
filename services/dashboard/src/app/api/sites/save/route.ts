@@ -89,6 +89,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         theme.base = configUpdates.themeBase;
         existing.theme = theme;
       }
+      if (configUpdates.theme_colors !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.colors = configUpdates.theme_colors;
+        existing.theme = theme;
+      }
+      if (configUpdates.theme_fonts !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.fonts = configUpdates.theme_fonts;
+        existing.theme = theme;
+      }
+      if (configUpdates.layout !== undefined) {
+        existing.layout = configUpdates.layout;
+      }
 
       // Phase 1 config fields
       if (configUpdates.groups !== undefined) {
@@ -99,7 +112,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         existing.tracking = { ...prev, ...configUpdates.tracking };
       }
       if (configUpdates.scripts !== undefined) {
-        existing.scripts = configUpdates.scripts;
+        // Only persist non-empty position arrays. Empty arrays mean "no
+        // site-level override" and should not be written — they would
+        // shadow inherited scripts from org/group/override layers during
+        // the merge-by-id resolution in seed-kv.
+        const scripts = configUpdates.scripts as Record<string, unknown[]>;
+        const filtered: Record<string, unknown[]> = {};
+        for (const [pos, entries] of Object.entries(scripts)) {
+          if (Array.isArray(entries) && entries.length > 0) {
+            filtered[pos] = entries;
+          }
+        }
+        if (Object.keys(filtered).length > 0) {
+          existing.scripts = filtered;
+        } else {
+          delete (existing as Record<string, unknown>).scripts;
+        }
       }
       if (configUpdates.scripts_vars !== undefined) {
         const prev = (existing.scripts_vars ?? {}) as Record<string, string>;
@@ -107,8 +135,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       if (configUpdates.ads_config !== undefined) {
         const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
-        existing.ads_config = { ...prev, ...configUpdates.ads_config };
+        const merged = { ...prev, ...configUpdates.ads_config } as Record<string, unknown>;
+        // Don't persist an empty ad_placements array — it shadows inherited
+        // placements from org/group/override layers during deepMerge in
+        // seed-kv. Same rationale as the scripts filter above.
+        const placements = merged.ad_placements;
+        if (Array.isArray(placements) && placements.length === 0) {
+          delete merged.ad_placements;
+        }
+        existing.ads_config = merged;
       }
+      // merge_modes is a feature-branch directive — the main-branch
+      // seed-kv.ts ignores it. Don't persist until it ships on main.
+      // if (configUpdates.merge_modes !== undefined) {
+      //   existing.merge_modes = configUpdates.merge_modes;
+      // }
       if (configUpdates.quality_threshold !== undefined) {
         brief.quality_threshold = configUpdates.quality_threshold;
       }

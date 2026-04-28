@@ -9,6 +9,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import { useAudiences } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
+import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import Link from "next/link";
@@ -597,6 +598,7 @@ export function ContentAgentTab({
 
   const tabs = [
     { id: "identity", label: "Identity", content: identityContent },
+    { id: "theme", label: "Theme", content: <SiteThemeTab domain={domain} /> },
     { id: "brief", label: "Content Brief", content: contentBriefContent },
     { id: "groups", label: "Groups", content: groupsContent },
     { id: "overrides", label: `Overrides${!overridesLoading && overrides.length > 0 ? ` (${overrides.length})` : ""}`, content: overridesContent },

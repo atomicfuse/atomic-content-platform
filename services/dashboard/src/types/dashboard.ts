@@ -115,6 +115,14 @@ export interface WizardFormData {
   articlesPerDay: number;
   preferredDays: string[];
   contentGuidelines: string;
+  /** Brand primary color (hex). */
+  primaryColor: string;
+  /** Brand accent color (hex). */
+  accentColor: string;
+  /** Google Font family for headings. */
+  fontHeading: string;
+  /** Google Font family for body text. */
+  fontBody: string;
   /** Script variable overrides for this site. */
   scriptsVars: Record<string, string>;
   /** Base64-encoded logo uploaded by user (skips AI generation). */

@@ -108,10 +108,8 @@ function topicHref(topic: string): string {
     left: 0;
     right: 0;
     z-index: 100;
-    background: var(--color-background, #fff);
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
-    backdrop-filter: blur(8px);
-    background-color: rgba(255, 255, 255, 0.95);
+    background: var(--color-primary, #1a1a2e);
+    color: #fff;
   }
 
   .nav-inner {
@@ -141,7 +139,7 @@ function topicHref(topic: string): string {
     font-family: var(--fontHeading, sans-serif);
     font-size: 1.375rem;
     font-weight: 800;
-    color: var(--color-primary, #0066ff);
+    color: #fff;
     letter-spacing: -0.02em;
   }
 
@@ -161,7 +159,7 @@ function topicHref(topic: string): string {
     padding: 0.5rem 0.875rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: var(--color-text, #1a1a2e);
+    color: #fff;
     border-radius: 6px;
     transition: background var(--transition-fast, 150ms ease),
                 color var(--transition-fast, 150ms ease);
@@ -169,8 +167,8 @@ function topicHref(topic: string): string {
   }
 
   .nav-link:hover {
-    background: var(--color-surface, #f8f9fa);
-    color: var(--color-primary, #0066ff);
+    background: rgba(255,255,255,0.1);
+    color: var(--color-accent, #f4c542);
   }
 
   /* Right actions */
@@ -190,12 +188,12 @@ function topicHref(topic: string): string {
     background: none;
     border-radius: 50%;
     cursor: pointer;
-    color: var(--color-text, #1a1a2e);
+    color: #fff;
     transition: background var(--transition-fast, 150ms ease);
   }
 
   .nav-icon-btn:hover {
-    background: var(--color-surface, #f8f9fa);
+    background: rgba(255,255,255,0.1);
   }
 
   /* Hamburger */
@@ -222,7 +220,7 @@ function topicHref(topic: string): string {
     display: block;
     width: 100%;
     height: 2px;
-    background: var(--color-text, #1a1a2e);
+    background: #fff;
     border-radius: 2px;
     transition: transform var(--transition-base, 250ms ease),
                 opacity var(--transition-base, 250ms ease);
@@ -235,8 +233,8 @@ function topicHref(topic: string): string {
     right: 0;
     bottom: 0;
     width: 280px;
-    background: var(--color-background, #fff);
-    border-left: 1px solid var(--color-border, #e5e7eb);
+    background: var(--color-primary, #1a1a2e);
+    color: #fff;
     transform: translateX(100%);
     transition: transform var(--transition-base, 250ms ease);
     z-index: 99;
@@ -258,15 +256,15 @@ function topicHref(topic: string): string {
     padding: 0.875rem 1.5rem;
     font-size: 1rem;
     font-weight: 500;
-    color: var(--color-text, #1a1a2e);
+    color: #fff;
     text-decoration: none;
-    border-bottom: 1px solid var(--color-border, #e5e7eb);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
     transition: background var(--transition-fast, 150ms ease);
   }
 
   .drawer-link:hover {
-    background: var(--color-surface, #f8f9fa);
-    color: var(--color-primary, #0066ff);
+    background: rgba(255,255,255,0.1);
+    color: var(--color-accent, #f4c542);
   }
 
   /* Spacer */
