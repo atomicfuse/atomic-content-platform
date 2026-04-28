@@ -9,6 +9,7 @@ import {
   triggerWorkflowViaPush,
   mergeBranchToMain,
 } from "@/lib/github";
+import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import type { ArticleEntry } from "@/types/dashboard";
@@ -18,7 +19,11 @@ import type { ArticleEntry } from "@/types/dashboard";
  */
 export interface ReviewArticle extends ArticleEntry {
   domain: string;
-  /** Staging preview base URL (e.g., "https://staging-mysite.mysite.pages.dev") */
+  /** Worker preview base URL — origin only (e.g.,
+   *  "https://atomic-site-worker-staging.dev1-953.workers.dev"). Caller
+   *  appends `/<slug>?_atl_site=<domain>` to build the article preview
+   *  link. Replaces the pre-Phase-7 `*.pages.dev` URL pattern; the
+   *  staging Pages projects no longer exist. */
   stagingBaseUrl: string | null;
   /** Git branch where the article lives */
   branch: string | null;
@@ -31,13 +36,11 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
 
   for (const site of index.sites) {
     const branch = site.staging_branch ?? undefined;
-    // Build stable staging URL from branch + pages subdomain (not deployment-specific preview_url)
-    // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
-    const pagesHost = site.pages_subdomain ?? site.pages_project;
-    const stagingBaseUrl =
-      site.staging_branch && pagesHost
-        ? `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
-        : site.preview_url ?? null;
+    // Worker preview origin. Articles in review live on `staging/<domain>`
+    // — sync-kv.yml writes those to staging KV (CONFIG_KV_STAGING) on
+    // push, and the staging Worker reads from there. The site-id override
+    // is appended by the consumer (per-article path).
+    const stagingBaseUrl = site.staging_branch ? WORKER_STAGING_URL : null;
 
     const articles = await readArticles(site.domain, branch);
     for (const article of articles) {

@@ -1,4 +1,5 @@
 import { StatusBadge } from "@/components/ui/Badge";
+import { workerPreviewUrl } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 
 interface SiteDetailHeaderProps {
@@ -8,35 +9,18 @@ interface SiteDetailHeaderProps {
 export function SiteDetailHeader({
   site,
 }: SiteDetailHeaderProps): React.ReactElement {
-  // Determine primary link based on site state
-  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
-  const pagesHost = site.pages_subdomain ?? site.pages_project;
-  let primaryHref: string;
-  let primaryLabel: string;
-
-  if (site.custom_domain) {
-    primaryHref = `https://${site.custom_domain}`;
-    primaryLabel = "Open Live Site";
-  } else if (pagesHost && (site.status === "Ready" || site.status === "Live")) {
-    primaryHref = `https://${pagesHost}.pages.dev`;
-    primaryLabel = "Open Site";
-  } else if (site.staging_branch && pagesHost && site.status === "Staging") {
-    primaryHref = `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`;
-    primaryLabel = "Open Staging";
-  } else {
-    primaryHref = `https://${site.domain}`;
-    primaryLabel = "Open Live Site";
-  }
-
-  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
-  const stagingUrl =
-    site.staging_branch && pagesHost
-      ? `https://${site.staging_branch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
-      : null;
-
-  // Show staging link for live sites that also have a staging branch
-  const showStagingLink =
-    stagingUrl && (site.status === "Ready" || site.status === "Live");
+  // Post-Phase-7 layout. Three possible affordances, each ungated by
+  // each other:
+  //   - Live Site:    custom_domain → that hostname, served by the prod Worker.
+  //   - Worker Preview: any site_id → the staging Worker via `?_atl_site=`.
+  //                   Always available for seeded sites; serves staging KV
+  //                   (i.e., the latest commit on `staging/<domain>`).
+  //
+  // The legacy `*.pages.dev` URLs (Open Site / Open Staging) are gone:
+  // Phase-8b deleted the Pages projects, so those domains no longer
+  // resolve.
+  const liveUrl = site.custom_domain ? `https://${site.custom_domain}` : null;
+  const workerUrl = site.domain ? workerPreviewUrl(site.domain) : null;
 
   const linkIcon = (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -57,34 +41,37 @@ export function SiteDetailHeader({
             <span>&middot;</span>
             <span>{site.vertical}</span>
           </div>
-          {pagesHost && (
+          {site.custom_domain && (
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              {pagesHost}.pages.dev
+              {site.custom_domain}
             </p>
           )}
         </div>
       </div>
       <div className="flex items-center gap-2">
-        {showStagingLink && (
+        {workerUrl && (
           <a
-            href={stagingUrl!}
+            href={workerUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-amber-500/30 bg-amber-500/5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 transition-colors"
+            title="Open this site on the staging Worker (no DNS needed; serves the latest staging-branch commit)"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
           >
-            Staging
+            Worker Preview
             {linkIcon}
           </a>
         )}
-        <a
-          href={primaryHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
-        >
-          {primaryLabel}
-          {linkIcon}
-        </a>
+        {liveUrl && (
+          <a
+            href={liveUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-surface)] transition-colors"
+          >
+            Open Live Site
+            {linkIcon}
+          </a>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,62 @@
+---
+interface Props { nextPage: number; hasMore: boolean; }
+const { nextPage, hasMore } = Astro.props;
+---
+
+{hasMore && (
+  <div class="load-more-wrap">
+    <a href={`?page=${nextPage}`} data-load-more class="load-more-btn">Load More</a>
+    <p class="load-more-status" data-load-more-status></p>
+  </div>
+)}
+
+<script is:inline>
+  (function () {
+    var btn = document.querySelector('a[data-load-more]');
+    if (!btn) return;
+    var feed = document.getElementById('article-feed-list');
+    var status = document.querySelector('[data-load-more-status]');
+    var page = parseInt(new URL(btn.href, window.location.href).searchParams.get('page'), 10) || 2;
+    var loading = false;
+
+    btn.addEventListener('click', async function (e) {
+      e.preventDefault();
+      if (loading) return;
+      loading = true;
+      btn.setAttribute('aria-disabled', 'true');
+      try {
+        var res = await fetch('/api/articles?page=' + page);
+        if (!res.ok) throw new Error('http ' + res.status);
+        var html = (await res.text()).trim();
+        if (!html) {
+          btn.style.display = 'none';
+          return;
+        }
+        feed.insertAdjacentHTML('beforeend', html);
+        page += 1;
+        btn.href = '?page=' + page;
+      } catch (err) {
+        if (status) status.textContent = "Couldn't load more — please try again.";
+      } finally {
+        loading = false;
+        btn.removeAttribute('aria-disabled');
+      }
+    });
+  })();
+</script>
+
+<style>
+  .load-more-wrap { text-align: center; padding: 2rem 0; }
+  .load-more-btn {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: var(--color-primary, #1a1a2e);
+    color: #fff;
+    text-decoration: none;
+    border-radius: var(--radius-md, 8px);
+    font-weight: 600;
+  }
+  .load-more-btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+  .load-more-status { font-size: 0.8125rem; color: var(--color-muted, #6b7280); }
+  .load-more-status:empty { display: none; }
+</style>

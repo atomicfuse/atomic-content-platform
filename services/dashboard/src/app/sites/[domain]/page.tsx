@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
+import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
@@ -79,11 +80,9 @@ export default async function SiteDetailPage({
       <SiteDetailTabs
         domain={decodedDomain}
         stagingTab={
-          site.pages_project ? (
+          site.staging_branch || site.pages_project ? (
             <StagingTab
               domain={decodedDomain}
-              pagesProject={site.pages_project}
-              pagesSubdomain={site.pages_subdomain}
               stagingBranch={site.staging_branch}
               previewUrl={site.preview_url}
               savedPreviews={site.saved_previews}
@@ -99,11 +98,10 @@ export default async function SiteDetailPage({
             articles={articles}
             domain={decodedDomain}
             stagingBranch={site.staging_branch}
-            previewUrl={
-              site.staging_branch && (site.pages_subdomain ?? site.pages_project)
-                ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_subdomain ?? site.pages_project}.pages.dev`
-                : site.preview_url ?? undefined
-            }
+            // Worker origin only — ContentTab appends `/<slug>?_atl_site=<domain>`
+            // per article via workerPreviewUrl(). Pass-through for any future
+            // override scenario; defaults to WORKER_STAGING_URL otherwise.
+            previewUrl={WORKER_STAGING_URL}
           />
         }
         identityTab={

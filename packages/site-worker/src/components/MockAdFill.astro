@@ -1,0 +1,16 @@
+---
+/**
+ * Server Island — emits the bundled `mock-ad-fill.js` script tag iff the
+ * resolved config requests it via `scripts.body_end[]`. The legacy
+ * site-builder followed the same convention. When real ad-network SDKs
+ * arrive (per `docs/future-decisions.md`), the writer simply drops the
+ * mock-ad-fill entry from the resolved config and the script disappears.
+ */
+import { getConfig } from '../lib/config';
+
+const config = getConfig(Astro);
+const bodyEnd = (config.scripts?.body_end ?? []) as Array<{ id?: string; src?: string; html?: string }>;
+const wantsMockFill = bodyEnd.some((s) => s.id === 'mock-ad-fill' || s.src?.includes('mock-ad-fill'));
+---
+
+{wantsMockFill && <script is:inline async src="/mock-ad-fill.js"></script>}

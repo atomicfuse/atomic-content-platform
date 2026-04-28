@@ -1,0 +1,71 @@
+name: site-worker tests
+
+# Runs on every PR + main push that touches the package. Three jobs:
+#   - typecheck (fast, parallel)
+#   - unit (vitest pure-function tests, fast)
+#   - build  (vitest + actual `pnpm build`, asserts on emitted env configs)
+#
+# Live HTTP integration tests are NOT in this workflow — they hit a real
+# deployed Worker and should run on demand or via a separate cron. See
+# `.github/workflows/site-worker-live.yml` for that.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/site-worker/**"
+      - "packages/shared-types/**"
+      - ".github/workflows/site-worker-test.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/site-worker/**"
+      - "packages/shared-types/**"
+      - ".github/workflows/site-worker-test.yml"
+  workflow_dispatch:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build shared-types
+        run: pnpm --filter @atomic-platform/shared-types build
+      - name: Typecheck site-worker
+        run: pnpm --filter @atomic-platform/site-worker typecheck
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build shared-types
+        run: pnpm --filter @atomic-platform/shared-types build
+      - name: Unit tests
+        run: pnpm --filter @atomic-platform/site-worker test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build shared-types
+        run: pnpm --filter @atomic-platform/shared-types build
+      - name: Build stability tests
+        run: pnpm --filter @atomic-platform/site-worker test:build

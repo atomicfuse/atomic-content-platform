@@ -1,0 +1,158 @@
+---
+/**
+ * Phase 2 HTML shell.
+ *
+ * Loads Google Fonts, sets theme CSS custom properties, renders the
+ * head + body slots. Inline ads, pixels, and the ad-loader.js script
+ * are intentionally absent — Phase 4 brings them back as Server Islands.
+ */
+import { getConfig } from '../lib/config';
+import PixelLoader from '../components/PixelLoader.astro';
+import '../themes/modern/styles/theme.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const config = getConfig(Astro);
+const { theme, scripts } = config;
+
+const headScripts = scripts?.head ?? [];
+const bodyStartScripts = scripts?.body_start ?? [];
+const bodyEndScripts = scripts?.body_end ?? [];
+
+const fontFamilies = [theme.fonts.heading, theme.fonts.body]
+  .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
+  .map((f) => f.replace(/ /g, '+'))
+  .filter((v, i, a) => a.indexOf(v) === i);
+
+const googleFontsUrl =
+  fontFamilies.length > 0
+    ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
+    : null;
+
+const cssVars = Object.entries(theme.colors)
+  .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {theme.favicon && <link rel="icon" href={theme.favicon} />}
+
+    {googleFontsUrl && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontsUrl} />
+      </>
+    )}
+
+    <slot name="head" />
+
+    {/* Injected head scripts from config.scripts.head (org/group/override/site layers). */}
+    {headScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    {/* Server Island — GA4/GTM/Meta pixels re-render per request from KV. */}
+    <PixelLoader server:defer />
+
+    <style
+      define:vars={{
+        fontHeading: theme.fonts.heading,
+        fontBody: theme.fonts.body,
+      }}
+    >
+      :root {
+        font-family: var(--fontBody), sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--fontHeading), sans-serif;
+      }
+    </style>
+
+    <style is:global>
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+    </style>
+
+    <style set:html={`:root { ${cssVars} }`}></style>
+  </head>
+
+  <body>
+    {/* Injected body_start scripts from config layers. */}
+    {bodyStartScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    <slot />
+
+    {/* Injected body_end scripts from config layers. */}
+    {bodyEndScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
+    <script is:inline>
+      (function() {
+        document.querySelectorAll('form[data-newsletter-form]').forEach(function(form) {
+          form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var hp = form.querySelector('input[name="_hp"]');
+            if (hp && hp.value) return;
+            var emailEl = form.querySelector('input[type="email"]');
+            var status = form.parentElement.querySelector('[data-newsletter-status]');
+            var email = emailEl && emailEl.value && emailEl.value.trim();
+            if (!email) return;
+            if (status) status.textContent = 'Subscribing…';
+            try {
+              var res = await fetch('https://atomic-content-platform.apps.cloudgrid.io/api/subscribe', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  email: email,
+                  domain: form.dataset.domain,
+                  source: form.dataset.source,
+                }),
+              });
+              if (res.ok) {
+                if (status) status.textContent = 'Thanks — check your inbox.';
+                form.reset();
+              } else {
+                if (status) status.textContent = 'Hmm, that didn\'t work. Please try again.';
+              }
+            } catch {
+              if (status) status.textContent = 'Network error. Please try again.';
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

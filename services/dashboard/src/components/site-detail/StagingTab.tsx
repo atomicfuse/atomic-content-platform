@@ -7,16 +7,18 @@ import {
   goLive,
   publishStagingToProduction,
   saveStagingPreview,
-  refreshPreviewUrl,
   ensureStagingBranch,
 } from "@/actions/wizard";
 import { StagingEditPanel } from "./StagingEditPanel";
+import { workerPreviewUrl } from "@/lib/constants";
 import type { SiteStatus } from "@/types/dashboard";
 
 interface StagingTabProps {
+  /** The network-repo directory slug for this site (e.g. "coolnews-atl").
+   *  Stored in `dashboard-index.yaml` under the `domain` field — NOT the
+   *  numeric `site_id` field, which is an unrelated internal id. Used as
+   *  both the KV site config key and the `?_atl_site=` Worker override. */
   domain: string;
-  pagesProject: string | null;
-  pagesSubdomain: string | null;
   stagingBranch: string | null;
   previewUrl: string | null;
   savedPreviews: Array<{ url: string; label: string; saved_at: string }> | null;
@@ -28,8 +30,6 @@ interface StagingTabProps {
 
 export function StagingTab({
   domain,
-  pagesProject,
-  pagesSubdomain,
   stagingBranch,
   previewUrl,
   savedPreviews,
@@ -40,15 +40,11 @@ export function StagingTab({
 }: StagingTabProps): React.ReactElement {
   const [currentStagingBranch, setCurrentStagingBranch] = useState(stagingBranch);
 
-  // pages_subdomain is the actual *.pages.dev prefix (may differ from pages_project if CF renamed)
-  const pagesHost = pagesSubdomain ?? pagesProject;
-
-  // Build stable staging URL from branch + pages subdomain (not the deployment-specific preview_url)
-  const currentPreviewUrl =
-    currentStagingBranch && pagesHost
-      ? `https://${currentStagingBranch.replace(/\//g, "-")}.${pagesHost}.pages.dev`
-      : previewUrl;
-  const [isRefreshing, startRefresh] = useTransition();
+  // Post-migration: site preview URL is the static workerPreviewUrl(domain).
+  // Both the Worker Preview block and the inline Staging Preview link below
+  // resolve to the same URL — `?_atl_site=<domain>` forces the right tenant.
+  const workerUrl = domain ? workerPreviewUrl(domain) : null;
+  const currentPreviewUrl = currentStagingBranch ? workerUrl : previewUrl;
   const [isSaving, startSave] = useTransition();
   const [isGoingLive, startGoLive] = useTransition();
   const [isPublishing, startPublish] = useTransition();
@@ -62,22 +58,11 @@ export function StagingTab({
   const isLiveMode = siteStatus === "Ready" || siteStatus === "Live";
   const hasStagingBranch = !!currentStagingBranch;
 
-  const productionUrl = customDomain
-    ? `https://${customDomain}`
-    : pagesHost
-      ? `https://${pagesHost}.pages.dev`
-      : null;
-
-  function handleRefreshPreview(): void {
-    startRefresh(async () => {
-      try {
-        await refreshPreviewUrl(domain);
-        toast("Preview URL refreshed", "success");
-      } catch {
-        toast("Failed to refresh preview URL", "error");
-      }
-    });
-  }
+  // Live URL is the custom domain (served by the prod Worker via the
+  // `coolnews.dev` Workers Custom Domain route). Sites without a custom
+  // domain don't have a public live URL — they're only reachable via
+  // the Worker preview (above).
+  const productionUrl = customDomain ? `https://${customDomain}` : null;
 
   function handleSavePreview(): void {
     if (!currentPreviewUrl || !saveLabel.trim()) return;
@@ -129,6 +114,39 @@ export function StagingTab({
 
   return (
     <div className="space-y-6">
+      {/* Worker preview — always available for seeded sites, no DNS needed.
+          Lives at the top so editors can compare Worker vs Pages output
+          mid-migration. */}
+      {workerUrl && (
+        <div className="rounded-lg bg-cyan-500/5 border border-cyan-500/20 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                Worker Preview
+              </h3>
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
+                Preview this site on the multi-tenant Worker — works for any seeded
+                site, no DNS needed. Asset edits show up within seconds (no rebuild).
+              </p>
+              <p className="text-xs text-[var(--text-muted)] mt-1 truncate font-mono">
+                {workerUrl}
+              </p>
+            </div>
+            <a
+              href={workerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 text-sm font-medium text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+            >
+              Open Worker Preview
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+              </svg>
+            </a>
+          </div>
+        </div>
+      )}
+
       {/* Header section — explains the mode */}
       {isLiveMode && (
         <div className="rounded-lg bg-blue-500/5 border border-blue-500/20 p-4">
@@ -210,14 +228,6 @@ export function StagingTab({
 
           {/* Actions row */}
           <div className="flex items-center gap-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={isRefreshing}
-              onClick={handleRefreshPreview}
-            >
-              Refresh Preview
-            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -329,10 +339,13 @@ export function StagingTab({
               Go Live
             </h3>
             <p className="text-sm text-[var(--text-secondary)]">
-              Merging staging to production will make this site live at{" "}
-              <span className="font-mono text-cyan">
-                {pagesHost}.pages.dev
-              </span>
+              Merging staging to production will sync this site&apos;s
+              content to prod KV{customDomain && (
+                <>
+                  {" "}and make it live at{" "}
+                  <span className="font-mono text-cyan">{customDomain}</span>
+                </>
+              )}.
             </p>
           </div>
           <Button
@@ -374,15 +387,13 @@ export function StagingTab({
         </div>
       )}
 
-      {/* Pages Project info */}
-      {pagesHost && (
+      {/* Footer info */}
+      {currentStagingBranch && (
         <p className="text-xs text-[var(--text-muted)]">
-          Pages project:{" "}
-          <span className="font-mono">{pagesHost}.pages.dev</span>
-          {currentStagingBranch && (
+          Branch: <span className="font-mono">{currentStagingBranch}</span>
+          {customDomain && (
             <>
-              {" "}&middot; Branch:{" "}
-              <span className="font-mono">{currentStagingBranch}</span>
+              {" "}&middot; Live: <span className="font-mono">{customDomain}</span>
             </>
           )}
         </p>

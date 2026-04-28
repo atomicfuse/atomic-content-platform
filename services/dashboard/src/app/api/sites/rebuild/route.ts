@@ -11,7 +11,8 @@ interface RebuildRequestBody {
 
 /**
  * POST /api/sites/rebuild
- * Triggers a .build-trigger push for each listed site on its staging branch.
+ * Pushes a .build-trigger file to each site's staging branch, which fires
+ * the sync-kv workflow (via GitHub push event) to seed KV + R2.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: RebuildRequestBody;
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const index = await readDashboardIndex();
     const results: Array<{ domain: string; ok: boolean; error?: string }> = [];
 
-    // Trigger rebuilds sequentially to avoid GitHub API rate limits
+    // Trigger syncs sequentially to avoid GitHub API rate limits
     for (const domain of domains) {
       const site = index.sites.find((s) => s.domain === domain);
       if (!site?.staging_branch) {
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const succeeded = results.filter((r) => r.ok).length;
     return NextResponse.json({
       status: "ok",
-      message: `Triggered rebuild for ${succeeded}/${domains.length} site(s)`,
+      message: `Triggered sync for ${succeeded}/${domains.length} site(s)`,
       reason,
       results,
     });

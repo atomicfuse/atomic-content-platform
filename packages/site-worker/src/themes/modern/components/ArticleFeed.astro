@@ -1,0 +1,22 @@
+---
+import FeedCard from './FeedCard.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { articles: ArticleIndexEntry[]; heading?: string; }
+const { articles, heading = "What's New?" } = Astro.props;
+---
+
+<section class="article-feed">
+  <h2 class="article-feed-heading">{heading}</h2>
+  <div id="article-feed-list">
+    {articles.map((article) => <FeedCard article={article} />)}
+  </div>
+</section>
+
+<style>
+  .article-feed-heading {
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin: 0 0 1rem;
+  }
+</style>

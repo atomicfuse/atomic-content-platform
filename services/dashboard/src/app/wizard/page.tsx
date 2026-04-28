@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { StepIdentity } from "@/components/wizard/StepIdentity";
@@ -34,6 +34,10 @@ const DEFAULT_FORM: WizardFormData = {
   articlesPerDay: 1,
   preferredDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   contentGuidelines: "",
+  primaryColor: "#1a1a2e",
+  accentColor: "#f4c542",
+  fontHeading: "Inter",
+  fontBody: "Inter",
   scriptsVars: {},
 };
 
@@ -48,25 +52,8 @@ export default function WizardPage(): React.ReactElement {
   });
   const [stagingResult, setStagingResult] = useState<{
     stagingUrl: string;
-    pagesProject: string;
+    siteFolder: string;
   } | null>(null);
-  const [availableDomains, setAvailableDomains] = useState<string[]>([]);
-
-  // Fetch available "New" domains for the dropdown
-  useEffect(() => {
-    async function fetchDomains(): Promise<void> {
-      try {
-        const res = await fetch("/api/domains/available");
-        if (res.ok) {
-          const data = (await res.json()) as { domains: string[] };
-          setAvailableDomains(data.domains);
-        }
-      } catch {
-        // Fallback: if API not available, allow typed input
-      }
-    }
-    void fetchDomains();
-  }, []);
 
   function updateForm(updates: Partial<WizardFormData>): void {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -80,7 +67,6 @@ export default function WizardPage(): React.ReactElement {
             return (
               <StepIdentity
                 data={formData}
-                availableDomains={availableDomains}
                 onChange={updateForm}
                 onNext={goNext}
                 onCancel={(): void => router.push("/")}

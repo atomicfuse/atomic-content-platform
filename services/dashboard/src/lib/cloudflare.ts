@@ -1,3 +1,5 @@
+import { WORKER_NAME_PROD } from "@/lib/constants";
+
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
 // --- Types ---
@@ -49,6 +51,15 @@ export interface CloudflareDomainInfo {
   latestDeploymentUrl: string | null;
   /** Whether there is an active production deployment. */
   hasDeployment: boolean;
+}
+
+/** A Workers Custom Domain registered on the Cloudflare account. */
+export interface WorkerCustomDomain {
+  id: string;
+  hostname: string;
+  zone_id: string;
+  service: string;
+  environment: string;
 }
 
 // --- Helpers ---
@@ -118,14 +129,6 @@ export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
 export async function getPagesProjectDomains(
   projectName: string
 ): Promise<string[]> {
-  const result = await getPagesProjectDomainsDetailed(projectName);
-  return result.map((d) => d.name);
-}
-
-/** Get custom domains with IDs for a specific Pages project. */
-export async function getPagesProjectDomainsDetailed(
-  projectName: string
-): Promise<Array<{ id: string; name: string; status: string }>> {
   const accountId = getAccountId();
   try {
     const response = await fetch(
@@ -136,7 +139,7 @@ export async function getPagesProjectDomainsDetailed(
       Array<{ id: string; name: string; status: string }>
     >;
     if (!data.success) return [];
-    return data.result;
+    return data.result.map((d) => d.name);
   } catch {
     return [];
   }
@@ -280,28 +283,6 @@ export async function getAPOStatus(zoneId: string): Promise<boolean> {
 
 // --- Pages Project Management ---
 
-/** Create a new Cloudflare Pages project. */
-export async function createPagesProject(
-  name: string
-): Promise<CloudflarePagesProject> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects`,
-    {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ name, production_branch: "main" }),
-    }
-  );
-  const data = (await response.json()) as CloudflareResponse<CloudflarePagesProject>;
-  if (!data.success) {
-    throw new Error(
-      `Failed to create Pages project: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-  return data.result;
-}
-
 /** Delete a Cloudflare Pages project. */
 export async function deletePagesProject(name: string): Promise<void> {
   const accountId = getAccountId();
@@ -320,87 +301,146 @@ export async function deletePagesProject(name: string): Promise<void> {
   }
 }
 
-/** Add a custom domain to a Pages project. */
-export async function addCustomDomainToProject(
-  projectName: string,
-  domain: string
-): Promise<{ id: string; name: string; status: string }> {
+
+// --- Workers Custom Domains API ---
+
+/** Register a custom domain on the production worker.
+ *  Cloudflare auto-manages the DNS A/AAAA record for the hostname. */
+export async function registerWorkerCustomDomain(
+  hostname: string,
+  zoneId: string,
+): Promise<{ id: string }> {
   const accountId = getAccountId();
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains`,
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains`,
     {
-      method: "POST",
+      method: "PUT",
       headers: getHeaders(),
-      body: JSON.stringify({ name: domain }),
-    }
+      body: JSON.stringify({
+        zone_id: zoneId,
+        hostname,
+        service: WORKER_NAME_PROD,
+        environment: "production",
+      }),
+    },
   );
-  const data = (await response.json()) as CloudflareResponse<{
-    id: string;
-    name: string;
-    status: string;
-  }>;
+  const data = (await response.json()) as CloudflareResponse<{ id: string }>;
   if (!data.success) {
     throw new Error(
-      `Failed to add custom domain: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to register custom domain ${hostname}: ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
   return data.result;
 }
 
-/** Remove a custom domain from a Pages project. CF deletes by domain name. */
-export async function removeCustomDomainFromProject(
-  projectName: string,
-  domainName: string
+/** Deregister a custom domain from the production worker.
+ *  No-op if the domain is not currently registered. */
+export async function deregisterWorkerCustomDomain(
+  hostname: string,
+): Promise<void> {
+  const accountId = getAccountId();
+  // Find the domain ID by hostname (server-side filter avoids pagination)
+  const listResp = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}&service=${WORKER_NAME_PROD}`,
+    { headers: getHeaders() },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list custom domains: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  const match = listData.result.find((d) => d.hostname === hostname);
+  if (!match) return; // Already removed — no-op
+
+  const delResp = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains/${match.id}`,
+    { method: "DELETE", headers: getHeaders() },
+  );
+  const delData = (await delResp.json()) as CloudflareResponse<null>;
+  if (!delData.success) {
+    throw new Error(
+      `Failed to deregister custom domain ${hostname}: ${delData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all Workers Custom Domains registered for the production worker.
+ *  Handles pagination (same pattern as listZones). */
+export async function listWorkerCustomDomains(): Promise<WorkerCustomDomain[]> {
+  const accountId = getAccountId();
+  const domains: WorkerCustomDomain[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await fetch(
+      `${CF_API_BASE}/accounts/${accountId}/workers/domains?service=${WORKER_NAME_PROD}&per_page=50&page=${page}`,
+      { headers: getHeaders() },
+    );
+    const data = (await response.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+    if (!data.success) {
+      throw new Error(
+        `Failed to list worker custom domains: ${data.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+    domains.push(...data.result);
+    hasMore = data.result.length === 50;
+    page++;
+  }
+
+  return domains;
+}
+
+// --- KV Direct Write API ---
+
+/** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
+ *  Content-Type is overridden to text/plain because the KV values API expects a raw
+ *  body — the default application/json from getHeaders() would be semantically incorrect. */
+export async function putKVEntry(
+  namespaceId: string,
+  key: string,
+  value: string,
 ): Promise<void> {
   const accountId = getAccountId();
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains/${domainName}`,
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
     {
-      method: "DELETE",
-      headers: getHeaders(),
-    }
+      method: "PUT",
+      headers: {
+        ...getHeaders(),
+        "Content-Type": "text/plain",
+      },
+      body: value,
+    },
   );
   const data = (await response.json()) as CloudflareResponse<null>;
   if (!data.success) {
     throw new Error(
-      `Failed to remove custom domain: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to write KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
 }
 
-/** List deployments for a Pages project. */
-export async function listDeployments(
-  projectName: string,
-  env?: "preview" | "production"
-): Promise<
-  Array<{
-    id: string;
-    url: string;
-    environment: string;
-    created_on: string;
-    aliases?: string[];
-    deployment_trigger?: { metadata?: { branch?: string } };
-  }>
-> {
+/** Delete a single KV entry by key. No-op if key does not exist. */
+export async function deleteKVEntry(
+  namespaceId: string,
+  key: string,
+): Promise<void> {
   const accountId = getAccountId();
-  const url = env
-    ? `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments?env=${env}`
-    : `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`;
-  const response = await fetch(url, { headers: getHeaders() });
-  const data = (await response.json()) as CloudflareResponse<
-    Array<{
-      id: string;
-      url: string;
-      environment: string;
-      created_on: string;
-      aliases?: string[];
-      deployment_trigger?: { metadata?: { branch?: string } };
-    }>
-  >;
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
   if (!data.success) {
+    // KV delete on a missing key returns success=true, so a failure here is a real error
     throw new Error(
-      `Failed to list deployments: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to delete KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
-  return data.result;
 }

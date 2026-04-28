@@ -80,8 +80,20 @@ export interface SiteBrief {
   /** Content vertical for aggregator API queries. */
   vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
 
+  /** Content Aggregator vertical ID — preferred over name for API queries. */
+  vertical_id?: string;
+
+  /** Content Aggregator category IDs — all categories the site targets. */
+  category_ids?: string[];
+
+  /** Content Aggregator tag IDs — all tags the site targets. */
+  tag_ids?: string[];
+
   /** Target audience type for aggregator API queries. */
   audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+
+  /** Content Aggregator audience type IDs — preferred over name for API queries. */
+  audience_type_ids?: string[];
 
   /** Content language code (ISO 639-1). Defaults to "EN". */
   language?: string;
@@ -145,6 +157,101 @@ export interface ResolvedThemeConfig {
     body: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the homepage hero block in the v2 magazine layout.
+ */
+export interface HeroLayoutConfig {
+  /** Whether the hero block is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Number of hero cards to display. Default: 4. */
+  count?: 3 | 4;
+}
+
+/**
+ * Configuration for the must-reads strip in the v2 magazine layout.
+ */
+export interface MustReadsLayoutConfig {
+  /** Whether the must-reads strip is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Number of must-reads (>= 1; values < 1 are clamped at runtime). Default: 5. */
+  count?: number;
+}
+
+/**
+ * Configuration for the sidebar topics list in the v2 magazine layout.
+ */
+export interface SidebarTopicsConfig {
+  /** Whether topics are auto-derived from site brief topics. Default: true. */
+  auto?: boolean;
+
+  /** Explicit ordered list of topic slugs. Default: []. */
+  explicit?: string[];
+}
+
+/**
+ * Configuration for the homepage "load more" pagination in the v2 magazine layout.
+ */
+export interface LoadMoreConfig {
+  /** Articles per page (>= 1; values < 1 are clamped at runtime). Default: 10. */
+  page_size?: number;
+}
+
+/**
+ * Layout knobs for the v2 magazine layout.
+ * All fields are optional partials that get merged across the
+ * org -> group -> site inheritance chain and then resolved against
+ * `LAYOUT_DEFAULTS`.
+ */
+export interface LayoutConfig {
+  /** Hero block configuration. */
+  hero?: HeroLayoutConfig;
+
+  /** Must-reads strip configuration. */
+  must_reads?: MustReadsLayoutConfig;
+
+  /** Sidebar topics list configuration. */
+  sidebar_topics?: SidebarTopicsConfig;
+
+  /** Homepage "load more" pagination configuration. */
+  load_more?: LoadMoreConfig;
+}
+
+/**
+ * Fully-resolved layout configuration where every field is required.
+ * Produced by `resolveLayout()` after merging org -> group -> site layers
+ * over `LAYOUT_DEFAULTS`.
+ */
+export interface ResolvedLayoutConfig {
+  /** Resolved hero block configuration. */
+  hero: { enabled: boolean; count: 3 | 4 };
+
+  /** Resolved must-reads strip configuration (count clamped to >= 1). */
+  must_reads: { enabled: boolean; count: number };
+
+  /** Resolved sidebar topics configuration. */
+  sidebar_topics: { auto: boolean; explicit: string[] };
+
+  /** Resolved load-more pagination configuration (page_size clamped to >= 1). */
+  load_more: { page_size: number };
+}
+
+/**
+ * Baseline defaults for the v2 magazine layout. Used as the starting point
+ * by `resolveLayout()` before merging org/group/site overrides.
+ */
+export const LAYOUT_DEFAULTS: ResolvedLayoutConfig = {
+  hero: { enabled: true, count: 4 },
+  must_reads: { enabled: true, count: 5 },
+  sidebar_topics: { auto: true, explicit: [] },
+  load_more: { page_size: 10 },
+};
 
 // ---------------------------------------------------------------------------
 // Preview page
@@ -274,6 +381,12 @@ export interface OrgConfig {
     body: string;
   };
 
+  /** Default colours applied to new sites (flow through inheritance). */
+  default_colors?: {
+    primary?: string;
+    accent?: string;
+  };
+
   /**
    * Default group IDs applied to sites that don't specify their own `groups:`.
    * References files at `groups/<id>.yaml`.
@@ -319,6 +432,9 @@ export interface OrgConfig {
 
   /** Default search configuration. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +483,9 @@ export interface GroupConfig {
 
   /** Group-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +565,9 @@ export interface SiteConfig {
 
   /** Site-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +633,9 @@ export interface ResolvedConfig {
 
   /** Fully-resolved theme configuration (all fields required). */
   theme: ResolvedThemeConfig;
+
+  /** Fully-resolved layout configuration (all fields required). */
+  layout: ResolvedLayoutConfig;
 
   /** Editorial brief for the site. */
   brief: SiteBrief;

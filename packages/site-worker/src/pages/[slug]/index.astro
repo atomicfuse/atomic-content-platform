@@ -1,0 +1,149 @@
+---
+export const prerender = false;
+
+import { env } from 'cloudflare:workers';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SEOHead from '../../components/SEOHead.astro';
+import PageLayout from '../../layouts/PageLayout.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
+import ArticleHero from '../../themes/modern/components/ArticleHero.astro';
+import Sidebar from '../../themes/modern/components/Sidebar.astro';
+import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
+import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
+import AdSlot from '../../components/AdSlot.astro';
+import { getConfig, getSiteId } from '../../lib/config';
+import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
+import { isVisibleArticle } from '../../utils/article-status';
+import { injectInlineAds } from '../../lib/inline-ads';
+
+const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca']);
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  return new Response('Not found', { status: 404 });
+}
+
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+
+// Shared pages live at top-level slugs (`/about`, `/privacy`, ...) and
+// take precedence over the article namespace.
+const shared: SharedPage | null = SHARED_PAGES.has(slug)
+  ? ((await env.CONFIG_KV.get<SharedPage>(sharedPageKey(siteId, slug), 'json')) ?? null)
+  : null;
+
+const article: ArticleRecord | null = shared
+  ? null
+  : ((await env.CONFIG_KV.get<ArticleRecord>(articleKey(siteId, slug), 'json')) ?? null);
+
+if (!shared && (!article || !isVisibleArticle(article.frontmatter.status))) {
+  return new Response('Not found', { status: 404 });
+}
+
+const articleBodyWithInlineAds = article
+  ? injectInlineAds(
+      article.body,
+      (config.ads_config?.ad_placements as Array<{ id?: string; position?: string }> | undefined) ?? [],
+    )
+  : '';
+
+// Compute related articles and category-list articles
+let related: ArticleIndexEntry[] = [];
+let categoryLists: { topic: string; articles: ArticleIndexEntry[] }[] = [];
+
+if (article) {
+  const allArticles =
+    (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+  const visibleOthers = allArticles
+    .filter((a) => isVisibleArticle(a.status) && a.slug !== article.frontmatter.slug)
+    .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
+
+  // Related: same primary tag, fallback to latest
+  const primaryTag = article.frontmatter.tags?.[0];
+  related = (primaryTag
+    ? visibleOthers.filter((a) => a.tags.includes(primaryTag))
+    : visibleOthers
+  ).slice(0, 4);
+
+  // Category lists: brief.topics, max 2
+  const allTopics = config.layout.sidebar_topics.auto
+    ? (config.brief?.topics ?? [])
+    : config.layout.sidebar_topics.explicit;
+  const otherTopics = allTopics.filter((t: string) => t !== primaryTag).slice(0, 2);
+  categoryLists = otherTopics.map((topic: string) => ({
+    topic,
+    articles: visibleOthers
+      .filter((a) => a.tags.some((t) => t.toLowerCase() === topic.toLowerCase()))
+      .slice(0, 4),
+  }));
+}
+---
+
+{shared && (
+  <PageLayout title={shared.title} slug={slug}>
+    <Fragment set:html={shared.html} />
+  </PageLayout>
+)}
+
+{article && (
+  <BaseLayout
+    title={`${article.frontmatter.title} | ${config.site_name}`}
+    description={article.frontmatter.description ?? article.frontmatter.title}
+  >
+    <Fragment slot="head">
+      <SEOHead
+        title={`${article.frontmatter.title} | ${config.site_name}`}
+        description={article.frontmatter.description ?? article.frontmatter.title}
+        canonicalUrl={`https://${config.domain}/${slug}`}
+        image={article.frontmatter.featuredImage}
+        siteName={config.site_name}
+        publishDate={article.frontmatter.publishDate}
+      />
+    </Fragment>
+
+    <Header config={config} currentPath={`/${slug}`} />
+    <ArticleHero article={article.frontmatter} />
+
+    <main class="article-page">
+      <div class="article-page-inner">
+        <article class="article-prose prose">
+          <Fragment set:html={articleBodyWithInlineAds} />
+          {article.frontmatter.tags && article.frontmatter.tags.length > 0 && (
+            <p class="article-tags">{article.frontmatter.tags.map((t: string) => `#${t}`).join(' ')}</p>
+          )}
+        </article>
+        <Sidebar variant="article" config={config} categories={categoryLists} />
+      </div>
+      <NewsletterBand domain={config.domain} />
+      <RelatedPosts articles={related} />
+    </main>
+
+    <Footer config={config} />
+    <AdSlot position="sticky-bottom" pageType="article" server:defer />
+  </BaseLayout>
+)}
+
+<style>
+  .article-page-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 2.5rem 1rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  @media (min-width: 960px) {
+    .article-page-inner { grid-template-columns: 1fr 320px; }
+  }
+  .article-tags { color: var(--color-muted, #6b7280); margin-top: 2rem; }
+  .article-prose {
+    line-height: 1.8;
+    font-size: 1.0625rem;
+  }
+  .article-prose :global(h2) { margin: 2rem 0 1rem; font-size: var(--text-2xl, 1.5rem); }
+  .article-prose :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl, 1.25rem); }
+  .article-prose :global(p)  { margin-bottom: 1.25rem; }
+  .article-prose :global(ul), .article-prose :global(ol) { margin: 1rem 0 1.25rem 1.5rem; }
+</style>
