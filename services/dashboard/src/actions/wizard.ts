@@ -572,7 +572,7 @@ export interface StagingSiteConfig {
   quality_threshold?: number;
   quality_weights?: Record<string, number>;
   // Layout v2 theme fields
-  theme_colors?: { primary: string; accent: string };
+  theme_colors?: Record<string, string>;
   theme_fonts?: { heading: string; body: string };
   layout?: Record<string, unknown>;
 }

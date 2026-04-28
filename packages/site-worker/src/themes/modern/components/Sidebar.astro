@@ -35,6 +35,6 @@ const { config, variant, categories = [] } = Astro.props;
 <style>
   .sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
   @media (min-width: 960px) {
-    .sidebar { position: sticky; top: calc(64px + 1rem); }
+    .sidebar { position: sticky; top: calc(64px + 1rem); align-self: start; }
   }
 </style>

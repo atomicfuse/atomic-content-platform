@@ -16,6 +16,8 @@ interface LayoutState {
 interface ThemeState {
   primaryColor: string;
   accentColor: string;
+  footerBg: string;
+  mustReadsBg: string;
   fontHeading: string;
   fontBody: string;
   layout: LayoutState;
@@ -64,6 +66,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
   const [state, setState] = useState<ThemeState>({
     primaryColor: "#1a1a2e",
     accentColor: "#f4c542",
+    footerBg: "#1a1a2e",
+    mustReadsBg: "#1a1a2e",
     fontHeading: "Inter",
     fontBody: "Inter",
     layout: { ...DEFAULT_LAYOUT },
@@ -83,6 +87,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         setState({
           primaryColor: colors.primary ?? "#1a1a2e",
           accentColor: colors.accent ?? "#f4c542",
+          footerBg: colors.footer_bg ?? colors.secondary ?? "#1a1a2e",
+          mustReadsBg: colors.must_reads_bg ?? colors.secondary ?? "#1a1a2e",
           fontHeading: fonts.heading ?? "Inter",
           fontBody: fonts.body ?? "Inter",
           layout: parseLayout(layout),
@@ -107,7 +113,12 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           logoBase64: null,
           faviconBase64: null,
           configUpdates: {
-            theme_colors: { primary: state.primaryColor, accent: state.accentColor },
+            theme_colors: {
+              primary: state.primaryColor,
+              accent: state.accentColor,
+              footer_bg: state.footerBg,
+              must_reads_bg: state.mustReadsBg,
+            },
             theme_fonts: { heading: state.fontHeading, body: state.fontBody },
             layout: state.layout,
           },
@@ -174,6 +185,25 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             value={state.accentColor}
             onChange={(v): void => setState((s) => ({ ...s, accentColor: v }))}
             helperText="Used for the subscribe band and call-to-action buttons"
+          />
+        </div>
+      </div>
+
+      {/* Section Colors */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Section Colors</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ColorPickerField
+            label="Footer background"
+            value={state.footerBg}
+            onChange={(v): void => setState((s) => ({ ...s, footerBg: v }))}
+            helperText="Background color for the site footer"
+          />
+          <ColorPickerField
+            label="Must Reads background"
+            value={state.mustReadsBg}
+            onChange={(v): void => setState((s) => ({ ...s, mustReadsBg: v }))}
+            helperText="Background color for the Must Reads section"
           />
         </div>
       </div>

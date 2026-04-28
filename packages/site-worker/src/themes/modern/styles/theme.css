@@ -9,16 +9,25 @@
 /* ------------------------------------------------------------------ */
 /* CSS custom-property defaults (overridden by per-site values)       */
 /* ------------------------------------------------------------------ */
-:root {
-  --color-primary: #0066ff;
-  --color-secondary: #1a1a2e;
-  --color-accent: #00ccff;
-  --color-background: #ffffff;
-  --color-text: #1a1a2e;
-  --color-muted: #6b7280;
-  --color-surface: #f8f9fa;
-  --color-border: #e5e7eb;
+/* Colour defaults live in a cascade layer so that the unlayered      */
+/* inline <style> emitted by BaseLayout always wins — regardless of   */
+/* stylesheet load order.                                             */
+@layer theme-defaults {
+  :root {
+    --color-primary: #0066ff;
+    --color-secondary: #1a1a2e;
+    --color-accent: #00ccff;
+    --color-background: #ffffff;
+    --color-text: #1a1a2e;
+    --color-muted: #6b7280;
+    --color-surface: #f8f9fa;
+    --color-border: #e5e7eb;
+    --color-footer_bg: var(--color-secondary, #1a1a2e);
+    --color-must_reads_bg: var(--color-secondary, #1a1a2e);
+  }
+}
 
+:root {
   /* Typography scale */
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
