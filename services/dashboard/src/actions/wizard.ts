@@ -15,8 +15,14 @@ import {
   triggerWorkflowViaPush,
   readFileBase64,
 } from "@/lib/github";
-import { listZones } from "@/lib/cloudflare";
-import { workerPreviewUrl } from "@/lib/constants";
+import {
+  listZones,
+  registerWorkerCustomDomain,
+  deregisterWorkerCustomDomain,
+  putKVEntry,
+  deleteKVEntry,
+} from "@/lib/cloudflare";
+import { workerPreviewUrl, KV_NAMESPACE_PROD } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
@@ -444,40 +450,87 @@ export async function getAvailableZones(): Promise<
     readDashboardIndex(),
   ]);
 
-  const usedAsSite = new Set(index.sites.map((s) => s.domain));
   const usedCustomDomains = new Set(
     index.sites.map((s) => s.custom_domain).filter((d): d is string => Boolean(d)),
   );
 
   return zones
-    .filter((z) => !usedAsSite.has(z.name) && !usedCustomDomains.has(z.name))
+    .filter((z) => z.status === "active" && !usedCustomDomains.has(z.name))
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
-/** Attach a custom domain to a site by writing it to dashboard-index.yaml.
- *  Post-migration this is just a data change — the production worker only
- *  picks up the route on the next `pnpm deploy:production` run (which feeds
- *  emit-env-configs.ts). The UI surfaces a "redeploy required" callout to
- *  the operator. Best-effort email-routing setup happens here too since it's
- *  zone-level and unrelated to the legacy Pages flow. */
 export async function attachCustomDomain(
   domain: string,
   customDomain: string,
-): Promise<{ redeployRequired: true }> {
+  zoneId: string,
+): Promise<{ success: true }> {
+  // --- Step 1: Write to dashboard-index ---
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
   if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
 
-  // Merge a duplicate zone-only entry's zone_id into this site, then drop the dupe.
+  // Dupe-merge: absorb zone_id from a placeholder entry matching the custom domain name.
+  // If rollback is needed later, the spliced-out dupe is NOT restored — it will be
+  // recreated on the next syncDomainsFromCloudflare() run.
+  let resolvedZoneId = zoneId;
   const dupeIndex = index.sites.findIndex((s) => s.domain === customDomain);
   if (dupeIndex !== -1) {
     const dupe = index.sites[dupeIndex]!;
-    if (dupe.zone_id) site.zone_id = dupe.zone_id;
+    if (dupe.zone_id && !resolvedZoneId) resolvedZoneId = dupe.zone_id;
     index.sites.splice(dupeIndex, 1);
   }
 
-  // Best-effort zone-level setup. Failures here must NOT abort the attach
-  // — the data write is the contract; email routing is a nicety.
+  const previousCustomDomain = site.custom_domain;
+  const previousStatus = site.status;
+  const previousZoneId = site.zone_id;
+  const previousPendingDns = site.worker_pending_dns;
+
+  site.custom_domain = customDomain;
+  site.zone_id = resolvedZoneId;
+  site.status = 'Live';
+  site.worker_pending_dns = false;
+  site.last_updated = new Date().toISOString();
+
+  await writeDashboardIndex(
+    index,
+    `dashboard: attach ${customDomain} to ${domain}`,
+  );
+
+  // --- Step 2: Register custom domain on CF worker ---
+  try {
+    await registerWorkerCustomDomain(customDomain, resolvedZoneId);
+  } catch (err) {
+    // Roll back index write
+    console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
+    site.custom_domain = previousCustomDomain;
+    site.status = previousStatus;
+    site.zone_id = previousZoneId;
+    site.worker_pending_dns = previousPendingDns;
+    site.last_updated = new Date().toISOString();
+    await writeDashboardIndex(
+      index,
+      `dashboard: rollback attach ${customDomain} from ${domain}`,
+    );
+    throw new Error(
+      `Failed to register ${customDomain} on Cloudflare: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // --- Step 3: Seed KV hostname entry ---
+  // key: site:<customDomain> → value: { siteId: domain }
+  // domain is the dashboard-index domain field (site identifier, e.g. "coolnews-atl")
+  try {
+    await putKVEntry(
+      KV_NAMESPACE_PROD,
+      `site:${customDomain.toLowerCase()}`,
+      JSON.stringify({ siteId: domain }),
+    );
+  } catch (err) {
+    // Non-fatal: KV will be seeded on next sync-kv CI run
+    console.warn('[attachCustomDomain] KV seed failed (will self-heal via CI)', err);
+  }
+
+  // --- Step 4: Best-effort email routing (existing) ---
   if (site.zone_id) {
     try {
       await enableEmailRouting(site.zone_id);
@@ -487,46 +540,57 @@ export async function attachCustomDomain(
     }
   }
 
-  site.custom_domain = customDomain;
-  site.status = 'Live';
-  site.last_updated = new Date().toISOString();
-
-  await writeDashboardIndex(
-    index,
-    `dashboard: attach ${customDomain} to ${domain}`,
-  );
-
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
 
-  return { redeployRequired: true };
+  return { success: true };
 }
 
-/** Detach a custom domain from a site (clears the field; reverts status).
- *  Post-migration: pure data change. Production deploy must be re-run for
- *  the prod worker to actually drop the route. */
 export async function detachCustomDomain(
   domain: string,
-): Promise<{ redeployRequired: true }> {
+): Promise<{ success: true }> {
+  // --- Step 1: Read current state ---
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
   if (!site?.custom_domain) {
     throw new Error(`No custom domain to detach for ${domain}`);
   }
+  const removedDomain = site.custom_domain;
 
+  // --- Step 2: Write index FIRST (critical ordering) ---
+  // If CF/KV cleanup fails later, the index is already correct.
+  // Orphaned CF route + KV entry are harmless and self-healing.
   site.custom_domain = null;
   site.status = 'Ready';
+  site.worker_pending_dns = true;
   site.last_updated = new Date().toISOString();
 
   await writeDashboardIndex(
     index,
-    `dashboard: detach custom domain from ${domain}`,
+    `dashboard: detach ${removedDomain} from ${domain}`,
   );
+
+  // --- Step 3: Deregister from CF worker (best-effort) ---
+  try {
+    await deregisterWorkerCustomDomain(removedDomain);
+  } catch (err) {
+    console.warn('[detachCustomDomain] CF deregistration failed (will self-heal on next deploy)', err);
+  }
+
+  // --- Step 4: Delete KV hostname entry (best-effort) ---
+  try {
+    await deleteKVEntry(
+      KV_NAMESPACE_PROD,
+      `site:${removedDomain.toLowerCase()}`,
+    );
+  } catch (err) {
+    console.warn('[detachCustomDomain] KV delete failed (stale entry is harmless)', err);
+  }
 
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
 
-  return { redeployRequired: true };
+  return { success: true };
 }
 
 /** Save a staging preview URL for later reference. */

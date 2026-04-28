@@ -87,3 +87,14 @@ export function workerPreviewUrl(siteId: string, path = "/"): string {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   return `${WORKER_STAGING_URL}${cleanPath}?_atl_site=${encodeURIComponent(siteId)}`;
 }
+
+// --- Cloudflare Worker + KV identifiers (production) ---
+
+/** Production worker name — used for Workers Custom Domains API. */
+export const WORKER_NAME_PROD = "atomic-site-worker";
+
+/** Production CONFIG_KV namespace ID. */
+export const KV_NAMESPACE_PROD = "a69cb2c59507482ca5e6d114babdd098";
+
+/** Staging CONFIG_KV namespace ID (not used by attach/detach — included for reference). */
+export const KV_NAMESPACE_STAGING = "4673c82cdd7f41d49e93d938fb1c6848";

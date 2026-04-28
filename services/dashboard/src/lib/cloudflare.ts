@@ -1,3 +1,5 @@
+import { WORKER_NAME_PROD } from "@/lib/constants";
+
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
 // --- Types ---
@@ -49,6 +51,15 @@ export interface CloudflareDomainInfo {
   latestDeploymentUrl: string | null;
   /** Whether there is an active production deployment. */
   hasDeployment: boolean;
+}
+
+/** A Workers Custom Domain registered on the Cloudflare account. */
+export interface WorkerCustomDomain {
+  id: string;
+  hostname: string;
+  zone_id: string;
+  service: string;
+  environment: string;
 }
 
 // --- Helpers ---
@@ -290,3 +301,146 @@ export async function deletePagesProject(name: string): Promise<void> {
   }
 }
 
+
+// --- Workers Custom Domains API ---
+
+/** Register a custom domain on the production worker.
+ *  Cloudflare auto-manages the DNS A/AAAA record for the hostname. */
+export async function registerWorkerCustomDomain(
+  hostname: string,
+  zoneId: string,
+): Promise<{ id: string }> {
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains`,
+    {
+      method: "PUT",
+      headers: getHeaders(),
+      body: JSON.stringify({
+        zone_id: zoneId,
+        hostname,
+        service: WORKER_NAME_PROD,
+        environment: "production",
+      }),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<{ id: string }>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to register custom domain ${hostname}: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+  return data.result;
+}
+
+/** Deregister a custom domain from the production worker.
+ *  No-op if the domain is not currently registered. */
+export async function deregisterWorkerCustomDomain(
+  hostname: string,
+): Promise<void> {
+  const accountId = getAccountId();
+  // Find the domain ID by hostname (server-side filter avoids pagination)
+  const listResp = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}&service=${WORKER_NAME_PROD}`,
+    { headers: getHeaders() },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list custom domains: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  const match = listData.result.find((d) => d.hostname === hostname);
+  if (!match) return; // Already removed — no-op
+
+  const delResp = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/workers/domains/${match.id}`,
+    { method: "DELETE", headers: getHeaders() },
+  );
+  const delData = (await delResp.json()) as CloudflareResponse<null>;
+  if (!delData.success) {
+    throw new Error(
+      `Failed to deregister custom domain ${hostname}: ${delData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all Workers Custom Domains registered for the production worker.
+ *  Handles pagination (same pattern as listZones). */
+export async function listWorkerCustomDomains(): Promise<WorkerCustomDomain[]> {
+  const accountId = getAccountId();
+  const domains: WorkerCustomDomain[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await fetch(
+      `${CF_API_BASE}/accounts/${accountId}/workers/domains?service=${WORKER_NAME_PROD}&per_page=50&page=${page}`,
+      { headers: getHeaders() },
+    );
+    const data = (await response.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+    if (!data.success) {
+      throw new Error(
+        `Failed to list worker custom domains: ${data.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+    domains.push(...data.result);
+    hasMore = data.result.length === 50;
+    page++;
+  }
+
+  return domains;
+}
+
+// --- KV Direct Write API ---
+
+/** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
+ *  Content-Type is overridden to text/plain because the KV values API expects a raw
+ *  body — the default application/json from getHeaders() would be semantically incorrect. */
+export async function putKVEntry(
+  namespaceId: string,
+  key: string,
+  value: string,
+): Promise<void> {
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    {
+      method: "PUT",
+      headers: {
+        ...getHeaders(),
+        "Content-Type": "text/plain",
+      },
+      body: value,
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to write KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** Delete a single KV entry by key. No-op if key does not exist. */
+export async function deleteKVEntry(
+  namespaceId: string,
+  key: string,
+): Promise<void> {
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    // KV delete on a missing key returns success=true, so a failure here is a real error
+    throw new Error(
+      `Failed to delete KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
