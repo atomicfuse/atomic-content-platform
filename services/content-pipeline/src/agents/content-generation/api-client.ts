@@ -65,6 +65,8 @@ async function fetchWithRetry(url: string, retries: number = MAX_RETRIES): Promi
 export interface GetContentParams {
   /** Maximum number of items to return. Always passed as page_size. */
   limit: number;
+  /** 1-based page number for pagination. Defaults to 1. */
+  page?: number;
   enriched?: boolean;
   status?: string;
   content_type?: string;
@@ -81,9 +83,10 @@ export interface GetContentParams {
 
 /**
  * Fetch enriched content items from the Content Aggregator v2 API.
- * Always passes page_size to avoid unbounded fetches.
+ * Returns the full response including pagination metadata so callers
+ * can paginate through results.
  */
-export async function getContent(params: GetContentParams): Promise<ContentItem[]> {
+export async function getContent(params: GetContentParams): Promise<ContentApiResponse> {
   const baseUrl = getBaseUrl();
   const url = new URL("/api/content", baseUrl);
 
@@ -91,6 +94,7 @@ export async function getContent(params: GetContentParams): Promise<ContentItem[
   url.searchParams.set("status", params.status ?? "active");
   url.searchParams.set("content_type", params.content_type ?? "article");
   url.searchParams.set("page_size", String(params.limit));
+  url.searchParams.set("page", String(params.page ?? 1));
 
   if (params.language) {
     url.searchParams.set("language", params.language);
@@ -113,9 +117,12 @@ export async function getContent(params: GetContentParams): Promise<ContentItem[
   const response = await fetchWithRetry(url.toString());
   const body = (await response.json()) as ContentApiResponse;
 
-  const items = body.items ?? [];
-  console.log(`[api-client] Received ${items.length} items (total: ${body.total_count ?? 0})`);
-  return items;
+  body.items = body.items ?? [];
+  console.log(
+    `[api-client] Received ${body.items.length} items ` +
+    `(page ${body.page ?? 1}/${body.total_pages ?? 1}, total: ${body.total_count ?? 0})`,
+  );
+  return body;
 }
 
 /**

@@ -3,9 +3,9 @@
  *
  * Steps:
  * 1. Read site brief (local YAML or GitHub API)
- * 2. Fetch enriched items from Content Aggregator v2 API (targetCount * 2)
+ * 2. Fetch enriched items from Content Aggregator v2 API (paginated)
  * 3. Fetch settings for factual classification
- * 4. Deduplicate against already-processed source URLs + titles
+ * 4. Deduplicate against already-processed source URLs + titles (paginate for more if needed)
  * 5. For each candidate (up to targetCount successes):
  *    a. Route: factual → Claude, general → OpenAI
  *    b. Generate article (cross-model fallback on failure)
@@ -15,7 +15,7 @@
  *    f. Build frontmatter + serialize to markdown
  * 6. Batch-write all articles in a single commit
  *
- * LIGHTWEIGHT: fetches only targetCount * 2 items. No pagination loops.
+ * Paginates through aggregator results to find fresh (non-duplicate) items.
  */
 
 import * as path from "node:path";
@@ -657,22 +657,50 @@ export async function runContentGeneration(
       }
     }
 
-    // Step 4: Fetch enriched items — LIGHTWEIGHT: only targetCount * 2
-    const fetchLimit = targetCount * 2;
-    console.log(`[agent] Fetching ${fetchLimit} items from aggregator (target: ${targetCount})`);
+    // Step 4: Fetch enriched items with pagination — skip past duplicates
+    const PAGE_SIZE = 20;
+    const MAX_PAGES = 5;
+    const newItems: ContentItem[] = [];
+    let totalFetched = 0;
+    let duplicateCount = 0;
 
-    const [items, settings] = await Promise.all([
-      getContent({
-        limit: fetchLimit,
+    const settings = await getSettings();
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      console.log(`[agent] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
+
+      const response = await getContent({
+        limit: PAGE_SIZE,
+        page,
         language: brief.language ?? "EN",
         vertical_id: brief.vertical_id,
         category_ids: brief.category_ids,
         tag_ids: tagIds,
-      }),
-      getSettings(),
-    ]);
+      });
 
-    if (items.length === 0) {
+      const pageItems = response.items;
+      totalFetched += pageItems.length;
+
+      if (pageItems.length === 0) break;
+
+      // Deduplicate this page against existing articles
+      for (const item of pageItems) {
+        if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
+        if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
+        newItems.push(item);
+      }
+
+      // Stop if we have enough fresh items or reached the last page
+      const totalPages = response.total_pages ?? 1;
+      if (newItems.length >= targetCount || page >= totalPages) break;
+
+      console.log(
+        `[agent] Page ${page}: found ${newItems.length} new so far ` +
+        `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
+      );
+    }
+
+    if (totalFetched === 0) {
       return {
         siteDomain,
         requested: targetCount,
@@ -683,19 +711,11 @@ export async function runContentGeneration(
       };
     }
 
-    // Step 4: Deduplicate — by URL AND title
-    const newItems = items.filter((item) => {
-      if (existing.urls.has(normalizeUrl(item.url))) return false;
-      if (existing.titles.has(normalizeTitleKey(item.title))) return false;
-      return true;
-    });
-    const duplicateCount = items.length - newItems.length;
-
     if (newItems.length === 0) {
       return {
         siteDomain,
         requested: targetCount,
-        totalSourced: items.length,
+        totalSourced: totalFetched,
         duplicateCount,
         availableNew: 0,
         results: [{ status: "skipped", reason: "all items already processed" }],
@@ -705,7 +725,7 @@ export async function runContentGeneration(
     console.log(
       `[agent] Processing up to ${targetCount} articles for ${siteDomain}` +
       ` from pool of ${newItems.length}` +
-      ` (fetched: ${items.length}, duplicates: ${duplicateCount})`,
+      ` (fetched: ${totalFetched}, duplicates: ${duplicateCount})`,
     );
 
     // Step 5: Process items with concurrency limit, stop at targetCount successes
@@ -721,8 +741,8 @@ export async function runContentGeneration(
     const createdCount = results.filter((r) => r.status === "created").length;
     if (createdCount < targetCount) {
       console.warn(
-        `[agent] Only ${createdCount}/${targetCount} articles created from ${fetchLimit} fetched items. ` +
-        `Returning what we have — not fetching more.`,
+        `[agent] Only ${createdCount}/${targetCount} articles created from ${totalFetched} fetched items. ` +
+        `Returning what we have.`,
       );
     }
 
@@ -753,7 +773,7 @@ export async function runContentGeneration(
     return {
       siteDomain,
       requested: targetCount,
-      totalSourced: items.length,
+      totalSourced: totalFetched,
       duplicateCount,
       availableNew: newItems.length,
       results: cleanResults,
