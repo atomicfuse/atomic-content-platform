@@ -274,7 +274,7 @@ export async function runScheduledPublish(
         siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
       } else if (created === 0 && genErrors.length === 0) {
         siteStatus = "no_content";
-        siteMessage = `All ${genResult.totalSourced} item(s) checked were duplicates (${genResult.duplicateCount} dupes)`;
+        siteMessage = `All ${genResult.results.length} item(s) skipped (duplicates or filtered)`;
       } else if (created < articlesPerDay && genErrors.length > 0) {
         siteStatus = "partial";
         siteMessage = `${genErrors.length} article(s) failed: ${genErrors[0]?.message ?? "unknown"}`;
