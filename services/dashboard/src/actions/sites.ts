@@ -97,9 +97,10 @@ export async function deleteSiteEntry(domain: string): Promise<{
   }
 
   // 4. Remove site from Worker KV (staging + prod) — best-effort
-  // Keys: site:<domain>, site:<custom_domain>, site-config:<siteId>
+  // KV siteId is the domain folder name (e.g. "scienceworld"), NOT the
+  // numeric site_id from dashboard-index ("6603398636894").
   {
-    const siteId = site.site_id ?? domain;
+    const siteId = domain;
     const hostnames = [domain, site.custom_domain].filter(Boolean) as string[];
     const kvKeys = [
       ...hostnames.map((h) => `site:${h.toLowerCase()}`),
