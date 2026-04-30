@@ -2,7 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import { siteLookupKey, siteConfigKey, type SiteLookup } from './lib/kv-schema';
-import { resolvePreview } from './lib/preview-override';
+import { resolvePreview, generatePreviewScript } from './lib/preview-override';
 
 /**
  * Multi-tenant site resolution.
@@ -59,13 +59,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   // Preview override: on workers.dev / localhost ONLY, `?_atl_site=<id>`
-  // (or a previously-set `atl_preview_site` cookie) forces a specific
-  // siteId. Production custom domains never honour this — the hostname
-  // → site mapping in KV is authoritative there.
+  // forces a specific siteId. Production custom domains never honour
+  // this — the hostname → site mapping in KV is authoritative there.
+  //
+  // Preview context is propagated per-tab via an inline script that
+  // rewrites internal links to carry `_atl_site`, not via cookies
+  // (cookies are domain-wide and leak across tabs).
   const preview = resolvePreview({
     hostname,
     searchParams: context.url.searchParams,
-    cookieHeader: context.request.headers.get('cookie'),
   });
 
   let siteId: string;
@@ -100,15 +102,35 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
   const response = await next();
   applyCacheHeaders(context.url.pathname, response);
-  // Persist the preview cookie if the override resolver asked us to.
-  // Preview responses are no-cache anyway (private, no-store gets set
-  // for any path with a query param indirectly — but we make it explicit
-  // here for the override case).
-  if (preview.setCookie) {
-    response.headers.append('set-cookie', preview.setCookie);
-    response.headers.set('cache-control', 'private, no-store');
+
+  // Inject the preview link-rewriting script into HTML responses so
+  // every internal `<a>` carries `_atl_site` — keeps context per-tab.
+  let finalResponse = response;
+  if (preview.siteIdOverride) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const html = await response.text();
+      const script = generatePreviewScript(preview.siteIdOverride);
+      const modifiedHtml = html.replace('</head>', `${script}\n</head>`);
+      finalResponse = new Response(modifiedHtml, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: new Headers(response.headers),
+      });
+    }
+    finalResponse.headers.set('cache-control', 'private, no-store');
   }
-  return response;
+
+  // Emit the legacy cookie deletion if resolvePreview asked for it
+  // (cleans up stale `atl_preview_site` cookies from the old mechanism).
+  if (preview.setCookie) {
+    finalResponse.headers.append('set-cookie', preview.setCookie);
+    if (!preview.siteIdOverride) {
+      finalResponse.headers.set('cache-control', 'private, no-store');
+    }
+  }
+
+  return finalResponse;
 });
 
 /**
