@@ -5,6 +5,7 @@ const TABS = [
   { label: "Network", href: "/settings/network" },
   { label: "Domains", href: "/settings/domains" },
   { label: "General Scheduler", href: "/settings/scheduler" },
+  { label: "Scheduler Log", href: "/settings/scheduler-log" },
   { label: "Email", href: "/settings/email" },
 ] as const;
 
