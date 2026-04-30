@@ -181,7 +181,7 @@ async function createTag(name: string, verticalId?: string): Promise<TagItem> {
     signal: AbortSignal.timeout(15_000),
   });
 
-  if (response.status === 201) {
+  if (response.status === 201 || response.status === 200) {
     return (await response.json()) as TagItem;
   }
 
