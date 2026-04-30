@@ -13,7 +13,8 @@ import {
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
 } from "@/lib/github";
-import { deletePagesProject } from "@/lib/cloudflare";
+import { deletePagesProject, deleteKVEntry } from "@/lib/cloudflare";
+import { KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 
@@ -32,7 +33,8 @@ export async function updateSiteEntry(
  * 1. Delete staging branch (if exists)
  * 2. Delete site files from git (main branch)
  * 3. Delete CF Pages project (if exists)
- * 4. Move to trash in dashboard index
+ * 4. Remove site from Worker KV (staging + prod)
+ * 5. Move to trash in dashboard index
  *
  * Returns a log of what was cleaned up for the UI.
  */
@@ -94,7 +96,45 @@ export async function deleteSiteEntry(domain: string): Promise<{
     }
   }
 
-  // 4. Move to trash in dashboard index
+  // 4. Remove site from Worker KV (staging + prod) — best-effort
+  // Keys: site:<domain>, site:<custom_domain>, site-config:<siteId>
+  {
+    const siteId = site.site_id ?? domain;
+    const hostnames = [domain, site.custom_domain].filter(Boolean) as string[];
+    const kvKeys = [
+      ...hostnames.map((h) => `site:${h.toLowerCase()}`),
+      `site-config:${siteId}`,
+      `article-index:${siteId}`,
+      `sync-status:${siteId}`,
+    ];
+    const namespaces = [
+      { id: KV_NAMESPACE_STAGING, label: "staging" },
+      { id: KV_NAMESPACE_PROD, label: "prod" },
+    ];
+    let kvDeleted = 0;
+    const kvErrors: string[] = [];
+    for (const ns of namespaces) {
+      for (const key of kvKeys) {
+        try {
+          await deleteKVEntry(ns.id, key);
+          kvDeleted++;
+        } catch (err) {
+          kvErrors.push(`${ns.label}/${key}: ${err instanceof Error ? err.message : "Unknown"}`);
+        }
+      }
+    }
+    if (kvErrors.length === 0) {
+      steps.push({ label: `Cleaned ${kvDeleted} Worker KV entries (staging + prod)`, success: true });
+    } else {
+      steps.push({
+        label: `Worker KV cleanup: ${kvDeleted} deleted, ${kvErrors.length} failed`,
+        success: kvErrors.length < kvKeys.length * namespaces.length,
+        error: kvErrors.join("; "),
+      });
+    }
+  }
+
+  // 5. Move to trash in dashboard index
   try {
     await removeSiteFromIndex(domain);
     steps.push({ label: "Moved to trash in dashboard index", success: true });
