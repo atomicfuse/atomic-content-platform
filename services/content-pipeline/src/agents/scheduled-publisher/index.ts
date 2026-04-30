@@ -20,6 +20,8 @@ import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief
 import { runContentGeneration } from "../content-generation/agent.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
+import { writeRunHistory } from "./history.js";
+import type { SiteRunResult, SchedulerRunEntry } from "./history.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -205,7 +207,9 @@ export async function runScheduledPublish(
   );
 
   // 3. Iterate sites
+  const siteResults: SiteRunResult[] = [];
   for (const { domain, branch: preferredBranch } of activeSites) {
+    let articlesPerDay = 0;
     try {
       let brief;
       let writeBranch: string;
@@ -229,7 +233,7 @@ export async function runScheduledPublish(
         continue;
       }
 
-      const articlesPerDay = resolveArticlesPerDay(schedule);
+      articlesPerDay = resolveArticlesPerDay(schedule);
       if (articlesPerDay <= 0) {
         result.skipped.push({ domain, reason: "no publishing schedule" });
         continue;
@@ -251,15 +255,51 @@ export async function runScheduledPublish(
       console.log(
         `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
       );
-      await runContentGeneration(
+      const genResult = await runContentGeneration(
         { siteDomain: domain, count: articlesPerDay, branch: writeBranch },
         config,
       );
       result.triggered.push(domain);
+
+      const created = genResult.results.filter((r) => r.status === "created").length;
+      const genErrors = genResult.results.filter((r) => r.status === "error");
+      let siteStatus: SiteRunResult["status"];
+      let siteMessage: string | undefined;
+
+      if (genResult.totalSourced === 0) {
+        siteStatus = "no_content";
+        siteMessage = "Aggregator returned 0 items for this site's topics";
+      } else if (created === 0 && genErrors.length > 0) {
+        siteStatus = "error";
+        siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
+      } else if (created === 0 && genErrors.length === 0) {
+        siteStatus = "no_content";
+        siteMessage = `All ${genResult.results.length} item(s) skipped (duplicates or filtered)`;
+      } else if (created < articlesPerDay && genErrors.length > 0) {
+        siteStatus = "partial";
+        siteMessage = `${genErrors.length} article(s) failed: ${genErrors[0]?.message ?? "unknown"}`;
+      } else {
+        siteStatus = "success";
+      }
+
+      siteResults.push({
+        domain,
+        status: siteStatus,
+        articlesCreated: created,
+        articlesRequested: articlesPerDay,
+        message: siteMessage,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[scheduled-publisher] Error processing ${domain}:`, message);
       result.errors.push({ domain, error: message });
+      siteResults.push({
+        domain,
+        status: "error",
+        articlesCreated: 0,
+        articlesRequested: articlesPerDay,
+        message,
+      });
     }
   }
 
@@ -267,6 +307,18 @@ export async function runScheduledPublish(
     `[scheduled-publisher] Done: ${result.triggered.length} triggered, ` +
       `${result.skipped.length} skipped, ${result.errors.length} errors`,
   );
+
+  // 4. Persist run history (best-effort, never blocks)
+  if (siteResults.length > 0 || result.skipped.length > 0) {
+    const entry: SchedulerRunEntry = {
+      timestamp: new Date().toISOString(),
+      timezone: schedCfg.timezone,
+      forced: force,
+      sites: siteResults,
+      skipped: result.skipped,
+    };
+    await writeRunHistory(entry, config);
+  }
 
   return result;
 }
