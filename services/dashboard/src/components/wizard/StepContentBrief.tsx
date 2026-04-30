@@ -64,9 +64,12 @@ export function StepContentBrief({
     }
   }, [data.siteName, data.vertical, data.topics.length, didAutoSuggest, onChange]);
 
+  // EC-19: Cap topics at 20.
+  const MAX_TOPICS = 20;
+
   function addTopic(raw: string): void {
     const tag = raw.trim();
-    if (tag && !data.topics.includes(tag)) {
+    if (tag && !data.topics.includes(tag) && data.topics.length < MAX_TOPICS) {
       onChange({ topics: [...data.topics, tag] });
     }
     setTopicInput("");
@@ -230,18 +233,26 @@ export function StepContentBrief({
                 </span>
               ))}
               <input
-                className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-                placeholder={data.topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
+                className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"
+                placeholder={data.topics.length >= MAX_TOPICS ? `Maximum ${MAX_TOPICS} topics` : data.topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
                 value={topicInput}
                 onChange={(e): void => setTopicInput(e.target.value)}
                 onKeyDown={handleTopicKeyDown}
                 onBlur={(): void => { if (topicInput.trim()) addTopic(topicInput); }}
+                disabled={data.topics.length >= MAX_TOPICS}
               />
             </>
           )}
         </div>
         <p className="text-xs text-[var(--text-muted)]">
           Press Enter or comma to add. Backspace to remove last. Topics are auto-suggested by AI.
+          {/* EC-19: Show topic count and cap. */}
+          {data.topics.length >= MAX_TOPICS && (
+            <span className="ml-1 text-amber-400">Maximum {MAX_TOPICS} topics reached.</span>
+          )}
+          {data.topics.length > 0 && data.topics.length < MAX_TOPICS && (
+            <span className="ml-1 tabular-nums">{data.topics.length}/{MAX_TOPICS}</span>
+          )}
         </p>
       </div>
 
@@ -252,9 +263,11 @@ export function StepContentBrief({
           min={1}
           max={10}
           value={data.articlesPerDay}
-          onChange={(e): void =>
-            onChange({ articlesPerDay: parseInt(e.target.value, 10) || 1 })
-          }
+          onChange={(e): void => {
+            // EC-17: Clamp to 1-10 to prevent scheduler abuse.
+            const raw = parseInt(e.target.value, 10) || 1;
+            onChange({ articlesPerDay: Math.max(1, Math.min(10, raw)) });
+          }}
         />
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
@@ -292,11 +305,18 @@ export function StepContentBrief({
         }
       />
 
+      {/* EC-18: Require at least one preferred day. */}
+      {data.preferredDays.length === 0 && (
+        <p className="text-xs text-amber-400">Select at least one preferred day.</p>
+      )}
+
       <div className="flex justify-between pt-4">
         <Button variant="ghost" onClick={onBack}>
           &larr; Back
         </Button>
-        <Button onClick={onNext}>Next &rarr;</Button>
+        <Button onClick={onNext} disabled={data.preferredDays.length === 0}>
+          Next &rarr;
+        </Button>
       </div>
     </div>
   );

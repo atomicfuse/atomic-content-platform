@@ -42,20 +42,23 @@ interface StagingResult {
   siteFolder: string;
 }
 
-/** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)". */
+/** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)".
+ *  Post-2026-04-29: vertical_ids removed from bundle rules. Tier-1 category ID
+ *  is included in category_ids alongside child IDs. */
 async function createBundle(
   name: string,
-  verticalId: string,
-  categoryIds: string[],
+  tier1CategoryId: string,
+  childCategoryIds: string[],
   tagIds: string[],
 ): Promise<{ id: string; name: string } | null> {
+  // Merge tier-1 ID with child category IDs (deduped)
+  const allCategoryIds = [tier1CategoryId, ...childCategoryIds.filter((id) => id !== tier1CategoryId)];
   const payload = {
     name,
     description: `Auto-created content bundle for ${name}`,
     active: true,
     rules: {
-      vertical_ids: [verticalId],
-      category_ids: categoryIds,
+      category_ids: allCategoryIds,
       tag_ids: tagIds,
     },
   };
@@ -164,7 +167,10 @@ export async function createSiteAndBuildStaging(
         : [],
       vertical: data.vertical || undefined,
       vertical_id: data.verticalId || undefined,
-      category_ids: categoryIds.length > 0 ? categoryIds : undefined,
+      // Include tier-1 (vertical) ID in category_ids for aggregator queries
+      category_ids: data.verticalId
+        ? [data.verticalId, ...categoryIds.filter((id) => id !== data.verticalId)]
+        : categoryIds.length > 0 ? categoryIds : undefined,
       tag_ids: tagIds.length > 0 ? tagIds : undefined,
       review_percentage: 5,
       schedule: {
@@ -284,7 +290,30 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   // 6. Create staging branch in git, branched from main.
   const stagingBranch = `staging/${projectName}`;
-  await createBranch(stagingBranch);
+
+  // EC-6: Pre-check — if the branch already exists AND the dashboard-index
+  // has this slug in a completed state, another site owns it.
+  const branchAlreadyExists = await branchExists(stagingBranch);
+  if (branchAlreadyExists) {
+    const preIndex = await readDashboardIndex({ fresh: true });
+    const clash = preIndex.sites.find((s) => s.domain === siteFolder);
+    if (clash && clash.status !== "Staging") {
+      throw new Error(
+        `A site with slug "${projectName}" already exists (status: ${clash.status}). Choose a different slug.`,
+      );
+    }
+    // Otherwise it's a partial failure retry — proceed (EC-1).
+  }
+
+  // EC-1: Idempotent branch creation — catch 422 "Reference already exists"
+  // so a retry after partial failure doesn't crash.
+  try {
+    await createBranch(stagingBranch);
+  } catch (e: unknown) {
+    const status = (e as { status?: number }).status;
+    if (status !== 422) throw e;
+    // Branch already exists — commitSiteFiles will overwrite it.
+  }
 
   // 7. Commit site files to the staging branch via the Git Data API.
   await commitSiteFiles(siteFolder, files, "create site", stagingBranch);
@@ -294,7 +323,24 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   // writes a .build-trigger file via the Contents API to wake up sync-kv,
   // which then seeds CONFIG_KV_STAGING + R2 for the new site.
   // (workflow_dispatch would be cleaner but the token lacks actions:write.)
-  await triggerWorkflowViaPush(stagingBranch, siteFolder);
+  //
+  // EC-3: Retry once after a 2s delay if the trigger push fails (network
+  // timeout, auth glitch). If still failing, log and continue — the preview
+  // poll will time out with a helpful message.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await triggerWorkflowViaPush(stagingBranch, siteFolder);
+      break;
+    } catch (triggerErr) {
+      if (attempt === 0) {
+        console.warn("[wizard] CI trigger attempt 1 failed, retrying in 2s:", triggerErr);
+        await new Promise((r) => setTimeout(r, 2000));
+      } else {
+        console.error("[wizard] CI trigger failed after 2 attempts:", triggerErr);
+        // Non-fatal: sync-kv will run on the next push to the branch.
+      }
+    }
+  }
 
   // 9. Create / update dashboard-index entry. Pages-related fields are
   // null post-migration (kept on the type for backwards compat).
@@ -321,18 +367,36 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     custom_domain: null,
   };
 
-  const index = await readDashboardIndex();
-  const existing = index.sites.find((s) => s.domain === siteFolder);
-  if (existing) {
-    await updateSiteInIndex(siteFolder, {
-      status: "Staging",
-      company: data.company,
-      vertical: data.vertical,
-      staging_branch: stagingBranch,
-      preview_url: previewUrl,
-    });
-  } else {
-    await addSitesToIndex([siteEntry]);
+  // EC-4: Retry index update once on failure. If still failing, surface a
+  // specific message so the user knows files are deployed but the index
+  // needs manual attention.
+  for (let indexAttempt = 0; indexAttempt < 2; indexAttempt++) {
+    try {
+      const index = await readDashboardIndex({ fresh: true });
+      const existing = index.sites.find((s) => s.domain === siteFolder);
+      if (existing) {
+        await updateSiteInIndex(siteFolder, {
+          status: "Staging",
+          company: data.company,
+          vertical: data.vertical,
+          staging_branch: stagingBranch,
+          preview_url: previewUrl,
+        });
+      } else {
+        await addSitesToIndex([siteEntry]);
+      }
+      break;
+    } catch (indexErr) {
+      if (indexAttempt === 0) {
+        console.warn("[wizard] Index update attempt 1 failed, retrying:", indexErr);
+        await new Promise((r) => setTimeout(r, 1000));
+      } else {
+        throw new Error(
+          "Site files deployed but dashboard index update failed. " +
+          "The site will appear after a manual index update or retry.",
+        );
+      }
+    }
   }
 
   revalidatePath("/");
@@ -463,9 +527,21 @@ export async function attachCustomDomain(
   zoneId: string,
 ): Promise<{ success: true }> {
   // --- Step 1: Write to dashboard-index ---
-  const index = await readDashboardIndex();
+  // EC-7: Read fresh (bypass 30s TTL cache) to minimise the race window
+  // where two users attach the same custom domain concurrently.
+  const index = await readDashboardIndex({ fresh: true });
   const site = index.sites.find((s) => s.domain === domain);
   if (!site) throw new Error(`Site ${domain} not found in dashboard index`);
+
+  // EC-7: Check if another site already claims this custom domain.
+  const domainClash = index.sites.find(
+    (s) => s.domain !== domain && s.custom_domain === customDomain,
+  );
+  if (domainClash) {
+    throw new Error(
+      `Custom domain "${customDomain}" is already attached to site "${domainClash.domain}".`,
+    );
+  }
 
   // Dupe-merge: absorb zone_id from a placeholder entry matching the custom domain name.
   // If rollback is needed later, the spliced-out dupe is NOT restored — it will be
@@ -517,15 +593,43 @@ export async function attachCustomDomain(
   // --- Step 3: Seed KV hostname entry ---
   // key: site:<customDomain> → value: { siteId: domain }
   // domain is the dashboard-index domain field (site identifier, e.g. "coolnews-atl")
+  //
+  // EC-5: If KV seed fails, roll back CF registration + index so the domain
+  // doesn't route to the Worker while KV has no site:<hostname> entry (→ 404).
   try {
     await putKVEntry(
       KV_NAMESPACE_PROD,
       `site:${customDomain.toLowerCase()}`,
       JSON.stringify({ siteId: domain }),
     );
-  } catch (err) {
-    // Non-fatal: KV will be seeded on next sync-kv CI run
-    console.warn('[attachCustomDomain] KV seed failed (will self-heal via CI)', err);
+  } catch (kvErr) {
+    console.error('[attachCustomDomain] KV seed failed, rolling back CF + index', kvErr);
+
+    // Best-effort CF deregistration
+    try {
+      await deregisterWorkerCustomDomain(customDomain);
+    } catch (cfErr) {
+      console.error(
+        '[attachCustomDomain] CF deregistration also failed — may need manual cleanup in Cloudflare dashboard',
+        cfErr,
+      );
+    }
+
+    // Revert index
+    site.custom_domain = previousCustomDomain;
+    site.status = previousStatus;
+    site.zone_id = previousZoneId;
+    site.worker_pending_dns = previousPendingDns;
+    site.last_updated = new Date().toISOString();
+    await writeDashboardIndex(
+      index,
+      `dashboard: rollback attach ${customDomain} from ${domain} (KV seed failed)`,
+    );
+
+    throw new Error(
+      `KV seed failed for ${customDomain}. CF registration and index have been rolled back. ` +
+      `Custom domain may need manual cleanup in Cloudflare dashboard.`,
+    );
   }
 
   // --- Step 4: Best-effort email routing (existing) ---
@@ -853,10 +957,18 @@ export async function saveAllStagingEdits(
 
   if (logoBase64) {
     const raw = Buffer.from(logoBase64, "base64");
-    const transparent = await removeBackground(raw);
+    // EC-9: removeBackground can throw on malformed images — use original
+    // image as fallback so the deploy doesn't fail over a cosmetic issue.
+    let processed: Buffer;
+    try {
+      processed = await removeBackground(raw);
+    } catch (bgErr) {
+      console.warn("[wizard] removeBackground failed, using original image:", bgErr);
+      processed = raw;
+    }
     files.push({
       path: `sites/${domain}/assets/logo.png`,
-      content: transparent,
+      content: processed,
     });
   }
 
@@ -880,7 +992,14 @@ export async function uploadStagingLogo(
   if (!site?.staging_branch) throw new Error("No staging branch for this site");
 
   const raw = Buffer.from(base64Data, "base64");
-  const logoBuffer = await removeBackground(raw);
+  // EC-9: Use original image if removeBackground throws.
+  let logoBuffer: Buffer;
+  try {
+    logoBuffer = await removeBackground(raw);
+  } catch (bgErr) {
+    console.warn("[wizard] removeBackground failed, using original image:", bgErr);
+    logoBuffer = raw;
+  }
 
   // Read existing config to update theme references
   const config = await readSiteConfigFromGit(domain, site.staging_branch);
@@ -1090,6 +1209,9 @@ Requirements:
 - Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
 
   try {
+    // EC-8: 15s timeout prevents the entire action from hanging if Gemini
+    // is slow or unresponsive. On timeout, the catch block returns null
+    // (non-fatal — site works fine without a logo).
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
     const response = await fetch(url, {
       method: "POST",
@@ -1098,6 +1220,7 @@ Requirements:
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
       }),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!response.ok) {
@@ -1125,7 +1248,13 @@ Requirements:
     }
 
     const raw = Buffer.from(imagePart.inlineData.data, "base64");
-    return removeBackground(raw);
+    // EC-9: Use original image if removeBackground throws.
+    try {
+      return await removeBackground(raw);
+    } catch (bgErr) {
+      console.warn("[wizard] removeBackground failed, using original image:", bgErr);
+      return raw;
+    }
   } catch (err) {
     console.warn("[wizard] Logo generation error:", err);
     return null;

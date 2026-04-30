@@ -57,8 +57,16 @@ export interface SiteBrief {
     schedule: PublishSchedule;
     /** Content vertical for aggregator API queries. */
     vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
+    /** Content Aggregator vertical ID — preferred over name for API queries. */
+    vertical_id?: string;
+    /** Content Aggregator category IDs — all categories the site targets. */
+    category_ids?: string[];
+    /** Content Aggregator tag IDs — all tags the site targets. */
+    tag_ids?: string[];
     /** Target audience type for aggregator API queries. */
     audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+    /** Content Aggregator audience type IDs — preferred over name for API queries. */
+    audience_type_ids?: string[];
     /** Content language code (ISO 639-1). Defaults to "EN". */
     language?: string;
     /** Minimum quality score (0-100) for auto-publish. Default 75. */

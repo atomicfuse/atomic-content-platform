@@ -27,7 +27,8 @@ describe("buildQueryParams", () => {
   it("maps brief fields to API params", () => {
     const params = buildQueryParams(baseBrief);
 
-    expect(params.vertical_id).toBe("abc123");
+    // Post-2026-04-29: vertical_id maps to category_id (tier-1)
+    expect(params.category_id).toBe("abc123");
     expect(params.audience_type_id).toBe("def456");
     expect(params.language).toBe("EN");
     expect(params.limit).toBe(3);
@@ -54,10 +55,10 @@ describe("buildQueryParams", () => {
     expect(params.limit).toBe(10);
   });
 
-  it("omits vertical_id and audience_type_id when not set in brief", () => {
-    const brief = { ...baseBrief, vertical_id: undefined, audience_type_ids: undefined, audience_type_id: undefined };
+  it("omits category_id and audience_type_id when not set in brief", () => {
+    const brief = { ...baseBrief, vertical_id: undefined, category_ids: undefined, audience_type_ids: undefined, audience_type_id: undefined };
     const params = buildQueryParams(brief);
-    expect(params.vertical_id).toBeUndefined();
+    expect(params.category_id).toBeUndefined();
     expect(params.audience_type_id).toBeUndefined();
   });
 });

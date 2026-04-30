@@ -124,7 +124,7 @@ export function ContentAgentTab({
 
   const { verticals } = useVerticals();
   const { categories } = useCategories(verticalId);
-  const { tags: allTags, loading: tagsLoading, refetch: refetchTags } = useTags(verticalId);
+  const { tags: allTags, loading: tagsLoading, refetch: refetchTags } = useTags();
   const [creatingTag, setCreatingTag] = useState(false);
 
   function toggleCategory(id: string): void {
@@ -152,7 +152,7 @@ export function ContentAgentTab({
       const res = await fetch("/api/tags", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, vertical_id: verticalId || undefined }),
+        body: JSON.stringify({ name }),
       });
       if (res.ok || res.status === 201) {
         const tag = (await res.json()) as { id: string; name: string };
@@ -448,15 +448,15 @@ export function ContentAgentTab({
           Controls which content the aggregator returns for article generation.
         </p>
 
-        {/* Vertical */}
+        {/* Category (tier-1) */}
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Vertical
+            Category
           </label>
           <div className="relative">
             <input
               className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
-              placeholder="Search verticals..."
+              placeholder="Search categories..."
               value={verticalDropdownOpen ? verticalSearch : selectedVerticalName || verticalSearch}
               onChange={(e): void => {
                 setVerticalSearch(e.target.value);
@@ -484,7 +484,7 @@ export function ContentAgentTab({
                   setCategoryFilter("");
                 }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-red-400 transition-colors"
-                title="Clear vertical"
+                title="Clear category"
               >
                 &times;
               </button>
@@ -492,7 +492,7 @@ export function ContentAgentTab({
             {verticalDropdownOpen && (
               <div className="absolute z-10 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg max-h-48 overflow-y-auto">
                 {filteredVerticals.length === 0 ? (
-                  <p className="text-xs text-[var(--text-muted)] px-3 py-2">No verticals found</p>
+                  <p className="text-xs text-[var(--text-muted)] px-3 py-2">No categories found</p>
                 ) : (
                   filteredVerticals.map((v) => (
                     <button
@@ -527,16 +527,16 @@ export function ContentAgentTab({
           </div>
         </div>
 
-        {/* Categories */}
+        {/* Subcategories */}
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Categories
+            Subcategories
             {selectedCategoryIds.length > 0 && (
               <span className="ml-1.5 text-cyan font-mono">({selectedCategoryIds.length})</span>
             )}
           </label>
           {!verticalId ? (
-            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to browse categories.</p>
+            <p className="text-xs text-[var(--text-muted)] py-2">Select a category to browse subcategories.</p>
           ) : (
             <>
               {categories.length > 8 && (
@@ -583,7 +583,7 @@ export function ContentAgentTab({
             )}
           </label>
           {!verticalId ? (
-            <p className="text-xs text-[var(--text-muted)] py-2">Select a vertical to browse tags.</p>
+            <p className="text-xs text-[var(--text-muted)] py-2">Select a category to browse tags.</p>
           ) : (
             <>
               <input
@@ -596,7 +596,7 @@ export function ContentAgentTab({
                 {tagsLoading ? (
                   <p className="text-xs text-[var(--text-muted)] py-1 px-2">Loading tags...</p>
                 ) : filteredTags.length === 0 && !tagSearch.trim() ? (
-                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">No tags found for this vertical</p>
+                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">No tags found</p>
                 ) : (
                   <>
                     {filteredTags.map((tag) => (

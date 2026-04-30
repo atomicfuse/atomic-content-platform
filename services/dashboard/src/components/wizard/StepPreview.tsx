@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { createSiteAndBuildStaging } from "@/actions/wizard";
@@ -47,8 +47,12 @@ export function StepPreview({
   const [deployError, setDeployError] = useState<string | null>(null);
   const [waitingForBuild, setWaitingForBuild] = useState(false);
   const [buildStage, setBuildStage] = useState<string>("");
+  // EC-13: Track timeout so we can show "Check again" instead of a broken preview.
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // EC-12: Synchronous guard against double-click — set before startTransition
+  const deployingRef = useRef(false);
   const { toast } = useToast();
 
   // Cleanup timers on unmount
@@ -60,6 +64,10 @@ export function StepPreview({
   }, []);
 
   function handleBuildStaging(): void {
+    // EC-12: Bail if already deploying (double-click guard).
+    if (deployingRef.current) return;
+    deployingRef.current = true;
+
     setDeployStep(0);
     setDeployError(null);
 
@@ -101,13 +109,19 @@ export function StepPreview({
         const TIMEOUT_MS = 120_000;
 
         let pollInFlight = false;
+        // EC-11: Track consecutive non-404 error responses separately.
+        let consecutiveErrors = 0;
         pollRef.current = setInterval(async () => {
           if (pollInFlight) return;
           pollInFlight = true;
           try {
             try {
               const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
-              if (res.status !== 404) {
+              // EC-11: Only treat 200-299 as "live". Non-404 error codes
+              // (500, 502, etc.) are transient — keep polling instead of
+              // incorrectly declaring the site live.
+              if (res.ok) {
+                consecutiveErrors = 0;
                 if (pollRef.current) {
                   clearInterval(pollRef.current);
                   pollRef.current = null;
@@ -116,6 +130,15 @@ export function StepPreview({
                 setPreviewUrl(pollUrl);
                 toast("Staging site is live!", "success");
                 return;
+              }
+              if (res.status !== 404) {
+                consecutiveErrors++;
+                if (consecutiveErrors >= 5) {
+                  toast("Preview returned an error. The site may still be syncing.", "info");
+                  consecutiveErrors = 0; // reset so we don't spam toasts
+                }
+              } else {
+                consecutiveErrors = 0;
               }
             } catch {
               // network blip — keep polling
@@ -126,8 +149,10 @@ export function StepPreview({
                 pollRef.current = null;
               }
               setWaitingForBuild(false);
-              setPreviewUrl(pollUrl);
-              toast("Sync is taking longer than usual — your preview will be at the link in another minute or so. Refresh after ~1 min.", "info");
+              // EC-13: Do NOT auto-set previewUrl on timeout — the site
+              // isn't confirmed live. Show a helpful message instead.
+              setPollTimedOut(true);
+              toast("KV sync hasn't completed yet. Use 'Check again' or proceed — the preview will become available once sync finishes.", "info");
             }
           } finally {
             pollInFlight = false;
@@ -138,12 +163,50 @@ export function StepPreview({
           clearInterval(stepTimerRef.current);
           stepTimerRef.current = null;
         }
+        // EC-12: Reset guard so the Retry button can fire again.
+        deployingRef.current = false;
         const msg = error instanceof Error ? error.message : "Unknown error";
         setDeployError(msg);
         toast(`Failed to build staging: ${msg}`, "error");
       }
     });
   }
+
+  // EC-13: Re-poll handler for "Check again" button after timeout.
+  const handleCheckAgain = useCallback((): void => {
+    if (!stagingUrl) return;
+    setPollTimedOut(false);
+    setWaitingForBuild(true);
+    setBuildStage("kv-sync");
+
+    const pollUrl = stagingUrl;
+    const startedAt = Date.now();
+    const REPOLL_TIMEOUT_MS = 60_000;
+    let pollInFlight = false;
+
+    pollRef.current = setInterval(async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        try {
+          const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
+          if (res.ok) {
+            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+            setWaitingForBuild(false);
+            setPreviewUrl(pollUrl);
+            toast("Staging site is live!", "success");
+            return;
+          }
+        } catch { /* keep polling */ }
+        if (Date.now() - startedAt > REPOLL_TIMEOUT_MS) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setWaitingForBuild(false);
+          setPollTimedOut(true);
+          toast("Still not ready. You can try again or proceed.", "info");
+        }
+      } finally { pollInFlight = false; }
+    }, 5000);
+  }, [stagingUrl, toast]);
 
   const isDeploying = deployStep >= 0 && !deployError && !stagingUrl;
   const hasDeployed = !!previewUrl;
@@ -242,8 +305,25 @@ export function StepPreview({
         </div>
       )}
 
+      {/* EC-13: Timed out — show "Check again" instead of a broken iframe */}
+      {pollTimedOut && !previewUrl && !waitingForBuild && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-6 space-y-3">
+          <p className="text-sm text-amber-400 font-medium">
+            KV sync hasn&apos;t completed yet. The preview will become available once sync finishes.
+          </p>
+          <div className="flex gap-3">
+            <Button variant="ghost" size="sm" onClick={handleCheckAgain}>
+              Check again
+            </Button>
+            <Button variant="ghost" size="sm" onClick={(): void => { if (stagingUrl) setPreviewUrl(stagingUrl); }}>
+              Show preview anyway
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Initial state — not yet deployed, show Deploy button */}
-      {!previewUrl && !isDeploying && !deployError && !waitingForBuild && (
+      {!previewUrl && !isDeploying && !deployError && !waitingForBuild && !pollTimedOut && (
         <div className="space-y-4">
           <div className="rounded-xl border-2 border-[var(--border-primary)] bg-[var(--bg-elevated)] p-8 text-center space-y-4">
             <div className="w-12 h-12 rounded-xl bg-magenta/10 flex items-center justify-center mx-auto">
@@ -301,7 +381,7 @@ export function StepPreview({
         <Button variant="ghost" onClick={onBack} disabled={isDeploying || waitingForBuild}>
           &larr; Back
         </Button>
-        <Button onClick={onNext} disabled={!previewUrl || isDeploying}>
+        <Button onClick={onNext} disabled={(!previewUrl && !pollTimedOut) || isDeploying}>
           Next &rarr;
         </Button>
       </div>

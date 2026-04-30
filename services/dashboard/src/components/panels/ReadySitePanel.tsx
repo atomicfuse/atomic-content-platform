@@ -46,7 +46,7 @@ export function ReadySitePanel({
           {/* Info grid */}
           <div className="space-y-3">
             <InfoRow label="Company" value={site.company} />
-            <InfoRow label="Vertical" value={site.vertical} />
+            <InfoRow label="Category" value={site.vertical} />
             <InfoRow label="Site ID" value={site.site_id || "—"} />
             <InfoRow label="Exclusivity" value={site.exclusivity ?? "—"} />
             <InfoRow label="GA Info" value={site.ga_info ?? "—"} />

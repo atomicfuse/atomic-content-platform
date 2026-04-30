@@ -71,9 +71,8 @@ export interface GetContentParams {
   status?: string;
   content_type?: string;
   language?: string;
-  /** Content Aggregator vertical ID for filtering. */
-  vertical_id?: string;
-  /** Content Aggregator category IDs for filtering (OR logic). */
+  /** Content Aggregator category IDs for filtering (OR logic).
+   *  Post-2026-04-29: tier-1 (formerly "vertical") IDs go here too. */
   category_ids?: string[];
   /** Content Aggregator tag IDs for filtering (OR logic). */
   tag_ids?: string[];
@@ -98,9 +97,6 @@ export async function getContent(params: GetContentParams): Promise<ContentApiRe
 
   if (params.language) {
     url.searchParams.set("language", params.language);
-  }
-  if (params.vertical_id) {
-    url.searchParams.set("vertical_id", params.vertical_id);
   }
   if (params.category_ids && params.category_ids.length > 0) {
     url.searchParams.set("category_ids", params.category_ids.join(","));
@@ -145,7 +141,6 @@ export async function getContentById(id: string): Promise<ContentItem> {
 interface TagItem {
   id: string;
   name: string;
-  vertical_id?: string;
 }
 
 interface TagListResponse {
@@ -154,15 +149,15 @@ interface TagListResponse {
 }
 
 /**
- * Search for a tag by name within a vertical.
+ * Search for a tag by name.
  * Returns the first exact match (case-insensitive) or undefined.
+ * Post-2026-04-29: vertical_id scoping removed from tag API.
  */
-async function findTag(name: string, verticalId?: string): Promise<TagItem | undefined> {
+async function findTag(name: string): Promise<TagItem | undefined> {
   const baseUrl = getBaseUrl();
   const url = new URL("/api/tags", baseUrl);
   url.searchParams.set("search", name.trim());
   url.searchParams.set("page_size", "20");
-  if (verticalId) url.searchParams.set("vertical_id", verticalId);
 
   const response = await fetchWithRetry(url.toString());
   const body = (await response.json()) as TagListResponse;
@@ -175,11 +170,10 @@ async function findTag(name: string, verticalId?: string): Promise<TagItem | und
  * Create a tag on the aggregator. Returns the created tag.
  * Handles 409 (duplicate) by fetching the existing tag.
  */
-async function createTag(name: string, verticalId?: string): Promise<TagItem> {
+async function createTag(name: string): Promise<TagItem> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}/api/tags`;
   const payload: Record<string, string> = { name: name.trim() };
-  if (verticalId) payload.vertical_id = verticalId;
 
   const response = await fetch(url, {
     method: "POST",
@@ -194,7 +188,7 @@ async function createTag(name: string, verticalId?: string): Promise<TagItem> {
 
   if (response.status === 409) {
     // Duplicate — find the existing one
-    const existing = await findTag(name, verticalId);
+    const existing = await findTag(name);
     if (existing) return existing;
     throw new Error(`Tag "${name}" reported as duplicate but could not be found`);
   }
@@ -209,16 +203,15 @@ async function createTag(name: string, verticalId?: string): Promise<TagItem> {
  */
 export async function resolveTopicTagIds(
   topics: string[],
-  verticalId?: string,
 ): Promise<string[]> {
   const ids: string[] = [];
 
   for (const topic of topics) {
     try {
-      let tag = await findTag(topic, verticalId);
+      let tag = await findTag(topic);
       if (!tag) {
         console.log(`[api-client] Tag "${topic}" not found — creating`);
-        tag = await createTag(topic, verticalId);
+        tag = await createTag(topic);
         console.log(`[api-client] Created tag "${topic}" → ${tag.id}`);
       }
       ids.push(tag.id);

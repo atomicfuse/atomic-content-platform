@@ -60,13 +60,13 @@ export function Filters({
         ))}
       </select>
 
-      {/* Vertical filter */}
+      {/* Category filter */}
       <select
         value={vertical}
         onChange={(e): void => onVerticalChange(e.target.value as Vertical | "")}
         className="px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
       >
-        <option value="">All Verticals</option>
+        <option value="">All Categories</option>
         {verticals.map((v) => (
           <option key={v.id} value={v.name}>{v.name}</option>
         ))}

@@ -344,7 +344,7 @@ export default function SettingsEmailPage(): React.ReactElement {
             <input
               value={siteFilter}
               onChange={(e): void => setSiteFilter(e.target.value)}
-              placeholder="Filter by domain, vertical, or company..."
+              placeholder="Filter by domain, category, or company..."
               className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
             />
             <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)]">

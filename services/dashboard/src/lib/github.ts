@@ -57,10 +57,16 @@ function getOctokit(): Octokit {
 
 const dashboardIndexCache = createTtlCache<DashboardIndex>(30_000);
 
-/** Read and parse dashboard-index.yaml from the network repo. */
-export async function readDashboardIndex(): Promise<DashboardIndex> {
-  const cached = dashboardIndexCache.get();
-  if (cached) return cached;
+/** Read and parse dashboard-index.yaml from the network repo.
+ *  Pass `fresh: true` to bypass the 30s TTL cache (e.g. before a
+ *  uniqueness check that needs real-time data). */
+export async function readDashboardIndex(
+  opts?: { fresh?: boolean },
+): Promise<DashboardIndex> {
+  if (!opts?.fresh) {
+    const cached = dashboardIndexCache.get();
+    if (cached) return cached;
+  }
 
   const octokit = getOctokit();
   try {
