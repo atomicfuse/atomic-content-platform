@@ -3,6 +3,7 @@ import {
   isPreviewableHost,
   parseCookie,
   resolvePreview,
+  generatePreviewScript,
 } from '../preview-override';
 
 describe('isPreviewableHost', () => {
@@ -67,7 +68,6 @@ describe('resolvePreview', () => {
     const r = resolvePreview({
       hostname: prodHost,
       searchParams: new URLSearchParams('_atl_site=scienceworld'),
-      cookieHeader: null,
     });
     expect(r).toEqual({ siteIdOverride: null, setCookie: null });
   });
@@ -76,40 +76,29 @@ describe('resolvePreview', () => {
     const r = resolvePreview({
       hostname: wdHost,
       searchParams: new URLSearchParams('_atl_site=scienceworld'),
-      cookieHeader: null,
     });
     expect(r.siteIdOverride).toBe('scienceworld');
-    expect(r.setCookie).toContain('atl_preview_site=scienceworld');
-    expect(r.setCookie).toContain('Max-Age=3600');
-    expect(r.setCookie).toContain('HttpOnly');
-    expect(r.setCookie).toContain('SameSite=Lax');
+    // Now emits a deletion cookie (legacy cleanup), not a persistence cookie.
+    expect(r.setCookie).toContain('atl_preview_site=;');
+    expect(r.setCookie).toContain('Max-Age=0');
   });
 
-  it('honours cookie when no query param', () => {
+  it('does NOT fall back to cookie (cookie mechanism removed)', () => {
+    // Previously this would use the cookie value. Now it returns no
+    // override — the cookie is no longer read because it caused
+    // cross-tab leakage.
     const r = resolvePreview({
       hostname: wdHost,
       searchParams: new URLSearchParams(),
-      cookieHeader: 'atl_preview_site=scienceworld',
     });
-    expect(r.siteIdOverride).toBe('scienceworld');
-    expect(r.setCookie).toBeNull(); // no need to refresh cookie if already set
-  });
-
-  it('query overrides cookie', () => {
-    const r = resolvePreview({
-      hostname: wdHost,
-      searchParams: new URLSearchParams('_atl_site=other-site'),
-      cookieHeader: 'atl_preview_site=scienceworld',
-    });
-    expect(r.siteIdOverride).toBe('other-site');
-    expect(r.setCookie).toContain('atl_preview_site=other-site');
+    expect(r.siteIdOverride).toBeNull();
+    expect(r.setCookie).toBeNull();
   });
 
   it('?_atl_site=clear emits a deletion cookie + no override', () => {
     const r = resolvePreview({
       hostname: wdHost,
       searchParams: new URLSearchParams('_atl_site=clear'),
-      cookieHeader: 'atl_preview_site=scienceworld',
     });
     expect(r.siteIdOverride).toBeNull();
     expect(r.setCookie).toContain('atl_preview_site=;');
@@ -120,26 +109,42 @@ describe('resolvePreview', () => {
     const r = resolvePreview({
       hostname: wdHost,
       searchParams: new URLSearchParams('_atl_site=../../etc/passwd'),
-      cookieHeader: null,
     });
     expect(r).toEqual({ siteIdOverride: null, setCookie: null });
-  });
-
-  it('rejects malformed cookie value', () => {
-    const r = resolvePreview({
-      hostname: wdHost,
-      searchParams: new URLSearchParams(),
-      cookieHeader: 'atl_preview_site=" OR 1=1',
-    });
-    expect(r.siteIdOverride).toBeNull();
   });
 
   it('localhost is also previewable', () => {
     const r = resolvePreview({
       hostname: 'localhost',
       searchParams: new URLSearchParams('_atl_site=scienceworld'),
-      cookieHeader: null,
     });
     expect(r.siteIdOverride).toBe('scienceworld');
+  });
+});
+
+describe('generatePreviewScript', () => {
+  it('produces a script tag with the siteId embedded', () => {
+    const script = generatePreviewScript('coolnews-atl');
+    expect(script).toContain('<script data-atl-preview>');
+    expect(script).toContain("'coolnews-atl'");
+    expect(script).toContain('</script>');
+  });
+
+  it('escapes single quotes in siteId', () => {
+    const script = generatePreviewScript("site'name");
+    expect(script).toContain("site\\'name");
+    expect(script).not.toContain("site'name'");
+  });
+
+  it('escapes backslashes in siteId', () => {
+    const script = generatePreviewScript('site\\name');
+    expect(script).toContain("site\\\\name");
+  });
+
+  it('sets _atl_site param via click handler', () => {
+    const script = generatePreviewScript('test-site');
+    expect(script).toContain('_atl_site');
+    expect(script).toContain('.closest');
+    expect(script).toContain('addEventListener');
   });
 });
