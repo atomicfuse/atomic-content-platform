@@ -160,7 +160,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   Company
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Vertical
+                  Category
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Status

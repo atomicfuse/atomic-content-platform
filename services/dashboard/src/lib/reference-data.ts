@@ -54,13 +54,12 @@ export interface CategoryItem {
   id: string;
   name: string;
   iab_code: string;
-  vertical_id: string;
+  parent_id: string | null;
 }
 
 export interface TagItem {
   id: string;
   name: string;
-  vertical_id?: string;
   usage_count?: number;
 }
 
@@ -85,38 +84,37 @@ export async function getVerticals(): Promise<VerticalItem[]> {
   return list;
 }
 
-/** Fetch categories for a vertical. No localStorage cache — depends on verticalId param. */
-export async function getCategories(verticalId: string): Promise<CategoryItem[]> {
-  if (!verticalId) return [];
-  const res = await fetch(`/api/categories?vertical_id=${verticalId}`);
+/** Fetch child categories for a tier-1 (parent) category. No localStorage cache — depends on parentId param. */
+export async function getCategories(parentId: string): Promise<CategoryItem[]> {
+  if (!parentId) return [];
+  const res = await fetch(`/api/categories?parent_id=${parentId}`);
   if (!res.ok) return [];
   const data = (await res.json()) as { items?: unknown[] };
   if (!Array.isArray(data.items)) return [];
   return data.items
     .map((d: unknown) => {
-      const obj = d as { id?: string; name?: string; iab_code?: string; vertical_id?: string };
+      const obj = d as { id?: string; name?: string; iab_code?: string; parent_id?: string | null };
       if (obj.id && obj.name) {
-        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", vertical_id: obj.vertical_id ?? "" };
+        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", parent_id: obj.parent_id ?? null };
       }
       return null;
     })
     .filter((x): x is CategoryItem => x !== null);
 }
 
-/** Fetch tags for a vertical. Includes usage_count. */
-export async function getTags(verticalId: string): Promise<TagItem[]> {
-  if (!verticalId) return [];
-  const res = await fetch(`/api/tags?vertical_id=${verticalId}`);
+/** Fetch popular tags. Includes usage_count. No vertical scoping (dropped 2026-04-29). */
+export async function getTags(): Promise<TagItem[]> {
+  const res = await fetch("/api/tags");
   if (!res.ok) return [];
   const data = (await res.json()) as { items?: unknown[] };
   if (!Array.isArray(data.items)) return [];
   return extractTags(data.items);
 }
 
-/** Search tags by name via API. Debounce in the caller. */
-export async function searchTags(verticalId: string, search: string): Promise<TagItem[]> {
-  if (!verticalId || !search.trim()) return [];
-  const qs = new URLSearchParams({ vertical_id: verticalId, search: search.trim(), page_size: "20" });
+/** Search tags by name via API. Debounce in the caller. No vertical scoping (dropped 2026-04-29). */
+export async function searchTags(search: string): Promise<TagItem[]> {
+  if (!search.trim()) return [];
+  const qs = new URLSearchParams({ search: search.trim(), page_size: "20" });
   const res = await fetch(`/api/tags?${qs.toString()}`);
   if (!res.ok) return [];
   const data = (await res.json()) as { items?: unknown[] };
@@ -127,10 +125,9 @@ export async function searchTags(verticalId: string, search: string): Promise<Ta
 function extractTags(items: unknown[]): TagItem[] {
   return items
     .map((d: unknown) => {
-      const obj = d as { id?: string; name?: string; vertical_id?: string; usage_count?: number };
+      const obj = d as { id?: string; name?: string; usage_count?: number };
       if (obj.id && obj.name) {
         const tag: TagItem = { id: obj.id, name: obj.name };
-        if (obj.vertical_id) tag.vertical_id = obj.vertical_id;
         if (obj.usage_count !== undefined) tag.usage_count = obj.usage_count;
         return tag;
       }
@@ -149,7 +146,6 @@ export interface BundleItem {
   description?: string;
   content_count?: number;
   rules: {
-    vertical_ids: string[];
     category_ids: string[];
     tag_ids: string[];
   };
@@ -167,7 +163,7 @@ export async function getBundles(): Promise<BundleItem[]> {
         name?: string;
         description?: string;
         content_count?: number;
-        rules?: { vertical_ids?: string[]; category_ids?: string[]; tag_ids?: string[] };
+        rules?: { category_ids?: string[]; tag_ids?: string[] };
       };
       if (!obj.id || !obj.name) return null;
       const bundle: BundleItem = {
@@ -176,7 +172,6 @@ export async function getBundles(): Promise<BundleItem[]> {
         description: obj.description,
         content_count: obj.content_count,
         rules: {
-          vertical_ids: obj.rules?.vertical_ids ?? [],
           category_ids: obj.rules?.category_ids ?? [],
           tag_ids: obj.rules?.tag_ids ?? [],
         },

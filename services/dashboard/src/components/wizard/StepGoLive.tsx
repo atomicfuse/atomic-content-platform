@@ -39,7 +39,7 @@ export function StepGoLive({
             <p className="font-medium">{data.company}</p>
           </div>
           <div>
-            <p className="text-[var(--text-muted)]">Vertical</p>
+            <p className="text-[var(--text-muted)]">Category</p>
             <p className="font-medium">{data.vertical}</p>
           </div>
           <div>

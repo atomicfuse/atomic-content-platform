@@ -8,9 +8,9 @@ const AGGREGATOR_URL =
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = request.nextUrl;
-    const verticalId = searchParams.get("vertical_id") ?? "";
-    const qs = verticalId
-      ? `?vertical_id=${verticalId}&active=true&page_size=100`
+    const parentId = searchParams.get("parent_id") ?? "";
+    const qs = parentId
+      ? `?parent_id=${parentId}&active=true&page_size=100`
       : "?active=true&page_size=100";
     const res = await fetch(`${AGGREGATOR_URL}/api/categories${qs}`, {
       headers: { Accept: "application/json" },

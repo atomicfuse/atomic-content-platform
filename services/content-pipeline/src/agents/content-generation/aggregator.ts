@@ -34,7 +34,8 @@ export interface AggregatorResponse {
 }
 
 export interface AggregatorQueryParams {
-  vertical_id?: string;
+  /** Post-2026-04-29: tier-1 category ID replaces the old vertical_id filter. */
+  category_id?: string;
   audience_type_id?: string;
   content_format?: string;
   freshness?: string;
@@ -53,15 +54,19 @@ const NEWS_TOPICS = ["news", "breaking", "trending", "politics", "current events
 
 /**
  * Map a site brief to aggregator API query parameters.
- * Uses vertical_id and audience_type_id (Content Aggregator v2 IDs).
+ * Post-2026-04-29: uses category_id (tier-1, was vertical_id) and audience_type_id.
  */
 export function buildQueryParams(brief: SiteBrief, limit?: number): AggregatorQueryParams {
   const params: AggregatorQueryParams = {};
 
+  // vertical_id in site.yaml is now the tier-1 category ID — use it as category_id
   if (brief.vertical_id) {
-    params.vertical_id = brief.vertical_id;
+    params.category_id = brief.vertical_id;
+  } else if (brief.category_ids?.[0]) {
+    // Fall back to the first category_id which is likely the tier-1
+    params.category_id = brief.category_ids[0];
   } else if (brief.vertical) {
-    console.warn(`[aggregator] No vertical_id set, vertical name "${brief.vertical}" cannot be used as query param — omitting`);
+    console.warn(`[aggregator] No vertical_id/category_ids set, vertical name "${brief.vertical}" cannot be used as query param — omitting`);
   }
   // Prefer audience_type_ids array; fall back to legacy singular audience_type_id
   const audienceId = brief.audience_type_ids?.[0] ?? brief.audience_type_id;
@@ -216,10 +221,10 @@ export async function fetchWithFallback(
     params: { ...baseParams, content_format: undefined, freshness: "This week", source_quality: undefined, audience_type_id: undefined },
   });
 
-  // Step 6: minimal — only vertical_id + language + limit
+  // Step 6: minimal — only category_id (tier-1) + language + limit
   paramChain.push({
-    label: "minimal (vertical_id + language only)",
-    params: { vertical_id: baseParams.vertical_id, language: baseParams.language, limit: baseParams.limit },
+    label: "minimal (category_id + language only)",
+    params: { category_id: baseParams.category_id, language: baseParams.language, limit: baseParams.limit },
   });
 
   for (const step of paramChain) {
@@ -248,7 +253,7 @@ export async function fetchWithFallback(
   }
 
   console.log("[aggregator] No articles found after all fallbacks", {
-    vertical_id: baseParams.vertical_id,
+    category_id: baseParams.category_id,
     audience_type_id: baseParams.audience_type_id,
     language: baseParams.language,
   });

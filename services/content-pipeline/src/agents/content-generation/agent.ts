@@ -651,7 +651,7 @@ export async function runContentGeneration(
     let tagIds = brief.tag_ids;
     if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
       console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
-      tagIds = await resolveTopicTagIds(brief.topics, brief.vertical_id);
+      tagIds = await resolveTopicTagIds(brief.topics);
       if (tagIds.length > 0) {
         console.log(`[agent] Resolved ${tagIds.length} tag ID(s): ${tagIds.join(", ")}`);
       }
@@ -669,12 +669,18 @@ export async function runContentGeneration(
     for (let page = 1; page <= MAX_PAGES; page++) {
       console.log(`[agent] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
 
+      // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
+      // into category_ids for the aggregator query.
+      const categoryIds = brief.category_ids ?? [];
+      const mergedCategoryIds = brief.vertical_id
+        ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
+        : categoryIds;
+
       const response = await getContent({
         limit: PAGE_SIZE,
         page,
         language: brief.language ?? "EN",
-        vertical_id: brief.vertical_id,
-        category_ids: brief.category_ids,
+        category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
         tag_ids: tagIds,
       });
 

@@ -45,41 +45,37 @@ export function useVerticals(): { verticals: VerticalItem[]; loading: boolean } 
   return { verticals, loading };
 }
 
-export function useCategories(verticalId: string): { categories: CategoryItem[]; loading: boolean } {
+export function useCategories(parentId: string): { categories: CategoryItem[]; loading: boolean } {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!verticalId) {
+    if (!parentId) {
       setCategories([]);
       return;
     }
     setLoading(true);
-    getCategories(verticalId)
+    getCategories(parentId)
       .then(setCategories)
       .catch(() => setCategories([]))
       .finally(() => setLoading(false));
-  }, [verticalId]);
+  }, [parentId]);
 
   return { categories, loading };
 }
 
-export function useTags(verticalId: string): { tags: TagItem[]; loading: boolean; refetch: () => void } {
+export function useTags(): { tags: TagItem[]; loading: boolean; refetch: () => void } {
   const [tags, setTags] = useState<TagItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    if (!verticalId) {
-      setTags([]);
-      return;
-    }
     setLoading(true);
-    getTags(verticalId)
+    getTags()
       .then(setTags)
       .catch(() => setTags([]))
       .finally(() => setLoading(false));
-  }, [verticalId, tick]);
+  }, [tick]);
 
   function refetch(): void {
     setTick((t) => t + 1);
@@ -90,7 +86,6 @@ export function useTags(verticalId: string): { tags: TagItem[]; loading: boolean
 
 /** Search tags via API with debounce. Only calls when search is non-empty. */
 export function useTagSearch(
-  verticalId: string,
   search: string,
   debounceMs = 300,
 ): { results: TagItem[]; loading: boolean } {
@@ -100,14 +95,14 @@ export function useTagSearch(
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (!search.trim() || !verticalId) {
+    if (!search.trim()) {
       setResults([]);
       setLoading(false);
       return;
     }
     setLoading(true);
     timerRef.current = setTimeout(() => {
-      searchTags(verticalId, search)
+      searchTags(search)
         .then(setResults)
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
@@ -115,7 +110,7 @@ export function useTagSearch(
     return (): void => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [verticalId, search, debounceMs]);
+  }, [search, debounceMs]);
 
   return { results, loading };
 }

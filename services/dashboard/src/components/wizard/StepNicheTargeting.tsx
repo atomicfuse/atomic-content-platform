@@ -39,9 +39,8 @@ export function StepNicheTargeting({
   const [previewCount, setPreviewCount] = useState<number | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Tag search — server-side via API, debounced in the hook
+  // Tag search — server-side via API, debounced in the hook (no vertical scoping post-2026-04-29)
   const { results: tagResults, loading: tagSearchLoading } = useTagSearch(
-    data.verticalId,
     tagSearch,
   );
   const filteredTagResults = tagResults.filter(
@@ -71,6 +70,9 @@ export function StepNicheTargeting({
     (mode === "new" && !!data.verticalId && data.selectedCategories.length >= 1);
 
   // --- Bundle selection ---
+  // Post-2026-04-29: bundles no longer have vertical_ids. Tier-1 category IDs
+  // are mixed into category_ids. Cross-reference with the verticals list
+  // (tier-1 categories) to resolve the vertical for the UI.
   function handleBundleSelect(bundleId: string): void {
     if (!bundleId) {
       onChange({ bundleId: "" });
@@ -78,11 +80,13 @@ export function StepNicheTargeting({
     }
     const bundle = bundles.find((b) => b.id === bundleId);
     if (!bundle) return;
-    const vId = bundle.rules.vertical_ids[0] ?? "";
-    const v = verticals.find((vert) => vert.id === vId);
+    // Find the tier-1 category by matching bundle's category_ids against verticals
+    const verticalIdSet = new Set(verticals.map((v) => v.id));
+    const tier1Id = bundle.rules.category_ids.find((cid) => verticalIdSet.has(cid)) ?? "";
+    const v = verticals.find((vert) => vert.id === tier1Id);
     onChange({
       bundleId: bundle.id,
-      verticalId: vId,
+      verticalId: tier1Id,
       vertical: v?.name ?? "",
       iabVerticalCode: v?.iab_code ?? "",
       selectedCategories: [],
@@ -90,12 +94,12 @@ export function StepNicheTargeting({
     });
   }
 
-  // --- Vertical change (clears selections with confirmation) ---
+  // --- Category (tier-1) change (clears selections with confirmation) ---
   function handleVerticalChange(id: string): void {
     const hasSelections = data.selectedCategories.length > 0 || data.selectedTags.length > 0;
     if (hasSelections && id !== data.verticalId) {
       const confirmed = window.confirm(
-        "Changing the vertical will clear your category and tag selections. Continue?",
+        "Changing the category will clear your subcategory and tag selections. Continue?",
       );
       if (!confirmed) return;
     }
@@ -143,7 +147,7 @@ export function StepNicheTargeting({
       const res = await fetch("/api/tags", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, vertical_id: data.verticalId }),
+        body: JSON.stringify({ name }),
       });
       if (res.status === 201) {
         const created = (await res.json()) as { id: string; name: string };
@@ -164,8 +168,10 @@ export function StepNicheTargeting({
     if (!data.verticalId) return;
     setPreviewLoading(true);
     try {
-      const qs = new URLSearchParams({ vertical_id: data.verticalId });
-      if (categoryIds.length) qs.set("category_ids", categoryIds.join(","));
+      // Include the tier-1 (vertical) ID in category_ids for the query
+      const allCategoryIds = [data.verticalId, ...categoryIds];
+      const qs = new URLSearchParams();
+      if (allCategoryIds.length) qs.set("category_ids", allCategoryIds.join(","));
       if (tagIds.length) qs.set("tag_ids", tagIds.join(","));
       const res = await fetch(`/api/bundles/preview?${qs.toString()}`);
       if (res.ok) {
@@ -275,7 +281,7 @@ export function StepNicheTargeting({
               </div>
               {data.vertical && (
                 <p className="text-xs text-[var(--text-muted)]">
-                  Vertical: {data.vertical}
+                  Category: {data.vertical}
                   {data.iabVerticalCode ? ` (IAB ${data.iabVerticalCode})` : ""}
                 </p>
               )}
@@ -287,15 +293,15 @@ export function StepNicheTargeting({
       {/* === Create New Bundle === */}
       {mode === "new" && (
         <>
-          {/* Vertical — searchable combobox */}
+          {/* Category (tier-1) — searchable combobox */}
           <div ref={verticalRef} className="relative">
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-              Vertical
+              Category
             </label>
             <div className="relative">
               <input
                 type="text"
-                placeholder="Search verticals..."
+                placeholder="Search categories..."
                 value={verticalOpen ? verticalSearch : (data.vertical || verticalSearch)}
                 onFocus={(): void => {
                   setVerticalOpen(true);
@@ -324,7 +330,7 @@ export function StepNicheTargeting({
             {verticalOpen && (
               <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
                 {filteredVerticals.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No verticals found</p>
+                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No categories found</p>
                 ) : (
                   filteredVerticals.map((v) => (
                     <button
@@ -352,19 +358,19 @@ export function StepNicheTargeting({
             )}
             {data.verticalId && data.iabVerticalCode && !verticalOpen && (
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                IAB: {data.vertical} ({data.iabVerticalCode})
+                IAB {data.iabVerticalCode}: {data.vertical}
               </p>
             )}
           </div>
 
-          {/* Categories */}
+          {/* Subcategories */}
           {data.verticalId && (
             <div className="space-y-2">
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                Categories <span className="text-red-400">*</span>
+                Subcategories <span className="text-red-400">*</span>
               </label>
               <Input
-                placeholder="Filter categories..."
+                placeholder="Filter subcategories..."
                 value={categorySearch}
                 onChange={(e): void => setCategorySearch(e.target.value)}
               />
@@ -378,7 +384,7 @@ export function StepNicheTargeting({
                   <p className="text-sm text-[var(--text-muted)] py-2 text-center">Loading...</p>
                 ) : filteredCategories.length === 0 ? (
                   <p className="text-sm text-[var(--text-muted)] py-2 text-center">
-                    No categories found
+                    No subcategories found
                   </p>
                 ) : (
                   filteredCategories.map((cat) => (

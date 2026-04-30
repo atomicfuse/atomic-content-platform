@@ -8,11 +8,9 @@ const AGGREGATOR_URL =
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = request.nextUrl;
-    const verticalId = searchParams.get("vertical_id") ?? "";
     const search = searchParams.get("search") ?? "";
     const pageSize = searchParams.get("page_size") ?? "20";
     const qs = new URLSearchParams({ page_size: pageSize, include_usage: "true" });
-    if (verticalId) qs.set("vertical_id", verticalId);
     if (search) qs.set("search", search);
     const res = await fetch(`${AGGREGATOR_URL}/api/tags?${qs.toString()}`, {
       headers: { Accept: "application/json" },

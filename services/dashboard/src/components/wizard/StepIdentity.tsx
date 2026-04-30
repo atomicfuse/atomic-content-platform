@@ -21,10 +21,18 @@ export function StepIdentity({
   onCancel,
 }: StepIdentityProps): React.ReactElement {
   const { audiences } = useAudiences();
-  const canProceed = data.pagesProjectName && data.siteName;
+  // EC-16: Trim whitespace before checking — "   " is truthy but blank.
+  const canProceed = data.pagesProjectName?.trim() && data.siteName?.trim();
 
   function handleProjectNameChange(value: string): void {
-    const sanitized = value.toLowerCase().replace(/[^a-z0-9-]/g, "");
+    // EC-14: Enforce max length of 63 (DNS label limit / GitHub branch best practice).
+    // EC-15: Collapse consecutive hyphens and strip leading/trailing hyphens.
+    const sanitized = value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 63);
     onChange({ pagesProjectName: sanitized });
   }
 
@@ -38,11 +46,14 @@ export function StepIdentity({
           placeholder="coolnews-dev-v2"
           value={data.pagesProjectName}
           onChange={(e): void => handleProjectNameChange(e.target.value)}
+          maxLength={63}
         />
         <p className="text-xs text-[var(--text-muted)]">
           Used as the network-repo folder name. Creates a staging branch{" "}
           <span className="font-mono text-cyan">staging/{data.pagesProjectName || "your-project"}</span>{" "}
           and a preview on the multi-tenant Worker.
+          {/* EC-14: Character count */}
+          <span className="ml-2 tabular-nums">{data.pagesProjectName.length}/63</span>
         </p>
       </div>
 
@@ -51,6 +62,11 @@ export function StepIdentity({
         placeholder="Cool News"
         value={data.siteName}
         onChange={(e): void => onChange({ siteName: e.target.value })}
+        onBlur={(): void => {
+          // EC-16: Trim whitespace on blur so "   " doesn't persist.
+          const trimmed = data.siteName.trim();
+          if (trimmed !== data.siteName) onChange({ siteName: trimmed });
+        }}
       />
 
       <div className="space-y-1.5">
