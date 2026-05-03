@@ -58,6 +58,43 @@ async function handleRequest(
     return;
   }
 
+  // Active scheduler run — query BullMQ for in-progress state
+  if (req.method === "GET" && req.url === "/scheduler/active-run") {
+    if (!queueInstances) {
+      sendJson(res, 200, { status: "none", message: "Queue not configured" });
+      return;
+    }
+    try {
+      const schedulerRunQueue = queueInstances.schedulerRunQueue;
+      const active = await schedulerRunQueue.getActive();
+      const waiting = await schedulerRunQueue.getWaiting();
+
+      if (active.length === 0 && waiting.length === 0) {
+        sendJson(res, 200, { status: "none" });
+        return;
+      }
+
+      const current = active[0] ?? waiting[0];
+      const generateQueue = queueInstances.generateQueue;
+      const children = await generateQueue.getActive();
+      const completedChildren = await generateQueue.getCompleted(0, 100);
+      const failedChildren = await generateQueue.getFailed(0, 100);
+
+      sendJson(res, 200, {
+        status: "active",
+        runId: current?.data?.runId,
+        total: children.length + completedChildren.length + failedChildren.length,
+        active: children.length,
+        completed: completedChildren.length,
+        failed: failedChildren.length,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
   // Job status — query BullMQ
   if (req.method === "GET" && req.url && req.url.startsWith("/job/")) {
     const jobId = req.url.slice(5);  // "/job/<id>" → "<id>"
