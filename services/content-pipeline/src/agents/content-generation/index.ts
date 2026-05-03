@@ -19,6 +19,8 @@ dotenv.config({ override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
+import { startWorkers } from "../../queue/index.js";
+import type { QueueInstances } from "../../queue/index.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -52,6 +54,29 @@ async function handleRequest(
       const message = err instanceof Error ? err.message : String(err);
       console.error("[server] Scheduled publish error:", message);
       sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
+  // Job status — query BullMQ
+  if (req.method === "GET" && req.url && req.url.startsWith("/job/")) {
+    const jobId = req.url.slice(5);  // "/job/<id>" → "<id>"
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured" });
+      return;
+    }
+    const job = await queueInstances.generateQueue.getJob(jobId);
+    if (!job) {
+      sendJson(res, 404, { status: "error", message: "Job not found" });
+      return;
+    }
+    const state = await job.getState();
+    if (state === "completed") {
+      sendJson(res, 200, { status: "completed", result: job.returnvalue as unknown as Record<string, unknown> });
+    } else if (state === "failed") {
+      sendJson(res, 200, { status: "failed", error: job.failedReason, attempts: job.attemptsMade });
+    } else {
+      sendJson(res, 200, { status: state, attempts: job.attemptsMade });
     }
     return;
   }
@@ -123,6 +148,13 @@ try {
   process.exit(1);
 }
 
+let queueInstances: QueueInstances | undefined;
+if (config.redisUrl) {
+  queueInstances = startWorkers(config.redisUrl);
+} else {
+  console.log("[server] REDIS_URL not set — queue workers disabled (direct execution mode)");
+}
+
 const server = http.createServer((req, res) => {
   handleRequest(req, res, config).catch((err) => {
     console.error("[server] Unhandled error:", err);
@@ -145,3 +177,20 @@ server.listen(config.port, () => {
   console.log(`[server] Aggregator: ${config.contentAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
 });
+
+async function shutdown(signal: string): Promise<void> {
+  console.log(`[server] ${signal} received — shutting down gracefully`);
+  if (queueInstances) {
+    await queueInstances.generateWorker.close();
+    await queueInstances.generateQueueEvents.close();
+    await queueInstances.connection.quit();
+    console.log("[server] Queue workers closed");
+  }
+  server.close(() => {
+    console.log("[server] HTTP server closed");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
