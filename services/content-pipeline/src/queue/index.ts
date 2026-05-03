@@ -9,6 +9,7 @@ import {
   createGenerateQueueEvents,
   createGenerateWorker,
 } from "./content-generation.js";
+import type { AgentConfig } from "../lib/config.js";
 
 export type { GenerateJobData } from "./types.js";
 export { GENERATE_QUEUE, SCHEDULER_RUN_QUEUE, DEFAULT_JOB_OPTIONS } from "./types.js";
@@ -27,12 +28,12 @@ const WORKER_CONCURRENCY = 3;
  * Start all queue workers. Called once at server boot.
  * Returns queue instances for the HTTP server to use (enqueue, job lookup).
  */
-export function startWorkers(redisUrl: string): QueueInstances {
+export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstances {
   const connection = createRedisConnection(redisUrl);
 
   const generateQueue = createGenerateQueue(connection);
   const generateQueueEvents = createGenerateQueueEvents(connection);
-  const generateWorker = createGenerateWorker(connection, WORKER_CONCURRENCY);
+  const generateWorker = createGenerateWorker(connection, WORKER_CONCURRENCY, config);
 
   generateWorker.on("failed", (job, err) => {
     console.error(

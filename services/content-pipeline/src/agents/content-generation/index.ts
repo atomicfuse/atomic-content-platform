@@ -150,7 +150,7 @@ try {
 
 let queueInstances: QueueInstances | undefined;
 if (config.redisUrl) {
-  queueInstances = startWorkers(config.redisUrl);
+  queueInstances = startWorkers(config.redisUrl, config);
 } else {
   console.log("[server] REDIS_URL not set — queue workers disabled (direct execution mode)");
 }
