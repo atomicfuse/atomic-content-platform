@@ -22,6 +22,9 @@ import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
 import { writeRunHistory } from "./history.js";
 import type { SiteRunResult, SchedulerRunEntry } from "./history.js";
+import { createSchedulerFlow, buildRunId } from "../../queue/scheduler-flow.js";
+import type { SchedulerSite } from "../../queue/scheduler-flow.js";
+import type { QueueInstances } from "../../queue/index.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -146,6 +149,46 @@ export function resolveArticlesPerDay(schedule: PublishSchedule): number {
   return Math.max(1, Math.ceil(perWeek / daysCount));
 }
 
+// ---------------------------------------------------------------------------
+// Per-site eligibility check (shared by queue and direct-execution paths)
+// ---------------------------------------------------------------------------
+
+type EligibilityResult =
+  | { kind: "eligible"; branch: string; count: number }
+  | { kind: "skipped"; reason: string };
+
+async function checkSiteEligibility(
+  siteEntry: { domain: string; branch: string },
+  config: AgentConfig,
+  schedCfg: SchedulerConfig,
+): Promise<EligibilityResult> {
+  const octokit = createGitHubClient(config.github);
+  try {
+    const { data, branch: foundBranch } = await readSiteBriefWithFallback(
+      octokit,
+      config.networkRepo,
+      siteEntry.domain,
+      siteEntry.branch,
+    );
+    const schedule = data.brief?.schedule;
+    if (!schedule) return { kind: "skipped", reason: "no publishing schedule" };
+
+    const count = resolveArticlesPerDay(schedule);
+    if (count <= 0) return { kind: "skipped", reason: "no publishing schedule" };
+
+    if (!isTodayPreferredDay(schedule, schedCfg.timezone)) {
+      return {
+        kind: "skipped",
+        reason: `not a preferred day (${(schedule.preferred_days ?? []).join(", ")})`,
+      };
+    }
+
+    return { kind: "eligible", branch: foundBranch, count };
+  } catch {
+    return { kind: "skipped", reason: "no brief configured" };
+  }
+}
+
 /**
  * Main entry point: check all sites and trigger content generation for due sites.
  * When `force` is true, bypass global enabled/hour gating (per-site preferred_days
@@ -154,6 +197,7 @@ export function resolveArticlesPerDay(schedule: PublishSchedule): number {
 export async function runScheduledPublish(
   config: AgentConfig,
   force = false,
+  queueInstances?: QueueInstances,
 ): Promise<ScheduledPublishResult> {
   const result: ScheduledPublishResult = {
     status: "ok",
@@ -205,6 +249,71 @@ export async function runScheduledPublish(
   console.log(
     `[scheduled-publisher] Tick firing${force ? " (forced)" : ""}: checking ${activeSites.length} site(s) in tz=${schedCfg.timezone}`,
   );
+
+  // ---------- Queue path: enqueue as Flow ----------
+  if (queueInstances) {
+    const runId = buildRunId();
+    const eligibleSites: SchedulerSite[] = [];
+    const skippedSites: Array<{ domain: string; reason: string }> = [];
+
+    // Do Layer 2 (per-site) filtering BEFORE enqueuing
+    for (const siteEntry of activeSites) {
+      const outcome = await checkSiteEligibility(siteEntry, config, schedCfg);
+      if (outcome.kind === "eligible") {
+        eligibleSites.push({
+          domain: siteEntry.domain,
+          branch: outcome.branch,
+          count: outcome.count,
+        });
+      } else {
+        skippedSites.push({ domain: siteEntry.domain, reason: outcome.reason });
+      }
+    }
+
+    if (eligibleSites.length === 0) {
+      return {
+        status: "ok",
+        configStatus: result.configStatus,
+        triggered: [],
+        skipped: skippedSites,
+        errors: [],
+      };
+    }
+
+    try {
+      const { enqueued } = await createSchedulerFlow(
+        queueInstances.connection,
+        runId,
+        schedCfg.timezone,
+        force,
+        eligibleSites,
+        skippedSites,
+      );
+
+      console.log(`[scheduler] Enqueued Flow: ${enqueued} site(s), runId=${runId}`);
+      return {
+        status: "ok",
+        configStatus: result.configStatus,
+        triggered: eligibleSites.map((s) => s.domain),
+        skipped: skippedSites,
+        errors: [],
+      };
+    } catch (err) {
+      // flowProducer.add() throws if a job with this jobId already exists
+      // (duplicate cron tick within the same hour). Log and return safely.
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[scheduler] Flow creation failed (likely duplicate): ${message}`);
+      return {
+        status: "ok",
+        configStatus: result.configStatus,
+        triggered: [],
+        skipped: skippedSites,
+        errors: [{ domain: "scheduler", error: message }],
+      };
+    }
+  }
+
+  // ---------- Fallback: direct execution (no queue) ----------
 
   // 3. Iterate sites
   const siteResults: SiteRunResult[] = [];

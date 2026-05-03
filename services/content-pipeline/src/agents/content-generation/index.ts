@@ -48,7 +48,7 @@ async function handleRequest(
     const force = parsed.searchParams.get("force") === "true";
     console.log(`[server] Scheduled publish triggered${force ? " (forced)" : ""}`);
     try {
-      const result = await runScheduledPublish(config, force);
+      const result = await runScheduledPublish(config, force, queueInstances);
       sendJson(res, 200, result as unknown as Record<string, unknown>);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -183,6 +183,9 @@ async function shutdown(signal: string): Promise<void> {
   if (queueInstances) {
     await queueInstances.generateWorker.close();
     await queueInstances.generateQueueEvents.close();
+    await queueInstances.schedulerRunWorker.close();
+    await queueInstances.schedulerRunQueue.close();
+    await queueInstances.flowProducer.close();
     await queueInstances.connection.quit();
     console.log("[server] Queue workers closed");
   }

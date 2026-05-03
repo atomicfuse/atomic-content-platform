@@ -9,6 +9,7 @@ import {
   createGenerateQueueEvents,
   createGenerateWorker,
 } from "./content-generation.js";
+import { setupSchedulerFlow } from "./scheduler-flow.js";
 import type { AgentConfig } from "../lib/config.js";
 
 export type { GenerateJobData } from "./types.js";
@@ -20,6 +21,9 @@ export interface QueueInstances {
   generateQueue: Queue<GenerateJobData, BatchContentGenerationResult>;
   generateQueueEvents: QueueEvents;
   generateWorker: Worker<GenerateJobData, BatchContentGenerationResult>;
+  flowProducer: FlowProducer;
+  schedulerRunWorker: Worker<SchedulerRunData>;
+  schedulerRunQueue: Queue<SchedulerRunData>;
 }
 
 const WORKER_CONCURRENCY = 3;
@@ -47,5 +51,22 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
 
   console.log(`[worker] Content-generation worker started (concurrency: ${WORKER_CONCURRENCY})`);
 
-  return { connection, generateQueue, generateQueueEvents, generateWorker };
+  const { flowProducer, schedulerRunWorker } = setupSchedulerFlow(connection, config);
+
+  const schedulerRunQueue = new Queue<SchedulerRunData>(
+    SCHEDULER_RUN_QUEUE,
+    { connection },
+  );
+
+  console.log("[worker] Scheduler-run worker started");
+
+  return {
+    connection,
+    generateQueue,
+    generateQueueEvents,
+    generateWorker,
+    flowProducer,
+    schedulerRunWorker,
+    schedulerRunQueue,
+  };
 }
