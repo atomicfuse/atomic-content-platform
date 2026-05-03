@@ -22,9 +22,11 @@
     "@anthropic-ai/sdk": "^0.86.1",
     "@cloudgrid-io/ai": "^0.1.1",
     "@octokit/rest": "^21.1.0",
+    "bullmq": "^5.76.5",
     "dotenv": "^16.4.0",
     "fast-xml-parser": "^5.5.9",
     "gray-matter": "^4.0.3",
+    "ioredis": "^5.10.1",
     "node-html-parser": "^7.1.0",
     "openai": "^6.34.0",
     "yaml": "^2.7.0"

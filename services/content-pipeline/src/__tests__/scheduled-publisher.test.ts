@@ -42,15 +42,6 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Minimal successful BatchContentGenerationResult for mocks. */
-function mockGenResult(created = 0, errors = 0, totalSourced = 0, duplicateCount = 0) {
-  const results = [
-    ...Array.from({ length: created }, (_, i) => ({ status: "created" as const, slug: `article-${i}` })),
-    ...Array.from({ length: errors }, () => ({ status: "error" as const, message: "mock error" })),
-  ];
-  return { results, totalSourced: totalSourced || created + errors, duplicateCount };
-}
-
 // Minimal AgentConfig for tests
 function makeConfig(overrides?: Record<string, unknown>) {
   return {
@@ -357,7 +348,7 @@ describe("runScheduledPublish", () => {
       },
       branch: "staging/test.com",
     });
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), false);
     expect(result.triggered).toContain("test.com");
@@ -445,6 +436,21 @@ function makeBriefResponse(
   };
 }
 
+/** Minimal successful generation result for mock returns. */
+function makeGenResult(domain = "site.com", count = 1) {
+  return {
+    siteDomain: domain,
+    requested: count,
+    totalSourced: count,
+    duplicateCount: 0,
+    availableNew: count,
+    results: Array.from({ length: count }, (_, i) => ({
+      status: "created" as const,
+      slug: `article-${i}`,
+    })),
+  };
+}
+
 /** Set up scheduler config (all hours, UTC) and mock sites. */
 function setupAllHoursConfig(): void {
   mockReadFile.mockResolvedValue(ALL_HOURS_CONFIG);
@@ -471,7 +477,7 @@ describe("runScheduledPublish — multi-site integration", () => {
       .mockResolvedValueOnce(makeBriefResponse("beta.com", {
         articles_per_day: 1, preferred_days: [t], preferred_time: "09:00",
       }));
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
     expect(result.triggered).toEqual(["alpha.com", "beta.com"]);
@@ -504,7 +510,7 @@ describe("runScheduledPublish — multi-site integration", () => {
       .mockResolvedValueOnce(makeBriefResponse("skip.com", {
         articles_per_day: 2, preferred_days: [nt], preferred_time: "14:00",
       }));
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), false);
 
@@ -559,7 +565,7 @@ describe("runScheduledPublish — multi-site integration", () => {
       .mockResolvedValueOnce(makeBriefResponse("site2.dev", {
         articles_per_day: 1, preferred_days: ALL_DAYS, preferred_time: "14:00",
       }));
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), false);
 
@@ -594,7 +600,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 1, preferred_days: [t], preferred_time: "14:00",
       }));
     mockRunContentGeneration
-      .mockResolvedValueOnce(mockGenResult(1))
+      .mockResolvedValueOnce(makeGenResult("good.com", 1))
       .mockRejectedValueOnce(new Error("GitHub API rate limited"));
 
     const result = await runScheduledPublish(makeConfig(), false);
@@ -667,7 +673,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 4, preferred_days: [t], preferred_time: "14:00",
       }, "main"),
     );
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -695,7 +701,7 @@ describe("runScheduledPublish — multi-site integration", () => {
       .mockResolvedValueOnce(makeBriefResponse("high.com", {
         articles_per_day: 10, preferred_days: [t], preferred_time: "14:00",
       }));
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -726,7 +732,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         preferred_time: "14:00",
       }),
     );
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -751,7 +757,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 2, preferred_days: [], preferred_time: "14:00",
       }),
     );
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), false);
 
@@ -829,7 +835,7 @@ describe("runScheduledPublish — multi-site integration", () => {
       }));
     mockRunContentGeneration
       .mockRejectedValueOnce(new Error("API down"))
-      .mockResolvedValueOnce(mockGenResult(1));
+      .mockResolvedValueOnce(makeGenResult("second-ok.com", 2));
 
     const result = await runScheduledPublish(makeConfig(), false);
 
@@ -873,7 +879,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 1, preferred_days: [t], preferred_time: "14:00",
       }, "feature/custom-branch.com"),
     );
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -898,7 +904,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 1, preferred_days: [t], preferred_time: "14:00",
       }),
     );
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -949,7 +955,7 @@ describe("runScheduledPublish — multi-site integration", () => {
         preferred_days: [t, "Monday", "Wednesday"],
         preferred_time: "14:00",
       }));
-    mockRunContentGeneration.mockResolvedValue(mockGenResult(1));
+    mockRunContentGeneration.mockResolvedValue(makeGenResult());
 
     const result = await runScheduledPublish(makeConfig(), true);
 
@@ -994,8 +1000,8 @@ describe("runScheduledPublish — multi-site integration", () => {
         articles_per_day: 1, preferred_days: [t], preferred_time: "14:00",
       }));
     mockRunContentGeneration
-      .mockResolvedValueOnce(mockGenResult(1))
-      .mockResolvedValueOnce(mockGenResult(1))
+      .mockResolvedValueOnce(makeGenResult("ok1.com", 1))
+      .mockResolvedValueOnce(makeGenResult("ok2.com", 2))
       .mockRejectedValueOnce(new Error("boom"));
 
     const result = await runScheduledPublish(makeConfig(), false);
