@@ -186,6 +186,77 @@ describe("processGenerateJob", () => {
     // Zero results = agent completed normally, not a failure
   });
 
+  // ---------------------------------------------------------------------------
+  // Edge cases
+  // ---------------------------------------------------------------------------
+
+  it("returns normally when all results are 'skipped' (no created, no error)", async () => {
+    // All articles are duplicates → status "skipped", not "error".
+    // Since there are zero "error" results, the throw guard (created === 0 && results.length > 0)
+    // fires. But "skipped" articles aren't failures — this tests the guard behavior.
+    const mockResult = {
+      siteDomain: "test.com",
+      requested: 3,
+      totalSourced: 5,
+      duplicateCount: 5,
+      availableNew: 0,
+      results: [
+        { status: "skipped", slug: "dup-1", reason: "duplicate" },
+        { status: "skipped", slug: "dup-2", reason: "duplicate" },
+      ],
+    };
+    mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
+    mockRunContentGeneration.mockResolvedValue(mockResult);
+
+    // The guard `created === 0 && results.length > 0` triggers because
+    // "skipped" is neither "created" nor "error". This IS a throw case
+    // because BullMQ should retry — maybe the duplicates clear next attempt.
+    await expect(processGenerateJob(makeJob(), config)).rejects.toThrow(
+      /All 2 articles failed/,
+    );
+  });
+
+  it("returns normally when results is empty but totalSourced > 0", async () => {
+    // Agent sourced items but filtered all out (quality too low, etc.)
+    // Empty results array → no created, but also results.length === 0 → no throw.
+    const mockResult = {
+      siteDomain: "test.com",
+      requested: 3,
+      totalSourced: 10,
+      duplicateCount: 10,
+      availableNew: 0,
+      results: [],
+    };
+    mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
+    mockRunContentGeneration.mockResolvedValue(mockResult);
+
+    const result = await processGenerateJob(makeJob(), config);
+    expect(result).toBe(mockResult);
+  });
+
+  it("returns result when 1 error among many successes (partial success)", async () => {
+    const mockResult = {
+      siteDomain: "test.com",
+      requested: 5,
+      totalSourced: 10,
+      duplicateCount: 0,
+      availableNew: 10,
+      results: [
+        { status: "created", slug: "a1" },
+        { status: "created", slug: "a2" },
+        { status: "created", slug: "a3" },
+        { status: "created", slug: "a4" },
+        { status: "error", message: "LLM timeout" },
+      ],
+    };
+    mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
+    mockRunContentGeneration.mockResolvedValue(mockResult);
+
+    const result = await processGenerateJob(makeJob(), config);
+    expect(result).toBe(mockResult);
+    // 4 created > 0 → no throw, even though 1 failed
+  });
+
   it("passes correct params to runContentGeneration", async () => {
     mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
     mockRunContentGeneration.mockResolvedValue({

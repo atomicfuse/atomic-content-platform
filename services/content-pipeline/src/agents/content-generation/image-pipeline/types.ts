@@ -17,6 +17,26 @@ export interface ImageGenerationResult {
   data: Buffer;
   /** Alt text for accessibility + SEO. */
   altText: string;
-  /** DALL-E prompt used for generation (for debugging). */
+  /** Prompt used for generation (for debugging). */
   prompt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Three-tier image generation ladder types
+// ---------------------------------------------------------------------------
+
+/** Result of a single image-generation attempt (Gemini or OpenAI). */
+export type ImageGenAttempt =
+  | { ok: true; data: Buffer }
+  | { ok: false; retriable: boolean; reason: string };
+
+/** Log entry for a single provider attempt within the ladder. */
+export interface ImageLadderAttemptLog {
+  provider: "gemini" | "openai";
+  reason: string;
+}
+
+/** Result of the three-tier image generation ladder. */
+export type ImageLadderResult =
+  | { ok: true; result: ImageGenerationResult }
+  | { ok: false; reason: "image_gen_exhausted"; attempts: ImageLadderAttemptLog[] };

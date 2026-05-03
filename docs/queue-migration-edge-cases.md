@@ -1,0 +1,76 @@
+# Queue Migration — Edge Cases Test Plan
+
+Covers edge cases for the BullMQ queue migration not exercised by existing tests.
+
+## Edge Cases
+
+### 1. processGenerateJob: all results are "skipped" (no created, no error)
+All articles come back as "skipped" (duplicates). `results.length > 0` but zero created, zero errors. Should NOT throw — this is normal completion (not a retry scenario).
+
+### 2. processGenerateJob: runContentGeneration returns empty results array
+`results: []` with `totalSourced > 0`. Agent sourced items but produced zero output (e.g., all filtered by quality). Should return normally.
+
+### 3. processGenerateJob: single error among many successes
+1 error + 4 created. Partial success should return result (not throw).
+
+### 4. processSchedulerRun: getChildrenValues returns empty object
+No children completed (all failed permanently). All domains in `enqueuedDomains` should appear as errors in history.
+
+### 5. processSchedulerRun: child result has null values in getChildrenValues
+BullMQ can return null for a child key. The processor should skip nulls gracefully.
+
+### 6. processSchedulerRun: history file has malformed JSON
+`readFile` returns garbage. Should start with empty history (not crash).
+
+### 7. processSchedulerRun: history append respects MAX_ENTRIES cap
+When existing history has 50 entries, new entry prepends and oldest is dropped.
+
+### 8. processSchedulerRun: commitFile fails (GitHub API error)
+History write fails. The error should propagate (parent job fails), but the run data is not lost (BullMQ retries the parent).
+
+### 9. createSchedulerFlow: zero sites (all filtered)
+Should still call flowProducer.add with empty children array.
+
+### 10. createSchedulerFlow: forced flag propagates correctly
+`forced: true` should set `triggeredBy: "scheduled-forced"` on children.
+
+### 11. processSchedulerRun: mixed status classification
+Child returns: some created, some errors, created < requested. Should map to "partial" status.
+
+### 12. processSchedulerRun: child with all duplicates (0 created, 0 errors, totalSourced > 0)
+Should map to "no_content" status with duplicates message.
+
+### 13. buildRunId: determinism within same hour
+Two calls within same hour produce identical IDs.
+
+## Image Generation Ladder — Edge Cases
+
+### 14. Gemini succeeds on first attempt
+Tier A attempt 1 returns `{ ok: true }`. OpenAI never called. Article created with image.
+
+### 15. Gemini fails (transient), succeeds on retry
+Tier A attempt 1 returns `{ ok: false, retriable: true }` (5xx/429/timeout). Attempt 2 succeeds. OpenAI never called.
+
+### 16. Gemini fails (permanent), falls through to OpenAI
+Tier A attempt 1 returns `{ ok: false, retriable: false }` (4xx/content policy). No retry. Tier B (OpenAI) succeeds.
+
+### 17. Gemini exhausted (2 transient failures), OpenAI succeeds
+Both Gemini attempts fail with retriable errors. OpenAI gpt-image-1 fallback succeeds.
+
+### 18. Both providers fail → image_gen_exhausted
+Gemini (2 attempts) + OpenAI (1 attempt) all fail. Returns `{ status: "error", reason: "image_gen_exhausted" }`. processWithConcurrency picks next source URL.
+
+### 19. Missing GEMINI_API_KEY → skips to OpenAI
+No Gemini key configured. Tier A skipped, logs `api_key_not_configured`. Tier B (OpenAI) handles image generation.
+
+### 20. Missing OPENAI_API_KEY → Gemini only, exhausted on failure
+No OpenAI key. After Gemini fails, Tier B skipped with `api_key_not_configured`. Returns exhausted.
+
+### 21. Both API keys missing → immediate exhausted
+Both tiers skipped. Returns exhausted with `[gemini:api_key_not_configured, openai:api_key_not_configured]`.
+
+### 22. OpenAI prompt omits reference image context
+Gemini gets `hasReference=true` prompt when thumbnail available. OpenAI always gets `hasReference=false` prompt (text-only API, no reference image support).
+
+### 23. Image failure doesn't block other articles in batch
+Article fails due to `image_gen_exhausted` → returns `{ status: "error" }`. processWithConcurrency continues launching from the source pool. Other articles unaffected.

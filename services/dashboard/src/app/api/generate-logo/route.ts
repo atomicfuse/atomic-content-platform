@@ -83,15 +83,16 @@ function buildLogoPrompt(
   vertical: string,
   audience?: string
 ): string {
-  return `Create a modern, professional logo icon for a website called "${siteName}".
+  return `Create a modern, professional logo for a website called "${siteName}".
 The website is in the "${vertical}" vertical${audience ? ` targeting ${audience}` : ""}.
 
 Requirements:
-- Simple, clean icon/symbol design (NOT text-heavy)
-- Works well at small sizes (favicon, header icon)
+- Logo must include both an icon/symbol AND the site name "${siteName}" written beside it (horizontal layout: icon on the left, site name text on the right)
+- The site name text must be clearly legible, modern sans-serif font, white or light colored
+- Simple, clean icon/symbol design paired with the site name
+- Works well in a website header
 - Modern flat design style with vibrant colors
-- Square aspect ratio
-- No text or letters in the logo — pure icon/symbol only
+- Wide/landscape aspect ratio (roughly 3:1 or 4:1 to fit icon + text side by side)
 - Professional quality suitable for a content website
 - Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
 }
