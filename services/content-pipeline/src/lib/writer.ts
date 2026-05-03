@@ -3,6 +3,8 @@ import { join, dirname } from "node:path";
 import { createGitHubClient, commitFile, commitBatch, parseRepo } from "./github.js";
 import type { GitHubConfig, BatchFileEntry, BatchBinaryEntry } from "./github.js";
 
+export type { BatchFileEntry };
+
 export interface WriterConfig {
   localNetworkPath: string | undefined;
   github: GitHubConfig;
@@ -109,14 +111,18 @@ export interface PendingAsset {
 /**
  * Write multiple articles (and optional assets) in a SINGLE git commit.
  * Falls back to individual writes in local mode.
+ *
+ * `extraFiles` allows including additional text files (e.g. dedup-index.json)
+ * in the same atomic commit.
  */
 export async function writeArticleBatch(
   config: WriterConfig,
   articles: PendingArticle[],
   assets: PendingAsset[],
   commitMessage: string,
+  extraFiles?: BatchFileEntry[],
 ): Promise<void> {
-  if (articles.length === 0 && assets.length === 0) return;
+  if (articles.length === 0 && assets.length === 0 && (!extraFiles || extraFiles.length === 0)) return;
 
   // Local mode: write each file individually (no git commit needed)
   if (shouldWriteLocal(config)) {
@@ -131,14 +137,22 @@ export async function writeArticleBatch(
       await mkdir(dirname(filePath), { recursive: true });
       await writeFile(filePath, asset.data);
     }
+    for (const ef of extraFiles ?? []) {
+      const filePath = join(config.localNetworkPath!, ef.path);
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, ef.content, "utf-8");
+    }
     return;
   }
 
   // GitHub mode: single commit via Git Trees API
-  const textFiles: BatchFileEntry[] = articles.map((a) => ({
-    path: `sites/${a.siteDomain}/articles/${a.slug}.md`,
-    content: a.content,
-  }));
+  const textFiles: BatchFileEntry[] = [
+    ...articles.map((a) => ({
+      path: `sites/${a.siteDomain}/articles/${a.slug}.md`,
+      content: a.content,
+    })),
+    ...(extraFiles ?? []),
+  ];
 
   const binaryFiles: BatchBinaryEntry[] = assets.map((a) => ({
     path: `sites/${a.siteDomain}/${a.assetPath}`,

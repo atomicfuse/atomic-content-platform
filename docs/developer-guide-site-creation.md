@@ -8,13 +8,14 @@
 
 The end-to-end path from "user clicks + New Site" to "live preview iframe in the wizard." Includes:
 
+- **Architecture** — the two-repo / two-flow split between code (Astro app) and data (network YAML), and how the Worker bridges them
+- **Sync vs async** — the three operational layers (browser UX, server action, CI + polling) and why each is shaped the way it is
 - The 7 wizard steps (which are pure UI / which fire backend work)
 - The single server action that does ~95% of the heavy lifting
 - All the GitHub + Cloudflare API helpers it calls
-- What runs async in the background (CI workflow, KV propagation)
 - The post-wizard steps that take a site to production
 
-Read this top-to-bottom on your first pass. After that, use it as a lookup — every section has the file path so you can jump straight to the code.
+Read this top-to-bottom on your first pass — the order matters. **Architecture** before **sync/async** before the code walk-through. After that, use it as a lookup — every section has the file path so you can jump straight to the code.
 
 ---
 
@@ -43,6 +44,272 @@ After wizard (separate user actions on Site Detail page):
 - attachCustomDomain  →  CF API ───►  Worker custom domain registered + DNS auto-created
 - goLive              →  git: merge staging → main  ────►  sync-kv.yml fires on main  ───►  KV prod + R2 prod
 ```
+
+---
+
+## Architecture — Astro, Git, and the Worker
+
+> Read this BEFORE Part 0. The async model only makes sense once you've internalized the two-repo / two-flow split below.
+
+### The single most important insight
+
+There are **two separate things** that both happen to live in git, and most newcomers confuse them:
+
+```
+┌─────────────────────────────────────┐         ┌─────────────────────────────────────┐
+│  CODE (the engine)                  │         │  DATA (what the engine renders)     │
+│                                     │         │                                     │
+│  Repo: atomic-content-platform      │         │  Repo: atomic-labs-network          │
+│  Path: packages/site-worker/        │         │  Path: sites/, org.yaml, groups/    │
+│                                     │         │                                     │
+│  This is the Astro app.             │         │  This is YAML + Markdown content.   │
+│                                     │         │                                     │
+│  Build: `pnpm build` (Astro compiles)│        │  Build: NONE — it's just data       │
+│  Deploy: `pnpm deploy:production`   │         │  "Deploy": sync-kv.yml writes to KV │
+│  Frequency: weekly-ish (devs)       │         │  Frequency: daily (editors)         │
+└─────────────────────────────────────┘         └─────────────────────────────────────┘
+                  │                                                 │
+                  │ deploys to                                      │ writes to
+                  ▼                                                 ▼
+        ┌─────────────────────┐                            ┌─────────────────────┐
+        │  Cloudflare Worker  │ ◄──── reads at request ──── │  Cloudflare KV + R2 │
+        │  atomic-site-worker │                            │                     │
+        └─────────────────────┘                            └─────────────────────┘
+                  │
+                  │ serves
+                  ▼
+              The user
+```
+
+**The wizard creates DATA, not CODE.** It commits `site.yaml` to the network repo. It doesn't touch the Astro app, doesn't trigger a build, doesn't redeploy the Worker. The same Worker that's already running picks up the new site on the next request because it reads everything from KV.
+
+That's why a new site is live in ~60 seconds without a build step.
+
+### What Astro actually does
+
+Astro is the framework that builds the Worker. It runs **once at build time** to produce the `_worker.js` file that Cloudflare runs. After that, the Astro framework is "compiled away" — Cloudflare just runs the JavaScript output.
+
+#### Build time (`pnpm build` in `packages/site-worker/`)
+
+```
+         ┌──────────────────────────────────────┐
+INPUT:   │  packages/site-worker/src/           │
+         │  ├── pages/                          │
+         │  │   ├── index.astro      ← homepage │
+         │  │   ├── [slug]/          ← article  │
+         │  │   ├── [siteId]/assets/ ← R2 route │
+         │  │   ├── api/             ← /_ping   │
+         │  │   └── category/                   │
+         │  ├── middleware.ts        ← runs on  │
+         │  ├── layouts/                  every │
+         │  ├── components/              request│
+         │  ├── themes/modern/                  │
+         │  └── lib/                            │
+         └──────────────────────────────────────┘
+                          │
+                          ▼  astro build
+                          │  (compiles .astro → JS,
+                          │   bundles, minifies)
+                          ▼
+         ┌──────────────────────────────────────┐
+OUTPUT:  │  dist/                                │
+         │  ├── server/                          │
+         │  │   ├── _worker.js   ← THE bundle    │
+         │  │   │                  Cloudflare    │
+         │  │   │                  runs this     │
+         │  │   ├── wrangler.json                │
+         │  │   ├── wrangler.staging.json        │
+         │  │   └── wrangler.production.json     │
+         │  └── client/                          │
+         │      ├── _astro/      ← hashed CSS/JS │
+         │      ├── mock-ad-fill.js              │
+         │      └── placeholder.svg              │
+         └──────────────────────────────────────┘
+```
+
+Then the post-build script `emit-env-configs.ts` reads `wrangler.json` and produces per-env variants with the right KV namespace IDs, R2 bucket names, and custom-domain routes baked in.
+
+#### Deploy time (`wrangler deploy`)
+
+```
+     dist/server/_worker.js  ─┐
+     dist/server/wrangler.   │  wrangler deploy
+       production.json       │  ─────────────►   Cloudflare API
+     dist/client/* (assets) ─┘                  uploads code + config
+                                                + claims any custom_domain
+                                                routes in the wrangler.json
+```
+
+After this, the new code is running globally on Cloudflare's edge. **The Worker now handles every request** for `coolnews.dev/*` (and any other custom domains in the routes config) until the next deploy.
+
+#### Request time — runtime
+
+Astro is in `output: 'server'` mode (`astro.config.mjs`), so **every page renders fresh on every request**. There are no pre-built per-site HTML files anywhere.
+
+```
+   GET coolnews.dev/some-article          ◄──── browser
+                │
+                ▼
+   Cloudflare edge (closest POP)
+                │
+                ▼
+   Worker startup (cold ~30ms, warm ~0ms)
+                │
+                ▼
+   ┌────────────────────────────────────────────────────────────────┐
+   │  src/middleware.ts                                             │
+   │  ───────────────                                               │
+   │   1. Check if /_ping → respond "ok" + bail                     │
+   │   2. Check if path matches /<siteId>/assets/* → R2 endpoint    │
+   │   3. Read KV: site:coolnews.dev → {siteId: "coolnews-atl"}     │
+   │   4. Read KV: site-config:coolnews-atl → ResolvedConfig object │
+   │   5. Set Astro.locals.site = { siteId, hostname, config }      │
+   │   6. Pass to next() ──────────────────────────────────────────►│
+   │                                                                │
+   │  src/pages/[slug]/index.astro    (or index.astro for /)        │
+   │  ──────────────────────────                                    │
+   │   const config = getConfig(Astro);  // from locals             │
+   │   const siteId = getSiteId(Astro);                             │
+   │                                                                │
+   │   // KV read: pull the article body                            │
+   │   const article = await env.CONFIG_KV.get(                     │
+   │     `article:${siteId}:${slug}`, 'json');                      │
+   │                                                                │
+   │   // Astro renders the .astro template into HTML               │
+   │   return <BaseLayout>...                                       │
+   │                                                                │
+   │  middleware post-handler                                       │
+   │  ──────────────────────                                        │
+   │   apply cache-control header per route class                   │
+   │   set preview cookie if applicable                             │
+   └────────────────────────────────────────────────────────────────┘
+                │
+                ▼
+   HTML response back to browser
+```
+
+**Notice what's NOT happening:**
+- No file system reads (it's a Worker, no disk)
+- No git access (Worker doesn't know git exists)
+- No build (the build happened weeks ago, possibly)
+- No per-site code path (the same `[slug].astro` handles every site's article pages)
+
+The only thing that's per-site is the **data in KV**, which the Astro components read at render time.
+
+### Concrete: what's inside an Astro page
+
+The homepage (`src/pages/index.astro`) — actual code:
+
+```astro
+---
+export const prerender = false;  // SSR every request, never pre-build
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { env } from 'cloudflare:workers';     // ← Cloudflare runtime
+import { getConfig, getSiteId } from '../lib/config';
+import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
+
+// These come from middleware via Astro.locals
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+
+// Pull article list from KV. This is the runtime read.
+const allArticles =
+  (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+
+const visible = allArticles
+  .filter((a) => isVisibleArticle(a.status))
+  .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
+---
+
+<BaseLayout config={config}>
+  <Header config={config} />
+  <HeroGrid articles={visible.slice(0, 4)} />
+  <ArticleFeed articles={visible} />
+  <Footer config={config} />
+</BaseLayout>
+```
+
+**Three things to notice:**
+
+1. `prerender = false` — tells Astro "don't pre-build this page, render it for every request."
+2. `env.CONFIG_KV.get(...)` — that's a Cloudflare KV read. It's the only "I/O" in the page.
+3. `<BaseLayout config={config}>` — Astro components compose the page. The components are compiled into JS at build time; they're NOT re-fetched per request. Only the data is.
+
+### Why creating a site doesn't redeploy the Worker
+
+When the wizard runs:
+
+| Step | What changes | Does the Worker need redeploying? |
+|---|---|---|
+| `createBranch staging/<slug>` | New git branch in network repo | No |
+| `commitSiteFiles` (site.yaml, logo, ...) | New files in network repo | No |
+| `triggerWorkflowViaPush` | sync-kv.yml fires | No |
+| `seed-kv.ts` runs in CI | New KV keys + R2 objects | No |
+| Worker handles next request to that hostname | Reads new KV keys | No (reads on every request anyway) |
+| `attachCustomDomain` | CF runtime route added | Technically no, BUT see [the known drift bug](#-known-gap-source-of-truth-drift) — next code-deploy may strip the route if not added to `emit-env-configs.ts` |
+
+Compare to the legacy Pages flow we retired in Phase 8: every site change triggered a full Astro build + Pages deploy per site. 50 sites = 50 builds. New article in site X = rebuild site X. **All gone.**
+
+### When you DO need to redeploy the Worker
+
+Three scenarios, all developer-facing (not editorial):
+
+1. **You changed Astro page code.** Edited `src/pages/index.astro` to change the homepage layout, added a new component, changed middleware logic. → `pnpm deploy:production`.
+2. **You changed the data shape.** Added a new field to `ResolvedConfig` that pages read. → both update `shared-types` AND redeploy the Worker so it knows about the new field.
+3. **You added a new custom domain via `attachCustomDomain`.** Currently the runtime API call works immediately, but `emit-env-configs.ts` doesn't know — next deploy may strip the domain. So for now: also commit the route to `emit-env-configs.ts` and redeploy. (See the [known drift bug](#-known-gap-source-of-truth-drift) in Part 5.)
+
+For everything else — new site, new article, edited config, new theme color — **no redeploy needed.** That's the architecture working as designed.
+
+### File map: Astro app vs. data
+
+```
+atomic-content-platform/                 ← THE CODE
+└── packages/site-worker/
+    ├── astro.config.mjs                 Astro framework config (output: 'server')
+    ├── wrangler.toml                    Cloudflare bindings (KV/R2/routes)
+    ├── src/
+    │   ├── middleware.ts                Runs on every request: hostname → KV → config
+    │   ├── pages/
+    │   │   ├── index.astro              Homepage (per-request SSR)
+    │   │   ├── [slug]/index.astro       Article page (per-request SSR)
+    │   │   ├── [siteId]/assets/[...].ts R2 asset endpoint
+    │   │   ├── api/_ping.ts             Health check
+    │   │   └── category/[topic]/        Category pages
+    │   ├── layouts/                     BaseLayout, ArticleLayout, etc.
+    │   ├── components/                  AdSlot, SEOHead, etc.
+    │   ├── themes/modern/               Theme components (Header, Footer, HeroGrid)
+    │   ├── lib/
+    │   │   ├── kv-schema.ts             KV key naming convention
+    │   │   ├── config.ts                Astro.locals helpers
+    │   │   └── preview-override.ts      ?_atl_site= handling
+    │   └── shared-pages/                about.md, privacy.md templates
+    └── scripts/
+        ├── seed-kv.ts                   Reads network repo → writes KV/R2 (run by CI)
+        └── emit-env-configs.ts          Post-build: per-env wrangler.json
+
+atomic-labs-network/                     ← THE DATA
+├── org.yaml                             Network-wide defaults (tracking, ads, theme)
+├── groups/<id>.yaml                     Group config layers
+├── overrides/config/<id>.yaml           Targeted exception layers
+├── sites/
+│   └── <slug>/
+│       ├── site.yaml                    Per-site config (created by wizard)
+│       ├── articles/<slug>.md           Articles (created by content-pipeline)
+│       └── assets/<file>                Images (uploaded by wizard / pipeline)
+├── dashboard-index.yaml                 Master site list
+└── .github/workflows/sync-kv.yml        CI that bridges DATA → KV/R2
+```
+
+When you're debugging:
+- "The site is showing wrong content / no article" → look in DATA (KV, network repo).
+- "The site layout is broken / missing component" → look in CODE (Astro pages, deployed Worker).
+- "New site missing from dashboard" → look at DATA (`dashboard-index.yaml`).
+- "Site looks weird in production but fine in `pnpm dev`" → mismatch between deployed Worker and current code — check what's deployed (`wrangler deployments list`).
+
+### Summary in one sentence
+
+**The Worker is a pre-built Astro app that reads per-request data from KV; the wizard adds data to KV; that's why creating sites doesn't need a build.**
 
 ---
 

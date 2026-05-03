@@ -18,10 +18,11 @@ import { parse as parseYaml } from "yaml";
 import { createGitHubClient, readFile } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
+import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
-import { writeRunHistory } from "./history.js";
-import type { SiteRunResult, SchedulerRunEntry } from "./history.js";
+import { RunHistoryAccumulator } from "./history.js";
+import type { SiteRunResult } from "./history.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -146,6 +147,106 @@ export function resolveArticlesPerDay(schedule: PublishSchedule): number {
   return Math.max(1, Math.ceil(perWeek / daysCount));
 }
 
+// ---------------------------------------------------------------------------
+// Per-site processing (called concurrently)
+// ---------------------------------------------------------------------------
+
+type SiteOutcome =
+  | { kind: "skipped"; domain: string; reason: string }
+  | { kind: "error"; domain: string; error: string; articlesRequested: number }
+  | { kind: "triggered"; domain: string; siteResult: SiteRunResult };
+
+async function processSingleSite(
+  siteEntry: { domain: string; branch: string },
+  config: AgentConfig,
+  schedCfg: SchedulerConfig,
+): Promise<SiteOutcome> {
+  const { domain, branch: preferredBranch } = siteEntry;
+  const octokit = createGitHubClient(config.github);
+  let articlesPerDay = 0;
+
+  try {
+    let brief;
+    let writeBranch: string;
+    try {
+      const { data, branch: foundBranch } = await readSiteBriefWithFallback(
+        octokit,
+        config.networkRepo,
+        domain,
+        preferredBranch,
+      );
+      brief = data.brief;
+      writeBranch = foundBranch;
+    } catch {
+      return { kind: "skipped", domain, reason: "no brief configured" };
+    }
+
+    const schedule = brief.schedule;
+    if (!schedule) {
+      return { kind: "skipped", domain, reason: "no publishing schedule" };
+    }
+
+    articlesPerDay = resolveArticlesPerDay(schedule);
+    if (articlesPerDay <= 0) {
+      return { kind: "skipped", domain, reason: "no publishing schedule" };
+    }
+
+    if (!isTodayPreferredDay(schedule, schedCfg.timezone)) {
+      return {
+        kind: "skipped",
+        domain,
+        reason: `not a preferred day (${(schedule.preferred_days ?? []).join(", ")})`,
+      };
+    }
+
+    // Trigger content generation for N articles on the site's staging branch
+    console.log(
+      `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
+    );
+    const genResult = await runContentGeneration(
+      { siteDomain: domain, count: articlesPerDay, branch: writeBranch },
+      config,
+    );
+
+    const created = genResult.results.filter((r) => r.status === "created").length;
+    const genErrors = genResult.results.filter((r) => r.status === "error");
+    let siteStatus: SiteRunResult["status"];
+    let siteMessage: string | undefined;
+
+    if (genResult.totalSourced === 0) {
+      siteStatus = "no_content";
+      siteMessage = "Aggregator returned 0 items for this site's topics";
+    } else if (created === 0 && genErrors.length > 0) {
+      siteStatus = "error";
+      siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
+    } else if (created === 0 && genErrors.length === 0) {
+      siteStatus = "no_content";
+      siteMessage = `All ${genResult.totalSourced} item(s) checked were duplicates (${genResult.duplicateCount} dupes)`;
+    } else if (created < articlesPerDay && genErrors.length > 0) {
+      siteStatus = "partial";
+      siteMessage = `${genErrors.length} article(s) failed: ${genErrors[0]?.message ?? "unknown"}`;
+    } else {
+      siteStatus = "success";
+    }
+
+    return {
+      kind: "triggered",
+      domain,
+      siteResult: {
+        domain,
+        status: siteStatus,
+        articlesCreated: created,
+        articlesRequested: articlesPerDay,
+        message: siteMessage,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[scheduled-publisher] Error processing ${domain}:`, message);
+    return { kind: "error", domain, error: message, articlesRequested: articlesPerDay };
+  }
+}
+
 /**
  * Main entry point: check all sites and trigger content generation for due sites.
  * When `force` is true, bypass global enabled/hour gating (per-site preferred_days
@@ -206,100 +307,45 @@ export async function runScheduledPublish(
     `[scheduled-publisher] Tick firing${force ? " (forced)" : ""}: checking ${activeSites.length} site(s) in tz=${schedCfg.timezone}`,
   );
 
-  // 3. Iterate sites
-  const siteResults: SiteRunResult[] = [];
-  for (const { domain, branch: preferredBranch } of activeSites) {
-    let articlesPerDay = 0;
-    try {
-      let brief;
-      let writeBranch: string;
-      try {
-        const { data, branch: foundBranch } = await readSiteBriefWithFallback(
-          octokit,
-          config.networkRepo,
-          domain,
-          preferredBranch,
-        );
-        brief = data.brief;
-        writeBranch = foundBranch;
-      } catch {
-        result.skipped.push({ domain, reason: "no brief configured" });
-        continue;
-      }
+  // 3. Process sites concurrently (max 3 in parallel to stay within API rate limits).
+  //    History is flushed incrementally after each site completes so that partial
+  //    progress survives a CloudGrid timeout.
+  const MAX_SITES_CONCURRENT = 3;
+  const history = new RunHistoryAccumulator(schedCfg.timezone, force, config);
 
-      const schedule = brief.schedule;
-      if (!schedule) {
-        result.skipped.push({ domain, reason: "no publishing schedule" });
-        continue;
-      }
-
-      articlesPerDay = resolveArticlesPerDay(schedule);
-      if (articlesPerDay <= 0) {
-        result.skipped.push({ domain, reason: "no publishing schedule" });
-        continue;
-      }
-
-      if (!isTodayPreferredDay(schedule, schedCfg.timezone)) {
-        result.skipped.push({
-          domain,
-          reason: `not a preferred day (${(schedule.preferred_days ?? []).join(", ")})`,
+  const siteOutcomes = await processWithConcurrency(
+    activeSites,
+    MAX_SITES_CONCURRENT,
+    activeSites.length,
+    async (siteEntry) => {
+      const outcome = await processSingleSite(siteEntry, config, schedCfg);
+      // Record to incremental history immediately
+      if (outcome.kind === "skipped") {
+        history.recordSkipped(outcome.domain, outcome.reason);
+      } else if (outcome.kind === "error") {
+        history.recordSiteResult({
+          domain: outcome.domain,
+          status: "error",
+          articlesCreated: 0,
+          articlesRequested: outcome.articlesRequested,
+          message: outcome.error,
         });
-        continue;
-      }
-
-      // 4. Trigger content generation for N articles on the site's staging
-      //    branch so the writer commits via GitHub API (and Cloudflare Pages
-      //    picks up the change). Passing an explicit branch also disables the
-      //    local-FS write path in dev — otherwise articles land as untracked
-      //    files on whatever branch happens to be checked out.
-      console.log(
-        `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
-      );
-      const genResult = await runContentGeneration(
-        { siteDomain: domain, count: articlesPerDay, branch: writeBranch },
-        config,
-      );
-      result.triggered.push(domain);
-
-      const created = genResult.results.filter((r) => r.status === "created").length;
-      const genErrors = genResult.results.filter((r) => r.status === "error");
-      let siteStatus: SiteRunResult["status"];
-      let siteMessage: string | undefined;
-
-      if (genResult.totalSourced === 0) {
-        siteStatus = "no_content";
-        siteMessage = "Aggregator returned 0 items for this site's topics";
-      } else if (created === 0 && genErrors.length > 0) {
-        siteStatus = "error";
-        siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
-      } else if (created === 0 && genErrors.length === 0) {
-        siteStatus = "no_content";
-        siteMessage = `All ${genResult.totalSourced} item(s) checked were duplicates (${genResult.duplicateCount} dupes)`;
-      } else if (created < articlesPerDay && genErrors.length > 0) {
-        siteStatus = "partial";
-        siteMessage = `${genErrors.length} article(s) failed: ${genErrors[0]?.message ?? "unknown"}`;
       } else {
-        siteStatus = "success";
+        history.recordSiteResult(outcome.siteResult);
       }
+      return outcome;
+    },
+    () => true,
+  );
 
-      siteResults.push({
-        domain,
-        status: siteStatus,
-        articlesCreated: created,
-        articlesRequested: articlesPerDay,
-        message: siteMessage,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[scheduled-publisher] Error processing ${domain}:`, message);
-      result.errors.push({ domain, error: message });
-      siteResults.push({
-        domain,
-        status: "error",
-        articlesCreated: 0,
-        articlesRequested: articlesPerDay,
-        message,
-      });
+  // Collect results from concurrent outcomes into the HTTP response
+  for (const outcome of siteOutcomes) {
+    if (outcome.kind === "skipped") {
+      result.skipped.push({ domain: outcome.domain, reason: outcome.reason });
+    } else if (outcome.kind === "error") {
+      result.errors.push({ domain: outcome.domain, error: outcome.error });
+    } else {
+      result.triggered.push(outcome.domain);
     }
   }
 
@@ -308,17 +354,8 @@ export async function runScheduledPublish(
       `${result.skipped.length} skipped, ${result.errors.length} errors`,
   );
 
-  // 4. Persist run history (best-effort, never blocks)
-  if (siteResults.length > 0 || result.skipped.length > 0) {
-    const entry: SchedulerRunEntry = {
-      timestamp: new Date().toISOString(),
-      timezone: schedCfg.timezone,
-      forced: force,
-      sites: siteResults,
-      skipped: result.skipped,
-    };
-    await writeRunHistory(entry, config);
-  }
+  // 4. Final history flush — ensures any pending writes land before we return
+  await history.finalize();
 
   return result;
 }

@@ -5,6 +5,12 @@
  * Storage: scheduler/history.json on main branch.
  * Written after each actual run (not no-op hour-skipped ticks).
  * Capped at 50 entries (rolling window).
+ *
+ * RunHistoryAccumulator flushes incrementally — after each site
+ * completes, the current entry is written so that partial progress
+ * survives a CloudGrid timeout (504). Writes are serialized through
+ * a promise chain and debounced so concurrent site completions
+ * produce at most one GitHub API call per settling period.
  */
 
 import { createGitHubClient, readFile, commitFile } from "../../lib/github.js";
@@ -65,5 +71,91 @@ export async function writeRunHistory(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[scheduled-publisher] Failed to write run history: ${msg}`);
+  }
+}
+
+/**
+ * Incremental history writer. Accumulates site outcomes and flushes to
+ * scheduler/history.json after each site completes.
+ *
+ * - Writes are serialized through a promise chain (no concurrent commits).
+ * - Natural debounce: if multiple sites finish before the current flush
+ *   completes, the next flush writes all accumulated results at once.
+ * - On flush failure, dirty stays true so the next flush retries with
+ *   the full accumulated state.
+ * - Call `finalize()` at the end to ensure all pending writes land.
+ */
+export class RunHistoryAccumulator {
+  private entry: SchedulerRunEntry;
+  private config: AgentConfig;
+  private flushChain: Promise<void> = Promise.resolve();
+  private dirty = false;
+
+  constructor(timezone: string, forced: boolean, config: AgentConfig) {
+    this.config = config;
+    this.entry = {
+      timestamp: new Date().toISOString(),
+      timezone,
+      forced,
+      sites: [],
+      skipped: [],
+    };
+  }
+
+  /** Record a processed site result (triggered, error, or no_content). */
+  recordSiteResult(siteResult: SiteRunResult): void {
+    this.entry.sites.push(siteResult);
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  /** Record a skipped site (no schedule, wrong day, no brief, etc.). */
+  recordSkipped(domain: string, reason: string): void {
+    this.entry.skipped.push({ domain, reason });
+    this.dirty = true;
+    this.scheduleFlush();
+  }
+
+  /** Wait for all pending flushes to complete. */
+  async finalize(): Promise<void> {
+    this.scheduleFlush();
+    await this.flushChain;
+  }
+
+  private scheduleFlush(): void {
+    this.flushChain = this.flushChain.then(async () => {
+      if (!this.dirty) return;
+      await this.doFlush();
+    });
+  }
+
+  private async doFlush(): Promise<void> {
+    try {
+      const history = await readHistory(this.config);
+      // Remove previous version of this entry (same timestamp) if we've flushed before
+      const filtered = history.filter((e) => e.timestamp !== this.entry.timestamp);
+      // Prepend current accumulated state (snapshot to avoid mutation during async write)
+      filtered.unshift({
+        ...this.entry,
+        sites: [...this.entry.sites],
+        skipped: [...this.entry.skipped],
+      });
+      const trimmed = filtered.slice(0, MAX_ENTRIES);
+      const octokit = createGitHubClient(this.config.github);
+      await commitFile(octokit, this.config.networkRepo, {
+        path: HISTORY_PATH,
+        content: JSON.stringify(trimmed, null, 2),
+        message: `scheduler: update run ${this.entry.timestamp}`,
+        branch: "main",
+      });
+      this.dirty = false;
+      console.log(
+        `[scheduled-publisher] History flushed (${this.entry.sites.length} sites, ${this.entry.skipped.length} skipped)`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[scheduled-publisher] Failed to flush history: ${msg}`);
+      // dirty stays true → next flush will retry with full accumulated state
+    }
   }
 }

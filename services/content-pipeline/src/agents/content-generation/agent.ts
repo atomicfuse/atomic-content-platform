@@ -38,8 +38,9 @@ import type { Generator, GeneratorConfig } from "./generators/base-generator.js"
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { writeArticleBatch } from "../../lib/writer.js";
-import type { PendingArticle, PendingAsset } from "../../lib/writer.js";
+import type { PendingArticle, PendingAsset, BatchFileEntry } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
+import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
 
@@ -144,8 +145,8 @@ export function ensureTopicTag(
 // Deduplication — bulk load all existing source_urls + titles
 // ---------------------------------------------------------------------------
 
-/** Normalize a URL for dedup comparison. */
-function normalizeUrl(url: string): string {
+/** Normalize a URL for dedup comparison. @internal Exported for testing. */
+export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
@@ -156,8 +157,8 @@ function normalizeUrl(url: string): string {
   }
 }
 
-/** Normalize a title for fuzzy dedup. */
-function normalizeTitleKey(title: string): string {
+/** Normalize a title for fuzzy dedup. @internal Exported for testing. */
+export function normalizeTitleKey(title: string): string {
   return title
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
@@ -165,11 +166,58 @@ function normalizeTitleKey(title: string): string {
     .trim();
 }
 
-interface ExistingArticles {
+export interface ExistingArticles {
   urls: Set<string>;
   titles: Set<string>;
 }
 
+// ---------------------------------------------------------------------------
+// Dedup index — persisted alongside articles to avoid N GitHub API reads
+// ---------------------------------------------------------------------------
+
+const DEDUP_INDEX_FILENAME = "dedup-index.json";
+
+interface DedupIndexData {
+  version: 1;
+  urls: string[];
+  titles: string[];
+}
+
+/** @internal Exported for testing. */
+export function dedupIndexPath(siteDomain: string): string {
+  return `sites/${siteDomain}/${DEDUP_INDEX_FILENAME}`;
+}
+
+/** @internal Exported for testing. */
+export function serializeDedupIndex(existing: ExistingArticles): string {
+  const data: DedupIndexData = {
+    version: 1,
+    urls: Array.from(existing.urls),
+    titles: Array.from(existing.titles),
+  };
+  return JSON.stringify(data);
+}
+
+/** @internal Exported for testing. */
+export function parseDedupIndex(raw: string): ExistingArticles | null {
+  try {
+    const data = JSON.parse(raw) as Partial<DedupIndexData>;
+    if (data.version === 1 && Array.isArray(data.urls) && Array.isArray(data.titles)) {
+      return { urls: new Set(data.urls), titles: new Set(data.titles) };
+    }
+  } catch {
+    // Invalid JSON
+  }
+  return null;
+}
+
+/**
+ * Load existing articles' source URLs and titles for deduplication.
+ *
+ * Fast path: read `sites/<domain>/dedup-index.json` (1 API call).
+ * Slow path: fall back to reading every article file individually (N calls).
+ * The index is written/updated atomically with article batch commits.
+ */
 async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
@@ -184,8 +232,21 @@ async function getAllExistingArticles(
   }
 
   if (config.localNetworkPath && !branch) {
-    const articlesDir = path.join(config.localNetworkPath, "sites", siteDomain, "articles");
+    // Local mode — try dedup index first
+    const indexPath = path.join(config.localNetworkPath, dedupIndexPath(siteDomain));
+    try {
+      const raw = await fs.readFile(indexPath, "utf-8");
+      const parsed = parseDedupIndex(raw);
+      if (parsed) {
+        console.log(`[agent] Loaded dedup index (local): ${parsed.urls.size} URLs, ${parsed.titles.size} titles`);
+        return parsed;
+      }
+    } catch {
+      // No index — fall through to full scan
+    }
 
+    // Full scan (local)
+    const articlesDir = path.join(config.localNetworkPath, "sites", siteDomain, "articles");
     let files: string[];
     try {
       files = await fs.readdir(articlesDir);
@@ -204,14 +265,27 @@ async function getAllExistingArticles(
       }
     }
 
+    console.log(`[agent] Built dedup index from full scan (local): ${urls.size} URLs, ${titles.size} titles`);
     return { urls, titles };
   }
 
-  // GitHub mode
+  // GitHub mode — try dedup index first
   const { listFiles, readFile } = await import("../../lib/github.js");
   const octokit = createGitHubClient(config.github);
-  const articlesPath = `sites/${siteDomain}/articles`;
 
+  try {
+    const raw = await readFile(octokit, config.networkRepo, dedupIndexPath(siteDomain), branch);
+    const parsed = parseDedupIndex(raw);
+    if (parsed) {
+      console.log(`[agent] Loaded dedup index: ${parsed.urls.size} URLs, ${parsed.titles.size} titles`);
+      return parsed;
+    }
+  } catch {
+    // No index — fall through to full scan
+  }
+
+  // Full scan (GitHub) — reads every article file individually
+  const articlesPath = `sites/${siteDomain}/articles`;
   let files: string[];
   try {
     files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
@@ -235,6 +309,7 @@ async function getAllExistingArticles(
     }
   }
 
+  console.log(`[agent] Built dedup index from full scan: ${urls.size} URLs, ${titles.size} titles (${files.length} files read)`);
   return { urls, titles };
 }
 
@@ -569,59 +644,8 @@ async function processItem(
 }
 
 // ---------------------------------------------------------------------------
-// Concurrency-limited processing
+// Concurrency-limited processing — imported from ../../lib/concurrency.js
 // ---------------------------------------------------------------------------
-
-async function processWithConcurrency<T, R>(
-  items: T[],
-  maxConcurrency: number,
-  targetCount: number,
-  processor: (item: T) => Promise<R>,
-  isSuccess: (result: R) => boolean,
-): Promise<R[]> {
-  const results: R[] = [];
-  let successCount = 0;
-  let nextIndex = 0;
-  const inFlight = new Set<Promise<void>>();
-
-  /** Whether we need AND can launch more items. */
-  function shouldLaunch(): boolean {
-    // Don't launch if we already have enough successes + pending to hit target
-    if (successCount + inFlight.size >= targetCount) return false;
-    // Don't launch if we ran out of items
-    if (nextIndex >= items.length) return false;
-    return true;
-  }
-
-  async function processNext(): Promise<void> {
-    const idx = nextIndex++;
-    const item = items[idx]!;
-
-    const result = await processor(item);
-    results.push(result);
-
-    if (isSuccess(result)) {
-      successCount++;
-    }
-  }
-
-  while ((successCount < targetCount && nextIndex < items.length) || inFlight.size > 0) {
-    // Fill up to maxConcurrency, but only if we still need more
-    while (shouldLaunch() && inFlight.size < maxConcurrency) {
-      const p = processNext().then(() => {
-        inFlight.delete(p);
-      });
-      inFlight.add(p);
-    }
-
-    // Wait for at least one to complete
-    if (inFlight.size > 0) {
-      await Promise.race(inFlight);
-    }
-  }
-
-  return results;
-}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -752,7 +776,7 @@ export async function runContentGeneration(
       );
     }
 
-    // Step 6: Batch-write all created articles in a SINGLE commit (cap to targetCount)
+    // Step 6: Batch-write all created articles + updated dedup index in a SINGLE commit
     const created = results.filter((r) => r.status === "created").slice(0, targetCount);
     if (created.length > 0) {
       const pendingArticles = created
@@ -762,6 +786,23 @@ export async function runContentGeneration(
         .map((r) => r._pendingAsset)
         .filter((a): a is PendingAsset => !!a);
 
+      // Build updated dedup index — add newly created articles to the existing sets
+      const updatedExisting: ExistingArticles = {
+        urls: new Set(existing.urls),
+        titles: new Set(existing.titles),
+      };
+      for (const r of created) {
+        if (r._pendingArticle) {
+          const { data } = matter(r._pendingArticle.content);
+          if (data.source_url) updatedExisting.urls.add(normalizeUrl(data.source_url as string));
+          if (data.title) updatedExisting.titles.add(normalizeTitleKey(data.title as string));
+        }
+      }
+      const dedupIndexFile: BatchFileEntry = {
+        path: dedupIndexPath(siteDomain),
+        content: serializeDedupIndex(updatedExisting),
+      };
+
       const slugList = pendingArticles.map((a) => a.slug).join(", ");
       const commitMsg = `feat(content): add ${pendingArticles.length} article(s) for ${siteDomain}\n\n${slugList}`;
 
@@ -770,6 +811,7 @@ export async function runContentGeneration(
         pendingArticles,
         pendingAssets,
         commitMsg,
+        [dedupIndexFile],
       );
     }
 
