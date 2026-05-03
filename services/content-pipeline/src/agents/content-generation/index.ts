@@ -14,8 +14,13 @@
  */
 
 import * as http from "node:http";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
-dotenv.config({ override: true });
+
+// Resolve .env relative to the service root (2 dirs up from src/agents/content-generation/)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
