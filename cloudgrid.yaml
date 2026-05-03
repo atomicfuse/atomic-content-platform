@@ -10,7 +10,7 @@ services:
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
     # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
     #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
-    #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+    #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, REDIS_URL
 
   content-pipeline:
     type: node
@@ -19,7 +19,7 @@ services:
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
-    # Secrets: GITHUB_TOKEN, GEMINI_API_KEY
+    # Secrets: GITHUB_TOKEN, GEMINI_API_KEY, REDIS_URL
     # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
 
   scheduled-publisher:
