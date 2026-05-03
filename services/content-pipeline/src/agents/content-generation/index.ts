@@ -220,6 +220,7 @@ async function shutdown(signal: string): Promise<void> {
   if (queueInstances) {
     await queueInstances.generateWorker.close();
     await queueInstances.generateQueueEvents.close();
+    await queueInstances.generateQueue.close();
     await queueInstances.schedulerRunWorker.close();
     await queueInstances.schedulerRunQueue.close();
     await queueInstances.flowProducer.close();

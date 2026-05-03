@@ -282,7 +282,7 @@ export async function runScheduledPublish(
 
     try {
       const { enqueued } = await createSchedulerFlow(
-        queueInstances.connection,
+        queueInstances.flowProducer,
         runId,
         schedCfg.timezone,
         force,

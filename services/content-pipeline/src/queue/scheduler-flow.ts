@@ -38,21 +38,17 @@ export interface SchedulerSite {
  * Create a BullMQ Flow: one parent `scheduler-run` job with N child `generate` jobs.
  * Uses deterministic `jobId` to prevent double-enqueue from overlapping cron ticks.
  *
- * The first argument is the Redis connection (used to create a FlowProducer
- * internally). Passing a connection rather than a pre-built FlowProducer keeps
- * the constructor call inside this function so tests can intercept it via
- * vi.mock("bullmq").
+ * The first argument is a pre-built FlowProducer (created once at boot in
+ * `setupSchedulerFlow`). Reusing it avoids leaking a Redis connection per tick.
  */
 export async function createSchedulerFlow(
-  connection: Redis,
+  flowProducer: FlowProducer,
   runId: string,
   timezone: string,
   forced: boolean,
   sites: SchedulerSite[],
   skipped: Array<{ domain: string; reason: string }>,
 ): Promise<{ runId: string; enqueued: number }> {
-  const flowProducer = new FlowProducer({ connection });
-
   const children = sites.map((site) => ({
     name: "generate",
     queueName: GENERATE_QUEUE,

@@ -81,7 +81,7 @@ describe("createSchedulerFlow", () => {
     ];
 
     const result = await createSchedulerFlow(
-      {} as any, // flow producer mock is injected via vi.mock
+      { add: mockFlowProducerAdd } as unknown as import("bullmq").FlowProducer,
       "2026-05-03T14",
       "UTC",
       false,
@@ -110,7 +110,7 @@ describe("createSchedulerFlow", () => {
 
   it("uses deterministic jobId to prevent double-enqueue", async () => {
     await createSchedulerFlow(
-      {} as any,
+      { add: mockFlowProducerAdd } as unknown as import("bullmq").FlowProducer,
       "2026-05-03T14",
       "UTC",
       false,
@@ -130,7 +130,7 @@ describe("createSchedulerFlow", () => {
     ];
 
     await createSchedulerFlow(
-      {} as any,
+      { add: mockFlowProducerAdd } as unknown as import("bullmq").FlowProducer,
       "2026-05-03T14",
       "UTC",
       false,
@@ -194,7 +194,7 @@ describe("processSchedulerRun", () => {
       getChildrenValues: mockGetChildrenValues,
     };
 
-    await processSchedulerRun(job as any, config);
+    await processSchedulerRun(job as unknown as import("bullmq").Job<import("../queue/types.js").SchedulerRunData>, config);
 
     expect(mockCommitFile).toHaveBeenCalledTimes(1);
     const commitArg = mockCommitFile.mock.calls[0]![2] as {
@@ -250,7 +250,7 @@ describe("processSchedulerRun", () => {
       getChildrenValues: mockGetChildrenValues,
     };
 
-    await processSchedulerRun(job as any, config);
+    await processSchedulerRun(job as unknown as import("bullmq").Job<import("../queue/types.js").SchedulerRunData>, config);
 
     const commitArg = mockCommitFile.mock.calls[0]![2] as { content: string };
     const written = JSON.parse(commitArg.content) as Array<{
