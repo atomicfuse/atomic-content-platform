@@ -686,50 +686,77 @@ export async function runContentGeneration(
     // Step 4: Fetch enriched items with pagination — skip past duplicates
     const PAGE_SIZE = 20;
     const MAX_PAGES = 5;
-    const newItems: ContentItem[] = [];
-    let totalFetched = 0;
-    let duplicateCount = 0;
 
     const settings = await getSettings();
 
-    for (let page = 1; page <= MAX_PAGES; page++) {
-      console.log(`[agent] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
+    // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
+    // into category_ids for the aggregator query.
+    const categoryIds = brief.category_ids ?? [];
+    const mergedCategoryIds = brief.vertical_id
+      ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
+      : categoryIds;
 
-      // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
-      // into category_ids for the aggregator query.
-      const categoryIds = brief.category_ids ?? [];
-      const mergedCategoryIds = brief.vertical_id
-        ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
-        : categoryIds;
+    // Helper: paginated fetch + dedup against existing articles
+    async function fetchNewItems(
+      useTagIds: string[] | undefined,
+      label: string,
+    ): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+      const newItems: ContentItem[] = [];
+      let totalFetched = 0;
+      let duplicateCount = 0;
 
-      const response = await getContent({
-        limit: PAGE_SIZE,
-        page,
-        language: brief.language ?? "EN",
-        category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
-        tag_ids: tagIds,
-      });
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        console.log(`[agent] [${label}] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
 
-      const pageItems = response.items;
-      totalFetched += pageItems.length;
+        const response = await getContent({
+          limit: PAGE_SIZE,
+          page,
+          language: brief.language ?? "EN",
+          category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
+          tag_ids: useTagIds,
+        });
 
-      if (pageItems.length === 0) break;
+        const pageItems = response.items;
+        totalFetched += pageItems.length;
 
-      // Deduplicate this page against existing articles
-      for (const item of pageItems) {
-        if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
-        if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
-        newItems.push(item);
+        if (pageItems.length === 0) break;
+
+        for (const item of pageItems) {
+          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
+          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
+          newItems.push(item);
+        }
+
+        const totalPages = response.total_pages ?? 1;
+        if (newItems.length >= targetCount || page >= totalPages) break;
+
+        console.log(
+          `[agent] [${label}] Page ${page}: found ${newItems.length} new so far ` +
+          `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
+        );
       }
 
-      // Stop if we have enough fresh items or reached the last page
-      const totalPages = response.total_pages ?? 1;
-      if (newItems.length >= targetCount || page >= totalPages) break;
+      return { newItems, totalFetched, duplicateCount };
+    }
 
+    // Narrow search: categories + tags
+    let { newItems, totalFetched, duplicateCount } = await fetchNewItems(tagIds, "narrow");
+
+    // Fallback: if narrow search found items but ALL were duplicates, retry
+    // with a broader search (categories only, no tags) to find fresh content.
+    if (newItems.length === 0 && totalFetched > 0 && tagIds && tagIds.length > 0) {
       console.log(
-        `[agent] Page ${page}: found ${newItems.length} new so far ` +
-        `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
+        `[agent] Narrow search (categories + tags) returned ${totalFetched} items but all ${duplicateCount} were duplicates. ` +
+        `Retrying with broader search (categories only, no tags)…`,
       );
+      const broad = await fetchNewItems(undefined, "broad");
+      newItems = broad.newItems;
+      totalFetched += broad.totalFetched;
+      duplicateCount += broad.duplicateCount;
+
+      if (newItems.length > 0) {
+        console.log(`[agent] Broad search found ${newItems.length} new item(s) — proceeding`);
+      }
     }
 
     if (totalFetched === 0) {

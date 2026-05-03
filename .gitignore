@@ -35,3 +35,4 @@ pnpm-debug.log*
 # `cloudgrid dev` invocation; never feature-relevant.
 .cloudgrid-dev.lock
 .superpowers/
+.cloudgrid/
