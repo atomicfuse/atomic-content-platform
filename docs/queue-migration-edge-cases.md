@@ -42,3 +42,35 @@ Should map to "no_content" status with duplicates message.
 
 ### 13. buildRunId: determinism within same hour
 Two calls within same hour produce identical IDs.
+
+## Image Generation Ladder — Edge Cases
+
+### 14. Gemini succeeds on first attempt
+Tier A attempt 1 returns `{ ok: true }`. OpenAI never called. Article created with image.
+
+### 15. Gemini fails (transient), succeeds on retry
+Tier A attempt 1 returns `{ ok: false, retriable: true }` (5xx/429/timeout). Attempt 2 succeeds. OpenAI never called.
+
+### 16. Gemini fails (permanent), falls through to OpenAI
+Tier A attempt 1 returns `{ ok: false, retriable: false }` (4xx/content policy). No retry. Tier B (OpenAI) succeeds.
+
+### 17. Gemini exhausted (2 transient failures), OpenAI succeeds
+Both Gemini attempts fail with retriable errors. OpenAI gpt-image-1 fallback succeeds.
+
+### 18. Both providers fail → image_gen_exhausted
+Gemini (2 attempts) + OpenAI (1 attempt) all fail. Returns `{ status: "error", reason: "image_gen_exhausted" }`. processWithConcurrency picks next source URL.
+
+### 19. Missing GEMINI_API_KEY → skips to OpenAI
+No Gemini key configured. Tier A skipped, logs `api_key_not_configured`. Tier B (OpenAI) handles image generation.
+
+### 20. Missing OPENAI_API_KEY → Gemini only, exhausted on failure
+No OpenAI key. After Gemini fails, Tier B skipped with `api_key_not_configured`. Returns exhausted.
+
+### 21. Both API keys missing → immediate exhausted
+Both tiers skipped. Returns exhausted with `[gemini:api_key_not_configured, openai:api_key_not_configured]`.
+
+### 22. OpenAI prompt omits reference image context
+Gemini gets `hasReference=true` prompt when thumbnail available. OpenAI always gets `hasReference=false` prompt (text-only API, no reference image support).
+
+### 23. Image failure doesn't block other articles in batch
+Article fails due to `image_gen_exhausted` → returns `{ status: "error" }`. processWithConcurrency continues launching from the source pool. Other articles unaffected.

@@ -1,16 +1,18 @@
 /**
- * Image Generator — creates article images using Gemini Flash.
+ * Image Generator — three-tier ladder: Gemini → OpenAI → exhausted.
  *
- * When the source article has a thumbnail, downloads it and sends it to
- * Gemini as a reference image. Gemini sees the original and generates a
- * new image in an appropriate style — realistic photo if the source is a
- * photograph, illustration if it's a graphic or low-quality image.
+ * Tier A: Gemini Flash (2 attempts, retry only on transient errors)
+ * Tier B: OpenAI gpt-image-1 (1 attempt, no retry — this IS the fallback)
+ * Tier C: Both exhausted → returns { ok: false, reason: "image_gen_exhausted" }
  *
- * Falls back gracefully — image generation is non-critical.
+ * Image generation is MANDATORY — articles without images are not created.
+ * When the ladder is exhausted, the article is abandoned and
+ * processWithConcurrency moves on to the next source URL.
  */
 
 import { generateImageWithGemini, type GeminiImageInput } from "../../../lib/gemini.js";
-import type { ImageGenerationResult } from "./types.js";
+import { generateImageWithOpenAI } from "../../../lib/openai-image.js";
+import type { ImageGenerationResult, ImageLadderResult, ImageLadderAttemptLog } from "./types.js";
 
 export interface ImageGenInput {
   articleTitle: string;
@@ -57,7 +59,7 @@ function buildImagePrompt(input: ImageGenInput, hasReference: boolean): string {
 
 /**
  * Download a thumbnail and return it as base64 for Gemini.
- * Returns undefined on any failure — non-critical.
+ * Returns undefined on any failure — thumbnail fetch is best-effort.
  */
 async function fetchThumbnail(url: string): Promise<GeminiImageInput | undefined> {
   try {
@@ -76,14 +78,12 @@ async function fetchThumbnail(url: string): Promise<GeminiImageInput | undefined
     }
 
     const contentType = response.headers.get("content-type") ?? "image/jpeg";
-    // Only accept actual images
     if (!contentType.startsWith("image/")) {
       console.warn(`[img-gen] Thumbnail not an image: ${contentType}`);
       return undefined;
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
-    // Skip tiny images (likely tracking pixels or broken)
     if (buffer.length < 5_000) {
       console.warn(`[img-gen] Thumbnail too small (${buffer.length} bytes), skipping`);
       return undefined;
@@ -106,17 +106,20 @@ function generateAltText(input: ImageGenInput): string {
 }
 
 /**
- * Generate an article image using Gemini Flash.
- * Returns null on failure — image generation is non-critical.
+ * Three-tier image generation ladder.
+ *
+ * Tier A: Gemini (up to 2 attempts — retry only on transient: 5xx/429/timeout)
+ * Tier B: OpenAI gpt-image-1 (1 attempt — this IS the fallback)
+ * Tier C: Exhausted → { ok: false, reason: "image_gen_exhausted", attempts }
  */
-export async function generateImage(input: ImageGenInput): Promise<ImageGenerationResult | null> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("[img-gen] GEMINI_API_KEY not set — skipping image generation");
-    return null;
-  }
+export async function generateImageWithLadder(
+  input: ImageGenInput,
+): Promise<ImageLadderResult> {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const attempts: ImageLadderAttemptLog[] = [];
 
-  // Try to fetch the source thumbnail as a style reference
+  // Fetch reference thumbnail (used by Gemini only — OpenAI prompt is text-only)
   let reference: GeminiImageInput | undefined;
   if (input.sourceThumbnailUrl) {
     console.log(`[img-gen] Fetching source thumbnail: ${input.sourceThumbnailUrl}`);
@@ -126,22 +129,57 @@ export async function generateImage(input: ImageGenInput): Promise<ImageGenerati
     }
   }
 
-  const prompt = buildImagePrompt(input, !!reference);
-  console.log(`[img-gen] Generating image for: "${input.articleTitle}" (${reference ? "with reference" : "no reference"})`);
-  console.log(`[img-gen] Prompt: ${prompt.slice(0, 150)}...`);
+  const geminiPrompt = buildImagePrompt(input, !!reference);
 
-  const imageData = await generateImageWithGemini(apiKey, prompt, reference);
+  // ── Tier A: Gemini (up to 2 attempts) ──────────────────────────────────
+  if (geminiKey) {
+    const MAX_GEMINI_ATTEMPTS = 2;
+    for (let i = 0; i < MAX_GEMINI_ATTEMPTS; i++) {
+      console.log(`[img-gen] Tier A: Gemini attempt ${i + 1}/${MAX_GEMINI_ATTEMPTS} for "${input.articleTitle}"`);
+      const attempt = await generateImageWithGemini(geminiKey, geminiPrompt, reference);
 
-  if (!imageData) {
-    console.warn(`[img-gen] Gemini returned no image for: "${input.articleTitle}"`);
-    return null;
+      if (attempt.ok) {
+        console.log(`[img-gen] Gemini succeeded (${(attempt.data.length / 1024).toFixed(0)} KB)`);
+        return {
+          ok: true,
+          result: { data: attempt.data, altText: generateAltText(input), prompt: geminiPrompt },
+        };
+      }
+
+      attempts.push({ provider: "gemini", reason: attempt.reason });
+      console.warn(`[img-gen] Gemini attempt ${i + 1} failed: ${attempt.reason} (retriable=${attempt.retriable})`);
+
+      // Permanent failure → skip remaining Gemini attempts
+      if (!attempt.retriable) break;
+    }
+  } else {
+    attempts.push({ provider: "gemini", reason: "api_key_not_configured" });
+    console.warn("[img-gen] Tier A skipped: GEMINI_API_KEY not set");
   }
 
-  console.log(`[img-gen] Image generated successfully (${(imageData.length / 1024).toFixed(0)} KB)`);
+  // ── Tier B: OpenAI gpt-image-1 (1 attempt) ────────────────────────────
+  if (openaiKey) {
+    const openaiPrompt = buildImagePrompt(input, false); // no reference for OpenAI
+    console.log(`[img-gen] Tier B: OpenAI attempt for "${input.articleTitle}"`);
+    const attempt = await generateImageWithOpenAI(openaiKey, openaiPrompt);
 
-  return {
-    data: imageData,
-    altText: generateAltText(input),
-    prompt,
-  };
+    if (attempt.ok) {
+      console.log(`[img-gen] OpenAI succeeded (${(attempt.data.length / 1024).toFixed(0)} KB)`);
+      return {
+        ok: true,
+        result: { data: attempt.data, altText: generateAltText(input), prompt: openaiPrompt },
+      };
+    }
+
+    attempts.push({ provider: "openai", reason: attempt.reason });
+    console.warn(`[img-gen] OpenAI failed: ${attempt.reason}`);
+  } else {
+    attempts.push({ provider: "openai", reason: "api_key_not_configured" });
+    console.warn("[img-gen] Tier B skipped: OPENAI_API_KEY not set");
+  }
+
+  // ── Tier C: Exhausted ──────────────────────────────────────────────────
+  const reasonChain = attempts.map((a) => `${a.provider}:${a.reason}`).join(", ");
+  console.error(`[img-gen] Image generation exhausted for "${input.articleTitle}": ${reasonChain}`);
+  return { ok: false, reason: "image_gen_exhausted", attempts };
 }

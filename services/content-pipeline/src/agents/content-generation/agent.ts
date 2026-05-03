@@ -28,7 +28,7 @@ import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
-import { generateImage } from "./image-pipeline/generator.js";
+import { generateImageWithLadder } from "./image-pipeline/generator.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
@@ -515,35 +515,37 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — generate from article content → fallback to source thumbnail
-    let pendingImageAsset: PendingAsset | undefined;
-    let featuredImageUrl: string | undefined;
+    // Step 4: Image pipeline — mandatory, three-tier ladder (Gemini → OpenAI → exhausted)
+    const ladderResult = await generateImageWithLadder({
+      articleTitle: generated.title,
+      articleDescription: generated.description,
+      articleSummary: item.summary,
+      vertical: item.vertical?.name ?? "General",
+      sourceThumbnailUrl: item.thumbnail?.url,
+    });
 
-    try {
-      const imageResult = await generateImage({
-        articleTitle: generated.title,
-        articleDescription: generated.description,
-        articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
-        sourceThumbnailUrl: item.thumbnail?.url,
-      });
-
-      if (imageResult) {
-        const assetPath = `assets/images/${slug}.png`;
-        pendingImageAsset = { siteDomain, assetPath, data: imageResult.data };
-        featuredImageUrl = `/assets/images/${slug}.png`;
-        console.log(`[agent] Generated image: ${assetPath}`);
-      }
-    } catch (imgErr) {
-      const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-      console.error(`[agent] Image generation failed: ${msg}`);
+    if (!ladderResult.ok) {
+      const reasonChain = ladderResult.attempts
+        .map((a) => `${a.provider}:${a.reason}`)
+        .join(", ");
+      console.error(
+        `[agent] Image generation exhausted for "${item.title}": ${reasonChain}`,
+      );
+      return {
+        status: "error",
+        reason: "image_gen_exhausted",
+        message: `Image generation failed: ${reasonChain}`,
+      };
     }
 
-    // Fallback: use source thumbnail URL if generation didn't produce an image
-    if (!featuredImageUrl && item.thumbnail?.url) {
-      console.log(`[agent] Using source thumbnail as fallback: ${item.thumbnail.url}`);
-      featuredImageUrl = item.thumbnail.url;
-    }
+    const assetPath = `assets/images/${slug}.png`;
+    const pendingImageAsset: PendingAsset = {
+      siteDomain,
+      assetPath,
+      data: ladderResult.result.data,
+    };
+    const featuredImageUrl = `/assets/images/${slug}.png`;
+    console.log(`[agent] Generated image: ${assetPath}`);
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);
