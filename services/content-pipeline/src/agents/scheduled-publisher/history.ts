@@ -41,6 +41,10 @@ async function readHistory(config: AgentConfig): Promise<SchedulerRunEntry[]> {
 }
 
 /**
+ * @deprecated Replaced by BullMQ Flow parent processor.
+ * Kept temporarily for the direct-execution fallback path.
+ * Delete after queue migration is stable (~1 week post-deploy).
+ *
  * Append a run entry to scheduler/history.json on main.
  * Reads the current file, prepends the new entry, caps at MAX_ENTRIES,
  * and commits back. Errors are logged but do not throw — history

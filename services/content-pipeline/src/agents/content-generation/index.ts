@@ -19,6 +19,8 @@ dotenv.config({ override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
+import { startWorkers } from "../../queue/index.js";
+import type { QueueInstances } from "../../queue/index.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -46,12 +48,72 @@ async function handleRequest(
     const force = parsed.searchParams.get("force") === "true";
     console.log(`[server] Scheduled publish triggered${force ? " (forced)" : ""}`);
     try {
-      const result = await runScheduledPublish(config, force);
+      const result = await runScheduledPublish(config, force, queueInstances);
       sendJson(res, 200, result as unknown as Record<string, unknown>);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[server] Scheduled publish error:", message);
       sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
+  // Active scheduler run — query BullMQ for in-progress state
+  if (req.method === "GET" && req.url === "/scheduler/active-run") {
+    if (!queueInstances) {
+      sendJson(res, 200, { status: "none", message: "Queue not configured" });
+      return;
+    }
+    try {
+      const schedulerRunQueue = queueInstances.schedulerRunQueue;
+      const active = await schedulerRunQueue.getActive();
+      const waiting = await schedulerRunQueue.getWaiting();
+
+      if (active.length === 0 && waiting.length === 0) {
+        sendJson(res, 200, { status: "none" });
+        return;
+      }
+
+      const current = active[0] ?? waiting[0];
+      const generateQueue = queueInstances.generateQueue;
+      const children = await generateQueue.getActive();
+      const completedChildren = await generateQueue.getCompleted(0, 100);
+      const failedChildren = await generateQueue.getFailed(0, 100);
+
+      sendJson(res, 200, {
+        status: "active",
+        runId: current?.data?.runId,
+        total: children.length + completedChildren.length + failedChildren.length,
+        active: children.length,
+        completed: completedChildren.length,
+        failed: failedChildren.length,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
+  // Job status — query BullMQ
+  if (req.method === "GET" && req.url && req.url.startsWith("/job/")) {
+    const jobId = req.url.slice(5);  // "/job/<id>" → "<id>"
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured" });
+      return;
+    }
+    const job = await queueInstances.generateQueue.getJob(jobId);
+    if (!job) {
+      sendJson(res, 404, { status: "error", message: "Job not found" });
+      return;
+    }
+    const state = await job.getState();
+    if (state === "completed") {
+      sendJson(res, 200, { status: "completed", result: job.returnvalue as unknown as Record<string, unknown> });
+    } else if (state === "failed") {
+      sendJson(res, 200, { status: "failed", error: job.failedReason, attempts: job.attemptsMade });
+    } else {
+      sendJson(res, 200, { status: state, attempts: job.attemptsMade });
     }
     return;
   }
@@ -123,6 +185,13 @@ try {
   process.exit(1);
 }
 
+let queueInstances: QueueInstances | undefined;
+if (config.redisUrl) {
+  queueInstances = startWorkers(config.redisUrl, config);
+} else {
+  console.log("[server] REDIS_URL not set — queue workers disabled (direct execution mode)");
+}
+
 const server = http.createServer((req, res) => {
   handleRequest(req, res, config).catch((err) => {
     console.error("[server] Unhandled error:", err);
@@ -145,3 +214,24 @@ server.listen(config.port, () => {
   console.log(`[server] Aggregator: ${config.contentAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
 });
+
+async function shutdown(signal: string): Promise<void> {
+  console.log(`[server] ${signal} received — shutting down gracefully`);
+  if (queueInstances) {
+    await queueInstances.generateWorker.close();
+    await queueInstances.generateQueueEvents.close();
+    await queueInstances.generateQueue.close();
+    await queueInstances.schedulerRunWorker.close();
+    await queueInstances.schedulerRunQueue.close();
+    await queueInstances.flowProducer.close();
+    await queueInstances.connection.quit();
+    console.log("[server] Queue workers closed");
+  }
+  server.close(() => {
+    console.log("[server] HTTP server closed");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT", () => void shutdown("SIGINT"));
