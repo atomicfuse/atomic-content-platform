@@ -95,6 +95,96 @@ async function handleRequest(
     return;
   }
 
+  // Job listing — query BullMQ for recent jobs
+  if (req.method === "GET" && req.url && req.url.startsWith("/jobs")) {
+    if (!queueInstances) {
+      sendJson(res, 503, { jobs: [], error: "Queue not configured" });
+      return;
+    }
+    try {
+      const parsed = new URL(req.url, "http://localhost");
+      const statusParam = parsed.searchParams.get("status") ?? "completed,failed,active";
+      const VALID_STATUSES = new Set(["completed", "failed", "active", "waiting", "delayed"]);
+      const statuses = statusParam
+        .split(",")
+        .filter((s): s is "completed" | "failed" | "active" | "waiting" | "delayed" =>
+          VALID_STATUSES.has(s),
+        );
+      const limit = Math.min(
+        parseInt(parsed.searchParams.get("limit") ?? "50", 10),
+        200,
+      );
+
+      const allJobs: Array<Record<string, unknown>> = [];
+
+      for (const status of statuses) {
+        const jobs = await queueInstances.generateQueue.getJobs(
+          [status],
+          0,
+          limit - 1,
+        );
+        for (const job of jobs) {
+          // Extract summary from returnvalue without sending the full results array
+          const rv = job.returnvalue as
+            | {
+                results?: Array<{ status: string; reason?: string; message?: string }>;
+                requested?: number;
+                totalSourced?: number;
+                duplicateCount?: number;
+              }
+            | undefined;
+          const results = rv?.results ?? [];
+          const created = results.filter((r) => r.status === "created").length;
+          const errored = results.filter((r) => r.status === "error").length;
+          // Collect error reasons from individual article results
+          const errorReasons = results
+            .filter((r) => r.status === "error")
+            .map((r) => r.message ?? r.reason ?? "unknown")
+            .slice(0, 5);
+
+          const data = job.data as {
+            siteDomain?: string;
+            triggeredBy?: string;
+            branch?: string;
+            count?: number;
+          } | undefined;
+
+          allJobs.push({
+            id: job.id,
+            status,
+            domain: data?.siteDomain ?? "unknown",
+            triggeredBy: data?.triggeredBy ?? "unknown",
+            branch: data?.branch,
+            count: data?.count,
+            articlesCreated: created,
+            articlesErrored: errored,
+            totalResults: results.length,
+            requested: rv?.requested,
+            totalSourced: rv?.totalSourced,
+            duplicateCount: rv?.duplicateCount,
+            failedReason: job.failedReason ?? undefined,
+            errorReasons: errorReasons.length > 0 ? errorReasons : undefined,
+            attemptsMade: job.attemptsMade,
+            timestamp: job.timestamp,
+            processedOn: job.processedOn,
+            finishedOn: job.finishedOn,
+          });
+        }
+      }
+
+      // Sort by timestamp descending (most recent first)
+      allJobs.sort(
+        (a, b) => ((b.timestamp as number) ?? 0) - ((a.timestamp as number) ?? 0),
+      );
+
+      sendJson(res, 200, { jobs: allJobs.slice(0, limit) } as Record<string, unknown>);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, { jobs: [], error: message });
+    }
+    return;
+  }
+
   // Job status — query BullMQ
   if (req.method === "GET" && req.url && req.url.startsWith("/job/")) {
     const jobId = req.url.slice(5);  // "/job/<id>" → "<id>"
