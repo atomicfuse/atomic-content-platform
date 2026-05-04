@@ -375,9 +375,23 @@ export function StepNicheTargeting({
                 onChange={(e): void => setCategorySearch(e.target.value)}
               />
               {data.selectedCategories.length > 0 && (
-                <p className="text-xs text-[var(--text-muted)]">
-                  Selected: {data.selectedCategories.map((c) => c.name).join(", ")}
-                </p>
+                <div className="flex flex-wrap gap-2">
+                  {data.selectedCategories.map((cat) => (
+                    <span
+                      key={cat.id}
+                      className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                    >
+                      {cat.name}
+                      <button
+                        type="button"
+                        onClick={(): void => toggleCategory({ id: cat.id, name: cat.name, iab_code: cat.iabCode ?? "" })}
+                        className="hover:text-red-400 transition-colors"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  ))}
+                </div>
               )}
               <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
                 {categoriesLoading ? (
