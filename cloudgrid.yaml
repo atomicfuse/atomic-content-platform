@@ -11,13 +11,16 @@ services:
 
   content-pipeline:
     type: node
+    build: npm run build
+    start: npm start
+    lang: typescript
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
       Secrets: GITHUB_TOKEN, GEMINI_API_KEY, REDIS_URL
     # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
-  scheduled-publisher:
-   type: cron
-   schedule: "0 * * * *"
-   timezone: EST
-   run: http://content-pipeline-app/scheduled-publish
+    # cron:
+      # scheduled-publisher:
+      #   schedule: "0 * * * *"
+      #   timezone: EST
+      #   run: /scheduled-publish
