@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +22,25 @@ export function StepIdentity({
   onCancel,
 }: StepIdentityProps): React.ReactElement {
   const { audiences } = useAudiences();
+  const [audienceSearch, setAudienceSearch] = useState("");
+  const [audienceOpen, setAudienceOpen] = useState(false);
+  const audienceRef = useRef<HTMLDivElement>(null);
+
+  // Close audience dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent): void {
+      if (audienceRef.current && !audienceRef.current.contains(e.target as Node)) {
+        setAudienceOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return (): void => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredAudiences = audiences
+    .filter((a) => !data.audienceIds.includes(a.id))
+    .filter((a) => a.name.toLowerCase().includes(audienceSearch.toLowerCase()));
+
   // EC-16: Trim whitespace before checking — "   " is truthy but blank.
   const canProceed = data.pagesProjectName?.trim() && data.siteName?.trim();
 
@@ -69,7 +89,7 @@ export function StepIdentity({
         }}
       />
 
-      <div className="space-y-1.5">
+      <div className="space-y-1.5" ref={audienceRef}>
         <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
           Audiences
         </label>
@@ -100,22 +120,46 @@ export function StepIdentity({
             })}
           </div>
         )}
-        <Select
-          options={audiences
-            .filter((a) => !data.audienceIds.includes(a.id))
-            .map((a) => ({ value: a.id, label: a.name }))}
-          placeholder="Add audience..."
-          value=""
-          onChange={(e): void => {
-            const id = e.target.value;
-            if (!id) return;
-            const name = audiences.find((a) => a.id === id)?.name ?? "";
-            onChange({
-              audienceIds: [...data.audienceIds, id],
-              audiences: [...data.audiences, name],
-            });
-          }}
-        />
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search audiences..."
+            value={audienceSearch}
+            onFocus={(): void => setAudienceOpen(true)}
+            onChange={(e): void => {
+              setAudienceSearch(e.target.value);
+              setAudienceOpen(true);
+            }}
+            className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
+          />
+          {audienceOpen && (
+            <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+              {filteredAudiences.length === 0 ? (
+                <p className="px-3 py-2 text-sm text-[var(--text-muted)]">
+                  {audienceSearch ? "No matching audiences" : "All audiences selected"}
+                </p>
+              ) : (
+                filteredAudiences.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={(): void => {
+                      onChange({
+                        audienceIds: [...data.audienceIds, a.id],
+                        audiences: [...data.audiences, a.name],
+                      });
+                      setAudienceSearch("");
+                      setAudienceOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] transition-colors"
+                  >
+                    {a.name}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <Select

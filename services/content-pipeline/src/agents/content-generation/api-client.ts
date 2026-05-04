@@ -143,9 +143,22 @@ interface TagItem {
   name: string;
 }
 
+interface RawTagItem {
+  id?: string;
+  _id?: string;
+  name: string;
+}
+
 interface TagListResponse {
-  items: TagItem[];
+  items: RawTagItem[];
   total_count: number;
+}
+
+/** Normalize a raw tag from the API (handles `_id` vs `id`). */
+function normalizeTag(raw: RawTagItem): TagItem | undefined {
+  const id = raw.id ?? raw._id;
+  if (!id) return undefined;
+  return { id, name: raw.name };
 }
 
 /**
@@ -163,7 +176,8 @@ async function findTag(name: string): Promise<TagItem | undefined> {
   const body = (await response.json()) as TagListResponse;
 
   const normalizedName = name.trim().toLowerCase();
-  return body.items.find((t) => t.name.toLowerCase() === normalizedName);
+  const raw = body.items.find((t) => t.name.toLowerCase() === normalizedName);
+  return raw ? normalizeTag(raw) : undefined;
 }
 
 /**
@@ -183,7 +197,15 @@ async function createTag(name: string): Promise<TagItem> {
   });
 
   if (response.status === 201 || response.status === 200) {
-    return (await response.json()) as TagItem;
+    const body = (await response.json()) as Record<string, unknown>;
+    // The aggregator may return `id` or `_id` depending on the backend
+    const id = (body.id ?? body._id) as string | undefined;
+    const tagName = (body.name ?? name) as string;
+    if (!id) {
+      console.warn(`[api-client] Tag created for "${name}" but response has no id:`, JSON.stringify(body).slice(0, 200));
+      throw new Error(`Tag "${name}" created but response missing id`);
+    }
+    return { id, name: tagName };
   }
 
   if (response.status === 409) {
