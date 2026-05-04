@@ -370,12 +370,20 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     scripts_vars: {},
     ads_txt: [],
     tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] },
-    categories: { enabled: false, root_path: '/category' },
+    categories: { enabled: true, root_path: '/category', per_page: 12 },
     sidebar: { enabled: false, widgets: [] },
     search: { enabled: false },
     preview_page: { enabled: false },
     active: true,
     ...merged,
+    // Deep-merge feature-flag objects so partial configs from
+    // org/group/override/site layers don't erase defaults.
+    categories: {
+      enabled: true,
+      root_path: '/category',
+      per_page: 12,
+      ...((merged as Record<string, unknown>).categories as Record<string, unknown> | undefined) ?? {},
+    } as ResolvedConfig['categories'],
     layout: resolveLayout(merged.layout as LayoutConfig | undefined),
     theme: {
       ...(merged.theme as Record<string, unknown> | undefined ?? {}),
