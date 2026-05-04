@@ -674,11 +674,11 @@ export async function runContentGeneration(
     const existing = await getAllExistingArticles(config, siteDomain, branch);
 
     // Step 3: Resolve tag IDs from topics if the brief doesn't have them
-    let tagIds = brief.tag_ids?.filter((id) => id.length > 0);
+    let tagIds = brief.tag_ids?.filter((id) => !!id && id.length > 0);
     if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
       console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
       tagIds = await resolveTopicTagIds(brief.topics);
-      tagIds = tagIds.filter((id) => id.length > 0);
+      tagIds = tagIds.filter((id) => !!id && id.length > 0);
       if (tagIds.length > 0) {
         console.log(`[agent] Resolved ${tagIds.length} tag ID(s): ${tagIds.join(", ")}`);
       }
