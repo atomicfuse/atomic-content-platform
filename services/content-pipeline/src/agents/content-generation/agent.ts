@@ -674,10 +674,11 @@ export async function runContentGeneration(
     const existing = await getAllExistingArticles(config, siteDomain, branch);
 
     // Step 3: Resolve tag IDs from topics if the brief doesn't have them
-    let tagIds = brief.tag_ids;
+    let tagIds = brief.tag_ids?.filter((id) => id.length > 0);
     if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
       console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
       tagIds = await resolveTopicTagIds(brief.topics);
+      tagIds = tagIds.filter((id) => id.length > 0);
       if (tagIds.length > 0) {
         console.log(`[agent] Resolved ${tagIds.length} tag ID(s): ${tagIds.join(", ")}`);
       }
@@ -742,11 +743,15 @@ export async function runContentGeneration(
     // Narrow search: categories + tags
     let { newItems, totalFetched, duplicateCount } = await fetchNewItems(tagIds, "narrow");
 
-    // Fallback: if narrow search found items but ALL were duplicates, retry
-    // with a broader search (categories only, no tags) to find fresh content.
-    if (newItems.length === 0 && totalFetched > 0 && tagIds && tagIds.length > 0) {
+    // Fallback: if narrow search yielded no usable items (either 0 results
+    // from the API or all duplicates), retry with a broader search
+    // (categories only, drop tags) to find fresh content.
+    if (newItems.length === 0 && tagIds && tagIds.length > 0) {
+      const reason = totalFetched === 0
+        ? "returned 0 items"
+        : `returned ${totalFetched} items but all ${duplicateCount} were duplicates`;
       console.log(
-        `[agent] Narrow search (categories + tags) returned ${totalFetched} items but all ${duplicateCount} were duplicates. ` +
+        `[agent] Narrow search (categories + tags) ${reason}. ` +
         `Retrying with broader search (categories only, no tags)…`,
       );
       const broad = await fetchNewItems(undefined, "broad");
