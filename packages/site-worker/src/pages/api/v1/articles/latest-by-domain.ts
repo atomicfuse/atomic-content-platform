@@ -6,7 +6,9 @@ import {
   type SiteLookup,
   type ArticleIndexEntry,
 } from '../../../../lib/kv-schema';
-import { isVisibleArticle } from '../../../../utils/article-status';
+// Always filter to published-only — URLs point to production domains where
+// only published articles are accessible (review articles 404 there).
+const isPublished = (status: string): boolean => status === 'published';
 
 export const prerender = false;
 
@@ -124,7 +126,7 @@ export const GET: APIRoute = async ({ request }) => {
 
     // Filter to visible + sort by publishDate desc, then slug asc for ties
     const sorted = articles
-      .filter((a) => isVisibleArticle(a.status))
+      .filter((a) => isPublished(a.status))
       .sort((a, b) => {
         const timeDiff =
           new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
