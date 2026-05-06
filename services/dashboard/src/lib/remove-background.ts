@@ -54,6 +54,7 @@ export async function removeBackground(
   return sharp(data, {
     raw: { width: info.width, height: info.height, channels: 4 },
   })
+    .trim()   // Remove transparent padding so the logo fills its bounding box
     .png()
     .toBuffer();
 }

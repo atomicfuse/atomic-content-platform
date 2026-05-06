@@ -8,6 +8,7 @@ import {
 } from "@/lib/github";
 import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
+import { removeBackground } from "@/lib/remove-background";
 
 interface SaveRequestBody {
   domain: string;
@@ -169,23 +170,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Clean uploaded logos: remove background + trim whitespace so the logo
+    // fills its bounding box (no tiny logo in a sea of white padding).
+    let processedLogoBase64 = logoBase64;
+    if (logoBase64) {
+      try {
+        const cleaned = await removeBackground(Buffer.from(logoBase64, "base64"));
+        processedLogoBase64 = cleaned.toString("base64");
+      } catch {
+        // Keep the original if processing fails
+      }
+    }
+
     // Set theme references for logo/favicon
     // When a logo is provided without a separate favicon, auto-extract the
     // icon portion as a square favicon so the browser tab is recognizable.
     let effectiveFaviconBase64 = faviconBase64;
-    if (logoBase64 && !faviconBase64) {
+    if (processedLogoBase64 && !faviconBase64) {
       try {
-        const extracted = await extractFaviconFromLogo(Buffer.from(logoBase64, "base64"));
+        const extracted = await extractFaviconFromLogo(Buffer.from(processedLogoBase64, "base64"));
         effectiveFaviconBase64 = extracted.toString("base64");
       } catch {
-        // Fall back to using the full logo as favicon
-        effectiveFaviconBase64 = logoBase64;
+        effectiveFaviconBase64 = processedLogoBase64;
       }
     }
 
-    if (logoBase64 || effectiveFaviconBase64) {
+    if (processedLogoBase64 || effectiveFaviconBase64) {
       const theme = (existing.theme ?? {}) as Record<string, unknown>;
-      if (logoBase64) {
+      if (processedLogoBase64) {
         theme.logo = "/assets/logo.png";
       }
       if (effectiveFaviconBase64) {
@@ -202,10 +214,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     ];
 
-    if (logoBase64) {
+    if (processedLogoBase64) {
       files.push({
         path: `sites/${domain}/assets/logo.png`,
-        content: Buffer.from(logoBase64, "base64"),
+        content: Buffer.from(processedLogoBase64, "base64"),
       });
     }
     if (effectiveFaviconBase64) {
@@ -215,10 +227,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       });
     }
 
-    const hasAssets = logoBase64 || effectiveFaviconBase64;
-    const assetLabel = logoBase64 && effectiveFaviconBase64
+    const hasAssets = processedLogoBase64 || effectiveFaviconBase64;
+    const assetLabel = processedLogoBase64 && effectiveFaviconBase64
       ? "logo and favicon"
-      : logoBase64
+      : processedLogoBase64
         ? "logo"
         : "favicon";
     const commitMsg = hasAssets && configUpdates
