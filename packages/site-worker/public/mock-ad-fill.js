@@ -393,12 +393,193 @@
     document.body.appendChild(panel);
   }
 
+  // ----------------------------------------------------------------
+  // Mock interstitial overlay
+  // ----------------------------------------------------------------
+  function mockInterstitial() {
+    // Read interstitial config exposed by InterstitialLoader.astro
+    var ic = window.__ATL_INTERSTITIAL_CONFIG__ || null;
+    if (!ic || (!ic.script_url && !ic.script_inline)) return;
+
+    // Skip mock overlay when a real script is configured — let
+    // InterstitialLoader's trigger logic handle the real ad script.
+    // Only show mock when the URL is the placeholder demo URL or empty.
+    var hasRealUrl = ic.script_url && ic.script_url.indexOf('example.com') === -1;
+    var hasRealInline = ic.script_inline && ic.script_inline.trim().length > 0;
+    if (hasRealUrl || hasRealInline) return;
+
+    // Build overlay
+    var overlay = document.createElement('div');
+    overlay.id = 'atl-interstitial-mock';
+    overlay.style.cssText = [
+      'position: fixed', 'inset: 0', 'z-index: 99999',
+      'background: rgba(0,0,0,0.75)', 'backdrop-filter: blur(4px)',
+      'display: flex', 'align-items: center', 'justify-content: center',
+      'opacity: 0', 'transition: opacity 0.3s ease',
+      'font-family: -apple-system, BlinkMacSystemFont, sans-serif'
+    ].join(';');
+
+    var card = document.createElement('div');
+    card.style.cssText = [
+      'background: #fff', 'border-radius: 12px', 'padding: 24px',
+      'max-width: 560px', 'width: 90%', 'max-height: 80vh', 'overflow-y: auto',
+      'box-shadow: 0 20px 60px rgba(0,0,0,0.3)',
+      'position: relative'
+    ].join(';');
+
+    // Close button with countdown delay (reads from config, default 3s)
+    var CLOSE_DELAY = (ic.close_delay_seconds != null) ? ic.close_delay_seconds : 3;
+    var closeBtn = document.createElement('button');
+
+    function activateCloseBtn() {
+      closeBtn.textContent = '\u2715';
+      closeBtn.disabled = false;
+      closeBtn.style.cssText = [
+        'position: absolute', 'top: 12px', 'right: 16px',
+        'background: none', 'border: none', 'font-size: 20px',
+        'color: #666', 'cursor: pointer', 'line-height: 1',
+        'padding: 4px', 'transition: all 0.2s ease'
+      ].join(';');
+      closeBtn.onmouseenter = function() { closeBtn.style.color = '#000'; };
+      closeBtn.onmouseleave = function() { closeBtn.style.color = '#666'; };
+    }
+
+    if (CLOSE_DELAY <= 0) {
+      activateCloseBtn();
+    } else {
+      closeBtn.disabled = true;
+      closeBtn.style.cssText = [
+        'position: absolute', 'top: 12px', 'right: 16px',
+        'background: rgba(0,0,0,0.08)', 'border: none', 'font-size: 13px',
+        'color: #999', 'cursor: default', 'line-height: 1',
+        'padding: 4px 8px', 'border-radius: 4px',
+        'font-family: -apple-system, BlinkMacSystemFont, sans-serif',
+        'font-weight: 600', 'min-width: 28px', 'text-align: center',
+        'transition: all 0.2s ease'
+      ].join(';');
+      closeBtn.textContent = String(CLOSE_DELAY);
+
+      var remaining = CLOSE_DELAY;
+      var countdown = setInterval(function() {
+        remaining--;
+        if (remaining > 0) {
+          closeBtn.textContent = String(remaining);
+        } else {
+          clearInterval(countdown);
+          activateCloseBtn();
+        }
+      }, 1000);
+    }
+
+    closeBtn.onclick = function() {
+      if (closeBtn.disabled) return;
+      overlay.style.opacity = '0';
+      setTimeout(function() { overlay.remove(); }, 300);
+    };
+    card.appendChild(closeBtn);
+
+    // "AD" badge
+    var adBadge = document.createElement('div');
+    adBadge.style.cssText = 'font-size:9px;font-weight:700;color:#999;letter-spacing:1px;margin-bottom:8px;';
+    adBadge.textContent = 'SPONSORED · INTERSTITIAL';
+    card.appendChild(adBadge);
+
+    // Title
+    var title = document.createElement('div');
+    title.style.cssText = 'font-size:16px;font-weight:700;color:#222;margin-bottom:16px;';
+    title.textContent = 'You may like:';
+    card.appendChild(title);
+
+    // Mock content grid
+    var grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:12px;';
+
+    var mockItems = [
+      { title: '10 Hidden Gems You Need to Visit', source: 'TravelNet' },
+      { title: 'The Future of AI in Everyday Life', source: 'TechPulse' },
+      { title: 'Top Budget Smartphones of 2026', source: 'GadgetPro' },
+      { title: 'Easy 15-Minute Dinner Recipes', source: 'FoodDaily' }
+    ];
+    var colors = ['#1a73e8', '#e65100', '#2e7d32', '#6a1b9a'];
+
+    mockItems.forEach(function(item, i) {
+      var itemCard = document.createElement('div');
+      itemCard.style.cssText = [
+        'border-radius: 8px', 'overflow: hidden',
+        'border: 1px solid #eee', 'cursor: pointer',
+        'transition: transform 0.15s ease, box-shadow 0.15s ease'
+      ].join(';');
+      itemCard.onmouseenter = function() { itemCard.style.transform = 'scale(1.02)'; itemCard.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)'; };
+      itemCard.onmouseleave = function() { itemCard.style.transform = 'scale(1)'; itemCard.style.boxShadow = 'none'; };
+
+      var thumb = document.createElement('div');
+      thumb.style.cssText = 'width:100%;height:80px;background:' + colors[i] + '22;display:flex;align-items:center;justify-content:center;';
+      var thumbIcon = document.createElement('div');
+      thumbIcon.style.cssText = 'width:40px;height:40px;border-radius:50%;background:' + colors[i] + '33;';
+      thumb.appendChild(thumbIcon);
+      itemCard.appendChild(thumb);
+
+      var body = document.createElement('div');
+      body.style.cssText = 'padding:10px;';
+
+      var t = document.createElement('div');
+      t.style.cssText = 'font-size:13px;font-weight:600;color:#333;line-height:1.3;margin-bottom:4px;';
+      t.textContent = item.title;
+      body.appendChild(t);
+
+      var s = document.createElement('div');
+      s.style.cssText = 'font-size:10px;color:#999;';
+      s.textContent = item.source;
+      body.appendChild(s);
+
+      itemCard.appendChild(body);
+      grid.appendChild(itemCard);
+    });
+
+    card.appendChild(grid);
+
+    // Trigger + frequency info
+    var info = document.createElement('div');
+    info.style.cssText = 'margin-top:16px;padding-top:12px;border-top:1px solid #eee;font-size:10px;color:#999;font-family:monospace;line-height:1.6;';
+    var trigger = ic.trigger || {};
+    var freq = ic.frequency || {};
+    info.innerHTML = '<div style="font-weight:700;color:#ffa000;margin-bottom:4px;">\uD83D\uDFE1 Mock Interstitial</div>' +
+      '<div style="color:#e65100;font-size:9px;margin-bottom:4px;">Mock always shows after 2s. Real interstitial respects trigger/frequency/page-type settings below.</div>' +
+      'Script: ' + (ic.script_url || '(inline, ' + (ic.script_inline || '').length + ' chars)') + '<br>' +
+      'Trigger: ' + (trigger.type || 'delay') +
+        (trigger.type === 'delay' ? ' (' + (trigger.delay_seconds || 5) + 's)' : '') +
+        (trigger.type === 'scroll' ? ' (' + (trigger.scroll_percent || 50) + '%)' : '') + '<br>' +
+      'Frequency: ' + (freq.type || 'once_per_session') +
+        (freq.type === 'custom' ? ' (max ' + (freq.max_per_session || 1) + '/session)' : '') + '<br>' +
+      'Pages: ' + (ic.page_types || ['all']).join(', ') + '<br>' +
+      'Close delay: ' + CLOSE_DELAY + 's';
+    card.appendChild(info);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    // Close on backdrop click (only after countdown expires)
+    overlay.addEventListener('click', function(e) {
+      if (e.target === overlay && !closeBtn.disabled) closeBtn.onclick();
+    });
+
+    // Fade in
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        overlay.style.opacity = '1';
+      });
+    });
+  }
+
   // Start checking for ad containers
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function() { setTimeout(fillAll, 500); });
   } else {
     setTimeout(fillAll, 500);
   }
+
+  // Show mock interstitial after a short delay (simulates trigger)
+  setTimeout(mockInterstitial, 2000);
 
   // Re-fill on resize (sizes change between mobile/desktop)
   var resizeTimer;

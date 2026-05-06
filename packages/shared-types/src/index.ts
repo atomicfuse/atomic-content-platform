@@ -9,6 +9,10 @@ export type {
   ScriptEntry,
   AdPlacementSizes,
   AdPlacement,
+  InterstitialTrigger,
+  InterstitialFrequency,
+  InterstitialPageType,
+  InterstitialConfig,
   AdsConfig,
 } from "./ads.js";
 

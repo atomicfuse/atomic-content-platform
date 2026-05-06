@@ -1,5 +1,6 @@
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
-import type { AdsConfigFormValue } from "@/components/settings/AdsConfigForm";
+import type { AdsConfigFormValue, InterstitialConfigFormValue } from "@/components/settings/AdsConfigForm";
+import { DEFAULT_INTERSTITIAL_CONFIG } from "@/components/settings/AdsConfigForm";
 import type { AdSizeConfig } from "@/components/settings/ad-size-config";
 import { sizeTuplesToConfig } from "@/components/settings/ad-size-config";
 
@@ -53,10 +54,32 @@ export function normalizeScripts(raw: Record<string, unknown> | undefined): Unif
   };
 }
 
+function normalizeInterstitialConfig(raw: Record<string, unknown> | undefined): InterstitialConfigFormValue {
+  if (!raw) return { ...DEFAULT_INTERSTITIAL_CONFIG };
+  const trigger = raw.trigger as Record<string, unknown> | undefined;
+  const frequency = raw.frequency as Record<string, unknown> | undefined;
+  return {
+    script_url: (raw.script_url as string) ?? "",
+    script_inline: (raw.script_inline as string) ?? "",
+    trigger: {
+      type: (trigger?.type as InterstitialConfigFormValue["trigger"]["type"]) ?? "delay",
+      delay_seconds: (trigger?.delay_seconds as number) ?? 5,
+      scroll_percent: (trigger?.scroll_percent as number) ?? 50,
+    },
+    frequency: {
+      type: (frequency?.type as InterstitialConfigFormValue["frequency"]["type"]) ?? "once_per_session",
+      max_per_session: (frequency?.max_per_session as number) ?? 1,
+    },
+    page_types: Array.isArray(raw.page_types) ? raw.page_types : ["all"],
+    close_delay_seconds: (raw.close_delay_seconds as number) ?? 3,
+  };
+}
+
 export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): AdsConfigFormValue {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
+    interstitial_config: normalizeInterstitialConfig(raw?.interstitial_config as Record<string, unknown> | undefined),
     layout: (raw?.layout as string) ?? "standard",
     ad_placements: placements.map((p: Record<string, unknown>) => {
       const rawSizes = p.sizes;

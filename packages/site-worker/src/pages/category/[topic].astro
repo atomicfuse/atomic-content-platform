@@ -50,7 +50,7 @@ const pageDesc = `Browse ${displayName} articles on ${config.site_name}`;
 const canonicalUrl = `https://${config.domain}/category/${topicSlug}`;
 ---
 
-<BaseLayout title={pageTitle} description={pageDesc}>
+<BaseLayout title={pageTitle} description={pageDesc} pageType="category">
   <Fragment slot="head">
     <SEOHead
       title={pageTitle}

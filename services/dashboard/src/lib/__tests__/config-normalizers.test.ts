@@ -280,3 +280,234 @@ describe("normalizeAdsConfig defaults", () => {
     expect(result.ad_placements).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interstitial config normalizer tests
+// ---------------------------------------------------------------------------
+describe("interstitial config normalization", () => {
+  it("I01 — returns default interstitial config when not present", () => {
+    const result = normalizeAdsConfig(undefined);
+    expect(result.interstitial_config).toEqual({
+      script_url: "",
+      script_inline: "",
+      trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+      frequency: { type: "once_per_session", max_per_session: 1 },
+      page_types: ["all"],
+      close_delay_seconds: 3,
+    });
+  });
+
+  it("I02 — returns default interstitial config for empty ads_config", () => {
+    const result = normalizeAdsConfig({});
+    expect(result.interstitial_config.script_url).toBe("");
+    expect(result.interstitial_config.trigger.type).toBe("delay");
+    expect(result.interstitial_config.frequency.type).toBe("once_per_session");
+    expect(result.interstitial_config.page_types).toEqual(["all"]);
+  });
+
+  it("I03 — normalizes full interstitial config from YAML", () => {
+    const result = normalizeAdsConfig({
+      interstitial: true,
+      interstitial_config: {
+        script_url: "https://cdn.example.com/interstitial.js",
+        trigger: { type: "scroll", scroll_percent: 75 },
+        frequency: { type: "custom", max_per_session: 3 },
+        page_types: ["article", "homepage"],
+      },
+    });
+    expect(result.interstitial).toBe(true);
+    expect(result.interstitial_config.script_url).toBe("https://cdn.example.com/interstitial.js");
+    expect(result.interstitial_config.trigger.type).toBe("scroll");
+    expect(result.interstitial_config.trigger.scroll_percent).toBe(75);
+    expect(result.interstitial_config.frequency.type).toBe("custom");
+    expect(result.interstitial_config.frequency.max_per_session).toBe(3);
+    expect(result.interstitial_config.page_types).toEqual(["article", "homepage"]);
+  });
+
+  it("I04 — fills defaults for partial trigger config", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://example.com/ad.js",
+        trigger: { type: "delay" },
+        frequency: {},
+      },
+    });
+    expect(result.interstitial_config.trigger.delay_seconds).toBe(5);
+    expect(result.interstitial_config.trigger.scroll_percent).toBe(50);
+    expect(result.interstitial_config.frequency.type).toBe("once_per_session");
+    expect(result.interstitial_config.frequency.max_per_session).toBe(1);
+  });
+
+  it("I05 — fills defaults for missing trigger and frequency objects", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://example.com/ad.js",
+      },
+    });
+    expect(result.interstitial_config.trigger).toEqual({
+      type: "delay",
+      delay_seconds: 5,
+      scroll_percent: 50,
+    });
+    expect(result.interstitial_config.frequency).toEqual({
+      type: "once_per_session",
+      max_per_session: 1,
+    });
+  });
+
+  it("I06 — defaults page_types to ['all'] when missing", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: { script_url: "https://x.com/a.js" },
+    });
+    expect(result.interstitial_config.page_types).toEqual(["all"]);
+  });
+
+  it("I07 — preserves exit_intent trigger type", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        trigger: { type: "exit_intent" },
+      },
+    });
+    expect(result.interstitial_config.trigger.type).toBe("exit_intent");
+  });
+
+  it("I08 — preserves once_per_day frequency type", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        frequency: { type: "once_per_day" },
+      },
+    });
+    expect(result.interstitial_config.frequency.type).toBe("once_per_day");
+  });
+
+  it("I09 — preserves custom max_per_session value", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        frequency: { type: "custom", max_per_session: 5 },
+      },
+    });
+    expect(result.interstitial_config.frequency.max_per_session).toBe(5);
+  });
+
+  it("I10 — preserves category-only page_types", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        page_types: ["category"],
+      },
+    });
+    expect(result.interstitial_config.page_types).toEqual(["category"]);
+  });
+
+  it("I11 — preserves delay_seconds value", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        trigger: { type: "delay", delay_seconds: 30 },
+      },
+    });
+    expect(result.interstitial_config.trigger.delay_seconds).toBe(30);
+  });
+
+  it("I12 — interstitial false with config still normalizes config", () => {
+    const result = normalizeAdsConfig({
+      interstitial: false,
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        trigger: { type: "scroll", scroll_percent: 80 },
+        frequency: { type: "once_per_day" },
+        page_types: ["homepage", "article"],
+      },
+    });
+    expect(result.interstitial).toBe(false);
+    expect(result.interstitial_config.script_url).toBe("https://x.com/a.js");
+    expect(result.interstitial_config.trigger.scroll_percent).toBe(80);
+  });
+
+  it("I13 — preserves multiple page_types", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        page_types: ["article", "category", "homepage"],
+      },
+    });
+    expect(result.interstitial_config.page_types).toHaveLength(3);
+    expect(result.interstitial_config.page_types).toContain("article");
+    expect(result.interstitial_config.page_types).toContain("category");
+    expect(result.interstitial_config.page_types).toContain("homepage");
+  });
+
+  it("I14 — non-array page_types falls back to ['all']", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        page_types: "article",
+      },
+    });
+    expect(result.interstitial_config.page_types).toEqual(["all"]);
+  });
+
+  it("I15 — interstitial_config is independent of ad_placements", () => {
+    const result = normalizeAdsConfig({
+      interstitial: true,
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        trigger: { type: "delay", delay_seconds: 10 },
+      },
+      ad_placements: [
+        { id: "top", position: "above-content", device: "all", sizes: { desktop: [[728, 90]] } },
+      ],
+    });
+    expect(result.interstitial).toBe(true);
+    expect(result.interstitial_config.script_url).toBe("https://x.com/a.js");
+    expect(result.ad_placements).toHaveLength(1);
+    expect(result.ad_placements[0].id).toBe("top");
+  });
+
+  it("I16 — defaults close_delay_seconds to 3 when missing", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: { script_url: "https://x.com/a.js" },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(3);
+  });
+
+  it("I17 — preserves explicit close_delay_seconds value", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        close_delay_seconds: 5,
+      },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(5);
+  });
+
+  it("I18 — preserves close_delay_seconds of 0", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        close_delay_seconds: 0,
+      },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(0);
+  });
+
+  it("I19 — defaults script_inline to empty string when missing", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: { script_url: "https://x.com/a.js" },
+    });
+    expect(result.interstitial_config.script_inline).toBe("");
+  });
+
+  it("I20 — preserves script_inline value", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "",
+        script_inline: "(function(){ /* ad code */ })();",
+      },
+    });
+    expect(result.interstitial_config.script_inline).toBe("(function(){ /* ad code */ })();");
+  });
+});

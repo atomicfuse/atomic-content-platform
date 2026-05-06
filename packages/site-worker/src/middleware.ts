@@ -28,6 +28,12 @@ import { resolvePreview, generatePreviewScript } from './lib/preview-override';
  *   - default                      no explicit cache (CF default)
  */
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Public API v1 endpoints bypass per-site resolution — they handle
+  // multi-domain lookups internally and don't need Astro.locals.site.
+  if (context.url.pathname.startsWith('/api/v1/')) {
+    return next();
+  }
+
   // Health check bypass — useful while seeding KV.
   if (context.url.pathname === '/_ping') {
     return new Response('ok', {

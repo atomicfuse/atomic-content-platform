@@ -1,6 +1,7 @@
 services:
   dashboard:
     type: nextjs
+    path: /
     env:
       CONTENT_AGENT_URL: http://content-pipeline-app
       NEXTAUTH_URL: https://sites-platform-e297.atomic.cloudgrid.io
@@ -11,6 +12,7 @@ services:
 
   content-pipeline:
     type: node
+    path: /api
     build: npm run build
     start: npm start
     lang: typescript

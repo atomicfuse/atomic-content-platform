@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { SizeConfigPanel } from "./SizeConfigPanel";
 import type { AdSizeConfig } from "./ad-size-config";
 import {
@@ -29,8 +29,36 @@ export interface AdPlacement {
 
 export { validatePlacementConfigs } from "./ad-size-config";
 
+export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+
+export interface InterstitialConfigFormValue {
+  script_url: string;
+  script_inline: string;
+  trigger: {
+    type: "delay" | "scroll" | "exit_intent";
+    delay_seconds: number;
+    scroll_percent: number;
+  };
+  frequency: {
+    type: "once_per_session" | "once_per_day" | "custom";
+    max_per_session: number;
+  };
+  page_types: InterstitialPageType[];
+  close_delay_seconds: number;
+}
+
+export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
+  script_url: "",
+  script_inline: "",
+  trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+  frequency: { type: "once_per_session", max_per_session: 1 },
+  page_types: ["all"],
+  close_delay_seconds: 3,
+};
+
 export interface AdsConfigFormValue {
   interstitial: boolean;
+  interstitial_config: InterstitialConfigFormValue;
   layout: string;
   ad_placements: AdPlacement[];
 }
@@ -132,6 +160,16 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
           }}
         />
       </div>
+
+      {/* Interstitial Config — shown when toggle is ON */}
+      {value.interstitial && (
+        <InterstitialConfigPanel
+          config={value.interstitial_config}
+          onChange={(cfg): void => {
+            updateField("interstitial_config", cfg);
+          }}
+        />
+      )}
 
       {/* Layout dropdown */}
       <div className="space-y-1.5">
@@ -339,6 +377,292 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
 
       {/* Placement Preview */}
       <PlacementPreview placements={value.ad_placements} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Interstitial Config Panel                                           */
+/* ------------------------------------------------------------------ */
+
+const TRIGGER_OPTIONS: Array<{ value: InterstitialConfigFormValue["trigger"]["type"]; label: string }> = [
+  { value: "delay", label: "Time Delay" },
+  { value: "scroll", label: "Scroll Depth" },
+  { value: "exit_intent", label: "Exit Intent" },
+];
+
+const FREQUENCY_OPTIONS: Array<{ value: InterstitialConfigFormValue["frequency"]["type"]; label: string }> = [
+  { value: "once_per_session", label: "Once Per Session" },
+  { value: "once_per_day", label: "Once Per Day" },
+  { value: "custom", label: "Custom (N per Session)" },
+];
+
+const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> = [
+  { value: "all", label: "All Pages" },
+  { value: "homepage", label: "Homepage" },
+  { value: "article", label: "Articles" },
+  { value: "category", label: "Categories" },
+];
+
+function InterstitialConfigPanel({
+  config,
+  onChange,
+}: {
+  config: InterstitialConfigFormValue;
+  onChange: (config: InterstitialConfigFormValue) => void;
+}): React.ReactElement {
+  const initialTab = config.script_inline ? "inline" : "url";
+  const [scriptTab, setScriptTab] = useState<"url" | "inline">(initialTab);
+
+  const update = <K extends keyof InterstitialConfigFormValue>(
+    key: K,
+    val: InterstitialConfigFormValue[K],
+  ): void => {
+    onChange({ ...config, [key]: val });
+  };
+
+  const togglePageType = (pt: InterstitialPageType): void => {
+    if (pt === "all") {
+      // Toggle "all" — if already selected, deselect; otherwise select only "all"
+      update("page_types", config.page_types.includes("all") ? [] : ["all"]);
+      return;
+    }
+    // Deselect "all" when picking specific types
+    let next: InterstitialPageType[] = config.page_types.filter((t) => t !== "all");
+    if (next.includes(pt)) {
+      next = next.filter((t) => t !== pt);
+    } else {
+      next = [...next, pt];
+    }
+    // If all specific types selected, collapse to "all"
+    if (next.length === 3 && next.includes("homepage") && next.includes("article") && next.includes("category")) {
+      next = ["all"];
+    }
+    update("page_types", next.length > 0 ? next : ["all"]);
+  };
+
+  const selectClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none";
+  const inputClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors";
+  const labelClass =
+    "block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]";
+
+  return (
+    <div className="rounded-lg border border-cyan/20 bg-cyan/5 p-4 space-y-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-cyan">
+        Interstitial Configuration
+      </h4>
+
+      {/* Script — tabbed: External URL / Inline Code */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Script</label>
+        <div className="flex gap-1 mb-2">
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("url")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "url"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            External URL
+          </button>
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("inline")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "inline"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            Inline Code
+          </button>
+        </div>
+
+        {scriptTab === "url" ? (
+          <>
+            <input
+              type="url"
+              value={config.script_url}
+              placeholder="https://cdn.adnetwork.com/interstitial.js"
+              onChange={(e): void => {
+                update("script_url", e.target.value);
+              }}
+              className={inputClass}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              External ad-network script that renders the interstitial overlay.
+            </p>
+          </>
+        ) : (
+          <>
+            <textarea
+              value={config.script_inline}
+              placeholder={"// Inline JavaScript for the interstitial overlay\n(function() {\n  // ...\n})();"}
+              onChange={(e): void => {
+                update("script_inline", e.target.value);
+              }}
+              rows={6}
+              className={inputClass + " font-mono text-xs"}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              Inline JavaScript injected directly. Use when no external script URL is available.
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Trigger + Frequency row */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Trigger */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Trigger</label>
+          <select
+            value={config.trigger.type}
+            onChange={(e): void => {
+              onChange({
+                ...config,
+                trigger: { ...config.trigger, type: e.target.value as InterstitialConfigFormValue["trigger"]["type"] },
+              });
+            }}
+            className={selectClass}
+          >
+            {TRIGGER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {config.trigger.type === "delay" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={config.trigger.delay_seconds}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    trigger: { ...config.trigger, delay_seconds: Math.max(1, parseInt(e.target.value) || 5) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">seconds</span>
+            </div>
+          )}
+
+          {config.trigger.type === "scroll" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={config.trigger.scroll_percent}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    trigger: { ...config.trigger, scroll_percent: Math.max(1, Math.min(100, parseInt(e.target.value) || 50)) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">% scroll depth</span>
+            </div>
+          )}
+        </div>
+
+        {/* Frequency */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Frequency Cap</label>
+          <select
+            value={config.frequency.type}
+            onChange={(e): void => {
+              onChange({
+                ...config,
+                frequency: { ...config.frequency, type: e.target.value as InterstitialConfigFormValue["frequency"]["type"] },
+              });
+            }}
+            className={selectClass}
+          >
+            {FREQUENCY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {config.frequency.type === "custom" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={config.frequency.max_per_session}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    frequency: { ...config.frequency, max_per_session: Math.max(1, parseInt(e.target.value) || 1) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">times per session</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Page Types */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Show On Page Types</label>
+        <div className="flex flex-wrap gap-2">
+          {PAGE_TYPE_OPTIONS.map((opt) => {
+            const active = config.page_types.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(): void => {
+                  togglePageType(opt.value);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+                  active
+                    ? "bg-cyan/20 border-cyan/50 text-cyan"
+                    : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Close Button Delay */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Close Button Delay</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={config.close_delay_seconds}
+            onChange={(e): void => {
+              update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+            }}
+            className={inputClass + " w-20"}
+          />
+          <span className="text-xs text-[var(--text-muted)]">seconds</span>
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+        </p>
+      </div>
     </div>
   );
 }

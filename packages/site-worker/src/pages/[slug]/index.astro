@@ -91,6 +91,7 @@ if (article) {
   <BaseLayout
     title={`${article.frontmatter.title} | ${config.site_name}`}
     description={article.frontmatter.description ?? article.frontmatter.title}
+    pageType="article"
   >
     <Fragment slot="head">
       <SEOHead

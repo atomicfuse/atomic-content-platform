@@ -47,6 +47,7 @@ const hasMore = visible.length > initialCount + (page - 1) * pageSize;
 <BaseLayout
   title={config.site_name}
   description={config.site_tagline ?? `${config.site_name} — latest articles`}
+  pageType="homepage"
 >
   <Fragment slot="head">
     <SEOHead

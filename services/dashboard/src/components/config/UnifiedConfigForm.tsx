@@ -105,6 +105,14 @@ const DEFAULT_SCRIPTS: ScriptsConfig = {
 
 const DEFAULT_ADS_CONFIG: AdsConfigFormValue = {
   interstitial: false,
+  interstitial_config: {
+    script_url: "",
+    script_inline: "",
+    trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+    frequency: { type: "once_per_session", max_per_session: 1 },
+    page_types: ["all"],
+    close_delay_seconds: 3,
+  },
   layout: "standard",
   ad_placements: [],
 };
