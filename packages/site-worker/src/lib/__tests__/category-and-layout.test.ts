@@ -371,8 +371,8 @@ describe('Layout resolution', () => {
   it('hero.count only accepts 3 or 4', () => {
     expect(resolveLayout({ hero: { count: 3 } }).hero.count).toBe(3);
     expect(resolveLayout({ hero: { count: 4 } }).hero.count).toBe(4);
-    expect(resolveLayout({ hero: { count: 5 } }).hero.count).toBe(LAYOUT_DEFAULTS.hero.count);
-    expect(resolveLayout({ hero: { count: 0 } }).hero.count).toBe(LAYOUT_DEFAULTS.hero.count);
+    expect(resolveLayout({ hero: { count: 5 as unknown as 3 | 4 } }).hero.count).toBe(LAYOUT_DEFAULTS.hero.count);
+    expect(resolveLayout({ hero: { count: 0 as unknown as 3 | 4 } }).hero.count).toBe(LAYOUT_DEFAULTS.hero.count);
   });
 
   it('must_reads.count clamps to >= 1', () => {
@@ -961,13 +961,13 @@ describe('Full merge cycle — scripts across org → group → override → sit
 
     // Step 2: merge scripts_vars via deepMerge
     const mergedVars = layers.reduce(
-      (acc, l) => deepMerge(acc, l.scripts_vars ?? {}) as Record<string, string>,
+      (acc, l) => deepMerge(acc, (l.scripts_vars ?? {}) as Record<string, string>) as Record<string, string>,
       {} as Record<string, string>,
     );
     expect(mergedVars).toEqual({ alpha_id: 'cool-001', inter_enabled: 'false' });
 
     // Step 3: resolve placeholders
-    const resolved = resolveScriptVars(scripts, mergedVars);
+    const resolved = resolveScriptVars(scripts, mergedVars as Record<string, string>);
     expect(resolved.head[1].inline).toBe("window.init('cool-001')");
     expect(resolved.body_end[0].inline).toBe("if('false'==='true') run()");
     expect(resolved.body_start[0].inline).toBe("document.body.style.backgroundColor='red'");

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
@@ -12,6 +13,7 @@ import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
+import { generateLogoPreview } from "@/actions/wizard";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -38,6 +40,9 @@ interface ContentAgentTabProps {
   pagesProject?: string | null;
   pagesSubdomain?: string | null;
   customDomain?: string | null;
+  currentLogoPath?: string | null;
+  currentFaviconPath?: string | null;
+  previewUrl?: string | null;
 }
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -54,68 +59,138 @@ export function ContentAgentTab({
   pagesProject,
   pagesSubdomain,
   customDomain,
+  currentLogoPath,
+  currentFaviconPath,
+  previewUrl,
 }: ContentAgentTabProps): React.ReactElement {
   const { toast } = useToast();
+  const router = useRouter();
   const { audiences: audienceOptions } = useAudiences();
 
   // --- Identity state ---
   const [savingIdentity, setSavingIdentity] = useState(false);
-  const [siteName, setSiteName] = useState((siteConfig?.site_name as string) ?? "");
-  const [siteTagline, setSiteTagline] = useState((siteConfig?.site_tagline as string) ?? "");
+  const initSiteName = (siteConfig?.site_name as string) ?? "";
+  const initSiteTagline = (siteConfig?.site_tagline as string) ?? "";
   const briefRaw = siteConfig?.brief as Record<string, unknown> | undefined;
+  const initAudienceIds = (() => {
+    const raw = briefRaw?.audience_type_ids;
+    if (Array.isArray(raw)) return raw as string[];
+    const single = briefRaw?.audience_type_id as string | undefined;
+    return single ? [single] : [];
+  })();
+  const initTone = brief?.tone ?? "";
+  const [siteName, setSiteName] = useState(initSiteName);
+  const [siteTagline, setSiteTagline] = useState(initSiteTagline);
   const [audiences, setAudiences] = useState<string[]>(() => {
     const raw = briefRaw?.audiences;
     if (Array.isArray(raw)) return raw as string[];
     const single = brief?.audience;
     return single ? [single] : [];
   });
-  const [audienceIds, setAudienceIds] = useState<string[]>(() => {
-    const raw = briefRaw?.audience_type_ids;
-    if (Array.isArray(raw)) return raw as string[];
-    const single = briefRaw?.audience_type_id as string | undefined;
-    return single ? [single] : [];
-  });
-  const [tone, setTone] = useState(brief?.tone ?? "");
+  const [audienceIds, setAudienceIds] = useState<string[]>(initAudienceIds);
+  const [tone, setTone] = useState(initTone);
+
+  // --- Assets state ---
+  const [assetVersion, setAssetVersion] = useState(0);
+  function assetUrl(assetPath: string): string {
+    const file = assetPath.replace(/^\//, "");
+    return `/api/sites/asset?domain=${encodeURIComponent(domain)}&file=${encodeURIComponent(file)}&v=${assetVersion}`;
+  }
+  const logoFileRef = useRef<HTMLInputElement>(null);
+  const faviconFileRef = useRef<HTMLInputElement>(null);
+  const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [pendingFavicon, setPendingFavicon] = useState<string | null>(null);
+  const [faviconSameAsLogo, setFaviconSameAsLogo] = useState(true);
+  const [isGeneratingLogo, startGenLogo] = useTransition();
+
+  // When logo changes and sync is on, auto-copy to favicon
+  function setLogoAndSync(base64: string): void {
+    setPendingLogo(base64);
+    if (faviconSameAsLogo) setPendingFavicon(base64);
+  }
+
+  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { toast("Please select an image file (PNG, JPG, SVG)", "error"); return; }
+    if (file.size > 2 * 1024 * 1024) { toast("Image must be under 2MB", "error"); return; }
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const base64Data = (reader.result as string).split(",")[1];
+      if (base64Data) setLogoAndSync(base64Data);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleFaviconUpload(e: React.ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/") && file.type !== "image/x-icon") { toast("Please select an image file (PNG, ICO, SVG)", "error"); return; }
+    if (file.size > 500 * 1024) { toast("Favicon must be under 500KB", "error"); return; }
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const base64Data = (reader.result as string).split(",")[1];
+      if (base64Data) {
+        setPendingFavicon(base64Data);
+        setFaviconSameAsLogo(false);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleGenerateLogo(): void {
+    startGenLogo(async () => {
+      try {
+        const base64 = await generateLogoPreview(domain);
+        if (base64) setLogoAndSync(base64);
+        else toast("AI could not generate an image — try again", "error");
+      } catch (err) {
+        toast(`Generation failed: ${err instanceof Error ? err.message : "Unknown"}`, "error");
+      }
+    });
+  }
 
   // --- Content Brief state ---
   const [savingBrief, setSavingBrief] = useState(false);
-  const [topics, setTopics] = useState<string[]>(brief?.topics ?? []);
-  const [topicInput, setTopicInput] = useState("");
-  const [articlesPerDay, setArticlesPerDay] = useState(
-    brief?.articles_per_day
-      ?? Math.max(1, Math.ceil((brief?.articles_per_week ?? 5) / Math.max(1, brief?.preferred_days?.length ?? 7)))
-  );
-  const [preferredDays, setPreferredDays] = useState<string[]>(brief?.preferred_days ?? []);
-  const [guidelines, setGuidelines] = useState(
-    Array.isArray(brief?.content_guidelines)
-      ? brief.content_guidelines.join("\n")
-      : (brief?.content_guidelines ?? "")
-  );
-
-  // --- Quality state (part of Content Brief) ---
-  const [qualityThreshold, setQualityThreshold] = useState(brief?.quality_threshold ?? 75);
-  const [qualityWeights, setQualityWeights] = useState({
+  const initTopics = brief?.topics ?? [];
+  const initArticlesPerDay = brief?.articles_per_day
+    ?? Math.max(1, Math.ceil((brief?.articles_per_week ?? 5) / Math.max(1, brief?.preferred_days?.length ?? 7)));
+  const initPreferredDays = brief?.preferred_days ?? [];
+  const initGuidelines = Array.isArray(brief?.content_guidelines)
+    ? brief.content_guidelines.join("\n")
+    : (brief?.content_guidelines ?? "");
+  const initQualityThreshold = brief?.quality_threshold ?? 75;
+  const initQualityWeights = {
     seo_quality: brief?.quality_weights?.seo_quality ?? 20,
     tone_match: brief?.quality_weights?.tone_match ?? 20,
     content_length: brief?.quality_weights?.content_length ?? 20,
     factual_accuracy: brief?.quality_weights?.factual_accuracy ?? 20,
     keyword_relevance: brief?.quality_weights?.keyword_relevance ?? 20,
-  });
+  };
+  const initVerticalId = (briefRaw?.vertical_id as string) ?? "";
+  const initCategoryIds = (briefRaw?.category_ids as string[]) ?? [];
+  const initTagIds = (briefRaw?.tag_ids as string[]) ?? [];
+  const initSeoKeywords = (briefRaw?.seo_keywords_focus as string[]) ?? [];
+  const [topics, setTopics] = useState<string[]>(initTopics);
+  const [topicInput, setTopicInput] = useState("");
+  const [articlesPerDay, setArticlesPerDay] = useState(initArticlesPerDay);
+  const [preferredDays, setPreferredDays] = useState<string[]>(initPreferredDays);
+  const [guidelines, setGuidelines] = useState(initGuidelines);
+
+  // --- Quality state (part of Content Brief) ---
+  const [qualityThreshold, setQualityThreshold] = useState(initQualityThreshold);
+  const [qualityWeights, setQualityWeights] = useState(initQualityWeights);
   const weightsTotal = Object.values(qualityWeights).reduce((a, b) => a + b, 0);
 
   // --- Niche Targeting state ---
-  const [verticalId, setVerticalId] = useState<string>((briefRaw?.vertical_id as string) ?? "");
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(
-    (briefRaw?.category_ids as string[]) ?? [],
-  );
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(
-    (briefRaw?.tag_ids as string[]) ?? [],
-  );
+  const [verticalId, setVerticalId] = useState<string>(initVerticalId);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>(initCategoryIds);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(initTagIds);
   const [selectedTagNames, setSelectedTagNames] = useState<Map<string, string>>(new Map());
   const [tagSearch, setTagSearch] = useState("");
-  const [seoKeywords, setSeoKeywords] = useState<string[]>(
-    (briefRaw?.seo_keywords_focus as string[]) ?? [],
-  );
+  const [seoKeywords, setSeoKeywords] = useState<string[]>(initSeoKeywords);
   const [seoKeywordInput, setSeoKeywordInput] = useState("");
   const [bundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
   const [verticalSearch, setVerticalSearch] = useState("");
@@ -198,9 +273,8 @@ export function ContentAgentTab({
 
   // --- Groups state ---
   const [savingGroups, setSavingGroups] = useState(false);
-  const [groups, setGroups] = useState<string[]>(
-    (siteConfig?.groups as string[] | undefined) ?? (siteConfig?.group ? [siteConfig.group as string] : [])
-  );
+  const initGroups = (siteConfig?.groups as string[] | undefined) ?? (siteConfig?.group ? [siteConfig.group as string] : []);
+  const [groups, setGroups] = useState<string[]>(initGroups);
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
   useEffect(() => {
     fetch("/api/groups")
@@ -283,20 +357,30 @@ export function ContentAgentTab({
 
   async function saveIdentity(): Promise<void> {
     setSavingIdentity(true);
+    // When "same as logo" is on, let the save route auto-extract a square
+    // icon favicon from the logo instead of using the full logo as favicon.
+    const effectiveFavicon = faviconSameAsLogo ? null : pendingFavicon;
     try {
       const res = await fetch("/api/sites/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
-          logoBase64: null,
-          faviconBase64: null,
+          logoBase64: pendingLogo ?? null,
+          faviconBase64: effectiveFavicon ?? null,
           configUpdates: { siteName, siteTagline, audiences, audienceIds, tone },
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
-      if (data.status === "ok") toast("Identity saved", "success");
-      else toast(data.message ?? "Failed to save", "error");
+      if (data.status === "ok") {
+        toast("Identity saved", "success");
+        setPendingLogo(null);
+        setPendingFavicon(null);
+        setAssetVersion((v) => v + 1);
+        router.refresh();
+      } else {
+        toast(data.message ?? "Failed to save", "error");
+      }
     } catch {
       toast("Failed to save identity", "error");
     } finally {
@@ -365,6 +449,28 @@ export function ContentAgentTab({
 
   // --- Sub-tab content ---
 
+  const identityDirty =
+    siteName !== initSiteName ||
+    siteTagline !== initSiteTagline ||
+    tone !== initTone ||
+    JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
+    !!pendingLogo ||
+    !!pendingFavicon;
+
+  const briefDirty =
+    JSON.stringify(topics) !== JSON.stringify(initTopics) ||
+    articlesPerDay !== initArticlesPerDay ||
+    JSON.stringify(preferredDays) !== JSON.stringify(initPreferredDays) ||
+    guidelines !== initGuidelines ||
+    qualityThreshold !== initQualityThreshold ||
+    JSON.stringify(qualityWeights) !== JSON.stringify(initQualityWeights) ||
+    verticalId !== initVerticalId ||
+    JSON.stringify(selectedCategoryIds) !== JSON.stringify(initCategoryIds) ||
+    JSON.stringify(selectedTagIds) !== JSON.stringify(initTagIds) ||
+    JSON.stringify(seoKeywords) !== JSON.stringify(initSeoKeywords);
+
+  const groupsDirty = JSON.stringify(groups) !== JSON.stringify(initGroups);
+
   const identityContent = (
     <div className="space-y-6">
       <div className="space-y-4">
@@ -416,12 +522,198 @@ export function ContentAgentTab({
         </div>
         <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
       </div>
+      {/* Assets (Logo & Favicon) */}
+      <div className="space-y-3">
+        <div>
+          <h3 className="text-sm font-bold text-[var(--text-primary)]">Assets (optional)</h3>
+          <p className="text-xs text-[var(--text-muted)] mt-0.5">
+            Optional — AI will generate a logo if you skip this
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Logo */}
+          <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+            <h4 className="text-sm font-semibold text-[var(--text-primary)]">Logo</h4>
+
+            {!pendingLogo && currentLogoPath && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={assetUrl(currentLogoPath)}
+                  alt="Current logo"
+                  className="w-14 h-14 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
+                  onError={(e): void => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+                <p className="text-xs text-[var(--text-muted)]">Current logo</p>
+              </div>
+            )}
+
+            {pendingLogo && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={`data:image/png;base64,${pendingLogo}`}
+                  alt="Logo preview"
+                  className="w-14 h-14 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
+                />
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-[var(--text-primary)]">New logo ready</p>
+                  <p className="text-[10px] text-[var(--text-muted)]">Save to apply</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={(): void => setPendingLogo(null)}
+                  className="text-[var(--text-muted)] hover:text-red-400 transition-colors p-1"
+                  title="Discard logo"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" size="sm" onClick={(): void => logoFileRef.current?.click()}>
+                {pendingLogo || currentLogoPath ? "Replace Logo" : "Upload Logo"}
+              </Button>
+              <Button variant="secondary" size="sm" loading={isGeneratingLogo} onClick={handleGenerateLogo}>
+                {isGeneratingLogo ? "Generating..." : "Generate with AI"}
+              </Button>
+              <input ref={logoFileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
+          </div>
+
+          {/* Favicon */}
+          <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+            <h4 className="text-sm font-semibold text-[var(--text-primary)]">Favicon</h4>
+
+            {/* Sync toggle */}
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={faviconSameAsLogo}
+                onChange={(e): void => {
+                  const checked = e.target.checked;
+                  setFaviconSameAsLogo(checked);
+                  if (checked && pendingLogo) setPendingFavicon(pendingLogo);
+                }}
+                className="accent-cyan"
+              />
+              <span className="text-xs text-[var(--text-secondary)]">Same as logo</span>
+            </label>
+
+            {faviconSameAsLogo ? (
+              /* Synced mode — show preview of whatever logo is */
+              <div className="space-y-3">
+                {(pendingLogo || pendingFavicon) ? (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={`data:image/png;base64,${pendingLogo ?? pendingFavicon}`}
+                      alt="Favicon preview"
+                      className="w-8 h-8 rounded object-contain bg-white border border-[var(--border-secondary)]"
+                    />
+                    <p className="text-xs text-[var(--text-muted)]">Will use the logo as favicon</p>
+                  </div>
+                ) : currentLogoPath ? (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={assetUrl(currentLogoPath)}
+                      alt="Current favicon"
+                      className="w-8 h-8 rounded object-contain bg-white border border-[var(--border-secondary)]"
+                      onError={(e): void => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <p className="text-xs text-[var(--text-muted)]">Using logo as favicon</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-[var(--text-muted)]">Favicon will match the logo</p>
+                )}
+              </div>
+            ) : (
+              /* Independent mode — full favicon controls */
+              <div className="space-y-3">
+                {!pendingFavicon && currentFaviconPath && (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={assetUrl(currentFaviconPath)}
+                      alt="Current favicon"
+                      className="w-8 h-8 rounded object-contain bg-white border border-[var(--border-secondary)]"
+                      onError={(e): void => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <p className="text-xs text-[var(--text-muted)]">Current favicon</p>
+                  </div>
+                )}
+
+                {pendingFavicon && (
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={`data:image/png;base64,${pendingFavicon}`}
+                      alt="Favicon preview"
+                      className="w-8 h-8 rounded object-contain bg-white border border-[var(--border-secondary)]"
+                    />
+                    <div className="flex-1">
+                      <p className="text-xs font-medium text-[var(--text-primary)]">New favicon ready</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">Save to apply</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(): void => setPendingFavicon(null)}
+                      className="text-[var(--text-muted)] hover:text-red-400 transition-colors p-1"
+                      title="Discard favicon"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={(): void => faviconFileRef.current?.click()}>
+                    {pendingFavicon || currentFaviconPath ? "Replace Favicon" : "Upload Favicon"}
+                  </Button>
+                  <input ref={faviconFileRef} type="file" accept=".png,.ico,.svg,image/png,image/x-icon,image/svg+xml" className="hidden" onChange={handleFaviconUpload} />
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">PNG, ICO or SVG, max 500KB.</p>
+              </div>
+            )}
+
+            {/* Browser tab mockup — always visible */}
+            <div>
+              <p className="text-[10px] text-[var(--text-muted)] mb-1">Browser tab preview</p>
+              <div className="inline-block">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg bg-[var(--bg-elevated)] border border-b-0 border-[var(--border-secondary)] max-w-[180px]">
+                  {(() => {
+                    const favSrc = faviconSameAsLogo
+                      ? (pendingLogo ? `data:image/png;base64,${pendingLogo}` : currentLogoPath ? assetUrl(currentLogoPath) : null)
+                      : (pendingFavicon ? `data:image/png;base64,${pendingFavicon}` : currentFaviconPath ? assetUrl(currentFaviconPath) : null);
+                    return favSrc
+                      ? <img src={favSrc} alt="" className="w-4 h-4 rounded-sm object-contain flex-shrink-0" />
+                      : <div className="w-4 h-4 rounded-sm bg-[var(--border-secondary)] flex-shrink-0" />;
+                  })()}
+                  <span className="text-xs text-[var(--text-primary)] truncate">
+                    {domain.replace(/\.pages\.dev$/, "").split(".")[0] ?? domain}
+                  </span>
+                </div>
+                <div className="border border-[var(--border-secondary)] rounded-tr-lg rounded-b-lg bg-[var(--bg-primary)] px-3 py-2 w-56">
+                  <div className="h-2 w-3/4 rounded bg-[var(--border-secondary)]" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <AttachDomainPanel
         domain={domain}
         customDomain={customDomain ?? null}
       />
-      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
-        <Button onClick={saveIdentity} loading={savingIdentity}>Save Identity</Button>
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
+        {identityDirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save Identity to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={saveIdentity} loading={savingIdentity} disabled={!identityDirty || savingIdentity}>Save Identity</Button>
       </div>
     </div>
   );
@@ -834,8 +1126,13 @@ export function ContentAgentTab({
         </div>
       </div>
 
-      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
-        <Button onClick={saveBrief} loading={savingBrief}>Save Content Brief</Button>
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
+        {briefDirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save Content Brief to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={saveBrief} loading={savingBrief} disabled={!briefDirty || savingBrief}>Save Content Brief</Button>
       </div>
     </div>
   );
@@ -904,8 +1201,13 @@ export function ContentAgentTab({
           </div>
         )}
       </div>
-      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
-        <Button onClick={saveGroups} loading={savingGroups}>Save Groups</Button>
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
+        {groupsDirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save Groups to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={saveGroups} loading={savingGroups} disabled={!groupsDirty || savingGroups}>Save Groups</Button>
       </div>
     </div>
   );

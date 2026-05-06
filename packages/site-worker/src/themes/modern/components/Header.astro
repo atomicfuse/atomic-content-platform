@@ -9,10 +9,10 @@ import type { ResolvedConfig } from '@atomic-platform/shared-types';
 
 interface Props {
   config: ResolvedConfig;
-  currentPath: string;
+  currentPath?: string;
 }
 
-const { config, currentPath } = Astro.props;
+const { config } = Astro.props;
 
 // Show first 5 topics as nav items
 const navTopics = (config.brief.topics ?? []).slice(0, 5);
@@ -128,24 +128,21 @@ function topicHref(topic: string): string {
     align-items: center;
     text-decoration: none;
     flex-shrink: 0;
-    height: 64px;
-    padding: 6px 0;
   }
 
   .logo-img {
-    height: 100%;
-    max-height: 52px;
+    height: 44px;
     width: auto;
+    max-width: 280px;
     object-fit: contain;
   }
 
   .logo-text {
     font-family: var(--fontHeading, sans-serif);
-    font-size: 1.75rem;
+    font-size: 1.25rem;
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.02em;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
 
   /* Desktop nav */

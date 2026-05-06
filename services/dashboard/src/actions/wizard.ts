@@ -21,11 +21,15 @@ import {
   deregisterWorkerCustomDomain,
   putKVEntry,
   deleteKVEntry,
+  getKVEntry,
+  listKVKeys,
+  bulkPutKV,
 } from "@/lib/cloudflare";
-import { workerPreviewUrl, KV_NAMESPACE_PROD } from "@/lib/constants";
+import { workerPreviewUrl, KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
+import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import {
   enableEmailRouting,
   createEmailRoutingRule,
@@ -234,6 +238,16 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   if (data.faviconBase64) {
     faviconBuffer = Buffer.from(data.faviconBase64, "base64");
+  } else if (logoBuffer) {
+    // Auto-extract a square icon favicon from the landscape logo so the
+    // browser tab shows a recognizable icon rather than the full logo+text
+    // shrunk to 16x16.
+    try {
+      faviconBuffer = await extractFaviconFromLogo(logoBuffer);
+    } catch (err) {
+      console.warn("[wizard] Favicon extraction failed, falling back to logo:", err);
+      faviconBuffer = logoBuffer;
+    }
   }
 
   // 4. Prepare files — all under sites/{projectName}/
@@ -521,6 +535,54 @@ export async function getAvailableZones(): Promise<
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
+/** Copy all KV entries for a site from staging to production KV.
+ *  This includes site-config, article-index, individual articles, shared pages,
+ *  and sync-status. The hostname entry (site:<hostname>) is NOT included — that's
+ *  handled separately by attachCustomDomain. */
+async function promoteSiteToProduction(siteId: string): Promise<number> {
+  // Known single-key entries for this site
+  const singleKeys = [
+    `site-config:${siteId}`,
+    `article-index:${siteId}`,
+    `sync-status:${siteId}`,
+  ];
+
+  // Prefix-based entries (articles + shared pages)
+  const [articleKeys, sharedPageKeys] = await Promise.all([
+    listKVKeys(KV_NAMESPACE_STAGING, `article:${siteId}:`),
+    listKVKeys(KV_NAMESPACE_STAGING, `shared-page:${siteId}:`),
+  ]);
+
+  const allKeys = [...singleKeys, ...articleKeys, ...sharedPageKeys];
+
+  // Read all values from staging KV in parallel (batched to avoid overwhelming the API)
+  const BATCH_SIZE = 20;
+  const entries: Array<{ key: string; value: string }> = [];
+
+  for (let i = 0; i < allKeys.length; i += BATCH_SIZE) {
+    const batch = allKeys.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (key) => {
+        const value = await getKVEntry(KV_NAMESPACE_STAGING, key);
+        return value ? { key, value } : null;
+      }),
+    );
+    for (const r of results) {
+      if (r) entries.push(r);
+    }
+  }
+
+  if (entries.length === 0) {
+    console.warn(`[promoteSiteToProduction] No KV entries found for siteId="${siteId}" in staging`);
+    return 0;
+  }
+
+  // Bulk write to production KV
+  await bulkPutKV(KV_NAMESPACE_PROD, entries);
+  console.log(`[promoteSiteToProduction] Copied ${entries.length} KV entries from staging to production for siteId="${siteId}"`);
+  return entries.length;
+}
+
 export async function attachCustomDomain(
   domain: string,
   customDomain: string,
@@ -632,7 +694,20 @@ export async function attachCustomDomain(
     );
   }
 
-  // --- Step 4: Best-effort email routing (existing) ---
+  // --- Step 4: Promote site data from staging KV to production KV ---
+  // Copies site-config, article-index, individual articles, shared pages, and
+  // sync-status so the production worker can serve the site immediately.
+  // Best-effort — the domain is already working for the hostname entry; a failed
+  // promotion just means the config/articles aren't in prod KV yet (fixable by
+  // re-running seed-kv manually).
+  try {
+    const count = await promoteSiteToProduction(domain);
+    console.log(`[attachCustomDomain] Promoted ${count} KV entries to production for ${domain}`);
+  } catch (err) {
+    console.error('[attachCustomDomain] KV promotion failed (site hostname is registered but config may be missing in prod KV)', err);
+  }
+
+  // --- Step 5: Best-effort email routing ---
   if (site.zone_id) {
     try {
       await enableEmailRouting(site.zone_id);
@@ -882,7 +957,12 @@ export async function generateLogoPreview(domain: string): Promise<string | null
   const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
   const audience = audiences.join(", ") || undefined;
 
-  const logoBuffer = await generateLogoWithGemini(geminiKey, siteName, vertical, audience);
+  // Extract header background color to determine logo text color
+  const theme = config?.theme as Record<string, unknown> | undefined;
+  const colors = theme?.colors as Record<string, string> | undefined;
+  const headerBg = colors?.primary ?? "#1a1a2e";
+
+  const logoBuffer = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg);
   if (!logoBuffer) return null;
 
   return logoBuffer.toString("base64");
@@ -1190,24 +1270,56 @@ function getFallbackTopics(siteName: string, vertical: string): string[] {
 
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 
+/** Simple luminance check — returns true if the hex color is dark. */
+function isDarkColor(hex: string): boolean {
+  const c = hex.replace("#", "");
+  if (c.length < 6) return true;
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  // Relative luminance (ITU-R BT.709)
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+}
+
 async function generateLogoWithGemini(
   apiKey: string,
   siteName: string,
   vertical: string,
-  audience?: string
+  audience?: string,
+  headerBg?: string,
 ): Promise<Buffer | null> {
-  const prompt = `Create a modern, professional logo for a website called "${siteName}".
-The website is in the "${vertical}" vertical${audience ? ` targeting ${audience}` : ""}.
+  const dark = isDarkColor(headerBg ?? "#1a1a2e");
+  const textHex = dark ? "#FFFFFF" : "#222222";
+  const iconColors = dark
+    ? "Use bright, vivid colors for the icon (NOT dark colors) so it pops on a dark background."
+    : "Use rich, saturated colors for the icon.";
 
-Requirements:
-- Logo must include both an icon/symbol AND the site name "${siteName}" written beside it (horizontal layout: icon on the left, site name text on the right)
-- The site name text must be clearly legible, modern sans-serif font, white or light colored
-- Simple, clean icon/symbol design paired with the site name
-- Works well in a website header
-- Modern flat design style with vibrant colors
-- Wide/landscape aspect ratio (roughly 3:1 or 4:1 to fit icon + text side by side)
-- Professional quality suitable for a content website
-- Transparent background (PNG with alpha channel) — do NOT include any background color, the background must be fully transparent`;
+  const prompt = `Design a professional website logo for "${siteName}", a ${vertical} site${audience ? ` targeting ${audience}` : ""}.
+
+⚠️ MANDATORY TEXT COLOR: The text "${siteName}" MUST be rendered in ${textHex} (${dark ? "pure white" : "near-black"}). This logo will be placed on a ${dark ? "dark" : "light"} background (${headerBg ?? "#1a1a2e"}). ${dark ? "Dark text will be INVISIBLE — you MUST use white #FFFFFF text." : "Light text will be INVISIBLE — you MUST use dark #222222 text."}
+
+COMPOSITION (left to right, tightly packed):
+• A bold, distinctive icon/symbol relevant to ${vertical}. ${iconColors}
+• Directly next to it: the text "${siteName}" in ${textHex} color, bold sans-serif typeface
+
+TEXT RULES:
+• The letters of "${siteName}" must be colored ${textHex} — not dark blue, not gray, not navy — exactly ${textHex}
+• Text must be clearly readable, spelled exactly as "${siteName}", and the dominant element
+• The icon and text should feel like one cohesive mark — vertically centered
+
+SIZING & CROP:
+• Landscape aspect ratio, roughly 4:1 (wide, not tall)
+• The icon + text must fill the full width and height — NO empty padding or whitespace
+• Crop tightly so the logo touches the canvas edges
+• Target 800×200 pixels
+
+STYLE:
+• Modern, professional, flat design
+• Transparent background (PNG with no solid background)
+• No gradients, no 3D effects, no drop shadows
+• Icon: bold and geometric, 2-3 colors max
+
+REMINDER: Text color = ${textHex}. Do NOT use dark text on transparent background if ${textHex} is white.`;
 
   try {
     // EC-8: 15s timeout prevents the entire action from hanging if Gemini

@@ -54,7 +54,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // unnecessary KV read on every image request.
   if (/^\/[a-z0-9][a-z0-9-]*\/assets\//i.test(context.url.pathname)) {
     const response = await next();
-    // The asset route sets its own cache-control. No-op here.
+    // On staging (workers.dev / localhost), use short cache so logo /
+    // favicon updates appear quickly after save + seed-kv. Production
+    // custom domains keep the long 24h cache set by the asset route.
+    const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
+    if (isStaging && response.status < 400) {
+      response.headers.set('cache-control', 'public, max-age=10, s-maxage=30, stale-while-revalidate=60');
+    }
     return response;
   }
 

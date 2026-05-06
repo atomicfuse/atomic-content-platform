@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { UnifiedConfigForm, DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
@@ -31,6 +31,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
   const [error, setError] = useState<string | null>(null);
   const [formConfig, setFormConfig] = useState<Partial<UnifiedConfigFields>>({});
   const [mergeModes, setMergeModes] = useState<OverrideMergeModes>({ ...DEFAULT_MERGE_MODES });
+  const initialSnapshot = useRef<string>("");
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -40,7 +41,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
       const data = (await res.json()) as SiteConfigResponse;
       const raw = data.config;
 
-      setFormConfig({
+      const initialConfig: Partial<UnifiedConfigFields> = {
         tracking: normalizeTracking(raw.tracking as Record<string, unknown> | undefined),
         scripts: normalizeScripts(raw.scripts as Record<string, unknown> | undefined),
         scripts_vars: (raw.scripts_vars ?? raw.script_variables ?? {}) as Record<string, string>,
@@ -50,13 +51,19 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         ads_txt: normalizeAdsTxt(raw.ads_txt),
         theme: (raw.theme ?? {}) as Record<string, unknown>,
         legal: (raw.legal ?? {}) as Record<string, string>,
-      });
+      };
+      setFormConfig(initialConfig);
 
       // Restore persisted merge modes from site.yaml (if any)
       const modes = raw.merge_modes as Partial<OverrideMergeModes> | undefined;
+      const initialModes = modes && typeof modes === "object"
+        ? { ...DEFAULT_MERGE_MODES, ...modes }
+        : { ...DEFAULT_MERGE_MODES };
       if (modes && typeof modes === "object") {
-        setMergeModes({ ...DEFAULT_MERGE_MODES, ...modes });
+        setMergeModes(initialModes);
       }
+
+      initialSnapshot.current = JSON.stringify({ config: initialConfig, modes: initialModes });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load config");
     } finally {
@@ -67,6 +74,8 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
   useEffect(() => {
     void fetchConfig();
   }, [fetchConfig]);
+
+  const dirty = JSON.stringify({ config: formConfig, modes: mergeModes }) !== initialSnapshot.current;
 
   async function handleSave(): Promise<void> {
     setSaving(true);
@@ -90,6 +99,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
       const data = (await res.json()) as { status: string; message?: string };
       if (data.status === "ok") {
         toast("Config saved", "success");
+        initialSnapshot.current = JSON.stringify({ config: formConfig, modes: mergeModes });
       } else {
         toast(data.message ?? "Failed to save", "error");
       }
@@ -121,8 +131,13 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         mergeModes={mergeModes}
         onMergeModesChange={setMergeModes}
       />
-      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
-        <Button onClick={handleSave} loading={saving}>
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save Config to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={handleSave} loading={saving} disabled={!dirty || saving}>
           Save Config
         </Button>
       </div>

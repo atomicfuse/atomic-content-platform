@@ -18,11 +18,13 @@ const href = `/${article.slug}`;
   .hero-card {
     position: relative;
     display: block;
-    aspect-ratio: 3/4;
+    aspect-ratio: 3/2;
     overflow: hidden;
     text-decoration: none;
     background: var(--color-secondary, #1a1a2e);
   }
+  @media (min-width: 640px) { .hero-card { aspect-ratio: 1/1; } }
+  @media (min-width: 1024px) { .hero-card { aspect-ratio: 3/4; } }
   .hero-card-image {
     position: absolute; inset: 0;
     width: 100%; height: 100%;

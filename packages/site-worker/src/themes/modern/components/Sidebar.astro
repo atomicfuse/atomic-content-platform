@@ -24,7 +24,7 @@ const { config, variant, categories = [] } = Astro.props;
   {variant === 'article' && (
     <>
       <AdSlot position="sidebar" pageType="article" server:defer />
-      <FollowUs config={config} />
+      <FollowUs />
       {categories.map((c) => (
         <CategoryList topic={c.topic} articles={c.articles} />
       ))}
@@ -35,6 +35,6 @@ const { config, variant, categories = [] } = Astro.props;
 <style>
   .sidebar { display: flex; flex-direction: column; gap: 1.5rem; }
   @media (min-width: 960px) {
-    .sidebar { position: sticky; top: calc(64px + 1rem); align-self: start; }
+    .sidebar { position: sticky; top: calc(56px + 1rem); align-self: start; }
   }
 </style>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
@@ -38,6 +38,8 @@ export default function SharedPageEditorPage(): React.ReactElement {
 
   const [pageData, setPageData] = useState<PageData | null>(null);
   const [globalContent, setGlobalContent] = useState("");
+  const initialGlobalContentRef = useRef<string>("");
+  const initialOverrideContentRef = useRef<string>("");
   const [saving, setSaving] = useState(false);
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [selectedSites, setSelectedSites] = useState<Set<string>>(new Set());
@@ -59,6 +61,7 @@ export default function SharedPageEditorPage(): React.ReactElement {
       const data = (await res.json()) as PageData;
       setPageData(data);
       setGlobalContent(data.content);
+      initialGlobalContentRef.current = data.content;
     } catch {
       toast("Failed to load page", "error");
     }
@@ -80,6 +83,7 @@ export default function SharedPageEditorPage(): React.ReactElement {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: globalContent }),
       });
+      initialGlobalContentRef.current = globalContent;
       toast("Page saved", "success");
     } catch {
       toast("Failed to save", "error");
@@ -115,6 +119,7 @@ export default function SharedPageEditorPage(): React.ReactElement {
       const data = (await res.json()) as { content: string };
       setSelectedOverride(siteId);
       setOverrideViewContent(data.content);
+      initialOverrideContentRef.current = data.content;
     } catch {
       toast("Failed to load override", "error");
     }
@@ -130,6 +135,7 @@ export default function SharedPageEditorPage(): React.ReactElement {
         body: JSON.stringify({ content: overrideViewContent }),
       });
       if (!res.ok) throw new Error("save failed");
+      initialOverrideContentRef.current = overrideViewContent;
       toast("Override saved", "success");
     } catch {
       toast("Failed to save override", "error");
@@ -185,6 +191,9 @@ export default function SharedPageEditorPage(): React.ReactElement {
     return <div className="text-[var(--text-secondary)] text-sm">Loading...</div>;
   }
 
+  const globalDirty = globalContent !== initialGlobalContentRef.current;
+  const overrideDirty = selectedOverride !== null && overrideViewContent !== initialOverrideContentRef.current;
+
   const variablesPanel = (
     <div className="bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-xl p-3 space-y-1">
       <div className="flex items-center justify-between mb-2">
@@ -238,8 +247,13 @@ export default function SharedPageEditorPage(): React.ReactElement {
         onChange={(e): void => setGlobalContent(e.target.value)}
         className="w-full h-[500px] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-primary)] font-mono focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan resize-y"
       />
-      <div className="flex justify-end">
-        <Button onClick={saveGlobal} loading={saving}>
+      <div className="flex items-center justify-between">
+        {globalDirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={saveGlobal} loading={saving} disabled={!globalDirty || saving}>
           Save Global Page
         </Button>
       </div>
@@ -301,8 +315,13 @@ export default function SharedPageEditorPage(): React.ReactElement {
             onChange={(e): void => setOverrideViewContent(e.target.value)}
             className="w-full h-[300px] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 text-sm text-[var(--text-primary)] font-mono focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan resize-y"
           />
-          <div className="flex justify-end">
-            <Button onClick={saveOverride} loading={savingOverride}>
+          <div className="flex items-center justify-between">
+            {overrideDirty ? (
+              <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+            ) : (
+              <span />
+            )}
+            <Button onClick={saveOverride} loading={savingOverride} disabled={!overrideDirty || savingOverride}>
               Save Override
             </Button>
           </div>

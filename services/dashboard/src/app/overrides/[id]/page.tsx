@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -45,6 +45,7 @@ export default function OverrideDetailPage(): React.ReactElement {
   const { toast } = useToast();
 
   const [config, setConfig] = useState<OverrideConfig | null>(null);
+  const initialSnapshotRef = useRef<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -77,7 +78,7 @@ export default function OverrideDetailPage(): React.ReactElement {
         sites: overrideData.targets?.sites ?? [],
       });
       // Extract _mode from each field for the merge mode selector
-      setMergeModes({
+      const initialMergeModes: OverrideMergeModes = {
         tracking: (overrideData.tracking as Record<string, unknown>)?._mode as OverrideMergeModes["tracking"] ?? DEFAULT_MERGE_MODES.tracking,
         scripts: (overrideData.scripts as Record<string, unknown>)?._mode as OverrideMergeModes["scripts"] ?? DEFAULT_MERGE_MODES.scripts,
         scripts_vars: (overrideData.scripts_vars as Record<string, unknown>)?._mode as OverrideMergeModes["scripts_vars"] ?? DEFAULT_MERGE_MODES.scripts_vars,
@@ -87,7 +88,9 @@ export default function OverrideDetailPage(): React.ReactElement {
           : ((overrideData.ads_txt as unknown as Record<string, unknown>)?._mode as OverrideMergeModes["ads_txt"] ?? DEFAULT_MERGE_MODES.ads_txt),
         theme: (overrideData.theme as Record<string, unknown>)?._mode as OverrideMergeModes["theme"] ?? DEFAULT_MERGE_MODES.theme,
         legal: (overrideData.legal as Record<string, unknown>)?._mode as OverrideMergeModes["legal"] ?? DEFAULT_MERGE_MODES.legal,
-      });
+      };
+      setMergeModes(initialMergeModes);
+      initialSnapshotRef.current = JSON.stringify({ config: overrideData, mergeModes: initialMergeModes });
       if (groupsRes.ok) setAllGroups((await groupsRes.json()) as GroupSummary[]);
       if (sitesRes.ok) setAllSites((await sitesRes.json()) as SiteSummary[]);
     } catch (err) {
@@ -160,6 +163,7 @@ export default function OverrideDetailPage(): React.ReactElement {
         body: JSON.stringify(configToSave),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialSnapshotRef.current = JSON.stringify({ config, mergeModes });
       toast("Override saved", "success");
 
       // Affected sites = UNION of old targets + new targets.
@@ -230,6 +234,8 @@ export default function OverrideDetailPage(): React.ReactElement {
   }
 
   if (!config) return <div />;
+
+  const dirty = JSON.stringify({ config, mergeModes }) !== initialSnapshotRef.current;
 
   const targetGroups = config.targets?.groups ?? [];
   const targetSites = config.targets?.sites ?? [];
@@ -354,8 +360,17 @@ export default function OverrideDetailPage(): React.ReactElement {
 
       <Tabs tabs={tabs} defaultTab="general" />
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>Save</Button>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {dirty ? (
+            <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+          ) : (
+            <span />
+          )}
+          <Button onClick={save} loading={saving} disabled={!dirty || saving}>
+            Save
+          </Button>
+        </div>
         <Button variant="danger" onClick={handleDelete} loading={deleting}>
           Delete
         </Button>
