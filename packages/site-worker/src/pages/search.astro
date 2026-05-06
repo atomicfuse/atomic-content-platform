@@ -1,0 +1,291 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../themes/modern/components/Header.astro';
+import Footer from '../themes/modern/components/Footer.astro';
+import { getConfig } from '../lib/config';
+
+const config = getConfig(Astro);
+---
+
+<BaseLayout
+  title={`Search — ${config.site_name}`}
+  description={`Search articles on ${config.site_name}`}
+  pageType="homepage"
+>
+  <Fragment slot="head">
+    <SEOHead
+      title={`Search — ${config.site_name}`}
+      description={`Search articles on ${config.site_name}`}
+      canonicalUrl={`https://${config.domain}/search`}
+      siteName={config.site_name}
+      noindex
+    />
+  </Fragment>
+
+  <Header config={config} currentPath="/search" />
+
+  <main class="search-page">
+    <div class="search-container">
+      <h1 class="search-heading">Search Articles</h1>
+
+      <div class="search-input-wrap">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <input
+          type="text"
+          id="search-input"
+          class="search-input"
+          placeholder="Search by title..."
+          autocomplete="off"
+          autofocus
+        />
+        <button id="search-clear" class="search-clear" type="button" aria-label="Clear search" style="display:none;">&times;</button>
+      </div>
+
+      <div id="search-status" class="search-status"></div>
+      <div id="search-results" class="search-results"></div>
+    </div>
+  </main>
+
+  <Footer config={config} />
+</BaseLayout>
+
+<script is:inline>
+(function() {
+  'use strict';
+  var input = document.getElementById('search-input');
+  var results = document.getElementById('search-results');
+  var status = document.getElementById('search-status');
+  var clearBtn = document.getElementById('search-clear');
+  var timer = null;
+
+  function debounce(fn, ms) {
+    return function() {
+      clearTimeout(timer);
+      timer = setTimeout(fn, ms);
+    };
+  }
+
+  function escapeHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function formatDate(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  function renderCard(a) {
+    var href = '/' + a.slug;
+    var img = a.featuredImage
+      ? '<a class="feed-card-thumb" href="' + href + '" aria-hidden="true" tabindex="-1"><img src="' + escapeHtml(a.featuredImage) + '" alt="" loading="lazy" /></a>'
+      : '<a class="feed-card-thumb" href="' + href + '" aria-hidden="true" tabindex="-1"></a>';
+    var desc = a.description
+      ? '<p class="feed-card-snippet">' + escapeHtml(a.description) + '</p>'
+      : '';
+    return '<article class="feed-card">' +
+      img +
+      '<div class="feed-card-body">' +
+        '<a class="feed-card-title-link" href="' + href + '">' +
+          '<h3 class="feed-card-title">' + escapeHtml(a.title) + '</h3>' +
+        '</a>' +
+        '<p class="feed-card-date">' + formatDate(a.publishDate) + '</p>' +
+        desc +
+      '</div>' +
+    '</article>';
+  }
+
+  function doSearch() {
+    var q = (input.value || '').trim();
+    clearBtn.style.display = q ? '' : 'none';
+
+    if (!q) {
+      results.innerHTML = '';
+      status.textContent = '';
+      return;
+    }
+
+    status.textContent = 'Searching...';
+
+    // Preserve _atl_site for staging preview
+    var params = new URLSearchParams(window.location.search);
+    var apiUrl = '/api/search?q=' + encodeURIComponent(q);
+    var site = params.get('_atl_site');
+    if (site) apiUrl += '&_atl_site=' + encodeURIComponent(site);
+
+    fetch(apiUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var items = data.results || [];
+        if (items.length === 0) {
+          status.textContent = 'No articles found for "' + q + '"';
+          results.innerHTML = '';
+          return;
+        }
+        status.textContent = items.length + ' result' + (items.length !== 1 ? 's' : '') + ' for "' + q + '"';
+        results.innerHTML = items.map(renderCard).join('');
+      })
+      .catch(function() {
+        status.textContent = 'Search failed. Please try again.';
+        results.innerHTML = '';
+      });
+  }
+
+  input.addEventListener('input', debounce(doSearch, 300));
+
+  clearBtn.addEventListener('click', function() {
+    input.value = '';
+    clearBtn.style.display = 'none';
+    results.innerHTML = '';
+    status.textContent = '';
+    input.focus();
+  });
+
+  // Handle ?q= in URL
+  var urlQ = new URLSearchParams(window.location.search).get('q');
+  if (urlQ) {
+    input.value = urlQ;
+    doSearch();
+  }
+})();
+</script>
+
+<style>
+  .search-page {
+    min-height: 60vh;
+    padding: 2rem 0;
+  }
+
+  .search-container {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+    max-width: 800px;
+  }
+
+  .search-heading {
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin: 0 0 1.5rem;
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .search-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .search-icon {
+    position: absolute;
+    left: 14px;
+    color: var(--color-muted, #6b7280);
+    pointer-events: none;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.875rem 2.5rem 0.875rem 2.75rem;
+    font-size: 1rem;
+    border: 2px solid var(--color-border, #e5e7eb);
+    border-radius: 12px;
+    background: var(--color-background, #fff);
+    color: var(--color-text, #1a1a2e);
+    outline: none;
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+    font-family: inherit;
+  }
+
+  .search-input:focus {
+    border-color: var(--color-primary, #1a1a2e);
+    box-shadow: 0 0 0 3px rgba(26, 26, 46, 0.1);
+  }
+
+  .search-input::placeholder {
+    color: var(--color-muted, #6b7280);
+  }
+
+  .search-clear {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    color: var(--color-muted, #6b7280);
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+  }
+
+  .search-clear:hover {
+    color: var(--color-text, #1a1a2e);
+  }
+
+  .search-status {
+    margin: 1rem 0;
+    font-size: 0.875rem;
+    color: var(--color-muted, #6b7280);
+    min-height: 1.25rem;
+  }
+
+  .search-results {
+    margin-top: 0.5rem;
+  }
+
+  /* Reuse FeedCard styles for search results */
+  .search-results .feed-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    padding: 1.25rem 0;
+    border-bottom: 1px solid var(--color-border, #e5e7eb);
+  }
+
+  @media (min-width: 640px) {
+    .search-results .feed-card { grid-template-columns: 180px 1fr; gap: 1.5rem; }
+  }
+
+  .search-results .feed-card-thumb {
+    display: block;
+    aspect-ratio: 16/10;
+    overflow: hidden;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface, #f8f9fa);
+  }
+
+  .search-results .feed-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+  .search-results .feed-card-title-link { color: inherit; text-decoration: none; }
+
+  .search-results .feed-card-title {
+    font-size: var(--text-xl, 1.25rem);
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0 0 0.5rem;
+    color: var(--color-feed_title, var(--color-text, #1a1a2e));
+  }
+
+  .search-results .feed-card-date {
+    font-size: var(--text-sm, 0.875rem);
+    color: var(--color-feed_date, var(--color-muted, #6b7280));
+    margin: 0 0 0.5rem;
+  }
+
+  .search-results .feed-card-snippet {
+    font-size: var(--text-base, 1rem);
+    color: var(--color-feed_desc, var(--color-text, #1a1a2e));
+    line-height: 1.6;
+    margin: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
