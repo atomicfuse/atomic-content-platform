@@ -397,11 +397,8 @@
   // Mock interstitial overlay
   // ----------------------------------------------------------------
   function mockInterstitial() {
-    var config = null;
-    try { config = JSON.parse(localStorage.getItem('_atl_m')); } catch(e) {}
-    if (!config || !config.ads_config || !config.ads_config.interstitial) return;
-
-    var ic = config.ads_config.interstitial_config;
+    // Read interstitial config exposed by InterstitialLoader.astro
+    var ic = window.__ATL_INTERSTITIAL_CONFIG__ || null;
     if (!ic || !ic.script_url) return;
 
     // Build overlay

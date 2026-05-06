@@ -36,6 +36,7 @@ const clientConfig = enabled
       script_url: ic!.script_url,
       trigger: ic!.trigger ?? { type: 'delay', delay_seconds: 5 },
       frequency: ic!.frequency ?? { type: 'once_per_session' },
+      page_types: ic!.page_types ?? ['all'],
     })
   : null;
 ---
@@ -47,6 +48,9 @@ const clientConfig = enabled
       var cfg;
       try { cfg = JSON.parse(__ATL_INTERSTITIAL__); } catch(e) { return; }
       if (!cfg || !cfg.script_url) return;
+
+      // Expose config for mock-ad-fill.js to read
+      window.__ATL_INTERSTITIAL_CONFIG__ = cfg;
 
       var HOST = location.hostname;
       var SESSION_KEY = 'atl_interstitial_' + HOST;
