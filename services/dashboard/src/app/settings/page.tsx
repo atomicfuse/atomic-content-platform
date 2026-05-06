@@ -48,8 +48,24 @@ function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConf
 
 function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
+  const rawIc = raw?.interstitial_config as Record<string, unknown> | undefined;
+  const rawTrigger = rawIc?.trigger as Record<string, unknown> | undefined;
+  const rawFreq = rawIc?.frequency as Record<string, unknown> | undefined;
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
+    interstitial_config: {
+      script_url: (rawIc?.script_url as string) ?? "",
+      trigger: {
+        type: (rawTrigger?.type as "delay" | "scroll" | "exit_intent") ?? "delay",
+        delay_seconds: (rawTrigger?.delay_seconds as number) ?? 5,
+        scroll_percent: (rawTrigger?.scroll_percent as number) ?? 50,
+      },
+      frequency: {
+        type: (rawFreq?.type as "once_per_session" | "once_per_day" | "custom") ?? "once_per_session",
+        max_per_session: (rawFreq?.max_per_session as number) ?? 1,
+      },
+      page_types: Array.isArray(rawIc?.page_types) ? rawIc.page_types : ["all"],
+    },
     layout: (raw?.layout as string) ?? "standard",
     ad_placements: placements.map((p: Record<string, unknown>) => {
       const rawSizes = p.sizes;

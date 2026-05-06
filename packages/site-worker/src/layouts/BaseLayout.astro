@@ -8,14 +8,16 @@
  */
 import { getConfig } from '../lib/config';
 import PixelLoader from '../components/PixelLoader.astro';
+import InterstitialLoader from '../components/InterstitialLoader.astro';
 import '../themes/modern/styles/theme.css';
 
 interface Props {
   title: string;
   description: string;
+  pageType?: 'homepage' | 'article' | 'category';
 }
 
-const { title, description } = Astro.props;
+const { title, description, pageType = 'article' } = Astro.props;
 const config = getConfig(Astro);
 const { theme, scripts } = config;
 
@@ -122,6 +124,9 @@ const cssVars = Object.entries(theme.colors)
           ? <script is:inline set:html={s.inline} />
           : null
     )}
+
+    {/* Interstitial ad loader — trigger + frequency + external script. */}
+    <InterstitialLoader pageType={pageType} server:defer />
 
     {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
     <script is:inline>

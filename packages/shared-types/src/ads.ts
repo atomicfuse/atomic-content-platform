@@ -68,6 +68,54 @@ export interface AdPlacement {
 }
 
 /**
+ * Trigger configuration for interstitial ads.
+ */
+export interface InterstitialTrigger {
+  /** How the interstitial is triggered. */
+  type: "delay" | "scroll" | "exit_intent";
+
+  /** Seconds to wait before showing (only for type "delay"). */
+  delay_seconds?: number;
+
+  /** Scroll depth percentage to trigger at (only for type "scroll"). */
+  scroll_percent?: number;
+}
+
+/**
+ * Frequency cap for interstitial ads.
+ */
+export interface InterstitialFrequency {
+  /** Frequency cap strategy. */
+  type: "once_per_session" | "once_per_day" | "custom";
+
+  /** Max times to show per session (only for type "custom"). */
+  max_per_session?: number;
+}
+
+/** Page types where interstitial ads can appear. */
+export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+
+/**
+ * Full interstitial ad configuration.
+ * The `script_url` is the external ad-network script that handles rendering
+ * the interstitial overlay. The wrapper injects it after trigger/frequency
+ * checks pass.
+ */
+export interface InterstitialConfig {
+  /** URL of the ad-network script to load. */
+  script_url: string;
+
+  /** When to trigger the interstitial. */
+  trigger: InterstitialTrigger;
+
+  /** How often to show the interstitial. */
+  frequency: InterstitialFrequency;
+
+  /** Which page types the interstitial appears on. */
+  page_types: InterstitialPageType[];
+}
+
+/**
  * Full advertising configuration for a site or group.
  *
  * Merge rules:
@@ -78,6 +126,9 @@ export interface AdPlacement {
 export interface AdsConfig {
   /** Whether interstitial (full-page) ads are enabled. */
   interstitial: boolean;
+
+  /** Interstitial ad configuration (script, trigger, frequency, page types). */
+  interstitial_config?: InterstitialConfig;
 
   /** Layout density identifier ("standard" | "high-density"). */
   layout: string;

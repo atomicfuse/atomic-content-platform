@@ -1,0 +1,131 @@
+---
+/**
+ * Server Island — injects the interstitial ad wrapper script when the
+ * resolved config has `ads_config.interstitial = true` and the current
+ * page type matches `interstitial_config.page_types`.
+ *
+ * The wrapper handles trigger timing (delay / scroll / exit-intent) and
+ * frequency capping (session / day / custom) before loading the external
+ * ad-network script. For mock/QA environments the companion mock-ad-fill.js
+ * renders a visual placeholder instead.
+ */
+import { getConfig } from '../lib/config';
+
+interface Props {
+  pageType: 'homepage' | 'article' | 'category';
+}
+
+const { pageType } = Astro.props;
+const config = getConfig(Astro);
+const ads = config.ads_config;
+const ic = ads?.interstitial_config;
+
+// Gate: interstitial must be enabled, config must exist, page type must match,
+// and script_url must be HTTPS (security: prevent arbitrary script injection).
+// Empty page_types array is treated as "all" (safety net for dashboard edge case).
+const pageTypes = Array.isArray(ic?.page_types) && ic!.page_types.length > 0 ? ic!.page_types : ['all'];
+const isValidUrl = ic?.script_url?.startsWith('https://') ?? false;
+const enabled =
+  ads?.interstitial === true &&
+  isValidUrl &&
+  (pageTypes.includes('all') || pageTypes.includes(pageType));
+
+// Serialise just the fields the client-side wrapper needs.
+const clientConfig = enabled
+  ? JSON.stringify({
+      script_url: ic!.script_url,
+      trigger: ic!.trigger ?? { type: 'delay', delay_seconds: 5 },
+      frequency: ic!.frequency ?? { type: 'once_per_session' },
+    })
+  : null;
+---
+
+{enabled && clientConfig && (
+  <script is:inline define:vars={{ __ATL_INTERSTITIAL__: clientConfig }}>
+    (function() {
+      'use strict';
+      var cfg;
+      try { cfg = JSON.parse(__ATL_INTERSTITIAL__); } catch(e) { return; }
+      if (!cfg || !cfg.script_url) return;
+
+      var HOST = location.hostname;
+      var SESSION_KEY = 'atl_interstitial_' + HOST;
+      var DAY_KEY    = 'atl_interstitial_day_' + HOST;
+      var COUNT_KEY  = 'atl_interstitial_count_' + HOST;
+
+      /* ---------- frequency check ---------- */
+      function isAllowed() {
+        var freq = cfg.frequency || {};
+        if (freq.type === 'once_per_session') {
+          return !sessionStorage.getItem(SESSION_KEY);
+        }
+        if (freq.type === 'once_per_day') {
+          var last = parseInt(localStorage.getItem(DAY_KEY) || '0', 10);
+          return (Date.now() - last) > 86400000;
+        }
+        if (freq.type === 'custom') {
+          var count = parseInt(sessionStorage.getItem(COUNT_KEY) || '0', 10);
+          return count < (freq.max_per_session || 1);
+        }
+        return true;
+      }
+
+      /* ---------- record impression ---------- */
+      function record() {
+        var freq = cfg.frequency || {};
+        if (freq.type === 'once_per_session') {
+          sessionStorage.setItem(SESSION_KEY, '1');
+        } else if (freq.type === 'once_per_day') {
+          localStorage.setItem(DAY_KEY, Date.now().toString());
+        } else if (freq.type === 'custom') {
+          var c = parseInt(sessionStorage.getItem(COUNT_KEY) || '0', 10);
+          sessionStorage.setItem(COUNT_KEY, (c + 1).toString());
+        }
+      }
+
+      /* ---------- load ad network script ---------- */
+      function fire() {
+        if (!isAllowed()) return;
+        record();
+        var s = document.createElement('script');
+        s.src = cfg.script_url;
+        s.async = true;
+        document.body.appendChild(s);
+      }
+
+      /* ---------- trigger logic ---------- */
+      var trigger = cfg.trigger || {};
+      if (trigger.type === 'scroll') {
+        var fired = false;
+        var pct = trigger.scroll_percent || 50;
+        var scrollHandler = function() {
+          if (fired) return;
+          var scrolled = (window.scrollY / Math.max(1, document.documentElement.scrollHeight - window.innerHeight)) * 100;
+          if (scrolled >= pct) { fired = true; fire(); window.removeEventListener('scroll', scrollHandler); }
+        };
+        window.addEventListener('scroll', scrollHandler, { passive: true });
+      } else if (trigger.type === 'exit_intent') {
+        var exitFired = false;
+        var exitHandler = function(e) {
+          if (exitFired) return;
+          if (e.clientY <= 0) { exitFired = true; fire(); document.removeEventListener('mouseout', exitHandler); }
+        };
+        document.addEventListener('mouseout', exitHandler);
+        /* On mobile, exit intent = tab-switch / app-switch — fire when user returns */
+        var pendingExit = false;
+        document.addEventListener('visibilitychange', function() {
+          if (exitFired) return;
+          if (document.visibilityState === 'hidden') { pendingExit = true; }
+          else if (pendingExit && document.visibilityState === 'visible') {
+            pendingExit = false; exitFired = true; fire();
+            document.removeEventListener('mouseout', exitHandler);
+          }
+        });
+      } else {
+        /* default: delay */
+        var seconds = trigger.delay_seconds || 5;
+        setTimeout(fire, seconds * 1000);
+      }
+    })();
+  </script>
+)}

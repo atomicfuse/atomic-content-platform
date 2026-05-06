@@ -22,6 +22,12 @@ function basePlacement(overrides: Partial<AdPlacement> = {}): AdPlacement {
 function baseValue(overrides: Partial<AdsConfigFormValue> = {}): AdsConfigFormValue {
   return {
     interstitial: false,
+    interstitial_config: {
+      script_url: "",
+      trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+      frequency: { type: "once_per_session", max_per_session: 1 },
+      page_types: ["all"],
+    },
     layout: "standard",
     ad_placements: [basePlacement()],
     ...overrides,
@@ -284,5 +290,110 @@ describe("E05 — Device toggle preserves panel data", () => {
     expect(val.ad_placements[0].mobileSizeConfig!.customSizes).toEqual([
       { width: 320, height: 50 },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interstitial Config UI
+// ---------------------------------------------------------------------------
+describe("interstitial config panel", () => {
+  it("I-UI01 — does not show config panel when interstitial is off", () => {
+    renderForm(baseValue({ interstitial: false }));
+    expect(screen.queryByText("Interstitial Configuration")).not.toBeInTheDocument();
+  });
+
+  it("I-UI02 — shows config panel when interstitial is toggled on", () => {
+    renderForm(
+      baseValue({
+        interstitial: true,
+        interstitial_config: {
+          script_url: "https://cdn.example.com/ad.js",
+          trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+          frequency: { type: "once_per_session", max_per_session: 1 },
+          page_types: ["all"],
+        },
+      }),
+    );
+    expect(screen.getByText("Interstitial Configuration")).toBeInTheDocument();
+  });
+
+  it("I-UI03 — shows Script URL input when interstitial is on", () => {
+    renderForm(
+      baseValue({
+        interstitial: true,
+        interstitial_config: {
+          script_url: "https://cdn.example.com/ad.js",
+          trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+          frequency: { type: "once_per_session", max_per_session: 1 },
+          page_types: ["all"],
+        },
+      }),
+    );
+    expect(screen.getByPlaceholderText("https://cdn.adnetwork.com/interstitial.js")).toBeInTheDocument();
+  });
+
+  it("I-UI04 — shows trigger dropdown with Time Delay selected", () => {
+    renderForm(
+      baseValue({
+        interstitial: true,
+        interstitial_config: {
+          script_url: "https://cdn.example.com/ad.js",
+          trigger: { type: "delay", delay_seconds: 10, scroll_percent: 50 },
+          frequency: { type: "once_per_session", max_per_session: 1 },
+          page_types: ["all"],
+        },
+      }),
+    );
+    // Verify the trigger options exist
+    expect(screen.getByText("Trigger")).toBeInTheDocument();
+    expect(screen.getByText("Frequency Cap")).toBeInTheDocument();
+  });
+
+  it("I-UI05 — shows page type buttons", () => {
+    renderForm(
+      baseValue({
+        interstitial: true,
+        interstitial_config: {
+          script_url: "",
+          trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+          frequency: { type: "once_per_session", max_per_session: 1 },
+          page_types: ["all"],
+        },
+      }),
+    );
+    expect(screen.getByText("All Pages")).toBeInTheDocument();
+    expect(screen.getByText("Homepage")).toBeInTheDocument();
+    expect(screen.getByText("Articles")).toBeInTheDocument();
+    expect(screen.getByText("Categories")).toBeInTheDocument();
+  });
+
+  it("I-UI06 — toggling interstitial on triggers onChange with interstitial=true", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderForm(baseValue({ interstitial: false }));
+    const toggleButton = screen.getByRole("switch");
+    await user.click(toggleButton);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ interstitial: true }),
+    );
+  });
+
+  it("I-UI07 — toggling interstitial off triggers onChange with interstitial=false", async () => {
+    const user = userEvent.setup();
+    const { onChange } = renderForm(
+      baseValue({
+        interstitial: true,
+        interstitial_config: {
+          script_url: "https://cdn.example.com/ad.js",
+          trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+          frequency: { type: "once_per_session", max_per_session: 1 },
+          page_types: ["all"],
+        },
+      }),
+    );
+    const toggleButton = screen.getByRole("switch");
+    await user.click(toggleButton);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ interstitial: false }),
+    );
   });
 });
