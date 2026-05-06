@@ -45,15 +45,14 @@ const EXPECTED_KV: ExpectedKv[] = [
 ];
 
 const EXPECTED_R2_BUCKETS: Array<{ name: string; description: string }> = [
-  { name: 'atl-assets-staging', description: 'staging' },
-  { name: 'atl-assets-prod', description: 'prod' },
+  { name: 'atl-assets-prod', description: 'shared asset bucket (both envs)' },
 ];
 
 const EXPECTED_WORKERS: ExpectedWorker[] = [
   {
     name: 'atomic-site-worker-staging',
     expectedKv: { CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848' },
-    expectedR2: { ASSET_BUCKET: 'atl-assets-staging' },
+    expectedR2: { ASSET_BUCKET: 'atl-assets-prod' },
   },
   {
     name: 'atomic-site-worker',

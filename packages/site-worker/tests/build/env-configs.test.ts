@@ -61,7 +61,7 @@ describe('env config emit', () => {
 
     const r2 = cfg.r2_buckets as Array<{ binding: string; bucket_name?: string }>;
     const assetBucket = r2.find((b) => b.binding === 'ASSET_BUCKET');
-    expect(assetBucket?.bucket_name).toBe('atl-assets-staging');
+    expect(assetBucket?.bucket_name).toBe('atl-assets-prod');
   });
 
   it('emits dist/server/wrangler.production.json with correct name + KV + R2 bindings', async () => {
@@ -91,11 +91,11 @@ describe('env config emit', () => {
     expect(prodKv?.id).toBeDefined();
     expect(stagingKv?.id).not.toBe(prodKv?.id);
 
+    // R2 bucket is intentionally shared across envs (single asset store).
     const stagingR2 = (staging.r2_buckets as Array<{ binding: string; bucket_name?: string }>).find((b) => b.binding === 'ASSET_BUCKET');
     const prodR2 = (prod.r2_buckets as Array<{ binding: string; bucket_name?: string }>).find((b) => b.binding === 'ASSET_BUCKET');
-    expect(stagingR2?.bucket_name).toBeDefined();
-    expect(prodR2?.bucket_name).toBeDefined();
-    expect(stagingR2?.bucket_name).not.toBe(prodR2?.bucket_name);
+    expect(stagingR2?.bucket_name).toBe('atl-assets-prod');
+    expect(prodR2?.bucket_name).toBe('atl-assets-prod');
   });
 
   it('production routes are derived from dashboard-index.yaml; staging emits no routes', async () => {
