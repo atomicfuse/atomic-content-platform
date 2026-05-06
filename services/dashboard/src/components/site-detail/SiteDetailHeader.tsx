@@ -4,10 +4,12 @@ import type { DashboardSiteEntry } from "@/types/dashboard";
 
 interface SiteDetailHeaderProps {
   site: DashboardSiteEntry;
+  logoUrl?: string | null;
 }
 
 export function SiteDetailHeader({
   site,
+  logoUrl,
 }: SiteDetailHeaderProps): React.ReactElement {
   // Post-Phase-7 layout. Three possible affordances, each ungated by
   // each other:
@@ -31,6 +33,13 @@ export function SiteDetailHeader({
   return (
     <div className="flex items-center justify-between pb-6 border-b border-[var(--border-secondary)]">
       <div className="flex items-center gap-4">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt={`${site.domain} logo`}
+            className="w-10 h-10 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
+          />
+        )}
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">{site.domain}</h1>

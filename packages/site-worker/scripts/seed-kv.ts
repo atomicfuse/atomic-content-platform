@@ -65,9 +65,9 @@ const DEFAULT_NETWORK_PATH = join(PLATFORM_ROOT, '..', 'atomic-labs-network');
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH ?? DEFAULT_NETWORK_PATH;
 const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? '4673c82cdd7f41d49e93d938fb1c6848';
 const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
-/** R2 bucket name for per-site assets. Defaults to staging. Override
- *  with `R2_BUCKET=atl-assets-prod pnpm seed:kv ...` for prod seeding. */
-const R2_BUCKET = process.env.R2_BUCKET ?? 'atl-assets-staging';
+/** R2 bucket name for per-site assets. Shared across environments.
+ *  Override with `R2_BUCKET=<name> pnpm seed:kv ...` if needed. */
+const R2_BUCKET = process.env.R2_BUCKET ?? 'atl-assets-prod';
 const R2_REMOTE = (process.env.R2_REMOTE ?? 'true') !== 'false';
 
 /** Bundled shared-page templates. Lived in `packages/site-builder/`

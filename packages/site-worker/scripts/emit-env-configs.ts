@@ -65,7 +65,7 @@ const ENVS: Record<string, EnvOverrides> = {
       CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848', // CONFIG_KV_STAGING
     },
     r2Buckets: {
-      ASSET_BUCKET: 'atl-assets-staging',
+      ASSET_BUCKET: 'atl-assets-prod', // shared bucket — assets are site-scoped and additive
     },
     routes: [], // staging is workers.dev-only
   },

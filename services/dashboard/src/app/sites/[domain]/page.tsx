@@ -76,7 +76,14 @@ export default async function SiteDetailPage({
 
   return (
     <div className="space-y-6">
-      <SiteDetailHeader site={site} />
+      <SiteDetailHeader
+        site={site}
+        logoUrl={
+          (siteConfig?.theme as Record<string, unknown> | undefined)?.logo
+            ? `/api/sites/asset?domain=${encodeURIComponent(decodedDomain)}&file=${encodeURIComponent(((siteConfig!.theme as Record<string, unknown>).logo as string).replace(/^\//, ""))}`
+            : null
+        }
+      />
       <SiteDetailTabs
         domain={decodedDomain}
         stagingTab={
@@ -113,6 +120,9 @@ export default async function SiteDetailPage({
             pagesProject={site.pages_project}
             pagesSubdomain={site.pages_subdomain}
             customDomain={site.custom_domain}
+            currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
+            currentFaviconPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null}
+            previewUrl={site.preview_url ?? null}
           />
         }
       />

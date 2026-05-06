@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ColorPickerField } from "@/components/wizard/ColorPickerField";
@@ -183,6 +183,11 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     layout: { ...DEFAULT_LAYOUT },
   });
   const [topicInput, setTopicInput] = useState("");
+  const initialState = useRef<ThemeState | null>(null);
+
+  // Compute on every render — avoids stale memoization issues.
+  const dirty = initialState.current !== null
+    && JSON.stringify(state) !== JSON.stringify(initialState.current);
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -201,15 +206,24 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           if (colors[key]) resolved[key] = colors[key];
         }
 
-        setState({
+        const loaded: ThemeState = {
           colors: resolved,
           preset: detectPreset(resolved),
           fontHeading: fonts.heading ?? "Inter",
           fontBody: fonts.body ?? "Inter",
           layout: parseLayout(layout),
-        });
+        };
+        setState(loaded);
+        initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
       } catch {
-        // keep defaults
+        // keep defaults — snapshot the defaults as initial state
+        initialState.current = {
+          colors: defaultColors(),
+          preset: "classic",
+          fontHeading: "Inter",
+          fontBody: "Inter",
+          layout: { ...DEFAULT_LAYOUT },
+        };
       } finally {
         setLoading(false);
       }
@@ -249,8 +263,12 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
-      if (data.status === "ok") toast("Theme saved", "success");
-      else toast(data.message ?? "Failed to save", "error");
+      if (data.status === "ok") {
+        toast("Theme saved — changes will appear on the staging site in a few minutes", "success");
+        initialState.current = JSON.parse(JSON.stringify(state)) as ThemeState;
+      } else {
+        toast(data.message ?? "Failed to save", "error");
+      }
     } catch {
       toast("Failed to save theme", "error");
     } finally {
@@ -582,8 +600,13 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         </div>
       </div>
 
-      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
-        <Button onClick={save} loading={saving}>Save Theme</Button>
+      <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save Theme to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={save} loading={saving} disabled={!dirty || saving}>Save Theme</Button>
       </div>
     </div>
   );

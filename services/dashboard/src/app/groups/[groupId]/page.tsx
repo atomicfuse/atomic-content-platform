@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
@@ -42,6 +42,7 @@ export default function GroupDetailPage(): React.ReactElement {
   const { toast } = useToast();
 
   const [config, setConfig] = useState<GroupConfig | null>(null);
+  const initialConfigRef = useRef<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -71,6 +72,7 @@ export default function GroupDetailPage(): React.ReactElement {
       }
       const groupData = (await groupRes.json()) as GroupConfig;
       setConfig(groupData);
+      initialConfigRef.current = JSON.stringify(groupData);
 
       if (sitesRes.ok) {
         const sitesData = (await sitesRes.json()) as Array<{
@@ -114,6 +116,7 @@ export default function GroupDetailPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialConfigRef.current = JSON.stringify(config);
       toast("Group saved", "success");
       setShowRebuildModal(true);
     } catch (err) {
@@ -185,6 +188,8 @@ export default function GroupDetailPage(): React.ReactElement {
   }
 
   if (!config) return <div />;
+
+  const dirty = JSON.stringify(config) !== initialConfigRef.current;
 
   // Build the config object for UnifiedConfigForm
   const formConfig: Partial<UnifiedConfigFields> = {
@@ -369,9 +374,16 @@ export default function GroupDetailPage(): React.ReactElement {
       <Tabs tabs={tabs} defaultTab="general" />
 
       <div className="flex items-center justify-between">
-        <Button onClick={save} loading={saving}>
-          Save
-        </Button>
+        <div className="flex items-center gap-4">
+          {dirty ? (
+            <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+          ) : (
+            <span />
+          )}
+          <Button onClick={save} loading={saving} disabled={!dirty || saving}>
+            Save
+          </Button>
+        </div>
         <Button
           variant="danger"
           onClick={(): void => setShowDeleteModal(true)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 
@@ -48,6 +48,8 @@ export default function SettingsSchedulerPage(): React.ReactElement {
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<RunResult | null>(null);
   const [preset, setPreset] = useState<Preset>("once");
+  const initialConfigRef = useRef<string>("");
+  const dirty = config !== null && JSON.stringify(config) !== initialConfigRef.current;
 
   useEffect(() => {
     void (async () => {
@@ -56,6 +58,7 @@ export default function SettingsSchedulerPage(): React.ReactElement {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as SchedulerConfig;
         setConfig(data);
+        initialConfigRef.current = JSON.stringify(data);
         setPreset(detectPreset(data.run_at_hours));
       } catch {
         toast("Failed to load scheduler config", "error");
@@ -94,6 +97,7 @@ export default function SettingsSchedulerPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialConfigRef.current = JSON.stringify(config);
       toast("Scheduler config saved", "success");
     } catch {
       toast("Failed to save scheduler config", "error");
@@ -220,11 +224,18 @@ export default function SettingsSchedulerPage(): React.ReactElement {
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>Save</Button>
-        <Button variant="secondary" onClick={runNow} loading={running}>
-          Run now
-        </Button>
+      <div className="flex items-center justify-between">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-3">
+          <Button onClick={save} loading={saving} disabled={!dirty || saving}>Save</Button>
+          <Button variant="secondary" onClick={runNow} loading={running}>
+            Run now
+          </Button>
+        </div>
       </div>
 
       {runResult && (

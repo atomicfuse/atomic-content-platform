@@ -444,3 +444,79 @@ export async function deleteKVEntry(
     );
   }
 }
+
+/** Read a single KV entry by key. Returns the raw string value, or null if the key
+ *  doesn't exist. The KV values API returns the raw body (not JSON-wrapped). */
+export async function getKVEntry(
+  namespaceId: string,
+  key: string,
+): Promise<string | null> {
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    { headers: getHeaders() },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Failed to read KV key "${key}": ${response.status} ${response.statusText}`);
+  }
+  return response.text();
+}
+
+/** List KV keys matching a prefix. Handles pagination automatically.
+ *  Returns just the key names (not values). */
+export async function listKVKeys(
+  namespaceId: string,
+  prefix: string,
+): Promise<string[]> {
+  const accountId = getAccountId();
+  const keys: string[] = [];
+  let cursor: string | undefined;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const params = new URLSearchParams({ prefix, limit: '1000' });
+    if (cursor) params.set('cursor', cursor);
+
+    const response = await fetch(
+      `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/keys?${params}`,
+      { headers: getHeaders() },
+    );
+    const data = (await response.json()) as CloudflareResponse<Array<{ name: string }>> & {
+      result_info?: { cursor?: string };
+    };
+    if (!data.success) {
+      throw new Error(`Failed to list KV keys with prefix "${prefix}": ${data.errors.map((e) => e.message).join(", ")}`);
+    }
+    keys.push(...data.result.map((k) => k.name));
+
+    cursor = data.result_info?.cursor;
+    if (!cursor || data.result.length === 0) break;
+  }
+
+  return keys;
+}
+
+/** Bulk write KV entries. Accepts up to 10,000 key-value pairs per call.
+ *  Each entry is { key, value } where value is a raw string. */
+export async function bulkPutKV(
+  namespaceId: string,
+  entries: Array<{ key: string; value: string }>,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    {
+      method: "PUT",
+      headers: getHeaders(),
+      body: JSON.stringify(entries),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to bulk write ${entries.length} KV entries: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}

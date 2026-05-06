@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
@@ -77,6 +77,8 @@ export default function OrgSettingsPage(): React.ReactElement {
   >([]);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const initialConfigRef = useRef<string>("");
+  const dirty = config !== null && JSON.stringify(config) !== initialConfigRef.current;
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -88,6 +90,7 @@ export default function OrgSettingsPage(): React.ReactElement {
       if (!orgRes.ok) throw new Error(`HTTP ${orgRes.status}`);
       const data = (await orgRes.json()) as OrgConfig;
       setConfig(data);
+      initialConfigRef.current = JSON.stringify(data);
       if (sitesRes.ok) {
         const sites = (await sitesRes.json()) as Array<{ domain: string }>;
         setAllSites(sites);
@@ -114,6 +117,7 @@ export default function OrgSettingsPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialConfigRef.current = JSON.stringify(config);
       toast("Org settings saved", "success");
       setShowRebuildModal(true);
     } catch (err) {
@@ -354,8 +358,13 @@ export default function OrgSettingsPage(): React.ReactElement {
 
       <Tabs tabs={tabs} defaultTab="general" />
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>
+      <div className="flex items-center justify-between">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={save} loading={saving} disabled={!dirty || saving}>
           Save
         </Button>
       </div>

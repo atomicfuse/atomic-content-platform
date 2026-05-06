@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
@@ -19,6 +19,8 @@ export default function NetworkSettingsPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const initialConfigRef = useRef<string>("");
+  const dirty = config !== null && JSON.stringify(config) !== initialConfigRef.current;
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -27,6 +29,7 @@ export default function NetworkSettingsPage(): React.ReactElement {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as NetworkConfig;
       setConfig(data);
+      initialConfigRef.current = JSON.stringify(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load network config");
     } finally {
@@ -49,6 +52,7 @@ export default function NetworkSettingsPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialConfigRef.current = JSON.stringify(config);
       toast("Network settings saved", "success");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to save";
@@ -113,8 +117,13 @@ export default function NetworkSettingsPage(): React.ReactElement {
         />
       </div>
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>
+      <div className="flex items-center justify-between">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={save} loading={saving} disabled={!dirty || saving}>
           Save
         </Button>
       </div>

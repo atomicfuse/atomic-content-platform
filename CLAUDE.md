@@ -308,7 +308,7 @@ CLOUDFLARE_ACCOUNT_ID=953511f6356ff606d84ac89bba3eff50 pnpm seed:kv <siteId> [ho
 Deploys to `atomic-content-platform.apps.cloudgrid.io`.
 
 ```bash
-cloudgrid deploy                                       # deploy current branch
+cloudgrid plug                                         # build + deploy current branch
 cloudgrid secrets set atomic-content-platform KEY=val  # sensitive (GITHUB_TOKEN, NEXTAUTH_SECRET, …)
 cloudgrid env set atomic-content-platform KEY=val      # runtime config (no rebuild)
 ```
@@ -353,7 +353,7 @@ Service contract (both services satisfy):
 - "Open a PR" = use the compare URL (`gh pr create` fails due to token scope):
   `https://github.com/atomicfuse/atomic-content-platform/compare/main...<dev-branch>`
 - Never touch the other developer's branch.
-- After merge to main: `cloudgrid deploy` (manual — no auto-deploy hook).
+- After merge to main: `cloudgrid plug` (manual — no auto-deploy hook).
 
 ## Known Landmines
 
