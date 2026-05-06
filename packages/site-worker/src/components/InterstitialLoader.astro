@@ -37,26 +37,44 @@ const enabled =
   hasScript &&
   (pageTypes.includes('all') || pageTypes.includes(pageType));
 
-// Serialise just the fields the client-side wrapper needs.
+// Serialise config fields for the client-side wrapper.
+// IMPORTANT: script_inline is passed via a separate <script type="text/plain">
+// tag instead of define:vars, because define:vars applies JSON.stringify which
+// double-encodes content that's already been stringified — breaking inline
+// scripts that contain quotes or special characters.
 const clientConfig = enabled
   ? JSON.stringify({
       script_url: hasExternalUrl ? ic!.script_url : '',
-      script_inline: hasInlineScript ? ic!.script_inline : '',
+      has_inline: hasInlineScript,
       trigger: ic!.trigger ?? { type: 'delay', delay_seconds: 5 },
       frequency: ic!.frequency ?? { type: 'once_per_session' },
       page_types: ic!.page_types ?? ['all'],
       close_delay_seconds: ic!.close_delay_seconds ?? 3,
     })
   : null;
+const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
 ---
 
 {enabled && clientConfig && (
+  <>
+  {/* Inline script content passed via hidden element to avoid define:vars double-encoding.
+      set:text HTML-entity-encodes on the server; .textContent decodes on the client. */}
+  {inlineScript && <div id="atl-interstitial-inline" style="display:none" set:text={inlineScript} />}
   <script is:inline define:vars={{ __ATL_INTERSTITIAL__: clientConfig }}>
     (function() {
       'use strict';
       var cfg;
       try { cfg = JSON.parse(__ATL_INTERSTITIAL__); } catch(e) { return; }
-      if (!cfg || (!cfg.script_url && !cfg.script_inline)) return;
+
+      // Read inline script from the DOM sidecar (avoids double-encoding)
+      if (cfg.has_inline) {
+        var el = document.getElementById('atl-interstitial-inline');
+        cfg.script_inline = el ? el.textContent || '' : '';
+      } else {
+        cfg.script_inline = '';
+      }
+
+      if (!cfg.script_url && !cfg.script_inline) return;
 
       // Expose config for mock-ad-fill.js to read
       window.__ATL_INTERSTITIAL_CONFIG__ = cfg;
@@ -145,4 +163,5 @@ const clientConfig = enabled
       }
     })();
   </script>
+  </>
 )}
