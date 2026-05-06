@@ -85,14 +85,18 @@ export type InterstitialPageType = "all" | "article" | "category" | "homepage";
  * checks pass.
  */
 export interface InterstitialConfig {
-    /** URL of the ad-network script to load. */
+    /** URL of the ad-network script to load. Mutually exclusive with `script_inline`. */
     script_url: string;
+    /** Inline JavaScript code for the interstitial. Mutually exclusive with `script_url`. */
+    script_inline?: string;
     /** When to trigger the interstitial. */
     trigger: InterstitialTrigger;
     /** How often to show the interstitial. */
     frequency: InterstitialFrequency;
     /** Which page types the interstitial appears on. */
     page_types: InterstitialPageType[];
+    /** Seconds the close button is disabled (countdown). Default: 3. */
+    close_delay_seconds?: number;
 }
 /**
  * Full advertising configuration for a site or group.
