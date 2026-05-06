@@ -29,11 +29,12 @@ const quickLinks = [
   <div class="footer-inner">
     {/* Column 1: About */}
     <div class="footer-col footer-about">
-      {config.theme.logo ? (
-        <img src={config.theme.logo} alt={config.site_name} class="footer-logo" />
-      ) : (
+      <div class="footer-logo-group">
+        {config.theme.logo && (
+          <img src={config.theme.logo} alt="" class="footer-logo" />
+        )}
         <span class="footer-logo-text">{config.site_name}</span>
-      )}
+      </div>
       <p class="footer-tagline">
         {config.site_tagline ?? config.site_name}
       </p>
@@ -90,11 +91,16 @@ const quickLinks = [
   }
 
   /* About column */
-  .footer-logo {
-    height: 52px;
-    width: auto;
-    max-width: 300px;
+  .footer-logo-group {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
     margin-bottom: 1rem;
+  }
+
+  .footer-logo {
+    height: 40px;
+    width: auto;
     object-fit: contain;
   }
 
@@ -103,8 +109,7 @@ const quickLinks = [
     font-size: 1.25rem;
     font-weight: 800;
     color: #fff;
-    display: block;
-    margin-bottom: 1rem;
+    white-space: nowrap;
   }
 
   .footer-tagline {

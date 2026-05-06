@@ -30,11 +30,10 @@ function topicHref(topic: string): string {
   <div class="nav-inner">
     {/* Logo */}
     <a href="/" class="nav-logo" aria-label={config.site_name}>
-      {config.theme.logo ? (
-        <img src={config.theme.logo} alt={config.site_name} class="logo-img" />
-      ) : (
-        <span class="logo-text">{config.site_name}</span>
+      {config.theme.logo && (
+        <img src={config.theme.logo} alt="" class="logo-img" />
       )}
+      <span class="logo-text">{config.site_name}</span>
     </a>
 
     {/* Desktop nav links */}
@@ -126,14 +125,14 @@ function topicHref(topic: string): string {
   .nav-logo {
     display: flex;
     align-items: center;
+    gap: 0.5rem;
     text-decoration: none;
     flex-shrink: 0;
   }
 
   .logo-img {
-    height: 44px;
+    height: 36px;
     width: auto;
-    max-width: 280px;
     object-fit: contain;
   }
 
@@ -143,6 +142,7 @@ function topicHref(topic: string): string {
     font-weight: 800;
     color: #fff;
     letter-spacing: -0.02em;
+    white-space: nowrap;
   }
 
   /* Desktop nav */

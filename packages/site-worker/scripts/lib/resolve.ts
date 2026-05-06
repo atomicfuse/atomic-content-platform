@@ -328,6 +328,25 @@ export function resolveScriptVars(
   };
 }
 
+// ---------- Shared-page variable substitution ----------
+
+/**
+ * Resolves `{{placeholder}}` tokens in shared-page HTML using a
+ * pre-built variable dictionary.  Analogous to `resolveScriptVars` for
+ * inline scripts but tolerant of unresolved tokens (shared pages may
+ * reference optional variables like `{{site_description}}`).
+ */
+export function resolveSharedPageVars(
+  html: string,
+  vars: Record<string, string>,
+): string {
+  let resolved = html;
+  for (const [key, value] of Object.entries(vars)) {
+    resolved = resolved.replaceAll(`{{${key}}}`, value);
+  }
+  return resolved;
+}
+
 // ---------- Override meta-fields ----------
 
 /**

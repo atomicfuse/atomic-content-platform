@@ -45,6 +45,7 @@ import {
   mergeScriptLayers,
   mergeAdPlacementLayers,
   resolveScriptVars,
+  resolveSharedPageVars,
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
@@ -237,6 +238,34 @@ async function loadSharedPage(siteId: string, name: SharedPageName): Promise<Sha
   };
 }
 
+// ---------- Shared-page variable map ----------
+
+/**
+ * Builds the `{{key}}` → value dictionary used by shared-page templates.
+ * Values come from the fully-resolved site config + org-level legal block.
+ * Keys match `AVAILABLE_VARIABLES` in the dashboard editor.
+ */
+function buildSharedPageVars(config: ResolvedConfig): Record<string, string> {
+  const domain = config.domain ?? '';
+  const legal = (config.legal ?? {}) as Record<string, string>;
+
+  // Resolve support_email from support_email_pattern if not already set.
+  const pattern = (config as Record<string, unknown>).support_email_pattern as string | undefined;
+  const supportEmail = config.support_email
+    ?? (pattern ? pattern.replaceAll('{{domain}}', domain) : `contact@${domain}`);
+
+  return {
+    site_name: config.site_name ?? '',
+    domain,
+    support_email: supportEmail,
+    site_email: supportEmail,
+    company_name: legal.company_name ?? config.legal_entity ?? '',
+    company_country: legal.company_country ?? '',
+    effective_date: legal.effective_date ?? new Date().toISOString().slice(0, 10),
+    site_description: config.site_tagline ?? '',
+  };
+}
+
 // ---------- Group + site config resolution ----------
 
 async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConfig; site: Record<string, unknown> }> {
@@ -394,6 +423,15 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     pages_project: String(site.pages_project ?? siteId),
   } as unknown as ResolvedConfig;
 
+  // Resolve support_email from the org-level pattern + site domain.
+  const domain = config.domain;
+  const pattern = (merged as Record<string, unknown>).support_email_pattern;
+  if (!config.support_email && typeof pattern === 'string') {
+    (config as Record<string, unknown>).support_email = pattern.replaceAll('{{domain}}', domain);
+  } else if (!config.support_email) {
+    (config as Record<string, unknown>).support_email = `contact@${domain}`;
+  }
+
   // Rewrite theme.logo / theme.favicon `/assets/...` paths the same way
   // article URLs are rewritten — the Header/Footer components read these
   // and emit raw <img src=…>. Bare `/assets/logo.png` 404s on the Worker.
@@ -453,11 +491,16 @@ async function main(): Promise<void> {
   const index: ArticleIndexEntry[] = articles.map((a) => a.frontmatter);
   console.log(`[seed-kv] articles: ${articles.length}`);
 
-  // 3. Shared pages
+  // 3. Shared pages — load templates, then substitute {{variable}} tokens
+  //    using values from the resolved config (site_name, domain, etc.).
+  const sharedPageVars = buildSharedPageVars(config);
   const sharedPages: SharedPageRecord[] = [];
   for (const name of SHARED_PAGES) {
     const page = await loadSharedPage(siteId, name);
-    if (page) sharedPages.push(page);
+    if (page) {
+      page.html = resolveSharedPageVars(page.html, sharedPageVars);
+      sharedPages.push(page);
+    }
   }
   console.log(`[seed-kv] shared pages: ${sharedPages.map((p) => p.slug).join(', ') || '(none)'}`);
 

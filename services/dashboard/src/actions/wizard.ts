@@ -1295,37 +1295,33 @@ async function generateLogoWithGemini(
   headerBg?: string,
 ): Promise<Buffer | null> {
   const dark = isDarkColor(headerBg ?? "#1a1a2e");
-  const textHex = dark ? "#FFFFFF" : "#222222";
   const iconColors = dark
-    ? "Use bright, vivid colors for the icon (NOT dark colors) so it pops on a dark background."
-    : "Use rich, saturated colors for the icon.";
+    ? "Use bright, vivid colors (NOT dark colors) so it pops on a dark background."
+    : "Use rich, saturated colors that stand out on a light background.";
 
-  const prompt = `Design a professional website logo for "${siteName}", a ${vertical} site${audience ? ` targeting ${audience}` : ""}.
+  const prompt = `Design a bold, distinctive ICON for a ${vertical} website called "${siteName}"${audience ? ` targeting ${audience}` : ""}.
 
-⚠️ MANDATORY TEXT COLOR: The text "${siteName}" MUST be rendered in ${textHex} (${dark ? "pure white" : "near-black"}). This logo will be placed on a ${dark ? "dark" : "light"} background (${headerBg ?? "#1a1a2e"}). ${dark ? "Dark text will be INVISIBLE — you MUST use white #FFFFFF text." : "Light text will be INVISIBLE — you MUST use dark #222222 text."}
+IMPORTANT — ICON ONLY, NO TEXT:
+• Do NOT include any text, letters, or words — this is a pure symbol/icon
+• The site name "${siteName}" will be rendered separately in HTML text
 
-COMPOSITION (left to right, tightly packed):
-• A bold, distinctive icon/symbol relevant to ${vertical}. ${iconColors}
-• Directly next to it: the text "${siteName}" in ${textHex} color, bold sans-serif typeface
-
-TEXT RULES:
-• The letters of "${siteName}" must be colored ${textHex} — not dark blue, not gray, not navy — exactly ${textHex}
-• Text must be clearly readable, spelled exactly as "${siteName}", and the dominant element
-• The icon and text should feel like one cohesive mark — vertically centered
+ICON DESIGN:
+• A single bold symbol or mark that represents ${vertical}
+• ${iconColors}
+• Simple, recognizable at small sizes (32px–48px)
+• 2–3 colors maximum, flat design
+• Geometric and clean — no fine details that disappear at small sizes
 
 SIZING & CROP:
-• Landscape aspect ratio, roughly 4:1 (wide, not tall)
-• The icon + text must fill the full width and height — NO empty padding or whitespace
-• Crop tightly so the logo touches the canvas edges
-• Target 800×200 pixels
+• Square aspect ratio, 1:1
+• The icon must fill the entire canvas — NO empty padding or whitespace around it
+• Crop tightly so the icon touches all edges
+• Target 512×512 pixels
 
 STYLE:
 • Modern, professional, flat design
 • Transparent background (PNG with no solid background)
-• No gradients, no 3D effects, no drop shadows
-• Icon: bold and geometric, 2-3 colors max
-
-REMINDER: Text color = ${textHex}. Do NOT use dark text on transparent background if ${textHex} is white.`;
+• No gradients, no 3D effects, no drop shadows, no text`;
 
   try {
     // EC-8: 15s timeout prevents the entire action from hanging if Gemini
