@@ -219,7 +219,13 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   let faviconBuffer: Buffer | null = null;
 
   if (data.logoBase64) {
-    logoBuffer = Buffer.from(data.logoBase64, "base64");
+    // Clean up uploaded logos: remove background + trim whitespace so the
+    // logo fills its bounding box instead of being a tiny mark in a sea of white.
+    try {
+      logoBuffer = await removeBackground(Buffer.from(data.logoBase64, "base64"));
+    } catch {
+      logoBuffer = Buffer.from(data.logoBase64, "base64");
+    }
   } else {
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
