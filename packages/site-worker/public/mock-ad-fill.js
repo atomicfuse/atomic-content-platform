@@ -399,7 +399,7 @@
   function mockInterstitial() {
     // Read interstitial config exposed by InterstitialLoader.astro
     var ic = window.__ATL_INTERSTITIAL_CONFIG__ || null;
-    if (!ic || !ic.script_url) return;
+    if (!ic || (!ic.script_url && !ic.script_inline)) return;
 
     // Build overlay
     var overlay = document.createElement('div');
@@ -538,7 +538,7 @@
     var freq = ic.frequency || {};
     info.innerHTML = '<div style="font-weight:700;color:#ffa000;margin-bottom:4px;">\uD83D\uDFE1 Mock Interstitial</div>' +
       '<div style="color:#e65100;font-size:9px;margin-bottom:4px;">Mock always shows after 2s. Real interstitial respects trigger/frequency/page-type settings below.</div>' +
-      'Script: ' + ic.script_url + '<br>' +
+      'Script: ' + (ic.script_url || '(inline, ' + (ic.script_inline || '').length + ' chars)') + '<br>' +
       'Trigger: ' + (trigger.type || 'delay') +
         (trigger.type === 'delay' ? ' (' + (trigger.delay_seconds || 5) + 's)' : '') +
         (trigger.type === 'scroll' ? ' (' + (trigger.scroll_percent || 50) + '%)' : '') + '<br>' +

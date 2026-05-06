@@ -60,6 +60,7 @@ function normalizeInterstitialConfig(raw: Record<string, unknown> | undefined): 
   const frequency = raw.frequency as Record<string, unknown> | undefined;
   return {
     script_url: (raw.script_url as string) ?? "",
+    script_inline: (raw.script_inline as string) ?? "",
     trigger: {
       type: (trigger?.type as InterstitialConfigFormValue["trigger"]["type"]) ?? "delay",
       delay_seconds: (trigger?.delay_seconds as number) ?? 5,

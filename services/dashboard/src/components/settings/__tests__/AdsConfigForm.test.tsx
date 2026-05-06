@@ -24,6 +24,7 @@ function baseValue(overrides: Partial<AdsConfigFormValue> = {}): AdsConfigFormVa
     interstitial: false,
     interstitial_config: {
       script_url: "",
+      script_inline: "",
       trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
       frequency: { type: "once_per_session", max_per_session: 1 },
       page_types: ["all"],
@@ -309,6 +310,7 @@ describe("interstitial config panel", () => {
         interstitial: true,
         interstitial_config: {
           script_url: "https://cdn.example.com/ad.js",
+      script_inline: "",
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
@@ -325,6 +327,7 @@ describe("interstitial config panel", () => {
         interstitial: true,
         interstitial_config: {
           script_url: "https://cdn.example.com/ad.js",
+      script_inline: "",
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
@@ -341,6 +344,7 @@ describe("interstitial config panel", () => {
         interstitial: true,
         interstitial_config: {
           script_url: "https://cdn.example.com/ad.js",
+      script_inline: "",
           trigger: { type: "delay", delay_seconds: 10, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
@@ -359,6 +363,7 @@ describe("interstitial config panel", () => {
         interstitial: true,
         interstitial_config: {
           script_url: "",
+      script_inline: "",
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
@@ -389,6 +394,7 @@ describe("interstitial config panel", () => {
         interstitial: true,
         interstitial_config: {
           script_url: "https://cdn.example.com/ad.js",
+      script_inline: "",
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],

@@ -1,13 +1,17 @@
 ---
 /**
- * Server Island — injects the interstitial ad wrapper script when the
- * resolved config has `ads_config.interstitial = true` and the current
- * page type matches `interstitial_config.page_types`.
+ * Injects the interstitial ad wrapper script when the resolved config has
+ * `ads_config.interstitial = true` and the current page type matches
+ * `interstitial_config.page_types`.
+ *
+ * Supports two script modes:
+ *   - External URL (`script_url`): loaded via <script src="...">
+ *   - Inline code (`script_inline`): injected directly as <script>code</script>
  *
  * The wrapper handles trigger timing (delay / scroll / exit-intent) and
- * frequency capping (session / day / custom) before loading the external
- * ad-network script. For mock/QA environments the companion mock-ad-fill.js
- * renders a visual placeholder instead.
+ * frequency capping (session / day / custom) before loading the ad script.
+ * For mock/QA environments the companion mock-ad-fill.js renders a visual
+ * placeholder instead.
  */
 import { getConfig } from '../lib/config';
 
@@ -20,20 +24,24 @@ const config = getConfig(Astro);
 const ads = config.ads_config;
 const ic = ads?.interstitial_config;
 
-// Gate: interstitial must be enabled, config must exist, page type must match,
-// and script_url must be HTTPS (security: prevent arbitrary script injection).
+// Gate: interstitial must be enabled, config must exist, page type must match.
+// External URLs must be HTTPS (security: prevent arbitrary script injection).
+// Inline scripts are allowed as-is (authored by site admins via dashboard).
 // Empty page_types array is treated as "all" (safety net for dashboard edge case).
 const pageTypes = Array.isArray(ic?.page_types) && ic!.page_types.length > 0 ? ic!.page_types : ['all'];
-const isValidUrl = ic?.script_url?.startsWith('https://') ?? false;
+const hasExternalUrl = ic?.script_url?.startsWith('https://') ?? false;
+const hasInlineScript = typeof ic?.script_inline === 'string' && ic!.script_inline.trim().length > 0;
+const hasScript = hasExternalUrl || hasInlineScript;
 const enabled =
   ads?.interstitial === true &&
-  isValidUrl &&
+  hasScript &&
   (pageTypes.includes('all') || pageTypes.includes(pageType));
 
 // Serialise just the fields the client-side wrapper needs.
 const clientConfig = enabled
   ? JSON.stringify({
-      script_url: ic!.script_url,
+      script_url: hasExternalUrl ? ic!.script_url : '',
+      script_inline: hasInlineScript ? ic!.script_inline : '',
       trigger: ic!.trigger ?? { type: 'delay', delay_seconds: 5 },
       frequency: ic!.frequency ?? { type: 'once_per_session' },
       page_types: ic!.page_types ?? ['all'],
@@ -48,7 +56,7 @@ const clientConfig = enabled
       'use strict';
       var cfg;
       try { cfg = JSON.parse(__ATL_INTERSTITIAL__); } catch(e) { return; }
-      if (!cfg || !cfg.script_url) return;
+      if (!cfg || (!cfg.script_url && !cfg.script_inline)) return;
 
       // Expose config for mock-ad-fill.js to read
       window.__ATL_INTERSTITIAL_CONFIG__ = cfg;
@@ -93,8 +101,12 @@ const clientConfig = enabled
         if (!isAllowed()) return;
         record();
         var s = document.createElement('script');
-        s.src = cfg.script_url;
-        s.async = true;
+        if (cfg.script_url) {
+          s.src = cfg.script_url;
+          s.async = true;
+        } else {
+          s.textContent = cfg.script_inline;
+        }
         document.body.appendChild(s);
       }
 

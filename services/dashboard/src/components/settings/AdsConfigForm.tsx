@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { SizeConfigPanel } from "./SizeConfigPanel";
 import type { AdSizeConfig } from "./ad-size-config";
 import {
@@ -33,6 +33,7 @@ export type InterstitialPageType = "all" | "article" | "category" | "homepage";
 
 export interface InterstitialConfigFormValue {
   script_url: string;
+  script_inline: string;
   trigger: {
     type: "delay" | "scroll" | "exit_intent";
     delay_seconds: number;
@@ -48,6 +49,7 @@ export interface InterstitialConfigFormValue {
 
 export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
   script_url: "",
+  script_inline: "",
   trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
   frequency: { type: "once_per_session", max_per_session: 1 },
   page_types: ["all"],
@@ -409,6 +411,9 @@ function InterstitialConfigPanel({
   config: InterstitialConfigFormValue;
   onChange: (config: InterstitialConfigFormValue) => void;
 }): React.ReactElement {
+  const initialTab = config.script_inline ? "inline" : "url";
+  const [scriptTab, setScriptTab] = useState<"url" | "inline">(initialTab);
+
   const update = <K extends keyof InterstitialConfigFormValue>(
     key: K,
     val: InterstitialConfigFormValue[K],
@@ -449,21 +454,65 @@ function InterstitialConfigPanel({
         Interstitial Configuration
       </h4>
 
-      {/* Script URL */}
+      {/* Script — tabbed: External URL / Inline Code */}
       <div className="space-y-1.5">
-        <label className={labelClass}>Script URL</label>
-        <input
-          type="url"
-          value={config.script_url}
-          placeholder="https://cdn.adnetwork.com/interstitial.js"
-          onChange={(e): void => {
-            update("script_url", e.target.value);
-          }}
-          className={inputClass}
-        />
-        <p className="text-xs text-[var(--text-muted)]">
-          External ad-network script that renders the interstitial overlay.
-        </p>
+        <label className={labelClass}>Script</label>
+        <div className="flex gap-1 mb-2">
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("url")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "url"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            External URL
+          </button>
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("inline")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "inline"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            Inline Code
+          </button>
+        </div>
+
+        {scriptTab === "url" ? (
+          <>
+            <input
+              type="url"
+              value={config.script_url}
+              placeholder="https://cdn.adnetwork.com/interstitial.js"
+              onChange={(e): void => {
+                update("script_url", e.target.value);
+              }}
+              className={inputClass}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              External ad-network script that renders the interstitial overlay.
+            </p>
+          </>
+        ) : (
+          <>
+            <textarea
+              value={config.script_inline}
+              placeholder={"// Inline JavaScript for the interstitial overlay\n(function() {\n  // ...\n})();"}
+              onChange={(e): void => {
+                update("script_inline", e.target.value);
+              }}
+              rows={6}
+              className={inputClass + " font-mono text-xs"}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              Inline JavaScript injected directly. Use when no external script URL is available.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Trigger + Frequency row */}

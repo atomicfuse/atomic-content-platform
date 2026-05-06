@@ -55,6 +55,7 @@ function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedCo
     interstitial: (raw?.interstitial as boolean) ?? false,
     interstitial_config: {
       script_url: (rawIc?.script_url as string) ?? "",
+      script_inline: (rawIc?.script_inline as string) ?? "",
       trigger: {
         type: (rawTrigger?.type as "delay" | "scroll" | "exit_intent") ?? "delay",
         delay_seconds: (rawTrigger?.delay_seconds as number) ?? 5,

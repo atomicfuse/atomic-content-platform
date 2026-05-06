@@ -102,8 +102,11 @@ export type InterstitialPageType = "all" | "article" | "category" | "homepage";
  * checks pass.
  */
 export interface InterstitialConfig {
-  /** URL of the ad-network script to load. */
+  /** URL of the ad-network script to load. Mutually exclusive with `script_inline`. */
   script_url: string;
+
+  /** Inline JavaScript code for the interstitial. Mutually exclusive with `script_url`. */
+  script_inline?: string;
 
   /** When to trigger the interstitial. */
   trigger: InterstitialTrigger;
