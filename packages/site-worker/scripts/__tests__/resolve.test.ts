@@ -3,6 +3,7 @@ import {
   deepMerge,
   mergeScriptLayers,
   mergeAdPlacementLayers,
+  resolveSharedPageVars,
   splitFrontmatter,
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
@@ -445,5 +446,36 @@ describe('layout merge across layers', () => {
     const org = { layout: { hero: { count: 4 } } };
     const site = { layout: null };
     expect(deepMerge(org, site)).toEqual({ layout: { hero: { count: 4 } } });
+  });
+});
+
+// ---------- resolveSharedPageVars ----------
+
+describe('resolveSharedPageVars', () => {
+  it('replaces all known {{key}} tokens', () => {
+    const html = '<h1>About {{site_name}}</h1><p>Contact: {{support_email}}</p>';
+    const vars = { site_name: 'Cool News', support_email: 'contact@coolnews.dev' };
+    expect(resolveSharedPageVars(html, vars)).toBe(
+      '<h1>About Cool News</h1><p>Contact: contact@coolnews.dev</p>',
+    );
+  });
+
+  it('replaces multiple occurrences of the same variable', () => {
+    const html = '{{site_name}} is great. Welcome to {{site_name}}.';
+    expect(resolveSharedPageVars(html, { site_name: 'TestSite' })).toBe(
+      'TestSite is great. Welcome to TestSite.',
+    );
+  });
+
+  it('leaves unresolved tokens as-is (tolerant)', () => {
+    const html = '<p>{{site_name}} — {{unknown_var}}</p>';
+    expect(resolveSharedPageVars(html, { site_name: 'MySite' })).toBe(
+      '<p>MySite — {{unknown_var}}</p>',
+    );
+  });
+
+  it('returns unchanged HTML when vars is empty', () => {
+    const html = '<p>{{site_name}}</p>';
+    expect(resolveSharedPageVars(html, {})).toBe('<p>{{site_name}}</p>');
   });
 });
