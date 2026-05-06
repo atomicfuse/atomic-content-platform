@@ -420,16 +420,43 @@
       'position: relative'
     ].join(';');
 
-    // Close button
+    // Close button with countdown delay
+    var CLOSE_DELAY = 3; // seconds before close button becomes active
     var closeBtn = document.createElement('button');
-    closeBtn.textContent = '\u2715';
+    closeBtn.disabled = true;
     closeBtn.style.cssText = [
       'position: absolute', 'top: 12px', 'right: 16px',
-      'background: none', 'border: none', 'font-size: 20px',
-      'color: #666', 'cursor: pointer', 'line-height: 1',
-      'padding: 4px'
+      'background: rgba(0,0,0,0.08)', 'border: none', 'font-size: 13px',
+      'color: #999', 'cursor: default', 'line-height: 1',
+      'padding: 4px 8px', 'border-radius: 4px',
+      'font-family: -apple-system, BlinkMacSystemFont, sans-serif',
+      'font-weight: 600', 'min-width: 28px', 'text-align: center',
+      'transition: all 0.2s ease'
     ].join(';');
+    closeBtn.textContent = String(CLOSE_DELAY);
+
+    var remaining = CLOSE_DELAY;
+    var countdown = setInterval(function() {
+      remaining--;
+      if (remaining > 0) {
+        closeBtn.textContent = String(remaining);
+      } else {
+        clearInterval(countdown);
+        closeBtn.textContent = '\u2715';
+        closeBtn.disabled = false;
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.style.color = '#666';
+        closeBtn.style.background = 'none';
+        closeBtn.style.fontSize = '20px';
+        closeBtn.style.padding = '4px';
+        closeBtn.onmouseenter = function() { closeBtn.style.color = '#000'; };
+        closeBtn.onmouseleave = function() { closeBtn.style.color = '#666'; };
+      }
+    }, 1000);
+
     closeBtn.onclick = function() {
+      if (closeBtn.disabled) return;
+      clearInterval(countdown);
       overlay.style.opacity = '0';
       setTimeout(function() { overlay.remove(); }, 300);
     };
@@ -514,9 +541,9 @@
     overlay.appendChild(card);
     document.body.appendChild(overlay);
 
-    // Close on backdrop click
+    // Close on backdrop click (only after countdown expires)
     overlay.addEventListener('click', function(e) {
-      if (e.target === overlay) closeBtn.onclick();
+      if (e.target === overlay && !closeBtn.disabled) closeBtn.onclick();
     });
 
     // Fade in
