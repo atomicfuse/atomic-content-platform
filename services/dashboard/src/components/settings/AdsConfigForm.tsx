@@ -43,6 +43,7 @@ export interface InterstitialConfigFormValue {
     max_per_session: number;
   };
   page_types: InterstitialPageType[];
+  close_delay_seconds: number;
 }
 
 export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
@@ -50,6 +51,7 @@ export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
   trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
   frequency: { type: "once_per_session", max_per_session: 1 },
   page_types: ["all"],
+  close_delay_seconds: 3,
 };
 
 export interface AdsConfigFormValue {
@@ -590,6 +592,27 @@ function InterstitialConfigPanel({
             );
           })}
         </div>
+      </div>
+
+      {/* Close Button Delay */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Close Button Delay</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={config.close_delay_seconds}
+            onChange={(e): void => {
+              update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+            }}
+            className={inputClass + " w-20"}
+          />
+          <span className="text-xs text-[var(--text-muted)]">seconds</span>
+        </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+        </p>
       </div>
     </div>
   );

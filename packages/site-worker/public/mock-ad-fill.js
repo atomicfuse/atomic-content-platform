@@ -420,43 +420,52 @@
       'position: relative'
     ].join(';');
 
-    // Close button with countdown delay
-    var CLOSE_DELAY = 3; // seconds before close button becomes active
+    // Close button with countdown delay (reads from config, default 3s)
+    var CLOSE_DELAY = (ic.close_delay_seconds != null) ? ic.close_delay_seconds : 3;
     var closeBtn = document.createElement('button');
-    closeBtn.disabled = true;
-    closeBtn.style.cssText = [
-      'position: absolute', 'top: 12px', 'right: 16px',
-      'background: rgba(0,0,0,0.08)', 'border: none', 'font-size: 13px',
-      'color: #999', 'cursor: default', 'line-height: 1',
-      'padding: 4px 8px', 'border-radius: 4px',
-      'font-family: -apple-system, BlinkMacSystemFont, sans-serif',
-      'font-weight: 600', 'min-width: 28px', 'text-align: center',
-      'transition: all 0.2s ease'
-    ].join(';');
-    closeBtn.textContent = String(CLOSE_DELAY);
 
-    var remaining = CLOSE_DELAY;
-    var countdown = setInterval(function() {
-      remaining--;
-      if (remaining > 0) {
-        closeBtn.textContent = String(remaining);
-      } else {
-        clearInterval(countdown);
-        closeBtn.textContent = '\u2715';
-        closeBtn.disabled = false;
-        closeBtn.style.cursor = 'pointer';
-        closeBtn.style.color = '#666';
-        closeBtn.style.background = 'none';
-        closeBtn.style.fontSize = '20px';
-        closeBtn.style.padding = '4px';
-        closeBtn.onmouseenter = function() { closeBtn.style.color = '#000'; };
-        closeBtn.onmouseleave = function() { closeBtn.style.color = '#666'; };
-      }
-    }, 1000);
+    function activateCloseBtn() {
+      closeBtn.textContent = '\u2715';
+      closeBtn.disabled = false;
+      closeBtn.style.cssText = [
+        'position: absolute', 'top: 12px', 'right: 16px',
+        'background: none', 'border: none', 'font-size: 20px',
+        'color: #666', 'cursor: pointer', 'line-height: 1',
+        'padding: 4px', 'transition: all 0.2s ease'
+      ].join(';');
+      closeBtn.onmouseenter = function() { closeBtn.style.color = '#000'; };
+      closeBtn.onmouseleave = function() { closeBtn.style.color = '#666'; };
+    }
+
+    if (CLOSE_DELAY <= 0) {
+      activateCloseBtn();
+    } else {
+      closeBtn.disabled = true;
+      closeBtn.style.cssText = [
+        'position: absolute', 'top: 12px', 'right: 16px',
+        'background: rgba(0,0,0,0.08)', 'border: none', 'font-size: 13px',
+        'color: #999', 'cursor: default', 'line-height: 1',
+        'padding: 4px 8px', 'border-radius: 4px',
+        'font-family: -apple-system, BlinkMacSystemFont, sans-serif',
+        'font-weight: 600', 'min-width: 28px', 'text-align: center',
+        'transition: all 0.2s ease'
+      ].join(';');
+      closeBtn.textContent = String(CLOSE_DELAY);
+
+      var remaining = CLOSE_DELAY;
+      var countdown = setInterval(function() {
+        remaining--;
+        if (remaining > 0) {
+          closeBtn.textContent = String(remaining);
+        } else {
+          clearInterval(countdown);
+          activateCloseBtn();
+        }
+      }, 1000);
+    }
 
     closeBtn.onclick = function() {
       if (closeBtn.disabled) return;
-      clearInterval(countdown);
       overlay.style.opacity = '0';
       setTimeout(function() { overlay.remove(); }, 300);
     };
@@ -535,7 +544,8 @@
         (trigger.type === 'scroll' ? ' (' + (trigger.scroll_percent || 50) + '%)' : '') + '<br>' +
       'Frequency: ' + (freq.type || 'once_per_session') +
         (freq.type === 'custom' ? ' (max ' + (freq.max_per_session || 1) + '/session)' : '') + '<br>' +
-      'Pages: ' + (ic.page_types || ['all']).join(', ');
+      'Pages: ' + (ic.page_types || ['all']).join(', ') + '<br>' +
+      'Close delay: ' + CLOSE_DELAY + 's';
     card.appendChild(info);
 
     overlay.appendChild(card);

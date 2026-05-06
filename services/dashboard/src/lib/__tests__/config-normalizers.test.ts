@@ -292,6 +292,7 @@ describe("interstitial config normalization", () => {
       trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
       frequency: { type: "once_per_session", max_per_session: 1 },
       page_types: ["all"],
+      close_delay_seconds: 3,
     });
   });
 
@@ -463,5 +464,32 @@ describe("interstitial config normalization", () => {
     expect(result.interstitial_config.script_url).toBe("https://x.com/a.js");
     expect(result.ad_placements).toHaveLength(1);
     expect(result.ad_placements[0].id).toBe("top");
+  });
+
+  it("I16 — defaults close_delay_seconds to 3 when missing", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: { script_url: "https://x.com/a.js" },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(3);
+  });
+
+  it("I17 — preserves explicit close_delay_seconds value", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        close_delay_seconds: 5,
+      },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(5);
+  });
+
+  it("I18 — preserves close_delay_seconds of 0", () => {
+    const result = normalizeAdsConfig({
+      interstitial_config: {
+        script_url: "https://x.com/a.js",
+        close_delay_seconds: 0,
+      },
+    });
+    expect(result.interstitial_config.close_delay_seconds).toBe(0);
   });
 });

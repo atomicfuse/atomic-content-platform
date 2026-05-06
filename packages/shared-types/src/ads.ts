@@ -113,6 +113,9 @@ export interface InterstitialConfig {
 
   /** Which page types the interstitial appears on. */
   page_types: InterstitialPageType[];
+
+  /** Seconds the close button is disabled (countdown). Default: 3. */
+  close_delay_seconds?: number;
 }
 
 /**

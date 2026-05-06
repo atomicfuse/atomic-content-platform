@@ -65,6 +65,7 @@ function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedCo
         max_per_session: (rawFreq?.max_per_session as number) ?? 1,
       },
       page_types: Array.isArray(rawIc?.page_types) ? rawIc.page_types : ["all"],
+      close_delay_seconds: (rawIc?.close_delay_seconds as number) ?? 3,
     },
     layout: (raw?.layout as string) ?? "standard",
     ad_placements: placements.map((p: Record<string, unknown>) => {

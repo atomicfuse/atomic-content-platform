@@ -27,6 +27,7 @@ function baseValue(overrides: Partial<AdsConfigFormValue> = {}): AdsConfigFormVa
       trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
       frequency: { type: "once_per_session", max_per_session: 1 },
       page_types: ["all"],
+      close_delay_seconds: 3,
     },
     layout: "standard",
     ad_placements: [basePlacement()],
@@ -311,6 +312,7 @@ describe("interstitial config panel", () => {
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
+          close_delay_seconds: 3,
         },
       }),
     );
@@ -326,6 +328,7 @@ describe("interstitial config panel", () => {
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
+          close_delay_seconds: 3,
         },
       }),
     );
@@ -341,6 +344,7 @@ describe("interstitial config panel", () => {
           trigger: { type: "delay", delay_seconds: 10, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
+          close_delay_seconds: 3,
         },
       }),
     );
@@ -358,6 +362,7 @@ describe("interstitial config panel", () => {
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
+          close_delay_seconds: 3,
         },
       }),
     );
@@ -387,6 +392,7 @@ describe("interstitial config panel", () => {
           trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
+          close_delay_seconds: 3,
         },
       }),
     );

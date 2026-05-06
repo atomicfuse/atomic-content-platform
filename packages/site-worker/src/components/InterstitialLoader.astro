@@ -37,6 +37,7 @@ const clientConfig = enabled
       trigger: ic!.trigger ?? { type: 'delay', delay_seconds: 5 },
       frequency: ic!.frequency ?? { type: 'once_per_session' },
       page_types: ic!.page_types ?? ['all'],
+      close_delay_seconds: ic!.close_delay_seconds ?? 3,
     })
   : null;
 ---

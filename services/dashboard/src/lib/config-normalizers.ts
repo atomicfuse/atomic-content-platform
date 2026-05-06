@@ -70,6 +70,7 @@ function normalizeInterstitialConfig(raw: Record<string, unknown> | undefined): 
       max_per_session: (frequency?.max_per_session as number) ?? 1,
     },
     page_types: Array.isArray(raw.page_types) ? raw.page_types : ["all"],
+    close_delay_seconds: (raw.close_delay_seconds as number) ?? 3,
   };
 }
 
