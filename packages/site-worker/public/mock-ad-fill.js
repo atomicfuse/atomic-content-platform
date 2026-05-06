@@ -401,6 +401,13 @@
     var ic = window.__ATL_INTERSTITIAL_CONFIG__ || null;
     if (!ic || (!ic.script_url && !ic.script_inline)) return;
 
+    // Skip mock overlay when a real script is configured — let
+    // InterstitialLoader's trigger logic handle the real ad script.
+    // Only show mock when the URL is the placeholder demo URL or empty.
+    var hasRealUrl = ic.script_url && ic.script_url.indexOf('example.com') === -1;
+    var hasRealInline = ic.script_inline && ic.script_inline.trim().length > 0;
+    if (hasRealUrl || hasRealInline) return;
+
     // Build overlay
     var overlay = document.createElement('div');
     overlay.id = 'atl-interstitial-mock';
