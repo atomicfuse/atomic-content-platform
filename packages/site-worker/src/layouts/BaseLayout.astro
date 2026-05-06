@@ -126,7 +126,7 @@ const cssVars = Object.entries(theme.colors)
     )}
 
     {/* Interstitial ad loader — trigger + frequency + external script. */}
-    <InterstitialLoader pageType={pageType} server:defer />
+    <InterstitialLoader pageType={pageType} />
 
     {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
     <script is:inline>
