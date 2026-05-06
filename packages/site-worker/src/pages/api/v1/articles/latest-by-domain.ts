@@ -137,7 +137,7 @@ export const GET: APIRoute = async ({ request }) => {
       result[hostname] = {
         domain: hostname,
         articles: sorted.map((a) => ({
-          url: `https://${hostname}/articles/${a.slug}`,
+          url: `https://${hostname}/${a.slug}`,
           published_at: a.publishDate,
         })),
       };

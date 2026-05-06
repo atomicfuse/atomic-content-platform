@@ -56,11 +56,11 @@ GET /api/v1/articles/latest-by-domain?domains=coolnews.dev,financerooms.com&limi
     "domain": "coolnews.dev",
     "articles": [
       {
-        "url": "https://coolnews.dev/articles/best-thriller-movies-2026",
+        "url": "https://coolnews.dev/best-thriller-movies-2026",
         "published_at": "2026-05-01T14:00:00.000Z"
       },
       {
-        "url": "https://coolnews.dev/articles/japan-overtourism-cherry-blossom",
+        "url": "https://coolnews.dev/japan-overtourism-cherry-blossom",
         "published_at": "2026-04-30T10:00:00.000Z"
       }
     ]
