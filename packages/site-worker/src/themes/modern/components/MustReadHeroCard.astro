@@ -28,7 +28,11 @@ const href = `/${article.slug}`;
     background: rgba(0,0,0,0.2);
     height: 100%;
   }
-  .mr-hero-image { width: 100%; aspect-ratio: 16/9; object-fit: cover; }
+  .mr-hero-image {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    transition: transform 400ms ease;
+  }
+  .mr-hero:hover .mr-hero-image { transform: scale(1.05); }
   .mr-hero-body { padding: 1.25rem; }
   .mr-hero-title {
     font-size: var(--text-2xl, 1.5rem);
