@@ -6,6 +6,13 @@
  * middleware.ts on every request). Changing a GA4 / GTM / Meta pixel
  * ID in a merged YAML config propagates to live traffic in one KV
  * write — no rebuild.
+ *
+ * Google tag implementation follows Google's official spec:
+ *   - gtag.js loaded ONCE with the primary measurement ID
+ *   - dataLayer + gtag function initialized once
+ *   - gtag('config', ...) called per property (GA4, Google Ads)
+ *   - GTM loaded separately (uses its own dataLayer push)
+ * See: https://developers.google.com/tag-platform/gtagjs/install
  */
 import { getConfig } from '../lib/config';
 
@@ -17,20 +24,16 @@ const gtm = (t.gtm as string | null | undefined) ?? null;
 const googleAds = (t.google_ads as string | null | undefined) ?? null;
 const facebookPixel = (t.facebook_pixel as string | null | undefined) ?? null;
 const customScripts = Array.isArray(t.custom) ? (t.custom as Array<{ id?: string; html?: string }>) : [];
+
+// Collect all gtag-based property IDs (GA4 + Google Ads).
+// Per Google's spec, gtag.js is loaded once and each property gets
+// its own gtag('config', ...) call in a single script block.
+const gtagIds: string[] = [ga4, googleAds].filter((id): id is string => !!id);
+const primaryGtagId = gtagIds[0] ?? null;
 ---
 
-{ga4 && (
-  <>
-    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${ga4}`}></script>
-    <script is:inline set:html={`
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', '${ga4}');
-    `} />
-  </>
-)}
-
+{/* GTM — loaded independently from gtag.js. GTM manages its own
+    dataLayer push and does not conflict with the gtag snippet below. */}
 {gtm && (
   <script is:inline set:html={`
     (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
@@ -41,17 +44,24 @@ const customScripts = Array.isArray(t.custom) ? (t.custom as Array<{ id?: string
   `} />
 )}
 
-{googleAds && (
+{/* gtag.js — loaded ONCE for ALL Google property IDs (GA4 + Ads).
+    Per Google's documentation: load the library once, initialize
+    dataLayer and gtag() once, then call gtag('config', ...) per ID.
+    Loading gtag.js multiple times causes duplicate events and
+    incorrect property attribution. */}
+{primaryGtagId && (
   <>
-    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${googleAds}`}></script>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${primaryGtagId}`}></script>
     <script is:inline set:html={`
       window.dataLayer = window.dataLayer || [];
       function gtag(){dataLayer.push(arguments);}
-      gtag('config', '${googleAds}');
+      gtag('js', new Date());
+      ${gtagIds.map((id) => `gtag('config', '${id}');`).join('\n      ')}
     `} />
   </>
 )}
 
+{/* Meta / Facebook pixel — independent from Google tags. */}
 {facebookPixel && (
   <script is:inline set:html={`
     !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
