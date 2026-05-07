@@ -147,4 +147,11 @@ describe('generatePreviewScript', () => {
     expect(script).toContain('.closest');
     expect(script).toContain('addEventListener');
   });
+
+  it('patches fetch for server island requests', () => {
+    const script = generatePreviewScript('test-site');
+    expect(script).toContain('window.fetch');
+    expect(script).toContain('_server-islands/');
+    expect(script).toContain('_atl_site');
+  });
 });

@@ -35,10 +35,11 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 
-const AGGREGATOR_URL =
+const RAW_AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-cloudgrid.apps.cloudgrid.io";
+  "https://content-aggregator-cloudgrid-0914.atomic.cloudgrid.io/api";
+const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 interface StagingResult {
   stagingUrl: string;
@@ -68,20 +69,27 @@ async function createBundle(
   };
 
   try {
-    let res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+    const url = `${AGGREGATOR_URL}/api/bundles`;
+    console.log("[wizard] POST", url, JSON.stringify(payload, null, 2));
+
+    let res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
+    console.log("[wizard] Bundle creation response:", res.status, res.statusText);
+
     // Handle 409 (duplicate name) — retry with " (2)" suffix
     if (res.status === 409) {
       payload.name = `${name} (2)`;
-      res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+      console.log("[wizard] 409 duplicate — retrying POST", url, JSON.stringify(payload, null, 2));
+      res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      console.log("[wizard] Retry response:", res.status, res.statusText);
     }
 
     // Accept both 200 and 201 as success — aggregators vary
@@ -95,6 +103,29 @@ async function createBundle(
     console.error("[wizard] Bundle creation error:", err);
     return null;
   }
+}
+
+/** Create a content bundle for an existing site from the site settings page.
+ *  Uses the niche targeting selections (category, subcategories, tags)
+ *  already configured in the Content Brief tab. Returns the new bundleId
+ *  on success, or throws on failure. */
+export async function createBundleForSite(
+  siteName: string,
+  tier1CategoryId: string,
+  childCategoryIds: string[],
+  tagIds: string[],
+): Promise<{ id: string; name: string }> {
+  if (!tier1CategoryId) {
+    throw new Error("A category must be selected before creating a bundle.");
+  }
+  if (childCategoryIds.length === 0) {
+    throw new Error("At least one subcategory must be selected before creating a bundle.");
+  }
+  const bundle = await createBundle(siteName, tier1CategoryId, childCategoryIds, tagIds);
+  if (!bundle) {
+    throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
+  }
+  return bundle;
 }
 
 /** Create site files in a staging branch and trigger sync-kv to seed
