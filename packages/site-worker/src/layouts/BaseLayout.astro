@@ -142,7 +142,7 @@ const cssVars = Object.entries(theme.colors)
             if (!email) return;
             if (status) status.textContent = 'Subscribing…';
             try {
-              var res = await fetch('https://atomic-content-platform.apps.cloudgrid.io/api/subscribe', {
+              var res = await fetch('https://atomic-content-platform-2d88.atomic.cloudgrid.io/api/subscribe', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
