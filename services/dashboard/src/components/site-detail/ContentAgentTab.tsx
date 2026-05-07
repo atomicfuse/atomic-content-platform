@@ -832,13 +832,51 @@ export function ContentAgentTab({
             <p className="text-xs text-[var(--text-muted)] py-2">Select a category to browse subcategories.</p>
           ) : (
             <>
-              {categories.length > 8 && (
-                <input
-                  className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
-                  placeholder="Filter categories..."
-                  value={categoryFilter}
-                  onChange={(e): void => setCategoryFilter(e.target.value)}
-                />
+              <input
+                className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+                placeholder="Filter subcategories..."
+                value={categoryFilter}
+                onChange={(e): void => setCategoryFilter(e.target.value)}
+              />
+              {/* Selected subcategory pills */}
+              {selectedCategoryIds.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedCategoryIds.map((id) => {
+                    const cat = categories.find((c) => c.id === id);
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                      >
+                        {cat?.name ?? id}
+                        <button
+                          type="button"
+                          onClick={(): void => toggleCategory(id)}
+                          className="hover:text-red-400 transition-colors"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Select all filtered button */}
+              {categoryFilter.trim() && filteredCategories.length > 0 && (
+                <button
+                  type="button"
+                  onClick={(): void => {
+                    const newIds = filteredCategories
+                      .map((c) => c.id)
+                      .filter((id) => !selectedCategoryIds.includes(id));
+                    if (newIds.length > 0) {
+                      setSelectedCategoryIds((prev) => [...prev, ...newIds]);
+                    }
+                  }}
+                  className="text-xs font-semibold text-cyan hover:text-cyan/80 transition-colors"
+                >
+                  + Select all filtered ({filteredCategories.filter((c) => !selectedCategoryIds.includes(c.id)).length})
+                </button>
               )}
               <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
                 {filteredCategories.length === 0 ? (
