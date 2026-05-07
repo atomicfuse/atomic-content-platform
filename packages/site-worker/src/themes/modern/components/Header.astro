@@ -30,10 +30,11 @@ function topicHref(topic: string): string {
   <div class="nav-inner">
     {/* Logo */}
     <a href="/" class="nav-logo" aria-label={config.site_name}>
-      {config.theme.logo && (
-        <img src={config.theme.logo} alt="" class="logo-img" />
+      {config.theme.logo ? (
+        <img src={config.theme.logo} alt={config.site_name} class="logo-img" />
+      ) : (
+        <span class="logo-text">{config.site_name}</span>
       )}
-      <span class="logo-text">{config.site_name}</span>
     </a>
 
     {/* Desktop nav links */}
@@ -131,7 +132,8 @@ function topicHref(topic: string): string {
   }
 
   .logo-img {
-    height: 36px;
+    height: 40px;
+    max-width: 240px;
     width: auto;
     object-fit: contain;
   }
