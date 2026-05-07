@@ -84,10 +84,12 @@ async function createBundle(
       });
     }
 
-    if (res.status === 201) {
+    // Accept both 200 and 201 as success — aggregators vary
+    if (res.ok) {
       return (await res.json()) as { id: string; name: string };
     }
-    console.error("[wizard] Bundle creation failed:", res.status);
+    const errorBody = await res.text().catch(() => "");
+    console.error("[wizard] Bundle creation failed:", res.status, errorBody);
     return null;
   } catch (err) {
     console.error("[wizard] Bundle creation error:", err);
@@ -138,7 +140,11 @@ export async function createSiteAndBuildStaging(
       categoryIds,
       tagIds,
     );
-    if (bundle) bundleId = bundle.id;
+    if (bundle) {
+      bundleId = bundle.id;
+    } else {
+      throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
+    }
   }
 
   // 1. Build site.yaml content. `domain` is the site folder identifier
