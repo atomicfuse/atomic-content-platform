@@ -25,6 +25,7 @@ const GUIDE_PAGES = [
   { slug: "12-site-builder", title: "Site Builder Flow" },
   { slug: "13-theme-and-layout", title: "Theme & Layout" },
   { slug: "14-articles-api", title: "Articles API" },
+  { slug: "15-creating-a-site", title: "Creating a Site" },
 ];
 
 export default function GuidePage(): React.ReactElement {
