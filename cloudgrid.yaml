@@ -1,5 +1,3 @@
-name: atomic-content-platform
-
 requires:
   - redis: private
 
