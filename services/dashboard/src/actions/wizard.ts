@@ -35,10 +35,11 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 
-const AGGREGATOR_URL =
+const RAW_AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-cloudgrid.apps.cloudgrid.io";
+  "https://content-aggregator-cloudgrid-0914.atomic.cloudgrid.io/api";
+const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 interface StagingResult {
   stagingUrl: string;
@@ -68,20 +69,27 @@ async function createBundle(
   };
 
   try {
-    let res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+    const url = `${AGGREGATOR_URL}/api/bundles`;
+    console.log("[wizard] POST", url, JSON.stringify(payload, null, 2));
+
+    let res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
 
+    console.log("[wizard] Bundle creation response:", res.status, res.statusText);
+
     // Handle 409 (duplicate name) — retry with " (2)" suffix
     if (res.status === 409) {
       payload.name = `${name} (2)`;
-      res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
+      console.log("[wizard] 409 duplicate — retrying POST", url, JSON.stringify(payload, null, 2));
+      res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      console.log("[wizard] Retry response:", res.status, res.statusText);
     }
 
     // Accept both 200 and 201 as success — aggregators vary
