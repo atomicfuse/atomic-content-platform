@@ -34,7 +34,7 @@ export async function generateImageWithOpenAI(
         model: OPENAI_IMAGE_MODEL,
         prompt,
         n: 1,
-        size: "1536x1024",
+        size: "1024x1024",
       }),
       signal: AbortSignal.timeout(90_000), // 90s — OpenAI image gen can be slow
     });

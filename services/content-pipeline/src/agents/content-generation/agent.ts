@@ -538,13 +538,13 @@ async function processItem(
       };
     }
 
-    const assetPath = `assets/images/${slug}.png`;
+    const assetPath = `assets/images/${slug}.webp`;
     const pendingImageAsset: PendingAsset = {
       siteDomain,
       assetPath,
       data: ladderResult.result.data,
     };
-    const featuredImageUrl = `/assets/images/${slug}.png`;
+    const featuredImageUrl = `/assets/images/${slug}.webp`;
     console.log(`[agent] Generated image: ${assetPath}`);
 
     // Step 5: SEO metadata

@@ -50,7 +50,7 @@ describe("generateImageWithOpenAI", () => {
     expect(body.model).toBe("gpt-image-1");
     expect(body.prompt).toBe("test prompt");
     expect(body.n).toBe(1);
-    expect(body.size).toBe("1536x1024");
+    expect(body.size).toBe("1024x1024");
   });
 
   it("returns { ok: false, retriable: false } when no image in response", async () => {

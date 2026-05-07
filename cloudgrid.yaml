@@ -1,28 +1,51 @@
+# CloudGrid deploy config for the atomic-content-platform entity.
+# Entity slug (sites-platform-e297) is pinned in .cloudgrid/link.json.
+# Reference: https://cloudgrid.io/docs (cloudgrid.yaml spec)
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # dashboard — public Next.js UI. Owns all /api/* (Next.js App Router routes)
+  # and serves at the entity outlet (https://sites-platform-e297.atomic.cloudgrid.io).
+  # ---------------------------------------------------------------------------
   dashboard:
     type: nextjs
     path: /
     env:
-      CONTENT_AGENT_URL: http://content-pipeline-app
-      NEXTAUTH_URL: https://sites-platform-e297.atomic.cloudgrid.io
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
-    # Secrets (via: cloudgrid secrets set KEY=VALUE):
-    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
-    #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, REDIS_URL
+    # Secrets (via `cloudgrid secrets set KEY=VALUE`):
+    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    #   GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
+    #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
+  # ---------------------------------------------------------------------------
+  # content-pipeline — internal worker (no public path). Reached by the
+  # dashboard at http://content-pipeline-app via cluster DNS.
+  # Endpoints: GET /health, POST /content-generate, GET /scheduled-publish.
+  # ---------------------------------------------------------------------------
   content-pipeline:
     type: node
-    path: /api
+    lang: typescript
     build: npm run build
     start: npm start
-    lang: typescript
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
-      Secrets: GITHUB_TOKEN, GEMINI_API_KEY, REDIS_URL
-    # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
-    # cron:
-      # scheduled-publisher:
-      #   schedule: "0 * * * *"
-      #   timezone: EST
-      #   run: /scheduled-publish
+    # Secrets (via `cloudgrid secrets set KEY=VALUE`):
+    #   GITHUB_TOKEN, GEMINI_API_KEY
+    # REDIS_URL is auto-injected by `requires: redis: private`.
+    # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
+
+  # ---------------------------------------------------------------------------
+  # scheduled-publisher — hourly cron that pings the pipeline. The pipeline
+  # gates execution against scheduler/config.yaml in the network repo, so
+  # most ticks are no-ops.
+  # ---------------------------------------------------------------------------
+  scheduled-publisher:
+    type: cron
+    schedule: "0 * * * *"
+    timezone: EST
+    run: http://content-pipeline-app/scheduled-publish
+
+requires:
+  - redis: private

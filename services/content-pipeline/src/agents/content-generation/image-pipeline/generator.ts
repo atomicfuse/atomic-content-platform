@@ -12,6 +12,7 @@
 
 import { generateImageWithGemini, type GeminiImageInput } from "../../../lib/gemini.js";
 import { generateImageWithOpenAI } from "../../../lib/openai-image.js";
+import { optimizeImage } from "../../../lib/image-optimizer.js";
 import type { ImageGenerationResult, ImageLadderResult, ImageLadderAttemptLog } from "./types.js";
 
 export interface ImageGenInput {
@@ -39,9 +40,9 @@ function buildImagePrompt(input: ImageGenInput, hasReference: boolean): string {
       `Create a NEW, ORIGINAL hero image for an article titled: "${input.articleTitle}".`,
       `Topic: ${topicSummary}.`,
       `Match the visual style of the reference image:`,
-      `- If it is a realistic photograph, generate a candid, high-resolution photograph with natural lighting and editorial quality.`,
-      `- If it is an illustration, graphic, or low-quality image, generate a clean, modern professional editorial illustration.`,
-      `Wide landscape format (16:9). Rich colors, premium quality.`,
+      `- If it is a realistic photograph, generate a candid photograph with natural lighting.`,
+      `- If it is an illustration, graphic, or low-quality image, generate a clean, modern editorial illustration.`,
+      `Wide landscape format (16:9). Web-optimized, moderate detail.`,
       `Do NOT copy the reference image. Create something new that matches its style.`,
       `Do NOT include any text, watermarks, logos, or identifiable real people.`,
     ].join(" ");
@@ -51,8 +52,8 @@ function buildImagePrompt(input: ImageGenInput, hasReference: boolean): string {
     `Create a professional editorial illustration for a ${input.vertical} article.`,
     `Article title: "${input.articleTitle}".`,
     `Topic: ${topicSummary}.`,
-    `Style: clean, modern, professional hero image for a news/content website.`,
-    `Wide landscape format (16:9). Vivid colors, editorial quality.`,
+    `Style: clean, modern hero image for a news/content website.`,
+    `Wide landscape format (16:9). Web-optimized, moderate detail.`,
     `Do NOT include any text, watermarks, logos, or identifiable real people.`,
   ].join(" ");
 }
@@ -139,10 +140,11 @@ export async function generateImageWithLadder(
       const attempt = await generateImageWithGemini(geminiKey, geminiPrompt, reference);
 
       if (attempt.ok) {
-        console.log(`[img-gen] Gemini succeeded (${(attempt.data.length / 1024).toFixed(0)} KB)`);
+        console.log(`[img-gen] Gemini succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+        const optimized = await optimizeImage(attempt.data);
         return {
           ok: true,
-          result: { data: attempt.data, altText: generateAltText(input), prompt: geminiPrompt },
+          result: { data: optimized, altText: generateAltText(input), prompt: geminiPrompt },
         };
       }
 
@@ -164,10 +166,11 @@ export async function generateImageWithLadder(
     const attempt = await generateImageWithOpenAI(openaiKey, openaiPrompt);
 
     if (attempt.ok) {
-      console.log(`[img-gen] OpenAI succeeded (${(attempt.data.length / 1024).toFixed(0)} KB)`);
+      console.log(`[img-gen] OpenAI succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+      const optimized = await optimizeImage(attempt.data);
       return {
         ok: true,
-        result: { data: attempt.data, altText: generateAltText(input), prompt: openaiPrompt },
+        result: { data: optimized, altText: generateAltText(input), prompt: openaiPrompt },
       };
     }
 
