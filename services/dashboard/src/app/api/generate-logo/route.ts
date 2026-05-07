@@ -105,31 +105,26 @@ function buildLogoPrompt(
   headerBg?: string,
 ): string {
   const dark = isDarkColor(headerBg ?? "#1a1a2e");
-  const iconColors = dark
-    ? "Use bright, vivid colors (NOT dark colors) so it pops on a dark background."
-    : "Use rich, saturated colors that stand out on a light background.";
+  const contrastInstruction = dark
+    ? "LIGHT VERSION: Use off-white, cream, or bright vibrant colors. Optimized for a dark/black background."
+    : "DARK VERSION: Use deep black, charcoal, or rich saturated colors. Optimized for a light/white background.";
 
-  return `Design a bold, distinctive ICON for a ${vertical} website called "${siteName}"${audience ? ` targeting ${audience}` : ""}.
+  return `Create a professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
 
-IMPORTANT — ICON ONLY, NO TEXT:
-• Do NOT include any text, letters, or words — this is a pure symbol/icon
-• The site name "${siteName}" will be rendered separately in HTML text
+LAYOUT & STRUCTURE:
+• COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
+• BALANCE: The icon and text should be vertically centered and horizontally aligned.
+• ASPECT RATIO: Wide horizontal format (suitable for a website navigation bar).
 
-ICON DESIGN:
-• A single bold symbol or mark that represents ${vertical}
-• ${iconColors}
-• Simple, recognizable at small sizes (32px–48px)
-• 2–3 colors maximum, flat design
-• Geometric and clean — no fine details that disappear at small sizes
+VISUAL STYLE:
+• ICON: A single, bold, recognizable symbol representing ${vertical}. Incorporate a creative element that subtly connects the icon to the text for a unified brand look.
+• TYPOGRAPHY: Use a bold, modern, clean sans-serif font. The text must read exactly "${siteName}".
+• ART STYLE: Minimalist, flat design, vector-like. No 3D, no gradients, no photorealism.
+• COLORS: ${contrastInstruction} Max 2-3 colors.
 
-SIZING & CROP:
-• Square aspect ratio, 1:1
-• The icon must fill the entire canvas — NO empty padding or whitespace around it
-• Crop tightly so the icon touches all edges
-• Target 512×512 pixels
-
-STYLE:
-• Modern, professional, flat design
-• Transparent background (PNG with no solid background)
-• No gradients, no 3D effects, no drop shadows, no text`;
+CRITICAL CONSTRAINTS:
+• TRANSPARENCY: Solid colors on a pure transparent background.
+• NO MOCKUPS: No business cards, no walls, no paper textures, no shadows.
+• CLARITY: Ensure high contrast and perfect spelling of "${siteName}".
+• PADDING: Leave a small amount of breathing room/padding around the edges.`;
 }

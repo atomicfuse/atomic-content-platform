@@ -30,10 +30,11 @@ const quickLinks = [
     {/* Column 1: About */}
     <div class="footer-col footer-about">
       <div class="footer-logo-group">
-        {config.theme.logo && (
-          <img src={config.theme.logo} alt="" class="footer-logo" />
+        {config.theme.logo ? (
+          <img src={config.theme.logo} alt={config.site_name} class="footer-logo" />
+        ) : (
+          <span class="footer-logo-text">{config.site_name}</span>
         )}
-        <span class="footer-logo-text">{config.site_name}</span>
       </div>
       <p class="footer-tagline">
         {config.site_tagline ?? config.site_name}
