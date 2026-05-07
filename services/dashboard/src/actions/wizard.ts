@@ -105,6 +105,29 @@ async function createBundle(
   }
 }
 
+/** Create a content bundle for an existing site from the site settings page.
+ *  Uses the niche targeting selections (category, subcategories, tags)
+ *  already configured in the Content Brief tab. Returns the new bundleId
+ *  on success, or throws on failure. */
+export async function createBundleForSite(
+  siteName: string,
+  tier1CategoryId: string,
+  childCategoryIds: string[],
+  tagIds: string[],
+): Promise<{ id: string; name: string }> {
+  if (!tier1CategoryId) {
+    throw new Error("A category must be selected before creating a bundle.");
+  }
+  if (childCategoryIds.length === 0) {
+    throw new Error("At least one subcategory must be selected before creating a bundle.");
+  }
+  const bundle = await createBundle(siteName, tier1CategoryId, childCategoryIds, tagIds);
+  if (!bundle) {
+    throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
+  }
+  return bundle;
+}
+
 /** Create site files in a staging branch and trigger sync-kv to seed
  *  CONFIG_KV_STAGING + R2 for the multi-tenant site-worker. */
 export async function createSiteAndBuildStaging(

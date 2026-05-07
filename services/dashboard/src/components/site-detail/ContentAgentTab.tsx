@@ -13,7 +13,7 @@ import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
-import { generateLogoPreview } from "@/actions/wizard";
+import { generateLogoPreview, createBundleForSite } from "@/actions/wizard";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -192,7 +192,8 @@ export function ContentAgentTab({
   const [tagSearch, setTagSearch] = useState("");
   const [seoKeywords, setSeoKeywords] = useState<string[]>(initSeoKeywords);
   const [seoKeywordInput, setSeoKeywordInput] = useState("");
-  const [bundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
+  const [bundleId, setBundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
+  const [creatingBundle, setCreatingBundle] = useState(false);
   const [verticalSearch, setVerticalSearch] = useState("");
   const [verticalDropdownOpen, setVerticalDropdownOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -942,7 +943,57 @@ export function ContentAgentTab({
               <span className="text-sm text-[var(--text-primary)] font-mono">{bundleId}</span>
             </div>
           ) : (
-            <p className="text-xs text-[var(--text-muted)] py-2">No content bundle assigned.</p>
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--text-muted)]">No content bundle assigned.</p>
+              <button
+                type="button"
+                disabled={creatingBundle || !verticalId || selectedCategoryIds.length === 0}
+                onClick={async (): Promise<void> => {
+                  setCreatingBundle(true);
+                  try {
+                    const bundle = await createBundleForSite(
+                      siteName || domain,
+                      verticalId,
+                      selectedCategoryIds,
+                      selectedTagIds,
+                    );
+                    setBundleId(bundle.id);
+                    // Save the bundleId to the site config
+                    await fetch("/api/sites/save", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        domain,
+                        logoBase64: null,
+                        faviconBase64: null,
+                        configUpdates: { bundleId: bundle.id },
+                      }),
+                    });
+                    toast("Content bundle created", "success");
+                  } catch (err) {
+                    toast(err instanceof Error ? err.message : "Failed to create bundle", "error");
+                  } finally {
+                    setCreatingBundle(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan/10 text-cyan border border-cyan/20 hover:bg-cyan/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {creatingBundle ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-cyan/30 border-t-cyan rounded-full animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "+ Create Bundle"
+                )}
+              </button>
+              {!verticalId && (
+                <p className="text-xs text-amber-400">Select a category above first.</p>
+              )}
+              {verticalId && selectedCategoryIds.length === 0 && (
+                <p className="text-xs text-amber-400">Select at least one subcategory above.</p>
+              )}
+            </div>
           )}
         </div>
 
