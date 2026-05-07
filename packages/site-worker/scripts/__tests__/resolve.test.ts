@@ -66,6 +66,68 @@ describe('deepMerge', () => {
     // Site wins on site_name.
     expect((merged as { site_name: string }).site_name).toBe('Cool News');
   });
+
+  it('4-layer tracking: org → group(null) → override(ga4) → site(ga4) — site wins', () => {
+    // Reproduces the financerooms scenario:
+    //   org: ga4 null
+    //   group mock-minimal: ga4 null (doesn't erase)
+    //   override test-ads-mock: ga4 "G-TESTDEMO000"
+    //   site: ga4 "G-19L2E4YFRV" (must win)
+    const org = { tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] } };
+    const group = { tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] } };
+    const override = { tracking: { ga4: 'G-TESTDEMO000', gtm: null, google_ads: null, facebook_pixel: null, custom: [] } };
+    const site = { tracking: { ga4: 'G-19L2E4YFRV', gtm: null, google_ads: null, facebook_pixel: null, custom: [] } };
+
+    const merged = [org, group, override, site].reduce(
+      (acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {},
+    );
+    const tracking = (merged as { tracking: { ga4: string; gtm: unknown; google_ads: unknown } }).tracking;
+    expect(tracking.ga4).toBe('G-19L2E4YFRV');
+    expect(tracking.gtm).toBeNull();
+    expect(tracking.google_ads).toBeNull();
+  });
+
+  it('3-layer tracking: org → group(null) → override(ga4) — override wins when site has no tracking', () => {
+    // When the site doesn't declare tracking, the override's value persists.
+    const org = { tracking: { ga4: null, gtm: null, custom: [] } };
+    const group = { tracking: { ga4: null } };
+    const override = { tracking: { ga4: 'G-OVERRIDE' } };
+    const site = { site_name: 'No Tracking Site' }; // no tracking field
+
+    const merged = [org, group, override, site].reduce(
+      (acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {},
+    );
+    expect((merged as { tracking: { ga4: string } }).tracking.ga4).toBe('G-OVERRIDE');
+  });
+
+  it('null in site tracking.ga4 does NOT erase override ga4', () => {
+    // If the site explicitly sets ga4: null, deepMerge preserves the
+    // override's value (null means "no opinion", not "remove").
+    const override = { tracking: { ga4: 'G-OVERRIDE' } };
+    const site = { tracking: { ga4: null } };
+
+    const merged = [override, site].reduce(
+      (acc, layer) => deepMerge(acc, layer) as Record<string, unknown>, {},
+    );
+    expect((merged as { tracking: { ga4: string } }).tracking.ga4).toBe('G-OVERRIDE');
+  });
+
+  it('each site gets its own GA4 tag from its own layer chain', () => {
+    // Two sites sharing the same override must resolve independently.
+    const org = { tracking: { ga4: null } };
+    const override = { tracking: { ga4: 'G-SHARED-OVERRIDE' } };
+    const siteA = { tracking: { ga4: 'G-SITE-A' } };
+    const siteB = { tracking: { ga4: 'G-SITE-B' } };
+
+    const mergedA = [org, override, siteA].reduce(
+      (acc, l) => deepMerge(acc, l) as Record<string, unknown>, {},
+    );
+    const mergedB = [org, override, siteB].reduce(
+      (acc, l) => deepMerge(acc, l) as Record<string, unknown>, {},
+    );
+    expect((mergedA as { tracking: { ga4: string } }).tracking.ga4).toBe('G-SITE-A');
+    expect((mergedB as { tracking: { ga4: string } }).tracking.ga4).toBe('G-SITE-B');
+  });
 });
 
 describe('splitFrontmatter', () => {
