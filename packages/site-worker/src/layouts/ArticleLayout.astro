@@ -70,7 +70,9 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
       </article>
 
       <aside class="article-sidebar">
-        <AdSlot position="sidebar" pageType="article" server:defer />
+        <div class="article-sidebar-sticky">
+          <AdSlot position="sidebar" pageType="article" server:defer />
+        </div>
       </aside>
     </div>
   </main>
@@ -149,10 +151,11 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   @media (min-width: 960px) {
     .article-sidebar {
       display: block;
-      position: sticky;
-      top: 80px;
-      align-self: start;
     }
+  }
+  .article-sidebar-sticky {
+    position: sticky;
+    top: 80px;
   }
   .ad-anchor { margin: 1.5rem 0; }
   .ad-sticky-bottom {
