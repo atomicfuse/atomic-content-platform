@@ -243,7 +243,7 @@ The site detail page (`/sites/[domain]`) has 3 top-level tabs:
 
 1. **Site Settings** (default tab) — 5 sub-tabs:
    - **Identity** — site name, tagline, audience, tone, Custom Domain panel
-   - **Content Brief** — topics, schedule (`articles_per_day`, `preferred_days`), content guidelines, inline Generate Articles section, quality threshold + criteria sliders
+   - **Content Brief** — topics, schedule (`articles_per_day`, `preferred_days`), content guidelines, inline Generate Articles section, quality threshold + criteria sliders. Niche Targeting section shows category/subcategories (violet pills with remove buttons) and "Create Bundle" button for sites without one. Subcategory filter has "Select all filtered" button.
    - **Groups** — assign/remove groups, view active overrides with source badges, links to group pages
    - **Overrides** — overrides that apply to this site
    - **Config** — `SiteConfigTab` renders `UnifiedConfigForm` (same component used on Org/Group pages); shows inheritance badges ("From org", "From group: X")
@@ -264,7 +264,7 @@ See **Config Inheritance — 5-Layer Resolution** above for the full chain (`org
 - **Content pipeline:** Node 20, raw `http.createServer`, Octokit.
 - **Styling:** Tailwind CSS v4.
 - **Language:** TypeScript strict — no `any`, explicit return types.
-- **Testing:** Vitest (content-pipeline).
+- **Testing:** Vitest (site-worker + content-pipeline). 381 tests across 15 test files.
 
 ## Common Commands
 
@@ -380,6 +380,10 @@ Service contract (both services satisfy):
 21. **KV siteId is the domain folder name, not the numeric `site_id`.** `seed-kv.ts` uses the `sites/<domain>/` folder name as the KV siteId (e.g. `site-config:scienceworld`). The `site_id` field in `dashboard-index.yaml` is a Cloudflare numeric ID — never use it for KV key construction.
 22. **Site deletion cleans up KV.** `deleteSiteEntry()` in `src/actions/sites.ts` deletes `site:<domain>`, `site-config:<domain>`, `article-index:<domain>`, and `sync-status:<domain>` from both staging and prod KV namespaces. Individual `article:<domain>:<slug>` entries are not deleted (KV has no prefix-list API); they become unreachable once the index is gone.
 23. **Content Aggregator dropped `vertical_id` (2026-04-29).** Verticals are now tier-1 categories (`parent_id=null`). Dashboard UI says "Category" everywhere. Internal field names (`verticalId`, `WizardFormData.vertical`, `SiteBrief.vertical_id`) are kept for backward compat with stored data. API routes use `parent_id` (categories) and no longer send `vertical_id` (tags, bundles).
+24. **site-worker — Server Islands need `_atl_site` propagation.** PixelLoader, AdSlot, and InterstitialLoader are Astro Server Islands (`server:defer`). The browser fetches them via `/_server-islands/<Name>?...`. On staging (workers.dev), these sub-requests don't carry `_atl_site` by default, so middleware resolves the wrong site. Fixed by patching `window.fetch` in `generatePreviewScript()` (`preview-override.ts`) to inject `_atl_site` into server island requests. If you add a new Server Island, this is automatic — no per-component work needed.
+25. **site-worker — PixelLoader loads gtag.js once per Google's spec.** GA4 + Google Ads share a single gtag.js load. Do not add a second `<script src="gtag.js">` tag — it causes duplicate events and incorrect attribution. GTM is loaded independently (its own snippet).
+26. **Content Aggregator URL requires `/api` suffix.** The aggregator base URL (`CONTENT_AGGREGATOR_URL`) defaults to the CloudGrid URL which does NOT include `/api`. All fetch calls must append `/api/...` to the base. See `wizard.ts` `getAggregatorApiBase()` which strips a trailing `/api` if present, then re-adds it per-call.
+27. **`createBundleForSite` in wizard.ts.** Site settings (ContentAgentTab) can create a content bundle from existing category + subcategory + tag selections. Calls `POST /api/bundles` on the aggregator. Handles 409 (duplicate name) by retrying with " (2)" suffix. Requires at least one subcategory selected.
 
 ## Quick Reference — File Ownership
 
@@ -403,4 +407,4 @@ Service contract (both services satisfy):
 
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
-Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker.
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site.
