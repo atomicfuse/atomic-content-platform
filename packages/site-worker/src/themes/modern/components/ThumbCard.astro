@@ -24,7 +24,11 @@ const href = `/${article.slug}`;
     text-decoration: none;
     background: var(--color-secondary, #1a1a2e);
   }
-  .thumb-card-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .thumb-card-image {
+    position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+    transition: transform 400ms ease;
+  }
+  .thumb-card:hover .thumb-card-image { transform: scale(1.05); }
   .thumb-card-overlay {
     position: absolute; inset: 0;
     background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%);
