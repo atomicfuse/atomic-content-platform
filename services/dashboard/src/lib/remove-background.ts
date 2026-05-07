@@ -55,6 +55,7 @@ export async function removeBackground(
     raw: { width: info.width, height: info.height, channels: 4 },
   })
     .trim()   // Remove transparent padding so the logo fills its bounding box
-    .png()
+    .resize({ width: 800, withoutEnlargement: true }) // Cap width for web use
+    .png({ palette: true, quality: 80, compressionLevel: 9 })
     .toBuffer();
 }

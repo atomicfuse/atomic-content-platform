@@ -17,6 +17,10 @@ vi.mock("../lib/openai-image.js", () => ({
     mockOpenAI(...args),
 }));
 
+vi.mock("../lib/image-optimizer.js", () => ({
+  optimizeImage: (buf: Buffer): Promise<Buffer> => Promise.resolve(buf),
+}));
+
 // Stub global fetch for thumbnail fetcher (inside generator.ts)
 vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("no thumbnail in test")));
 

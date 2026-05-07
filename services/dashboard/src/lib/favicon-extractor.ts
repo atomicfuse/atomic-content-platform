@@ -19,7 +19,7 @@ export async function extractFaviconFromLogo(
 
   if (w === 0 || h === 0) {
     // Can't parse — fall back to resizing the whole image
-    return sharp(logoBuffer).resize(180, 180, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
+    return sharp(logoBuffer).resize(180, 180, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png({ palette: true, quality: 80 }).toBuffer();
   }
 
   // Only crop if the image is significantly wider than tall (landscape logo)
@@ -29,13 +29,13 @@ export async function extractFaviconFromLogo(
     return sharp(logoBuffer)
       .extract({ left: 0, top: 0, width: size, height: size })
       .resize(180, 180, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .png()
+      .png({ palette: true, quality: 80 })
       .toBuffer();
   }
 
   // Square-ish or portrait — just resize the whole thing
   return sharp(logoBuffer)
     .resize(180, 180, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
+    .png({ palette: true, quality: 80 })
     .toBuffer();
 }
