@@ -409,4 +409,4 @@ Service contract (both services satisfy):
 
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
-Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site.
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site, error-handling, site-deletion.
