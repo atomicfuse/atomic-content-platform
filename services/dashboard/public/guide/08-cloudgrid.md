@@ -24,7 +24,7 @@ services:
     path: /pipeline
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
-      CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
+      CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
 
   scheduled-publisher:
     type: cron

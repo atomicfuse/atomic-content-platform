@@ -11,6 +11,7 @@ import {
   DEFAULT_JOB_OPTIONS,
 } from "./types.js";
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
+import { notifyError, notifySummary } from "../lib/notifications.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
@@ -187,6 +188,21 @@ export async function processSchedulerRun(
   console.log(
     `[scheduler-run] History written: ${sites.length} site(s), ${skipped.length} skipped`,
   );
+
+  // Notify if any sites errored or produced zero articles
+  const errorSites = sites
+    .filter((s) => s.status === "error")
+    .map((s) => ({ domain: s.domain, error: s.message ?? "unknown" }));
+  const zeroArticleSites = sites
+    .filter((s) => s.status !== "error" && s.articlesCreated === 0)
+    .map((s) => s.domain);
+
+  void notifySummary(config.notifications, {
+    runId,
+    triggered: sites.length,
+    errors: errorSites,
+    zeroArticleSites,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -214,6 +230,10 @@ export function setupSchedulerFlow(
     console.error(
       `[scheduler-run] Parent job ${job?.id} failed: ${err.message}`,
     );
+    void notifyError(config.notifications, {
+      agent: "scheduler-run",
+      error: `Run ${job?.data?.runId ?? job?.id} failed: ${err.message}`,
+    });
   });
 
   schedulerRunWorker.on("completed", (job) => {

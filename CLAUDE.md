@@ -325,7 +325,7 @@ Service contract (both services satisfy):
 | `NETWORK_REPO` | content-pipeline | `atomicfuse/atomic-labs-network`. |
 | `LOCAL_NETWORK_PATH` | content-pipeline (dev) | Absolute path to local checkout. Enables local-FS write path **only when no branch is passed**. |
 | `CONTENT_AGENT_URL` | dashboard | `http://content-pipeline-app` in CloudGrid / cloudgrid dev; needs NODE_ENV fallback to `http://localhost:5000`. |
-| `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-cloudgrid.apps.cloudgrid.io`. |
+| `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-v2-34cd.atomic.cloudgrid.io`. |
 | `GEMINI_API_KEY` | content-pipeline | For image generation. |
 | `NETWORK_DATA_PATH` | site-worker (seed-kv) | Absolute path to network repo checkout. seed-kv resolves config + reads articles + uploads R2 assets from this path. Use `git worktree` for cross-branch seeding. |
 | `R2_BUCKET` | site-worker (seed-kv) | R2 bucket name. Defaults to `atl-assets-staging`. Set to `atl-assets-prod` for prod seed. |
