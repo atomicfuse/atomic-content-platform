@@ -11,6 +11,7 @@ import {
 } from "./content-generation.js";
 import { setupSchedulerFlow } from "./scheduler-flow.js";
 import type { AgentConfig } from "../lib/config.js";
+import { notifyError } from "../lib/notifications.js";
 
 export type { GenerateJobData } from "./types.js";
 export { GENERATE_QUEUE, SCHEDULER_RUN_QUEUE, DEFAULT_JOB_OPTIONS } from "./types.js";
@@ -43,6 +44,11 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
     console.error(
       `[worker] Job ${job?.id} failed (attempt ${job?.attemptsMade}): ${err.message}`,
     );
+    void notifyError(config.notifications, {
+      agent: "content-generation",
+      error: `Job ${job?.id} failed after ${job?.attemptsMade} attempt(s): ${err.message}`,
+      site: job?.data?.siteDomain,
+    });
   });
 
   generateWorker.on("completed", (job) => {

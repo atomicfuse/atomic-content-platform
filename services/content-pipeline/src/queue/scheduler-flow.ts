@@ -11,6 +11,7 @@ import {
   DEFAULT_JOB_OPTIONS,
 } from "./types.js";
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
+import { notifyError } from "../lib/notifications.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
@@ -214,6 +215,10 @@ export function setupSchedulerFlow(
     console.error(
       `[scheduler-run] Parent job ${job?.id} failed: ${err.message}`,
     );
+    void notifyError(config.notifications, {
+      agent: "scheduler-run",
+      error: `Run ${job?.data?.runId ?? job?.id} failed: ${err.message}`,
+    });
   });
 
   schedulerRunWorker.on("completed", (job) => {
