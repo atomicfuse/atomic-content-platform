@@ -235,50 +235,53 @@ export async function permanentlyRemoveFromTrash(
   return index;
 }
 
-/** Delete site files (site.yaml, skill.md, articles, assets) from the Git repo. */
+/** Delete site files (site.yaml, articles, assets) AND shared-page override
+ *  files (overrides/<domain>/) from the Git repo in a single atomic commit.
+ *  No-op if neither directory exists. */
 export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   const octokit = getOctokit();
-  const basePath = `sites/${domain}`;
 
-  // List all files under sites/{domain}/
+  // Collect files from both sites/<domain>/ and overrides/<domain>/
   let files: Array<{ path: string; sha: string }> = [];
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: basePath,
-    });
-    if (Array.isArray(data)) {
-      // Collect top-level files
-      for (const item of data) {
-        if (item.type === "file") {
-          files.push({ path: item.path, sha: item.sha });
-        } else if (item.type === "dir") {
-          // Recurse one level into subdirs (articles/, assets/)
-          try {
-            const { data: subData } = await octokit.repos.getContent({
-              owner: NETWORK_REPO_OWNER,
-              repo: NETWORK_REPO_NAME,
-              path: item.path,
-            });
-            if (Array.isArray(subData)) {
-              for (const subItem of subData) {
-                if (subItem.type === "file") {
-                  files.push({ path: subItem.path, sha: subItem.sha });
+
+  for (const basePath of [`sites/${domain}`, `overrides/${domain}`]) {
+    try {
+      const { data } = await octokit.repos.getContent({
+        owner: NETWORK_REPO_OWNER,
+        repo: NETWORK_REPO_NAME,
+        path: basePath,
+      });
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          if (item.type === "file") {
+            files.push({ path: item.path, sha: item.sha });
+          } else if (item.type === "dir") {
+            // Recurse one level into subdirs (articles/, assets/)
+            try {
+              const { data: subData } = await octokit.repos.getContent({
+                owner: NETWORK_REPO_OWNER,
+                repo: NETWORK_REPO_NAME,
+                path: item.path,
+              });
+              if (Array.isArray(subData)) {
+                for (const subItem of subData) {
+                  if (subItem.type === "file") {
+                    files.push({ path: subItem.path, sha: subItem.sha });
+                  }
                 }
               }
+            } catch {
+              // Skip subdirs that fail
             }
-          } catch {
-            // Skip subdirs that fail
           }
         }
       }
+    } catch (error: unknown) {
+      if (isNotFoundError(error)) {
+        continue; // This directory doesn't exist — try the next one
+      }
+      throw error;
     }
-  } catch (error: unknown) {
-    if (isNotFoundError(error)) {
-      return; // No files to delete
-    }
-    throw error;
   }
 
   if (files.length === 0) return;
@@ -316,7 +319,7 @@ export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   const { data: newCommit } = await octokit.git.createCommit({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
-    message: `site(${domain}): delete all site files`,
+    message: `site(${domain}): delete all site files and overrides`,
     tree: newTree.sha,
     parents: [latestCommitSha],
   });
