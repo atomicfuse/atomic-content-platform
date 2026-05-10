@@ -190,7 +190,7 @@ export async function deleteSiteEntry(domain: string): Promise<{
     } else {
       steps.push({
         label: `KV prefix cleanup: ${totalDeleted} deleted, ${prefixErrors.length} errors`,
-        success: totalDeleted > 0,
+        success: prefixErrors.length === 0,
         error: prefixErrors.join("; "),
       });
     }
@@ -223,7 +223,7 @@ export async function deleteSiteEntry(domain: string): Promise<{
     } else {
       steps.push({
         label: `R2 cleanup: ${r2Deleted} deleted, ${r2Errors.length} errors`,
-        success: r2Deleted > 0 || r2Errors.length < 2,
+        success: r2Errors.length === 0,
         error: r2Errors.join("; "),
       });
     }
