@@ -520,3 +520,42 @@ export async function bulkPutKV(
     );
   }
 }
+
+/** Bulk delete KV entries by key. Accepts up to 10,000 keys per call.
+ *  No-op if keys array is empty. Missing keys are silently ignored. */
+export async function bulkDeleteKV(
+  namespaceId: string,
+  keys: string[],
+): Promise<void> {
+  if (keys.length === 0) return;
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+      body: JSON.stringify(keys),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to bulk delete ${keys.length} KV keys: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all KV keys matching a prefix, then bulk-delete them.
+ *  Returns the number of keys deleted. Handles pagination internally. */
+export async function deleteKVByPrefix(
+  namespaceId: string,
+  prefix: string,
+): Promise<number> {
+  const keys = await listKVKeys(namespaceId, prefix);
+  if (keys.length === 0) return 0;
+  // CF bulk delete supports up to 10,000 keys per call
+  for (let i = 0; i < keys.length; i += 10_000) {
+    await bulkDeleteKV(namespaceId, keys.slice(i, i + 10_000));
+  }
+  return keys.length;
+}
