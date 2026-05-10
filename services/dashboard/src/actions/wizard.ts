@@ -38,7 +38,7 @@ import {
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-cloudgrid-0914.atomic.cloudgrid.io/api";
+  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
 const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 interface StagingResult {

@@ -14,6 +14,7 @@ services:
     env:
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
       CONTENT_AGENT_URL: http://content-pipeline-app
+      CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
     # Secrets (via `cloudgrid secrets set KEY=VALUE`):
     #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
     #   GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
