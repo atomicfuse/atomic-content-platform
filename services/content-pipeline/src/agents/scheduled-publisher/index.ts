@@ -26,6 +26,7 @@ import type { SiteRunResult } from "./history.js";
 import { createSchedulerFlow, buildRunId } from "../../queue/scheduler-flow.js";
 import type { SchedulerSite } from "../../queue/scheduler-flow.js";
 import type { QueueInstances } from "../../queue/index.js";
+import { notifyError, notifySummary } from "../../lib/notifications.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -344,6 +345,10 @@ export async function runScheduledPublish(
     const message = err instanceof Error ? err.message : String(err);
     console.error("[scheduled-publisher] Failed to list sites:", message);
     result.errors.push({ domain: "*", error: message });
+    void notifyError(config.notifications, {
+      agent: "scheduled-publisher",
+      error: `Failed to list active sites: ${message}`,
+    });
     return result;
   }
 
@@ -462,6 +467,20 @@ export async function runScheduledPublish(
     `[scheduled-publisher] Done: ${result.triggered.length} triggered, ` +
       `${result.skipped.length} skipped, ${result.errors.length} errors`,
   );
+
+  // Notify if any sites errored or produced zero articles
+  const zeroArticleSites = siteOutcomes
+    .filter((o): o is Extract<SiteOutcome, { kind: "triggered" }> =>
+      o.kind === "triggered" && o.siteResult.articlesCreated === 0,
+    )
+    .map((o) => o.domain);
+
+  void notifySummary(config.notifications, {
+    runId: buildRunId(),
+    triggered: result.triggered.length,
+    errors: result.errors,
+    zeroArticleSites,
+  });
 
   // 4. Final history flush — ensures any pending writes land before we return
   await history.finalize();
