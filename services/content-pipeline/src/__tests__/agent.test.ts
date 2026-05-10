@@ -107,7 +107,7 @@ const config: AgentConfig = {
   networkRepo: "owner/repo",
   localNetworkPath: "/tmp/network",
   geminiApiKey: undefined,
-  contentAggregatorUrl: "https://content-aggregator-cloudgrid.apps.cloudgrid.io",
+  contentAggregatorUrl: "https://content-aggregator-v2-34cd.atomic.cloudgrid.io",
   port: 8080,
   notifications: {},
 };
