@@ -12,7 +12,7 @@ import type { ContentItem, ContentApiResponse, AggregatorSettings } from "./type
 // Configuration
 // ---------------------------------------------------------------------------
 
-const DEFAULT_BASE_URL = "https://content-aggregator-cloudgrid.apps.cloudgrid.io";
+const DEFAULT_BASE_URL = "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
 
