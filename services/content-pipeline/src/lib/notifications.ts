@@ -53,6 +53,47 @@ export async function notifyError(
   ]);
 }
 
+/**
+ * Send a summary notification after a scheduler run.
+ * Fires when any sites errored or produced zero articles.
+ */
+export async function notifySummary(
+  config: NotificationConfig,
+  params: {
+    runId: string;
+    triggered: number;
+    errors: Array<{ domain: string; error: string }>;
+    zeroArticleSites: string[];
+  },
+): Promise<void> {
+  if (params.errors.length === 0 && params.zeroArticleSites.length === 0) return;
+
+  const lines: string[] = [`Scheduler run ${params.runId}: ${params.triggered} site(s) triggered`];
+
+  if (params.errors.length > 0) {
+    lines.push(`\nErrors (${params.errors.length}):`);
+    for (const e of params.errors.slice(0, 5)) {
+      lines.push(`  - ${e.domain}: ${e.error}`);
+    }
+    if (params.errors.length > 5) lines.push(`  ... and ${params.errors.length - 5} more`);
+  }
+
+  if (params.zeroArticleSites.length > 0) {
+    lines.push(`\nZero articles generated (${params.zeroArticleSites.length}):`);
+    for (const d of params.zeroArticleSites.slice(0, 5)) {
+      lines.push(`  - ${d}`);
+    }
+    if (params.zeroArticleSites.length > 5) lines.push(`  ... and ${params.zeroArticleSites.length - 5} more`);
+  }
+
+  const message = lines.join("\n");
+
+  await Promise.allSettled([
+    config.telegramBotToken ? sendTelegram(config, message) : Promise.resolve(),
+    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
+  ]);
+}
+
 async function sendTelegram(
   config: NotificationConfig,
   text: string,
