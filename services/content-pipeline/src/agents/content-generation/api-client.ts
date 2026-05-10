@@ -250,15 +250,24 @@ export async function resolveTopicTagIds(
 // Settings
 // ---------------------------------------------------------------------------
 
+const DEFAULT_SETTINGS: AggregatorSettings = {
+  classification: { factual_tags: [] },
+  enrichment: { batch_size: 20 },
+};
+
 /**
  * Fetch aggregator settings (classification config, enrichment config).
+ * Falls back to defaults if the endpoint doesn't exist (aggregator v2).
  */
 export async function getSettings(): Promise<AggregatorSettings> {
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}/api/settings`;
 
-  console.log(`[api-client] GET ${url}`);
-
-  const response = await fetchWithRetry(url);
-  return (await response.json()) as AggregatorSettings;
+  try {
+    const response = await fetchWithRetry(url);
+    return (await response.json()) as AggregatorSettings;
+  } catch {
+    console.warn("[api-client] /api/settings not available — using defaults");
+    return DEFAULT_SETTINGS;
+  }
 }
