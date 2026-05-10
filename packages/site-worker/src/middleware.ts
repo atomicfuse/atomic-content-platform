@@ -34,6 +34,17 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return next();
   }
 
+  // Vite/Astro dev-server paths — only exist during `pnpm dev`.
+  // Covers /@vite/, /@id/, /@fs/, /src/, /node_modules/, absolute
+  // filesystem paths (/Users/...), and ?astro&type=style queries.
+  // None of these are real page routes and must not hit KV lookup.
+  const p = context.url.pathname;
+  if (p.startsWith('/@') || p.startsWith('/src/') || p.startsWith('/node_modules/') ||
+      p.startsWith('/Users/') || p.startsWith('/home/') ||
+      context.url.search.includes('astro&type=')) {
+    return next();
+  }
+
   // Health check bypass — useful while seeding KV.
   if (context.url.pathname === '/_ping') {
     return new Response('ok', {

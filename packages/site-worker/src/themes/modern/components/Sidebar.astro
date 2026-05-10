@@ -1,7 +1,6 @@
 ---
 import AdSlot from '../../../components/AdSlot.astro';
 import NewsletterBox from './NewsletterBox.astro';
-import FollowUs from './FollowUs.astro';
 import CategoryList from './CategoryList.astro';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import type { ArticleIndexEntry } from '../../../lib/kv-schema';
@@ -19,7 +18,7 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
   <div class="sidebar-sticky">
     {variant === 'home' && (
       <>
-        <AdSlot position="sidebar" pageType="homepage" server:defer />
+        <AdSlot position="homepage-sidebar" pageType="homepage" server:defer />
         {latestArticles.length > 0 && (
           <section class="sidebar-more">
             <h3 class="sidebar-more-heading">More</h3>
@@ -42,24 +41,34 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
     )}
     {variant === 'article' && (
       <>
-        <AdSlot position="sidebar" pageType="article" server:defer />
-        <FollowUs />
+        <AdSlot position="article-sidebar" pageType="article" server:defer />
         {categories.map((c) => (
           <CategoryList topic={c.topic} articles={c.articles} />
         ))}
+        {latestArticles.length > 0 && (
+          <section class="sidebar-more">
+            <h3 class="sidebar-more-heading">More</h3>
+            <ul class="sidebar-more-list">
+              {latestArticles.map((article) => (
+                <li>
+                  <a href={`/${article.slug}`} class="sidebar-more-link">
+                    {article.featuredImage && (
+                      <img src={article.featuredImage} alt="" loading="lazy" />
+                    )}
+                    <span>{article.title}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </>
     )}
   </div>
 </aside>
 
 <style>
-  .sidebar {
-    /* Grid item must stretch to the full cell height so that the sticky
-       child has vertical room to scroll. Without explicit stretch some
-       browsers (especially Safari) collapse the grid item to content
-       height, which kills sticky behaviour entirely. */
-    align-self: stretch;
-  }
+  .sidebar { /* grid item — stretches to full cell height by default */ }
   .sidebar-sticky {
     display: flex;
     flex-direction: column;

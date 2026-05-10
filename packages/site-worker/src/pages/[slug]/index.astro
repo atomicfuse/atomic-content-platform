@@ -49,9 +49,10 @@ const articleBodyWithInlineAds = article
     )
   : '';
 
-// Compute related articles and category-list articles
+// Compute related articles, category-list articles, and sidebar "More"
 let related: ArticleIndexEntry[] = [];
 let categoryLists: { topic: string; articles: ArticleIndexEntry[] }[] = [];
+let sidebarArticles: ArticleIndexEntry[] = [];
 
 if (article) {
   const allArticles =
@@ -78,6 +79,9 @@ if (article) {
       .filter((a) => a.tags.some((t) => t.toLowerCase() === topic.toLowerCase()))
       .slice(0, 4),
   }));
+
+  // Latest 2 for the sidebar "More" section
+  sidebarArticles = visibleOthers.slice(0, 2);
 }
 ---
 
@@ -115,7 +119,7 @@ if (article) {
             <p class="article-tags">{article.frontmatter.tags.map((t: string) => `#${t}`).join(' ')}</p>
           )}
         </article>
-        <Sidebar variant="article" config={config} categories={categoryLists} />
+        <Sidebar variant="article" config={config} categories={categoryLists} latestArticles={sidebarArticles} />
       </div>
       <NewsletterBand domain={config.domain} />
       <RelatedPosts articles={related} />

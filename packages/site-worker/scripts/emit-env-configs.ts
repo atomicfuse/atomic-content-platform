@@ -132,13 +132,16 @@ async function main(): Promise<void> {
     const config: WranglerConfig = JSON.parse(JSON.stringify(base));
     config.name = overrides.name;
 
-    // Override KV namespace IDs by binding name. Leave any binding the env
-    // doesn't override (e.g. SESSION) untouched — the adapter handles those.
+    // Override KV namespace IDs by binding name. Drop the adapter's
+    // auto-injected SESSION binding — Astro Sessions is unused, and `wrangler
+    // dev --remote` rejects KV bindings without an `id`.
     if (Array.isArray(config.kv_namespaces)) {
-      config.kv_namespaces = config.kv_namespaces.map((b) => {
-        const id = overrides.kvNamespaces[b.binding];
-        return id ? { ...b, id } : b;
-      });
+      config.kv_namespaces = config.kv_namespaces
+        .filter((b) => b.binding !== 'SESSION')
+        .map((b) => {
+          const id = overrides.kvNamespaces[b.binding];
+          return id ? { ...b, id } : b;
+        });
     }
 
     // Same for R2 bucket names.
