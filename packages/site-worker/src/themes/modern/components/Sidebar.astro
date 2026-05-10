@@ -53,7 +53,13 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
 </aside>
 
 <style>
-  .sidebar { /* grid item — stretches to full cell height by default */ }
+  .sidebar {
+    /* Grid item must stretch to the full cell height so that the sticky
+       child has vertical room to scroll. Without explicit stretch some
+       browsers (especially Safari) collapse the grid item to content
+       height, which kills sticky behaviour entirely. */
+    align-self: stretch;
+  }
   .sidebar-sticky {
     display: flex;
     flex-direction: column;
