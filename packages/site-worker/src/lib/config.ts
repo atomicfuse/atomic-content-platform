@@ -22,3 +22,7 @@ export function getSiteId(astro: APIContext | { locals: App.Locals }): string {
   }
   return site.siteId;
 }
+
+export function isPreviewMode(astro: APIContext | { locals: App.Locals }): boolean {
+  return astro.locals.site?.isPreview ?? false;
+}

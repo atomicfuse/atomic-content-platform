@@ -7,7 +7,7 @@ import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import AdSlot from '../../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
-import { getConfig, getSiteId } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 
@@ -16,6 +16,7 @@ if (!topicSlug) return new Response('Not found', { status: 404 });
 
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
+const preview = isPreviewMode(Astro);
 
 // Redirect to home if categories are disabled
 if (!config.categories.enabled) {
@@ -33,7 +34,7 @@ const allArticles =
   (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
 
 const matching = allArticles
-  .filter((a) => isVisibleArticle(a.status))
+  .filter((a) => preview || isVisibleArticle(a.status))
   .filter((a) => a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()))
   .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
 

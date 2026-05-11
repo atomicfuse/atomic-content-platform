@@ -13,6 +13,10 @@ declare global {
         siteId: string;
         hostname: string;
         config: ResolvedConfig;
+        /** True when the request was resolved via `?_atl_site=` preview
+         *  override. Preview mode bypasses article-status filtering so
+         *  review/draft articles are visible for content review. */
+        isPreview: boolean;
       };
     }
   }
