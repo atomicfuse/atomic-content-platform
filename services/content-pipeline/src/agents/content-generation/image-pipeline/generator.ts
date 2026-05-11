@@ -186,12 +186,6 @@ export async function generateImageWithLadder(
 
       if (attempt.ok) {
         console.log(`[img-gen] Gemini (${GEMINI_MODEL}) succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
-        if (notifications) {
-          void notifyImageGeneration(notifications, {
-            article: input.articleTitle, site: siteDomain,
-            provider: `Gemini (${GEMINI_MODEL})`, success: true,
-          });
-        }
         const optimized = await optimizeImage(attempt.data);
         return {
           ok: true,
@@ -234,12 +228,6 @@ export async function generateImageWithLadder(
 
     if (attempt.ok) {
       console.log(`[img-gen] OpenAI (${OPENAI_MODEL}) succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
-      if (notifications) {
-        void notifyImageGeneration(notifications, {
-          article: input.articleTitle, site: siteDomain,
-          provider: `OpenAI (${OPENAI_MODEL})`, success: true,
-        });
-      }
       const optimized = await optimizeImage(attempt.data);
       return {
         ok: true,
@@ -277,12 +265,6 @@ export async function generateImageWithLadder(
       try {
         const optimized = await optimizeImage(thumbBuffer);
         console.log(`[img-gen] Source thumbnail fallback succeeded (${(optimized.length / 1024).toFixed(0)} KB)`);
-        if (notifications) {
-          void notifyImageGeneration(notifications, {
-            article: input.articleTitle, site: siteDomain,
-            provider: "source thumbnail", success: true,
-          });
-        }
         return {
           ok: true,
           result: { data: optimized, altText: generateAltText(input), prompt: "(source thumbnail)" },
