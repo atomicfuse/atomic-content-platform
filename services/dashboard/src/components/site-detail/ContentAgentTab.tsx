@@ -26,6 +26,7 @@ interface ContentAgentTabProps {
     articles_per_week?: number;
     preferred_days: string[];
     content_guidelines: string | string[];
+    image_guidelines?: string | string[];
     quality_threshold?: number;
     quality_weights?: {
       seo_quality?: number;
@@ -161,6 +162,9 @@ export function ContentAgentTab({
   const initGuidelines = Array.isArray(brief?.content_guidelines)
     ? brief.content_guidelines.join("\n")
     : (brief?.content_guidelines ?? "");
+  const initImageGuidelines = Array.isArray(brief?.image_guidelines)
+    ? brief.image_guidelines.join("\n")
+    : (brief?.image_guidelines ?? "");
   const initQualityThreshold = brief?.quality_threshold ?? 75;
   const initQualityWeights = {
     seo_quality: brief?.quality_weights?.seo_quality ?? 20,
@@ -178,6 +182,7 @@ export function ContentAgentTab({
   const [articlesPerDay, setArticlesPerDay] = useState(initArticlesPerDay);
   const [preferredDays, setPreferredDays] = useState<string[]>(initPreferredDays);
   const [guidelines, setGuidelines] = useState(initGuidelines);
+  const [imageGuidelines, setImageGuidelines] = useState(initImageGuidelines);
 
   // --- Quality state (part of Content Brief) ---
   const [qualityThreshold, setQualityThreshold] = useState(initQualityThreshold);
@@ -402,6 +407,7 @@ export function ContentAgentTab({
           configUpdates: {
             topics,
             contentGuidelines: guidelines,
+            imageGuidelines,
             articlesPerDay,
             preferredDays,
             quality_threshold: qualityThreshold,
@@ -1136,6 +1142,13 @@ export function ContentAgentTab({
           value={guidelines}
           onChange={(e): void => setGuidelines(e.target.value)}
           placeholder="One guideline per line"
+        />
+        <Textarea
+          label="Image Guidelines"
+          rows={3}
+          value={imageGuidelines}
+          onChange={(e): void => setImageGuidelines(e.target.value)}
+          placeholder="One guideline per line (e.g., style, colors, composition)"
         />
       </div>
 

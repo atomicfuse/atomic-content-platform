@@ -124,6 +124,7 @@ export interface WizardFormData {
   articlesPerDay: number;
   preferredDays: string[];
   contentGuidelines: string;
+  imageGuidelines: string;
   /** @deprecated Use themeColors.primary instead. Kept for backwards compat with preview API. */
   primaryColor: string;
   /** @deprecated Use themeColors.accent instead. Kept for backwards compat with preview API. */

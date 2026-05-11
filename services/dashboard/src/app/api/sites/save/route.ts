@@ -76,6 +76,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ? configUpdates.contentGuidelines.split("\n").filter(Boolean)
           : [];
       }
+      if (configUpdates.imageGuidelines !== undefined) {
+        brief.image_guidelines = configUpdates.imageGuidelines
+          ? configUpdates.imageGuidelines.split("\n").filter(Boolean)
+          : [];
+      }
 
       const schedule = (brief.schedule ?? {}) as Record<string, unknown>;
       if (configUpdates.articlesPerDay !== undefined) {

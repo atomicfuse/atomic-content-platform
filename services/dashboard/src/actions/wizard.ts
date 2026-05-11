@@ -208,6 +208,9 @@ export async function createSiteAndBuildStaging(
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
         : [],
+      image_guidelines: data.imageGuidelines
+        ? data.imageGuidelines.split("\n").filter(Boolean)
+        : undefined,
       vertical: data.vertical || undefined,
       vertical_id: data.verticalId || undefined,
       // Include tier-1 (vertical) ID in category_ids for aggregator queries
@@ -845,6 +848,7 @@ export interface StagingSiteConfig {
   tone: string;
   topics: string[];
   contentGuidelines: string;
+  imageGuidelines: string;
   articlesPerDay: number;
   preferredDays: string[];
   themeBase: string;
@@ -899,6 +903,9 @@ export async function readStagingConfig(
     contentGuidelines: Array.isArray(brief?.content_guidelines)
       ? (brief.content_guidelines as string[]).join("\n")
       : (brief?.content_guidelines as string) ?? "",
+    imageGuidelines: Array.isArray(brief?.image_guidelines)
+      ? (brief.image_guidelines as string[]).join("\n")
+      : (brief?.image_guidelines as string) ?? "",
     // Dual-read: prefer articles_per_day; fall back to legacy articles_per_week.
     articlesPerDay:
       (schedule?.articles_per_day as number) ??
@@ -951,6 +958,11 @@ export async function updateStagingSite(
   if (updates.contentGuidelines !== undefined) {
     brief.content_guidelines = updates.contentGuidelines
       ? updates.contentGuidelines.split("\n").filter(Boolean)
+      : [];
+  }
+  if (updates.imageGuidelines !== undefined) {
+    brief.image_guidelines = updates.imageGuidelines
+      ? updates.imageGuidelines.split("\n").filter(Boolean)
       : [];
   }
 

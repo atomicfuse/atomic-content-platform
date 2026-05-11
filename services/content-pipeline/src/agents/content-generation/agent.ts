@@ -523,6 +523,7 @@ async function processItem(
         articleSummary: item.summary,
         vertical: item.vertical?.name ?? "General",
         sourceThumbnailUrl: item.thumbnail?.url,
+        imageGuidelines: brief.image_guidelines,
       },
       config.notifications,
       siteDomain,

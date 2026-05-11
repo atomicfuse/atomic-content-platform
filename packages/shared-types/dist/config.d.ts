@@ -51,6 +51,8 @@ export interface SiteBrief {
     seo_keywords_focus: string[];
     /** Free-form editorial guidelines for content agents. */
     content_guidelines: string | string[];
+    /** Free-form image generation guidelines for content agents. */
+    image_guidelines?: string | string[];
     /** Percentage of articles that require human review before publishing. */
     review_percentage: number;
     /** Publishing cadence settings. */

@@ -305,6 +305,16 @@ export function StepContentBrief({
         }
       />
 
+      <Textarea
+        label="Image Guidelines"
+        placeholder="Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."
+        rows={3}
+        value={data.imageGuidelines}
+        onChange={(e): void =>
+          onChange({ imageGuidelines: e.target.value })
+        }
+      />
+
       {/* EC-18: Require at least one preferred day. */}
       {data.preferredDays.length === 0 && (
         <p className="text-xs text-amber-400">Select at least one preferred day.</p>

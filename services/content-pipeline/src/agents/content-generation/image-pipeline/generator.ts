@@ -27,6 +27,8 @@ export interface ImageGenInput {
   vertical: string;
   /** Source article thumbnail URL (if available). */
   sourceThumbnailUrl?: string;
+  /** Image generation guidelines from site brief. */
+  imageGuidelines?: string | string[];
 }
 
 /**
@@ -39,8 +41,11 @@ export interface ImageGenInput {
 function buildImagePrompt(input: ImageGenInput, hasReference: boolean): string {
   const topicSummary = input.articleDescription || input.articleSummary.slice(0, 200);
 
+  // Format image guidelines from site brief (if provided)
+  const guidelinesBlock = formatImageGuidelines(input.imageGuidelines);
+
   if (hasReference) {
-    return [
+    const parts = [
       `I'm attaching the thumbnail from the source article as a style reference.`,
       `Create a NEW, ORIGINAL hero image for an article titled: "${input.articleTitle}".`,
       `Topic: ${topicSummary}.`,
@@ -50,17 +55,31 @@ function buildImagePrompt(input: ImageGenInput, hasReference: boolean): string {
       `Wide landscape format (16:9). Web-optimized, moderate detail.`,
       `Do NOT copy the reference image. Create something new that matches its style.`,
       `Do NOT include any text, watermarks, logos, or identifiable real people.`,
-    ].join(" ");
+    ];
+    if (guidelinesBlock) parts.push(guidelinesBlock);
+    return parts.join(" ");
   }
 
-  return [
+  const parts = [
     `Create a professional editorial illustration for a ${input.vertical} article.`,
     `Article title: "${input.articleTitle}".`,
     `Topic: ${topicSummary}.`,
     `Style: clean, modern hero image for a news/content website.`,
     `Wide landscape format (16:9). Web-optimized, moderate detail.`,
     `Do NOT include any text, watermarks, logos, or identifiable real people.`,
-  ].join(" ");
+  ];
+  if (guidelinesBlock) parts.push(guidelinesBlock);
+  return parts.join(" ");
+}
+
+/** Format image guidelines from site brief into a prompt section. */
+function formatImageGuidelines(guidelines?: string | string[]): string | undefined {
+  if (!guidelines) return undefined;
+  const items = Array.isArray(guidelines)
+    ? guidelines.filter(Boolean)
+    : guidelines.split("\n").filter(Boolean);
+  if (items.length === 0) return undefined;
+  return `Additional style guidelines: ${items.map((g) => `- ${g}`).join(" ")}`;
 }
 
 /**

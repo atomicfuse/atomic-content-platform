@@ -216,6 +216,32 @@ describe("generateImageWithLadder", () => {
     expect(mockOpenAI).not.toHaveBeenCalled();
   });
 
+  it("includes image guidelines in the prompt when provided", async () => {
+    mockGemini.mockResolvedValueOnce(ok("guided-image"));
+
+    const inputWithGuidelines = {
+      ...INPUT,
+      imageGuidelines: ["Use warm tones", "Photorealistic style"],
+    };
+    const result = await generateImageWithLadder(inputWithGuidelines);
+
+    expect(result.ok).toBe(true);
+    // Verify guidelines are in the prompt passed to Gemini
+    const geminiPrompt = mockGemini.mock.calls[0]![1] as string;
+    expect(geminiPrompt).toContain("Use warm tones");
+    expect(geminiPrompt).toContain("Photorealistic style");
+    expect(geminiPrompt).toContain("Additional style guidelines");
+  });
+
+  it("omits image guidelines section when not provided", async () => {
+    mockGemini.mockResolvedValueOnce(ok("plain-image"));
+
+    await generateImageWithLadder(INPUT);
+
+    const geminiPrompt = mockGemini.mock.calls[0]![1] as string;
+    expect(geminiPrompt).not.toContain("Additional style guidelines");
+  });
+
   it("passes thumbnail reference to Gemini but not OpenAI", async () => {
     // Gemini fails → falls to OpenAI
     mockGemini.mockResolvedValueOnce(fail(false, "no_image_in_response"));

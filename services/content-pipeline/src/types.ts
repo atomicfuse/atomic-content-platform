@@ -56,6 +56,8 @@ export interface SiteBrief {
   topics: string[];
   seo_keywords_focus: string[];
   content_guidelines: string | string[];
+  /** Free-form image generation guidelines for content agents. */
+  image_guidelines?: string | string[];
   review_percentage: number;
   schedule: PublishSchedule;
   vertical?: string;

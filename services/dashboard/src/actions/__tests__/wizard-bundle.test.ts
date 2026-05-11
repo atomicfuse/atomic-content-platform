@@ -122,6 +122,7 @@ function makeNewBundleFormData(
     articlesPerDay: 1,
     preferredDays: ["Monday", "Wednesday", "Friday"],
     contentGuidelines: "",
+    imageGuidelines: "",
     primaryColor: "#0066cc",
     accentColor: "#ff6600",
     fontHeading: "Inter",
