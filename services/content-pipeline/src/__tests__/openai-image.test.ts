@@ -47,7 +47,7 @@ describe("generateImageWithOpenAI", () => {
     );
 
     const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
-    expect(body.model).toBe("gpt-image-1");
+    expect(body.model).toBe("gpt-image-2");
     expect(body.prompt).toBe("test prompt");
     expect(body.n).toBe(1);
     expect(body.size).toBe("1024x1024");
