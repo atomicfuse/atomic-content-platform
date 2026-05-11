@@ -331,15 +331,46 @@
         return;
       }
     }
-    slots.forEach(fillSlot);
-    
-    // Also fill any data-slot containers that ad-loader might have populated
-    document.querySelectorAll('[data-slot]').forEach(function(slot) {
-      if (slot.querySelector('[data-ad-id]')) return; // already has an ad
-      // Leave empty — this slot wasn't targeted by any placement
+    slots.forEach(function(el) {
+      if (el.dataset.adFilled) return; // already filled
+      el.dataset.adFilled = '1';
+      fillSlot(el);
     });
 
     addDebugPanel();
+    observeNewSlots();
+  }
+
+  // Server Islands load asynchronously — non-preloaded islands (e.g. sidebar
+  // inside a child component) arrive AFTER the initial fillAll sweep. Use a
+  // MutationObserver to catch them as they appear in the DOM.
+  var observing = false;
+  function observeNewSlots() {
+    if (observing) return;
+    observing = true;
+    var obs = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var nodes = mutations[i].addedNodes;
+        for (var j = 0; j < nodes.length; j++) {
+          var node = nodes[j];
+          if (node.nodeType !== 1) continue;
+          // Check if the added node itself is an ad slot
+          if (node.dataset && node.dataset.adId && !node.dataset.adFilled) {
+            node.dataset.adFilled = '1';
+            fillSlot(node);
+          }
+          // Check children (server island replaces a subtree)
+          var childSlots = node.querySelectorAll ? node.querySelectorAll('[data-ad-id]') : [];
+          for (var k = 0; k < childSlots.length; k++) {
+            if (!childSlots[k].dataset.adFilled) {
+              childSlots[k].dataset.adFilled = '1';
+              fillSlot(childSlots[k]);
+            }
+          }
+        }
+      }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
   }
 
   function addDebugPanel() {
