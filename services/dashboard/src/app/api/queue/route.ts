@@ -27,13 +27,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       `${agentUrl}/jobs?status=${encodeURIComponent(status)}&limit=${limit}`,
     );
     const data = (await resp.json()) as Record<string, unknown>;
-    return NextResponse.json(data, { status: resp.status });
+    // Always return 200 — unavailable flag in body signals queue not ready
+    if (!resp.ok || data.unavailable) {
+      return NextResponse.json({ jobs: [], error: data.error ?? "Queue not available", unavailable: true });
+    }
+    return NextResponse.json(data);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to reach content pipeline";
     return NextResponse.json(
-      { jobs: [], error: message },
-      { status: 502 },
+      { jobs: [], error: message, unavailable: true },
     );
   }
 }

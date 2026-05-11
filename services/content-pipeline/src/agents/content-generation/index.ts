@@ -103,7 +103,7 @@ async function handleRequest(
   // Job listing — query BullMQ for recent jobs
   if (req.method === "GET" && req.url && req.url.startsWith("/jobs")) {
     if (!queueInstances) {
-      sendJson(res, 503, { jobs: [], error: "Queue not configured" });
+      sendJson(res, 200, { jobs: [], error: "Queue not configured — REDIS_URL not set", unavailable: true });
       return;
     }
     try {
