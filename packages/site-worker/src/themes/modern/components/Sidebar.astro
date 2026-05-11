@@ -1,7 +1,6 @@
 ---
 import AdSlot from '../../../components/AdSlot.astro';
 import NewsletterBox from './NewsletterBox.astro';
-import FollowUs from './FollowUs.astro';
 import CategoryList from './CategoryList.astro';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import type { ArticleIndexEntry } from '../../../lib/kv-schema';
@@ -43,7 +42,24 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
     {variant === 'article' && (
       <>
         <AdSlot position="sidebar" pageType="article" server:defer />
-        <FollowUs />
+        {latestArticles.length > 0 && (
+          <section class="sidebar-more">
+            <h3 class="sidebar-more-heading">More</h3>
+            <ul class="sidebar-more-list">
+              {latestArticles.map((article) => (
+                <li>
+                  <a href={`/${article.slug}`} class="sidebar-more-link">
+                    {article.featuredImage && (
+                      <img src={article.featuredImage} alt="" loading="lazy" />
+                    )}
+                    <span>{article.title}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        <NewsletterBox domain={config.domain} />
         {categories.map((c) => (
           <CategoryList topic={c.topic} articles={c.articles} />
         ))}
