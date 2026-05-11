@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { getConfig, getSiteId } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 
@@ -19,13 +19,14 @@ export const GET: APIRoute = async (ctx) => {
   }
 
   const siteId = getSiteId(ctx);
+  const preview = isPreviewMode(ctx);
   const all =
     (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
 
   const terms = query.split(/\s+/).filter(Boolean);
 
   const matches = all
-    .filter((a) => isVisibleArticle(a.status))
+    .filter((a) => preview || isVisibleArticle(a.status))
     .filter((a) => {
       const title = a.title.toLowerCase();
       const desc = (a.description ?? '').toLowerCase();

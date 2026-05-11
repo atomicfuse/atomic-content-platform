@@ -12,7 +12,7 @@ import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import AdSlot from '../../components/AdSlot.astro';
-import { getConfig, getSiteId } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
@@ -27,6 +27,7 @@ if (!slug) {
 
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
+const preview = isPreviewMode(Astro);
 
 // Shared pages live at top-level slugs (`/about`, `/privacy`, ...) and
 // take precedence over the article namespace.
@@ -38,7 +39,9 @@ const article: ArticleRecord | null = shared
   ? null
   : ((await env.CONFIG_KV.get<ArticleRecord>(articleKey(siteId, slug), 'json')) ?? null);
 
-if (!shared && (!article || !isVisibleArticle(article.frontmatter.status))) {
+// Preview mode (via ?_atl_site=) bypasses status filtering so review
+// articles are visible for content review from the dashboard.
+if (!shared && (!article || (!preview && !isVisibleArticle(article.frontmatter.status)))) {
   return new Response('Not found', { status: 404 });
 }
 
