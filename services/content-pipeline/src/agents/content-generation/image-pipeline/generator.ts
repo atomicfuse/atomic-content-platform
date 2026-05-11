@@ -1,13 +1,13 @@
 /**
- * Image Generator — three-tier ladder: Gemini → OpenAI → exhausted.
+ * Image Generator — three-tier ladder: Gemini → OpenAI → source thumbnail.
  *
  * Tier A: Gemini Flash (2 attempts, retry only on transient errors)
  * Tier B: OpenAI gpt-image-1 (1 attempt, no retry — this IS the fallback)
- * Tier C: Both exhausted → returns { ok: false, reason: "image_gen_exhausted" }
+ * Tier C: Source thumbnail (download + optimize — best-effort fallback)
+ * Tier D: All exhausted → returns { ok: false, reason: "image_gen_exhausted" }
  *
- * Image generation is MANDATORY — articles without images are not created.
- * When the ladder is exhausted, the article is abandoned and
- * processWithConcurrency moves on to the next source URL.
+ * Articles without images are still created (no featured image) so that a
+ * transient image-provider outage doesn't block the entire pipeline.
  */
 
 import { generateImageWithGemini, type GeminiImageInput } from "../../../lib/gemini.js";
@@ -100,6 +100,44 @@ async function fetchThumbnail(url: string): Promise<GeminiImageInput | undefined
 }
 
 /**
+ * Download a thumbnail as a raw Buffer for use as the article image.
+ * Separate from fetchThumbnail (which returns base64 for Gemini input).
+ * Returns undefined on any failure.
+ */
+async function downloadThumbnailBuffer(url: string): Promise<Buffer | undefined> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; AtomicBot/1.0)",
+        Accept: "image/*",
+      },
+      signal: AbortSignal.timeout(10_000),
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      console.warn(`[img-gen] Thumbnail download failed: ${response.status} ${url}`);
+      return undefined;
+    }
+
+    const contentType = response.headers.get("content-type") ?? "image/jpeg";
+    if (!contentType.startsWith("image/")) return undefined;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.length < 1_000) {
+      console.warn(`[img-gen] Thumbnail too small (${buffer.length} bytes)`);
+      return undefined;
+    }
+
+    return buffer;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[img-gen] Thumbnail download error: ${msg}`);
+    return undefined;
+  }
+}
+
+/**
  * Generate alt text from article context.
  */
 function generateAltText(input: ImageGenInput): string {
@@ -181,7 +219,31 @@ export async function generateImageWithLadder(
     console.warn("[img-gen] Tier B skipped: OPENAI_API_KEY not set");
   }
 
-  // ── Tier C: Exhausted ──────────────────────────────────────────────────
+  // ── Tier C: Source thumbnail (download + optimize) ───────────────────
+  if (input.sourceThumbnailUrl) {
+    console.log(`[img-gen] Tier C: downloading source thumbnail as fallback for "${input.articleTitle}"`);
+    const thumbBuffer = await downloadThumbnailBuffer(input.sourceThumbnailUrl);
+    if (thumbBuffer) {
+      try {
+        const optimized = await optimizeImage(thumbBuffer);
+        console.log(`[img-gen] Source thumbnail fallback succeeded (${(optimized.length / 1024).toFixed(0)} KB)`);
+        return {
+          ok: true,
+          result: { data: optimized, altText: generateAltText(input), prompt: "(source thumbnail)" },
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        attempts.push({ provider: "thumbnail", reason: msg });
+        console.warn(`[img-gen] Source thumbnail optimization failed: ${msg}`);
+      }
+    } else {
+      attempts.push({ provider: "thumbnail", reason: "download_failed" });
+    }
+  } else {
+    attempts.push({ provider: "thumbnail", reason: "no_source_url" });
+  }
+
+  // ── Tier D: Exhausted ──────────────────────────────────────────────────
   const reasonChain = attempts.map((a) => `${a.provider}:${a.reason}`).join(", ");
   console.error(`[img-gen] Image generation exhausted for "${input.articleTitle}": ${reasonChain}`);
   return { ok: false, reason: "image_gen_exhausted", attempts };

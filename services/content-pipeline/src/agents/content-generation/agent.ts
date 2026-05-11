@@ -515,7 +515,7 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — mandatory, three-tier ladder (Gemini → OpenAI → exhausted)
+    // Step 4: Image pipeline — four-tier ladder (Gemini → OpenAI → thumbnail → no image)
     const ladderResult = await generateImageWithLadder({
       articleTitle: generated.title,
       articleDescription: generated.description,
@@ -524,28 +524,27 @@ async function processItem(
       sourceThumbnailUrl: item.thumbnail?.url,
     });
 
-    if (!ladderResult.ok) {
+    let pendingImageAsset: PendingAsset | undefined;
+    let featuredImageUrl: string | undefined;
+
+    if (ladderResult.ok) {
+      const assetPath = `assets/images/${slug}.webp`;
+      pendingImageAsset = {
+        siteDomain,
+        assetPath,
+        data: ladderResult.result.data,
+      };
+      featuredImageUrl = `/assets/images/${slug}.webp`;
+      console.log(`[agent] Generated image: ${assetPath}`);
+    } else {
       const reasonChain = ladderResult.attempts
         .map((a) => `${a.provider}:${a.reason}`)
         .join(", ");
-      console.error(
-        `[agent] Image generation exhausted for "${item.title}": ${reasonChain}`,
+      console.warn(
+        `[agent] Image generation exhausted for "${item.title}": ${reasonChain}. ` +
+        `Proceeding without featured image.`,
       );
-      return {
-        status: "error",
-        reason: "image_gen_exhausted",
-        message: `Image generation failed: ${reasonChain}`,
-      };
     }
-
-    const assetPath = `assets/images/${slug}.webp`;
-    const pendingImageAsset: PendingAsset = {
-      siteDomain,
-      assetPath,
-      data: ladderResult.result.data,
-    };
-    const featuredImageUrl = `/assets/images/${slug}.webp`;
-    console.log(`[agent] Generated image: ${assetPath}`);
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);

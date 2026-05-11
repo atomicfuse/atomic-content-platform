@@ -32,7 +32,7 @@ export type ImageGenAttempt =
 
 /** Log entry for a single provider attempt within the ladder. */
 export interface ImageLadderAttemptLog {
-  provider: "gemini" | "openai";
+  provider: "gemini" | "openai" | "thumbnail";
   reason: string;
 }
 
