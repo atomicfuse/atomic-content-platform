@@ -8,7 +8,7 @@ const href = `/${article.slug}`;
 
 <a class="hero-card" href={href} aria-label={article.title}>
   {article.featuredImage && (
-    <img class="hero-card-image" src={article.featuredImage} alt="" loading="lazy" />
+    <img class="hero-card-image" src={article.featuredImage} alt="" loading="eager" />
   )}
   <div class="hero-card-overlay" aria-hidden="true"></div>
   <h2 class="hero-card-title">{article.title}</h2>

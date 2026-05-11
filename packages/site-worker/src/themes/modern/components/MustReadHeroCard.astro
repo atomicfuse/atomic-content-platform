@@ -8,7 +8,7 @@ const href = `/${article.slug}`;
 
 <a class="mr-hero" href={href}>
   {article.featuredImage && (
-    <img class="mr-hero-image" src={article.featuredImage} alt="" loading="lazy" />
+    <img class="mr-hero-image" src={article.featuredImage} alt="" loading="eager" />
   )}
   <div class="mr-hero-body">
     <h3 class="mr-hero-title">{article.title}</h3>
