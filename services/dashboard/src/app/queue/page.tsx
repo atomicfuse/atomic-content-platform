@@ -262,13 +262,20 @@ export default function QueuePage(): React.ReactElement {
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
 
-  const fetchJobs = useCallback(async () => {
+  const fetchJobs = useCallback(async (): Promise<{ unavailable: boolean }> => {
     try {
       const res = await fetch("/api/queue?status=completed,failed,active,waiting,delayed&limit=100");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { jobs: QueueJob[]; error?: string };
+      const data = (await res.json()) as { jobs: QueueJob[]; error?: string; unavailable?: boolean };
+      if (data.unavailable) {
+        setError(data.error ?? "Queue not available");
+        setUnavailable(true);
+        setJobs([]);
+        return { unavailable: true };
+      }
       if (data.error) {
         setError(data.error);
         setJobs([]);
@@ -279,16 +286,25 @@ export default function QueuePage(): React.ReactElement {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to fetch";
       setError(msg);
-      toast("Failed to load queue data", "error");
+      setUnavailable(true);
+      return { unavailable: true };
     }
     setLoading(false);
-  }, [toast]);
+    return { unavailable: false };
+  }, []);
 
   useEffect(() => {
-    void fetchJobs();
-    // Auto-refresh every 10s
-    const interval = setInterval(() => void fetchJobs(), 10_000);
-    return (): void => clearInterval(interval);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    void fetchJobs().then((result) => {
+      setLoading(false);
+      // Only poll if the queue is reachable
+      if (!result.unavailable) {
+        interval = setInterval(() => void fetchJobs(), 10_000);
+      }
+    });
+    return (): void => {
+      if (interval) clearInterval(interval);
+    };
   }, [fetchJobs]);
 
   const filtered =
@@ -381,7 +397,7 @@ export default function QueuePage(): React.ReactElement {
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-8 text-center">
           <p className="text-sm text-[var(--text-muted)]">
-            {error
+            {unavailable
               ? "Queue not available — content pipeline may be in direct execution mode."
               : filter === "all"
                 ? "No jobs recorded. Jobs appear here once a generation runs through the BullMQ queue."
