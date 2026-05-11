@@ -306,7 +306,8 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 server.listen(config.port, () => {
   console.log(`[server] Content generation agent running on http://localhost:${config.port}`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate`);
-  console.log(`[server] Aggregator: ${config.contentAggregatorUrl}`);
+  const effectiveAggregatorUrl = process.env.CONTENT_API_BASE_URL ?? config.contentAggregatorUrl;
+  console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
 });
 
