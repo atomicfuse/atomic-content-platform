@@ -13,7 +13,12 @@
 import { generateImageWithGemini, type GeminiImageInput } from "../../../lib/gemini.js";
 import { generateImageWithOpenAI } from "../../../lib/openai-image.js";
 import { optimizeImage } from "../../../lib/image-optimizer.js";
+import { notifyImageGeneration, type NotificationConfig } from "../../../lib/notifications.js";
 import type { ImageGenerationResult, ImageLadderResult, ImageLadderAttemptLog } from "./types.js";
+
+// Model identifiers — included in logs and notifications for traceability
+const GEMINI_MODEL = "gemini-2.5-flash-image";
+const OPENAI_MODEL = "gpt-image-1";
 
 export interface ImageGenInput {
   articleTitle: string;
@@ -153,6 +158,8 @@ function generateAltText(input: ImageGenInput): string {
  */
 export async function generateImageWithLadder(
   input: ImageGenInput,
+  notifications?: NotificationConfig,
+  siteDomain?: string,
 ): Promise<ImageLadderResult> {
   const geminiKey = process.env.GEMINI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
@@ -178,7 +185,13 @@ export async function generateImageWithLadder(
       const attempt = await generateImageWithGemini(geminiKey, geminiPrompt, reference);
 
       if (attempt.ok) {
-        console.log(`[img-gen] Gemini succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+        console.log(`[img-gen] Gemini (${GEMINI_MODEL}) succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+        if (notifications) {
+          void notifyImageGeneration(notifications, {
+            article: input.articleTitle, site: siteDomain,
+            provider: `Gemini (${GEMINI_MODEL})`, success: true,
+          });
+        }
         const optimized = await optimizeImage(attempt.data);
         return {
           ok: true,
@@ -187,14 +200,30 @@ export async function generateImageWithLadder(
       }
 
       attempts.push({ provider: "gemini", reason: attempt.reason });
-      console.warn(`[img-gen] Gemini attempt ${i + 1} failed: ${attempt.reason} (retriable=${attempt.retriable})`);
+      const isLastGemini = !attempt.retriable || i === MAX_GEMINI_ATTEMPTS - 1;
+      const nextTier = openaiKey ? `OpenAI (${OPENAI_MODEL})` : (input.sourceThumbnailUrl ? "source thumbnail" : undefined);
+      console.error(`[img-gen] Image generation with Gemini (${GEMINI_MODEL}) failed for "${input.articleTitle}" because ${attempt.reason}${isLastGemini && nextTier ? `. Trying now with ${nextTier}...` : ""}`);
+      if (notifications) {
+        void notifyImageGeneration(notifications, {
+          article: input.articleTitle, site: siteDomain,
+          provider: `Gemini (${GEMINI_MODEL})`, success: false, reason: attempt.reason,
+          nextProvider: isLastGemini ? nextTier : `Gemini (${GEMINI_MODEL}) retry`,
+        });
+      }
 
       // Permanent failure → skip remaining Gemini attempts
       if (!attempt.retriable) break;
     }
   } else {
     attempts.push({ provider: "gemini", reason: "api_key_not_configured" });
-    console.warn("[img-gen] Tier A skipped: GEMINI_API_KEY not set");
+    console.error(`[img-gen] Image generation with Gemini (${GEMINI_MODEL}) skipped: GEMINI_API_KEY not set`);
+    if (notifications) {
+      void notifyImageGeneration(notifications, {
+        article: input.articleTitle, site: siteDomain,
+        provider: `Gemini (${GEMINI_MODEL})`, success: false, reason: "API key not configured",
+        nextProvider: openaiKey ? `OpenAI (${OPENAI_MODEL})` : (input.sourceThumbnailUrl ? "source thumbnail" : undefined),
+      });
+    }
   }
 
   // ── Tier B: OpenAI gpt-image-1 (1 attempt) ────────────────────────────
@@ -204,7 +233,13 @@ export async function generateImageWithLadder(
     const attempt = await generateImageWithOpenAI(openaiKey, openaiPrompt);
 
     if (attempt.ok) {
-      console.log(`[img-gen] OpenAI succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+      console.log(`[img-gen] OpenAI (${OPENAI_MODEL}) succeeded (${(attempt.data.length / 1024).toFixed(0)} KB raw)`);
+      if (notifications) {
+        void notifyImageGeneration(notifications, {
+          article: input.articleTitle, site: siteDomain,
+          provider: `OpenAI (${OPENAI_MODEL})`, success: true,
+        });
+      }
       const optimized = await optimizeImage(attempt.data);
       return {
         ok: true,
@@ -213,10 +248,25 @@ export async function generateImageWithLadder(
     }
 
     attempts.push({ provider: "openai", reason: attempt.reason });
-    console.warn(`[img-gen] OpenAI failed: ${attempt.reason}`);
+    const nextTier = input.sourceThumbnailUrl ? "source thumbnail" : undefined;
+    console.error(`[img-gen] Image generation with OpenAI (${OPENAI_MODEL}) failed for "${input.articleTitle}" because ${attempt.reason}${nextTier ? `. Trying now with ${nextTier}...` : ""}`);
+    if (notifications) {
+      void notifyImageGeneration(notifications, {
+        article: input.articleTitle, site: siteDomain,
+        provider: `OpenAI (${OPENAI_MODEL})`, success: false, reason: attempt.reason,
+        nextProvider: nextTier,
+      });
+    }
   } else {
     attempts.push({ provider: "openai", reason: "api_key_not_configured" });
-    console.warn("[img-gen] Tier B skipped: OPENAI_API_KEY not set");
+    console.error(`[img-gen] Image generation with OpenAI (${OPENAI_MODEL}) skipped: OPENAI_API_KEY not set`);
+    if (notifications) {
+      void notifyImageGeneration(notifications, {
+        article: input.articleTitle, site: siteDomain,
+        provider: `OpenAI (${OPENAI_MODEL})`, success: false, reason: "API key not configured",
+        nextProvider: input.sourceThumbnailUrl ? "source thumbnail" : undefined,
+      });
+    }
   }
 
   // ── Tier C: Source thumbnail (download + optimize) ───────────────────
@@ -227,6 +277,12 @@ export async function generateImageWithLadder(
       try {
         const optimized = await optimizeImage(thumbBuffer);
         console.log(`[img-gen] Source thumbnail fallback succeeded (${(optimized.length / 1024).toFixed(0)} KB)`);
+        if (notifications) {
+          void notifyImageGeneration(notifications, {
+            article: input.articleTitle, site: siteDomain,
+            provider: "source thumbnail", success: true,
+          });
+        }
         return {
           ok: true,
           result: { data: optimized, altText: generateAltText(input), prompt: "(source thumbnail)" },
@@ -234,10 +290,23 @@ export async function generateImageWithLadder(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         attempts.push({ provider: "thumbnail", reason: msg });
-        console.warn(`[img-gen] Source thumbnail optimization failed: ${msg}`);
+        console.error(`[img-gen] Image generation with source thumbnail failed for "${input.articleTitle}" because ${msg}`);
+        if (notifications) {
+          void notifyImageGeneration(notifications, {
+            article: input.articleTitle, site: siteDomain,
+            provider: "source thumbnail", success: false, reason: msg,
+          });
+        }
       }
     } else {
       attempts.push({ provider: "thumbnail", reason: "download_failed" });
+      console.error(`[img-gen] Image generation with source thumbnail failed for "${input.articleTitle}" because download failed`);
+      if (notifications) {
+        void notifyImageGeneration(notifications, {
+          article: input.articleTitle, site: siteDomain,
+          provider: "source thumbnail", success: false, reason: "download failed",
+        });
+      }
     }
   } else {
     attempts.push({ provider: "thumbnail", reason: "no_source_url" });
