@@ -44,6 +44,28 @@ describe("generateImageWithGemini", () => {
     expect(result).toEqual({ ok: false, retriable: false, reason: "no_image_in_response" });
   });
 
+  it("returns { ok: false, retriable: false } when candidate has no content", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        candidates: [{ finishReason: "SAFETY" }],
+      }),
+    });
+
+    const result = await generateImageWithGemini("my-api-key", "prompt");
+    expect(result).toEqual({ ok: false, retriable: false, reason: "no_image_in_response" });
+  });
+
+  it("returns { ok: false, retriable: false } when candidates array is empty", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ candidates: [] }),
+    });
+
+    const result = await generateImageWithGemini("my-api-key", "prompt");
+    expect(result).toEqual({ ok: false, retriable: false, reason: "no_image_in_response" });
+  });
+
   it("returns { ok: false, retriable: true } on 5xx server error", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,

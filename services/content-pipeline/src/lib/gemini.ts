@@ -69,11 +69,11 @@ export async function generateImageWithGemini(
 
     const data = (await response.json()) as {
       candidates?: Array<{
-        content: { parts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> };
+        content?: { parts?: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> };
       }>;
     };
 
-    const imagePart = data.candidates?.[0]?.content.parts.find((p) => p.inlineData);
+    const imagePart = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);
     if (!imagePart?.inlineData) {
       console.warn("[gemini] No image in response");
       return { ok: false, retriable: false, reason: "no_image_in_response" };
