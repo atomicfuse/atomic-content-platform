@@ -66,6 +66,20 @@
       mockBrand: 'Download Our App',
       mockCta: 'Install Free'
     },
+    'sticky-bottom-bar': {
+      label: 'STICKY BOTTOM',
+      color: '#00838f',
+      bg: '#e0f7fa',
+      mockBrand: 'Download Our App',
+      mockCta: 'Install Free →'
+    },
+    'category-top-banner': {
+      label: 'CATEGORY TOP',
+      color: '#00838F',
+      bg: '#E0F7FA',
+      mockBrand: 'Category Sponsor',
+      mockCta: 'Discover More'
+    },
     // Homepage / category placements
     'homepage-top-banner': {
       label: 'HOMEPAGE TOP',
