@@ -631,6 +631,46 @@ async function promoteSiteToProduction(siteId: string): Promise<number> {
   return entries.length;
 }
 
+/**
+ * Patch config.domain in both KV namespaces and site.yaml so canonical URLs,
+ * og:url, and Meta verification use the real custom domain instead of the
+ * siteId folder name. Best-effort — failures are logged, not thrown.
+ */
+async function patchSiteConfigDomain(siteId: string, customDomain: string): Promise<void> {
+  const configKey = `site-config:${siteId}`;
+
+  // Patch KV in both namespaces
+  for (const ns of [KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING]) {
+    try {
+      const raw = await getKVEntry(ns, configKey);
+      if (!raw) continue;
+      const config = JSON.parse(raw) as Record<string, unknown>;
+      config.domain = customDomain;
+      await putKVEntry(ns, configKey, JSON.stringify(config));
+    } catch (err) {
+      console.warn(`[patchSiteConfigDomain] Failed to patch KV (${ns})`, err);
+    }
+  }
+
+  // Update site.yaml on the staging branch so next seed-kv picks up the
+  // correct domain. Reads the current file, updates the domain field, commits.
+  const stagingBranch = `staging/${siteId}`;
+  try {
+    const siteConfig = await readSiteConfigFromGit(siteId, stagingBranch);
+    if (siteConfig) {
+      siteConfig.domain = customDomain;
+      await commitSiteFiles(
+        siteId,
+        [{ path: `sites/${siteId}/site.yaml`, content: stringifyYaml(siteConfig) }],
+        `dashboard: update domain to ${customDomain}`,
+        stagingBranch,
+      );
+    }
+  } catch (err) {
+    console.warn('[patchSiteConfigDomain] Failed to update site.yaml', err);
+  }
+}
+
 export async function attachCustomDomain(
   domain: string,
   customDomain: string,
@@ -755,6 +795,17 @@ export async function attachCustomDomain(
     console.error('[attachCustomDomain] KV promotion failed (site hostname is registered but config may be missing in prod KV)', err);
   }
 
+  // --- Step 4b: Patch config.domain to the real custom domain ---
+  // site.yaml stores domain as the siteId (e.g. "financenewsbase") but canonical
+  // URLs, og:url, and Meta verification need the real domain ("financenewsbase.com").
+  // Patch KV in both namespaces + update site.yaml on the staging branch.
+  try {
+    await patchSiteConfigDomain(domain, customDomain);
+    console.log(`[attachCustomDomain] Patched config.domain to "${customDomain}" in KV + site.yaml`);
+  } catch (err) {
+    console.error('[attachCustomDomain] config.domain patch failed (canonical URLs may use siteId instead of domain)', err);
+  }
+
   // --- Step 5: Best-effort email routing ---
   if (site.zone_id) {
     try {
@@ -810,6 +861,14 @@ export async function detachCustomDomain(
     );
   } catch (err) {
     console.warn('[detachCustomDomain] KV delete failed (stale entry is harmless)', err);
+  }
+
+  // --- Step 5: Revert config.domain back to siteId (best-effort) ---
+  try {
+    await patchSiteConfigDomain(domain, domain);
+    console.log(`[detachCustomDomain] Reverted config.domain to "${domain}" in KV + site.yaml`);
+  } catch (err) {
+    console.warn('[detachCustomDomain] config.domain revert failed', err);
   }
 
   revalidatePath('/');
