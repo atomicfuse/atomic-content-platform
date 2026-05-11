@@ -141,17 +141,6 @@ All edits trigger a rebuild on the staging branch for preview before publishing.
 
 ## Deleting a Site
 
-Full cleanup in order:
-1. **Delete staging branch** from Git (`staging/{domain}`)
-2. **Delete site files** from the data repo (`sites/{domain}/` on main)
-3. **Delete CF Pages project** (legacy — only if one exists)
-4. **Clean Worker KV entries** — removes `site:{domain}`, `site-config:{domain}`, `article-index:{domain}`, and `sync-status:{domain}` from both staging and production KV namespaces. This ensures the Worker stops serving the deleted site immediately.
-5. **Move to trash** in `dashboard-index.yaml`
+Deletion performs a full cleanup across Git, KV, and R2 — removing all site files, article and shared-page KV entries, override files, and R2 assets. Sites go to trash first and can be restored or permanently deleted.
 
-The delete modal shows step-by-step progress with success/failure for each step.
-
-### Trash
-
-Sites in trash can be **restored** (moves back to the active list with status "New" if site files are gone) or **permanently deleted** (removes from trash and retries file deletion).
-
-Note: individual `article:{domain}:{slug}` KV entries are not deleted because Cloudflare KV has no prefix-list API. They become unreachable once the article-index and site-lookup entries are gone, and will be overwritten if the domain is ever recreated.
+For the complete deletion flow, resource inventory, and error handling details, see the **Deleting a Site** guide page.

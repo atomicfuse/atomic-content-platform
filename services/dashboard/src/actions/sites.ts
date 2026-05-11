@@ -13,8 +13,18 @@ import {
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
 } from "@/lib/github";
-import { deletePagesProject, deleteKVEntry } from "@/lib/cloudflare";
-import { KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING } from "@/lib/constants";
+import {
+  deletePagesProject,
+  deleteKVEntry,
+  deleteKVByPrefix,
+  deleteR2ObjectsByPrefix,
+} from "@/lib/cloudflare";
+import {
+  KV_NAMESPACE_PROD,
+  KV_NAMESPACE_STAGING,
+  R2_BUCKET_STAGING,
+  R2_BUCKET_PROD,
+} from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 
@@ -135,6 +145,90 @@ export async function deleteSiteEntry(domain: string): Promise<{
     }
   }
 
+  // 4b. Delete article + shared-page + prev-config KV entries by prefix (staging + prod)
+  {
+    const siteId = domain;
+    const prefixes = [
+      { prefix: `article:${siteId}:`, label: "articles" },
+      { prefix: `shared-page:${siteId}:`, label: "shared pages" },
+    ];
+    const extraKeys = [`site-config-prev:${siteId}`];
+    let totalDeleted = 0;
+    const prefixErrors: string[] = [];
+
+    for (const ns of [
+      { id: KV_NAMESPACE_STAGING, label: "staging" },
+      { id: KV_NAMESPACE_PROD, label: "prod" },
+    ]) {
+      for (const { prefix, label } of prefixes) {
+        try {
+          const count = await deleteKVByPrefix(ns.id, prefix);
+          totalDeleted += count;
+        } catch (err) {
+          prefixErrors.push(
+            `${ns.label}/${label}: ${err instanceof Error ? err.message : "Unknown"}`,
+          );
+        }
+      }
+      for (const key of extraKeys) {
+        try {
+          await deleteKVEntry(ns.id, key);
+          totalDeleted++;
+        } catch (err) {
+          prefixErrors.push(
+            `${ns.label}/${key}: ${err instanceof Error ? err.message : "Unknown"}`,
+          );
+        }
+      }
+    }
+
+    if (prefixErrors.length === 0) {
+      steps.push({
+        label: `Cleaned ${totalDeleted} KV entries (articles, shared pages, prev-config)`,
+        success: true,
+      });
+    } else {
+      steps.push({
+        label: `KV prefix cleanup: ${totalDeleted} deleted, ${prefixErrors.length} errors`,
+        success: prefixErrors.length === 0,
+        error: prefixErrors.join("; "),
+      });
+    }
+  }
+
+  // 4c. Delete R2 assets (staging + prod buckets) — best-effort
+  {
+    const siteId = domain;
+    let r2Deleted = 0;
+    const r2Errors: string[] = [];
+
+    for (const { bucket, label } of [
+      { bucket: R2_BUCKET_STAGING, label: "staging" },
+      { bucket: R2_BUCKET_PROD, label: "prod" },
+    ]) {
+      try {
+        const count = await deleteR2ObjectsByPrefix(bucket, `${siteId}/`);
+        r2Deleted += count;
+      } catch (err) {
+        r2Errors.push(
+          `${label}: ${err instanceof Error ? err.message : "Unknown"}`,
+        );
+      }
+    }
+
+    if (r2Errors.length === 0 && r2Deleted > 0) {
+      steps.push({ label: `Deleted ${r2Deleted} R2 assets (staging + prod)`, success: true });
+    } else if (r2Errors.length === 0) {
+      steps.push({ label: "No R2 assets to clean up", success: true });
+    } else {
+      steps.push({
+        label: `R2 cleanup: ${r2Deleted} deleted, ${r2Errors.length} errors`,
+        success: r2Errors.length === 0,
+        error: r2Errors.join("; "),
+      });
+    }
+  }
+
   // 5. Move to trash in dashboard index
   try {
     await removeSiteFromIndex(domain);
@@ -202,14 +296,32 @@ export async function deleteArticlesFromStaging(
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Permanently delete a domain — remove from trash AND delete any remaining site files from Git. */
+/** Permanently delete a domain — remove from trash AND retry cleanup for anything
+ *  the soft delete may have missed. Best-effort: swallows all cleanup errors. */
 export async function permanentlyDeleteSite(domain: string): Promise<void> {
-  // Try to delete files (may already be gone from soft delete)
+  // Retry site file + override file deletion (may already be gone from soft delete)
   try {
     await deleteSiteFilesFromRepo(domain);
   } catch {
     // Files may already be deleted — that's fine
   }
+
+  // Retry KV cleanup (all key patterns)
+  for (const nsId of [KV_NAMESPACE_STAGING, KV_NAMESPACE_PROD]) {
+    try { await deleteKVByPrefix(nsId, `article:${domain}:`); } catch { /* best-effort */ }
+    try { await deleteKVByPrefix(nsId, `shared-page:${domain}:`); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `site-config-prev:${domain}`); } catch { /* best-effort */ }
+    // Also retry the known keys in case soft delete missed them
+    try { await deleteKVEntry(nsId, `site:${domain}`); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `site-config:${domain}`); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `article-index:${domain}`); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `sync-status:${domain}`); } catch { /* best-effort */ }
+  }
+
+  // Retry R2 cleanup
+  try { await deleteR2ObjectsByPrefix(R2_BUCKET_STAGING, `${domain}/`); } catch { /* best-effort */ }
+  try { await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`); } catch { /* best-effort */ }
+
   await permanentlyRemoveFromTrash(domain);
   revalidatePath("/");
   revalidatePath("/sites");

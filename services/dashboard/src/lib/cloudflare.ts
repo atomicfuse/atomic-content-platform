@@ -1,4 +1,9 @@
 import { WORKER_NAME_PROD } from "@/lib/constants";
+import {
+  S3Client,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
@@ -519,4 +524,109 @@ export async function bulkPutKV(
       `Failed to bulk write ${entries.length} KV entries: ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
+}
+
+/** Bulk delete KV entries by key. Accepts up to 10,000 keys per call.
+ *  No-op if keys array is empty. Missing keys are silently ignored. */
+export async function bulkDeleteKV(
+  namespaceId: string,
+  keys: string[],
+): Promise<void> {
+  if (keys.length === 0) return;
+  const accountId = getAccountId();
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    {
+      method: "DELETE",
+      headers: getHeaders(),
+      body: JSON.stringify(keys),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to bulk delete ${keys.length} KV keys: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all KV keys matching a prefix, then bulk-delete them.
+ *  Returns the number of keys deleted. Handles pagination internally. */
+export async function deleteKVByPrefix(
+  namespaceId: string,
+  prefix: string,
+): Promise<number> {
+  const keys = await listKVKeys(namespaceId, prefix);
+  if (keys.length === 0) return 0;
+  // CF bulk delete supports up to 10,000 keys per call
+  for (let i = 0; i < keys.length; i += 10_000) {
+    await bulkDeleteKV(namespaceId, keys.slice(i, i + 10_000));
+  }
+  return keys.length;
+}
+
+// --- R2 Cleanup (S3-compatible API) ---
+
+/** Lazily-initialised S3 client for R2 operations.
+ *  Requires R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY env vars. */
+let _s3Client: S3Client | null = null;
+
+function getR2Client(): S3Client | null {
+  if (_s3Client) return _s3Client;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  if (!accessKeyId || !secretAccessKey) {
+    console.warn("R2 cleanup skipped: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not configured");
+    return null;
+  }
+  const accountId = getAccountId();
+  _s3Client = new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+  return _s3Client;
+}
+
+/** Delete all R2 objects matching a prefix from a bucket.
+ *  Handles pagination (ListObjectsV2) and batch deletion (DeleteObjects, 1000 per batch).
+ *  Returns the number of objects deleted. Returns 0 if R2 credentials are not configured. */
+export async function deleteR2ObjectsByPrefix(
+  bucket: string,
+  prefix: string,
+): Promise<number> {
+  const client = getR2Client();
+  if (!client) return 0;
+
+  let deleted = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const objects = list.Contents;
+    if (!objects || objects.length === 0) break;
+
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objects.map((o) => ({ Key: o.Key })),
+          Quiet: true,
+        },
+      }),
+    );
+
+    deleted += objects.length;
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return deleted;
 }

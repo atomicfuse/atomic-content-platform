@@ -27,6 +27,7 @@ const GUIDE_PAGES = [
   { slug: "14-articles-api", title: "Articles API" },
   { slug: "15-creating-a-site", title: "Creating a Site" },
   { slug: "16-error-handling", title: "Error Handling & Alerts" },
+  { slug: "17-site-deletion", title: "Deleting a Site" },
 ];
 
 export default function GuidePage(): React.ReactElement {

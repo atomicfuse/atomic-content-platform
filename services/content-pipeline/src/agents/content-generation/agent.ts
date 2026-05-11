@@ -403,7 +403,7 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
 
 async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
   let result;
-  if (config.localNetworkPath) {
+  if (config.localNetworkPath && !branch) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
     if (local) result = local;
   }

@@ -98,3 +98,11 @@ export const KV_NAMESPACE_PROD = "a69cb2c59507482ca5e6d114babdd098";
 
 /** Staging CONFIG_KV namespace ID (not used by attach/detach — included for reference). */
 export const KV_NAMESPACE_STAGING = "4673c82cdd7f41d49e93d938fb1c6848";
+
+// --- R2 bucket identifiers ---
+
+/** Staging R2 bucket for per-site assets. */
+export const R2_BUCKET_STAGING = "atl-assets-staging";
+
+/** Production R2 bucket for per-site assets. */
+export const R2_BUCKET_PROD = "atl-assets-prod";
