@@ -24,7 +24,7 @@ import { resolvePreview, generatePreviewScript } from './lib/preview-override';
  *   - /<siteId>/assets/*           handled by ASSETS binding (long cache)
  *   - /                            edge: 60s, browser: 30s, SWR 600s
  *   - /<slug>                      edge: 300s, browser: 60s, SWR 600s
- *   - /sitemap.xml, /ads.txt       edge: 600s, browser: 60s
+ *   - /robots.txt, /sitemap.xml, /ads.txt  edge: 600s, browser: 60s
  *   - default                      no explicit cache (CF default)
  */
 export const onRequest = defineMiddleware(async (context, next) => {
@@ -175,7 +175,7 @@ function applyCacheHeaders(pathname: string, response: Response): void {
   }
 
   // ads.txt and sitemap.xml change rarely; can be edge-cached longer.
-  if (pathname === '/ads.txt' || pathname === '/sitemap.xml' || pathname === '/sitemap-index.xml') {
+  if (pathname === '/robots.txt' || pathname === '/ads.txt' || pathname === '/sitemap.xml' || pathname === '/sitemap-index.xml') {
     response.headers.set('cache-control', 'public, max-age=60, s-maxage=600, stale-while-revalidate=3600');
     return;
   }
