@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// CONTENT_API_BASE_URL first: CloudGrid auto-injects CONTENT_AGGREGATOR_URL
+// as a platform read-only env pointing to a stale entity URL.
 const AGGREGATOR_URL =
-  process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
+  process.env.CONTENT_AGGREGATOR_URL ??
   "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
 
 /**
