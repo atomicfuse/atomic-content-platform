@@ -398,7 +398,7 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     scripts: { head: [], body_start: [], body_end: [] },
     scripts_vars: {},
     ads_txt: [],
-    tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, custom: [] },
+    tracking: { ga4: null, gtm: null, google_ads: null, facebook_pixel: null, facebook_domain_verification: null, custom: [] },
     categories: { enabled: true, root_path: '/category', per_page: 12 },
     sidebar: { enabled: false, widgets: [] },
     search: { enabled: false },

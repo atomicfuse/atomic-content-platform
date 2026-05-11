@@ -25,6 +25,7 @@ function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedCon
     gtm: (raw?.gtm as string) ?? null,
     google_ads: (raw?.google_ads as string) ?? null,
     facebook_pixel: (raw?.facebook_pixel as string) ?? null,
+    facebook_domain_verification: (raw?.facebook_domain_verification as string) ?? null,
     custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
   };
 }

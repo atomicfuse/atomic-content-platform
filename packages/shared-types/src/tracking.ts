@@ -29,6 +29,9 @@ export interface TrackingConfig {
   /** Meta / Facebook pixel ID. */
   facebook_pixel: string | null;
 
+  /** Facebook domain verification code (renders as a static meta tag in <head>). */
+  facebook_domain_verification: string | null;
+
   /** Additional custom tracking scripts. */
   custom: CustomTrackingScript[];
 }
