@@ -19,7 +19,8 @@ interface Props {
 
 const { title, description, pageType = 'article' } = Astro.props;
 const config = getConfig(Astro);
-const { theme, scripts } = config;
+const { theme, scripts, tracking } = config;
+const facebookDomainVerification = (tracking?.facebook_domain_verification as string | null | undefined) ?? null;
 
 const headScripts = scripts?.head ?? [];
 const bodyStartScripts = scripts?.body_start ?? [];
@@ -49,6 +50,9 @@ const cssVars = Object.entries(theme.colors)
 
     <title>{title}</title>
     <meta name="description" content={description} />
+    {facebookDomainVerification && (
+      <meta name="facebook-domain-verification" content={facebookDomainVerification} />
+    )}
     {theme.favicon && (
       <>
         <link rel="icon" type="image/png" sizes="32x32" href={theme.favicon} />

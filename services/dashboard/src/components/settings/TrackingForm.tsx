@@ -16,6 +16,7 @@ interface TrackingConfig {
   gtm: string | null;
   google_ads: string | null;
   facebook_pixel: string | null;
+  facebook_domain_verification: string | null;
   custom: CustomTrackingScript[];
 }
 
@@ -26,7 +27,7 @@ interface TrackingFormProps {
 }
 
 const VENDOR_FIELDS: Array<{
-  key: keyof Pick<TrackingConfig, "ga4" | "gtm" | "google_ads" | "facebook_pixel">;
+  key: keyof Pick<TrackingConfig, "ga4" | "gtm" | "google_ads" | "facebook_pixel" | "facebook_domain_verification">;
   label: string;
   placeholder: string;
 }> = [
@@ -34,6 +35,7 @@ const VENDOR_FIELDS: Array<{
   { key: "gtm", label: "GTM Container ID", placeholder: "GTM-XXXXXXX" },
   { key: "google_ads", label: "Google Ads Conversion ID", placeholder: "AW-XXXXXXXXXX" },
   { key: "facebook_pixel", label: "Facebook Pixel ID", placeholder: "1234567890" },
+  { key: "facebook_domain_verification", label: "Facebook Domain Verification", placeholder: "uisexyh42e57lhlkagkk3f6evwo6h7" },
 ];
 
 const POSITION_OPTIONS: Array<{ value: CustomTrackingScript["position"]; label: string }> = [
@@ -79,7 +81,7 @@ export function TrackingForm({
   );
 
   function getInheritanceSource(
-    key: keyof Pick<TrackingConfig, "ga4" | "gtm" | "google_ads" | "facebook_pixel">,
+    key: keyof Pick<TrackingConfig, "ga4" | "gtm" | "google_ads" | "facebook_pixel" | "facebook_domain_verification">,
   ): "org" | "custom" | null {
     if (!inheritedValues) return null;
     const inherited = inheritedValues[key];

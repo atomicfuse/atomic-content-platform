@@ -20,6 +20,7 @@ interface TrackingConfig {
   gtm: string | null;
   google_ads: string | null;
   facebook_pixel: string | null;
+  facebook_domain_verification: string | null;
   custom: Array<{ name: string; src: string; position: "head" | "body_start" | "body_end" }>;
 }
 
@@ -94,6 +95,7 @@ const DEFAULT_TRACKING: TrackingConfig = {
   gtm: null,
   google_ads: null,
   facebook_pixel: null,
+  facebook_domain_verification: null,
   custom: [],
 };
 
