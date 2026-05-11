@@ -7,7 +7,7 @@ import Header from '../../themes/modern/components/Header.astro';
 import Footer from '../../themes/modern/components/Footer.astro';
 import AdSlot from '../../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
-import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 
@@ -48,7 +48,7 @@ const slice = matching.slice(start, start + perPage);
 
 const pageTitle = `${displayName} — ${config.site_name}`;
 const pageDesc = `Browse ${displayName} articles on ${config.site_name}`;
-const canonicalUrl = `https://${config.domain}/category/${topicSlug}`;
+const canonicalUrl = `https://${getCanonicalDomain(Astro)}/category/${topicSlug}`;
 ---
 
 <BaseLayout title={pageTitle} description={pageDesc} pageType="category">

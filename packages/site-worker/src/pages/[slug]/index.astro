@@ -12,7 +12,7 @@ import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import AdSlot from '../../components/AdSlot.astro';
-import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
@@ -104,7 +104,7 @@ if (article) {
       <SEOHead
         title={`${article.frontmatter.title} | ${config.site_name}`}
         description={article.frontmatter.description ?? article.frontmatter.title}
-        canonicalUrl={`https://${config.domain}/${slug}`}
+        canonicalUrl={`https://${getCanonicalDomain(Astro)}/${slug}`}
         image={article.frontmatter.featuredImage}
         siteName={config.site_name}
         publishDate={article.frontmatter.publishDate}
