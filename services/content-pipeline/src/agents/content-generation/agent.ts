@@ -516,13 +516,17 @@ async function processItem(
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
     // Step 4: Image pipeline — four-tier ladder (Gemini → OpenAI → thumbnail → no image)
-    const ladderResult = await generateImageWithLadder({
-      articleTitle: generated.title,
-      articleDescription: generated.description,
-      articleSummary: item.summary,
-      vertical: item.vertical?.name ?? "General",
-      sourceThumbnailUrl: item.thumbnail?.url,
-    });
+    const ladderResult = await generateImageWithLadder(
+      {
+        articleTitle: generated.title,
+        articleDescription: generated.description,
+        articleSummary: item.summary,
+        vertical: item.vertical?.name ?? "General",
+        sourceThumbnailUrl: item.thumbnail?.url,
+      },
+      config.notifications,
+      siteDomain,
+    );
 
     let pendingImageAsset: PendingAsset | undefined;
     let featuredImageUrl: string | undefined;
