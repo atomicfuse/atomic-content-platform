@@ -3,23 +3,48 @@ export interface ReferenceItem {
   name: string;
 }
 
-const CACHE_KEY_AUDIENCES = "atl:audiences";
-const CACHE_KEY_VERTICALS = "atl:verticals:v2";
+const CACHE_KEY_AUDIENCES = "atl:audiences:v3";
+const CACHE_KEY_VERTICALS = "atl:verticals:v3";
+/** localStorage TTL — 1 hour. Prevents stale IDs from persisting across aggregator migrations. */
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
+/** Stale keys from previous versions — removed on first load. */
+const STALE_KEYS = ["atl:audiences", "atl:verticals:v2", "atl:audiences:v2"];
+
+function purgeStaleKeys(): void {
+  if (typeof window === "undefined") return;
+  for (const key of STALE_KEYS) {
+    localStorage.removeItem(key);
+  }
+}
+
+interface CacheEntry<T> {
+  ts: number;
+  data: T;
+}
 
 function getCached(key: string): ReferenceItem[] | null {
   if (typeof window === "undefined") return null;
+  purgeStaleKeys();
   const raw = localStorage.getItem(key);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as ReferenceItem[];
+    const entry = JSON.parse(raw) as CacheEntry<ReferenceItem[]>;
+    if (!entry.ts || Date.now() - entry.ts > CACHE_TTL_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return entry.data;
   } catch {
+    localStorage.removeItem(key);
     return null;
   }
 }
 
 function setCache(key: string, data: ReferenceItem[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(data));
+  const entry: CacheEntry<ReferenceItem[]> = { ts: Date.now(), data };
+  localStorage.setItem(key, JSON.stringify(entry));
 }
 
 /** Extract { id, name } pairs from a paginated API response ({ items: [...] }). */

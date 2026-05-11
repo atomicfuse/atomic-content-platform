@@ -23,7 +23,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
     const data: unknown = await res.json();
     return NextResponse.json(data, {
-      headers: { "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400" },
+      headers: { "Cache-Control": "private, max-age=300, stale-while-revalidate=3600" },
     });
   } catch (error) {
     console.error("[categories] error:", error);
