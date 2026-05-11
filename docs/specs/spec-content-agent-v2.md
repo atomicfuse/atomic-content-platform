@@ -16,7 +16,7 @@ Restructure the content generation agents to consume pre-enriched items from the
 ```
 ┌─────────────────────────┐
 │  Content Aggregator v2   │ ← Already deployed on CloudGrid
-│  (enrichment + taxonomy) │    https://content-aggregator-cloudgrid.atomic.cloudgrid.io/api
+│  (enrichment + taxonomy) │    https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api
 └───────────┬─────────────┘
             │ GET /api/content?enriched=true
             ▼
@@ -263,13 +263,13 @@ cloudgrid secrets set OPENAI_API_KEY=<your-openai-key>
 
 ### cloudgrid.yaml env (or cloudgrid env set):
 ```bash
-cloudgrid env set CONTENT_API_BASE_URL=https://content-aggregator-cloudgrid.atomic.cloudgrid.io/api
+cloudgrid env set CONTENT_API_BASE_URL=https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api
 ```
 
 ### Local .env:
 ```
 OPENAI_API_KEY=<your-openai-key>
-CONTENT_API_BASE_URL=https://content-aggregator-cloudgrid.atomic.cloudgrid.io/api
+CONTENT_API_BASE_URL=https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api
 ```
 
 **⚠️ IMPORTANT: Rotate the OpenAI key after setup — it was shared in a chat message.**

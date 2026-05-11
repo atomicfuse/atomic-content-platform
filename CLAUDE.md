@@ -386,6 +386,7 @@ Service contract (both services satisfy):
 25. **site-worker — PixelLoader loads gtag.js once per Google's spec.** GA4 + Google Ads share a single gtag.js load. Do not add a second `<script src="gtag.js">` tag — it causes duplicate events and incorrect attribution. GTM is loaded independently (its own snippet).
 26. **Content Aggregator URL requires `/api` suffix.** The aggregator base URL (`CONTENT_AGGREGATOR_URL`) defaults to the CloudGrid URL which does NOT include `/api`. All fetch calls must append `/api/...` to the base. See `wizard.ts` `getAggregatorApiBase()` which strips a trailing `/api` if present, then re-adds it per-call.
 27. **`createBundleForSite` in wizard.ts.** Site settings (ContentAgentTab) can create a content bundle from existing category + subcategory + tag selections. Calls `POST /api/bundles` on the aggregator. Handles 409 (duplicate name) by retrying with " (2)" suffix. Requires at least one subcategory selected.
+28. **CloudGrid auto-injects `CONTENT_AGGREGATOR_URL` as a stale platform read-only env.** It points to `content-aggregator-cloudgrid.apps.cloudgrid.io` (wrong). The correct aggregator is `content-aggregator-v2-34cd.atomic.cloudgrid.io`. All code must check `CONTENT_API_BASE_URL` **before** `CONTENT_AGGREGATOR_URL` in the env var fallback chain. Both `cloudgrid.yaml` services set `CONTENT_API_BASE_URL` to the correct URL. Never add new code that reads `CONTENT_AGGREGATOR_URL` first.
 
 ## Quick Reference — File Ownership
 
