@@ -1,10 +1,33 @@
 # Content Aggregator v2 -- API Reference
 
-Base URL: `https://<your-domain>` (Cloud Grid deployment) or `http://localhost:3000` (local dev)
+> **Taxonomy collapse (2026-04-29):** The legacy `verticals` collection +
+> `/api/verticals` route tree were merged into `categories`. Tier-1 (top-level)
+> categories live in `categories` with `parent_id: null` and replace the
+> "vertical" semantic — filter via `/api/categories?parent_id=null` or content
+> via `?category_id=<tier-1-id>`. The `categories[]` array on a content item is
+> sorted tier-1 first. Bundle rules are 2 dimensions: `category_ids[]` +
+> `tag_ids[]`.
+
+Base URL: `https://<your-domain>` (Cloud Grid deployment) or `http://content-aggregator-v2-34cd.atomic.cloudgrid.io` (local dev)
 
 ## Authentication
 
-No authentication is currently required. All endpoints are open.
+The dashboard API surface is unauthenticated. The three Cloud Grid cron
+entrypoints — `GET /api/content/enrich`, `GET /api/content/lifecycle`,
+`GET /api/sources/fetch` — are gated by a hostname-based rule:
+
+- **Cluster-internal calls** (dialed hostname ends with `.svc.cluster.local`)
+  are allowed unconditionally. Cloud Grid's cron pods hit the dashboard via
+  internal cluster DNS (`dashboard-app.<ns>.svc.cluster.local`), which is not
+  reachable from outside the VPC. The dialed hostname IS the authorization.
+- **Public-ingress calls** (any other hostname, e.g. the public domain)
+  require `?token=<CRON_SECRET>` matching the runtime env var. Comparison is
+  constant-time. Missing or wrong token returns 401 `unauthorized`.
+
+The matching `POST` handlers stay open for the dashboard's manual-trigger
+buttons. `CRON_SECRET` is set via `cloudgrid secrets set CRON_SECRET=...`
+and is only needed for public-ingress invocation (manual testing); cron
+ticks themselves do not need it.
 
 ## Error Format
 
@@ -23,10 +46,19 @@ Common error codes:
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
-| `validation_error` | 400 | Invalid input or failed validation |
+| `validation_error` | 400 | Invalid input — malformed ObjectId, unknown enum value, malformed JSON body, missing required field |
+| `unauthorized` | 401 | Missing / invalid cron token on a token-gated route |
 | `not_found` | 404 | Resource does not exist |
 | `duplicate` | 409 | Resource with that name already exists |
+| `referenced_by_bundle` | 409 | Category cannot be deleted while a bundle references it |
+| `health_check_failed` | 503 | `/health` could not reach MongoDB |
 | `internal_error` | 500 | Server error |
+
+Validation behavior:
+- Path/query/body ObjectIds are validated as 24-character hex; malformed values return 400.
+- Enum-style query params (`status`, `content_type`, `sort`, `order`, `language`, `type`, `group`, suggestion `status`/`type`/`action`) are validated against an allow-list; unknown values return 400. Empty string (`?status=`) is treated as "not provided" so the dashboard's blank-default behavior still resolves to the route's default.
+- Comma-separated multi-value enum params (e.g. `?content_type=video,article`) reject the whole request if ANY value is unknown — they don't silently filter to the valid subset.
+- Malformed JSON bodies on POST/PUT/PATCH/DELETE return 400 instead of 500.
 
 ## Pagination
 
@@ -63,39 +95,43 @@ Paginated responses include:
 | DELETE | `/api/content/:id` | Permanently delete a content item |
 | DELETE | `/api/content/bulk` | Bulk permanent delete |
 | POST | `/api/content/enrich` | Trigger the AI enrichment pipeline |
+| GET | `/api/content/enrich` | Cron entrypoint — runs the enrichment pipeline (token-gated; see Authentication) |
 | POST | `/api/content/lifecycle` | Run lifecycle jobs (archive, purge) |
+| GET | `/api/content/lifecycle` | Cron entrypoint — runs lifecycle jobs (token-gated; see Authentication) |
 
 ### Sources
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/sources` | List sources with content counts |
+| GET | `/api/sources/:id` | Get a single source by ID |
 | POST | `/api/sources` | Create a new source |
 | PUT | `/api/sources/:id` | Update a source |
 | DELETE | `/api/sources/:id` | Deactivate a source (soft delete) |
 | DELETE | `/api/sources/:id/content` | Delete all content from a source (keeps source) |
+| POST | `/api/sources/discover` | Auto-discover RSS feeds from a website URL |
 | POST | `/api/sources/fetch` | Trigger content collection |
+| GET | `/api/sources/fetch` | Cron entrypoint — runs the fetch pipeline (token-gated; see Authentication) |
 
 ### Taxonomy
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/verticals` | List verticals |
-| POST | `/api/verticals` | Create a vertical |
-| PUT | `/api/verticals/:id` | Update a vertical |
-| DELETE | `/api/verticals/:id` | Soft-delete a vertical |
-| GET | `/api/categories` | List categories |
-| POST | `/api/categories` | Create a category |
+| GET | `/api/categories` | List categories. `?parent_id=null` narrows to tier-1 (top-level / renamed "vertical"); `?parent_id=<id>` narrows to children of that parent. |
+| POST | `/api/categories` | Create a category (omit `parent_id` or set to null to create a tier-1) |
 | PUT | `/api/categories/:id` | Update a category |
-| DELETE | `/api/categories/:id` | Soft-delete a category |
+| DELETE | `/api/categories/:id` | Soft-delete a category. 409 `referenced_by_bundle` if any bundle references it. |
 | GET | `/api/tags` | List tags |
 | POST | `/api/tags` | Create a tag |
 | PUT | `/api/tags/:id` | Update a tag |
-| DELETE | `/api/tags/:id` | Hard delete a tag |
+| DELETE | `/api/tags/:id` | Hard delete a tag (auto-strips from referencing bundles) |
 | GET | `/api/audiences` | List audience types |
 | POST | `/api/audiences` | Create an audience type |
 | PUT | `/api/audiences/:id` | Update an audience type |
 | DELETE | `/api/audiences/:id` | Soft-delete an audience type |
+
+All categories: https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/categories?parent_id=null
+Subcategories per category: https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/categories?parent_id=<category_id>
 
 ### Content Bundles
 
@@ -140,18 +176,19 @@ Query content items with filters, pagination, and text search. Returns consumer-
 | `page` | integer | `1` | Page number |
 | `page_size` | integer | `20` | Items per page (max 100) |
 | `status` | string | `active` | Filter by status: `active`, `inactive`, `archived` |
-| `content_type` | string | -- | Comma-separated: `article`, `video`, `social_post`, `discussion`, `trend` |
-| `vertical_id` | string | -- | Filter by vertical ID |
-| `category_ids` | string | -- | Comma-separated category IDs. OR logic across values. |
+| `content_type` | string | -- | Comma-separated: `article`, `video`, `social_post`, `discussion`, `trend`. 400 if any value is unknown. |
+| `category_ids` | string | -- | Comma-separated category IDs. OR logic across values. To filter by tier-1 (the renamed "vertical") pass that tier-1 id. |
 | `tag_ids` | string | -- | Comma-separated tag IDs. OR logic across values. |
-| `bundle_id` | string | -- | Filter by a single bundle ID. Automatically scoped to active bundles — an unknown or inactive bundle returns an empty result with `total_count: 0` (no 404). |
-| `audience_type_id` | string | -- | Filter by audience type ID |
-| `source_id` | string | -- | Filter by source ID |
+| `bundle_id` | string | -- | Filter by a single bundle ID (24-hex; 400 on malformed). Automatically scoped to active bundles — an unknown or inactive bundle returns an empty result with `total_count: 0` (no 404). |
+| `audience_type_id` | string | -- | Filter by audience type ID (24-hex; 400 on malformed) |
+| `source_id` | string | -- | Filter by source ID (24-hex; 400 on malformed) |
 | `enriched` | string | `true` | `true` (default — only enriched items) or `false` (all items including unenriched). "Golden plate" philosophy: consumers get ready-to-use content by default. |
-| `language` | string | -- | ISO language code (auto-uppercased) |
+| `language` | string | -- | ISO 639-1 language code, validated against the supported set (EN/ES/FR/DE/PT/IT/NL/RU/ZH/JA/KO/AR/HE/TR/TH). Auto-uppercased. 400 on unknown. |
+| `sort` | string | `published_at` | `published_at` \| `created_at` \| `title`. 400 on unknown. |
+| `order` | string | `desc` | `asc` \| `desc`. 400 on unknown. |
 | `search` | string | -- | Text search across title, description, url, and exact content ID |
-| `category_id` | string | -- | **Deprecated** — legacy single-value alias for `category_ids`. Accepted for one release. Prefer `category_ids`. |
-| `tag_id` | string | -- | **Deprecated** — legacy single-value alias for `tag_ids`. Accepted for one release. Prefer `tag_ids`. |
+| `category_id` | string | -- | Single-value alias for `category_ids`. |
+| `tag_id` | string | -- | Single-value alias for `tag_ids`. |
 
 **Response** `200 OK`
 
@@ -189,12 +226,9 @@ Query content items with filters, pagination, and text search. Returns consumer-
         "name": "TechCrunch",
         "type": "rss"
       },
-      "vertical": {
-        "id": "6650a...",
-        "name": "Technology"
-      },
       "categories": [
-        { "id": "6650c...", "name": "Artificial Intelligence", "iab_code": "597" }
+        { "id": "6650a...", "name": "Technology & Computing", "iab_code": "596", "parent_id": null },
+        { "id": "6650c...", "name": "Artificial Intelligence", "iab_code": "597", "parent_id": "6650a..." }
       ],
       "tags": [
         { "id": "6650d...", "name": "machine learning" }
@@ -215,7 +249,7 @@ Query content items with filters, pagination, and text search. Returns consumer-
 **curl example**
 
 ```bash
-curl "http://localhost:3000/api/content?status=active&content_type=article,video&enriched=true&page_size=10"
+curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content?status=active&content_type=article,video&enriched=true&page_size=10"
 ```
 
 ---
@@ -246,15 +280,14 @@ Update content items. Supports single-item updates and bulk status changes.
 {
   "id": "6651a...",
   "status": "inactive",
-  "vertical_id": "6650a...",
-  "category_ids": ["6650c..."],
+  "category_ids": ["6650a...", "6650c..."],
   "tag_ids": ["6650d..."],
   "audience_type_ids": ["6650e..."],
   "expires_at": "2026-05-01T00:00:00.000Z"
 }
 ```
 
-All fields except `id` are optional. Setting `vertical_id` or `category_ids` also sets `classification_source` to `user_override` internally.
+All fields except `id` are optional. Operators override the broad-bucket assignment by including the tier-1 id (renamed "vertical") at index 0 of `category_ids`. Setting any of `category_ids`, `tag_ids`, or `audience_type_ids` flips `classification_source` to `user_override` internally.
 
 **Response** `200 OK`
 
@@ -329,7 +362,9 @@ Bulk permanent delete.
 
 ### POST /api/content/enrich
 
-Trigger the AI enrichment pipeline. Processes unenriched content items: generates content briefs, classifies with IAB Content Taxonomy 3.1 (picks one vertical + one-to-three categories under that vertical), and estimates expiration. Vertical-only classification is a retryable failure (`enrichment_error: 'classified_without_category'`); after `max_attempts` the item is marked `enrichment_status: 'failed'` and auto-purged by the lifecycle cron after `failure_retention_days`.
+Trigger the AI enrichment pipeline. Processes unenriched content items: generates content briefs, classifies with IAB Content Taxonomy 3.1 (picks one tier-1 / top-level category — the renamed "vertical" — plus one-to-three children under that tier-1), and estimates expiration. Tier-1-only classification is a retryable failure (`enrichment_error: 'classified_without_category'`); after `max_attempts` the item is marked `enrichment_status: 'failed'` and auto-purged by the lifecycle cron after `failure_retention_days`.
+
+The matching `GET /api/content/enrich` is the Cloud Grid cron entrypoint and gated per the rules in Authentication — cluster-internal calls (Cloud Grid cron pods) bypass the token check; public-ingress callers must present `?token=<CRON_SECRET>`.
 
 **Request Body** (optional)
 
@@ -348,7 +383,7 @@ Returns an enrichment summary with counts of processed, succeeded, and failed it
 **curl example**
 
 ```bash
-curl -X POST http://localhost:3000/api/content/enrich \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content/enrich \
   -H "Content-Type: application/json" \
   -d '{"batch_size": 5}'
 ```
@@ -359,7 +394,7 @@ curl -X POST http://localhost:3000/api/content/enrich \
 
 Run content lifecycle jobs: auto-archive expired content, archive retention-exceeded content, and purge old archived content.
 
-Designed to be called by cron. No request body required.
+Designed to be called by cron. No request body required. The matching `GET /api/content/lifecycle` is the Cloud Grid cron entrypoint and gated per the rules in Authentication — cluster-internal calls (Cloud Grid cron pods) bypass the token check; public-ingress callers must present `?token=<CRON_SECRET>`.
 
 **Response** `200 OK`
 
@@ -379,7 +414,7 @@ List sources with pagination and content counts.
 |-----------|------|---------|-------------|
 | `page` | integer | `1` | Page number |
 | `page_size` | integer | `25` | Items per page (max 100) |
-| `type` | string | -- | Filter by source type: `rss`, `youtube`, `reddit`, `social`, `google_trends` |
+| `type` | string | -- | Filter by source type: `rss`, `youtube`, `reddit`, `social`, `google_trends`. 400 on unknown. |
 | `active` | string | -- | `true` or `false` |
 
 **Response** `200 OK`
@@ -420,9 +455,11 @@ List sources with pagination and content counts.
         "default_expiration_days": null,
         "retention_days": null
       },
-      "vertical_id": "6650a...",
-      "category_ids": [],
+      "category_ids": ["6650a..."],
       "audience_type_ids": [],
+      "classification_override": null,
+      "classification_filter": null,
+      "auto_tags": null,
       "enrichment": {
         "auto_summarize": true,
         "auto_classify": true,
@@ -435,6 +472,49 @@ List sources with pagination and content counts.
 ```
 
 The `content_counts` object maps source IDs to the number of content items from each source.
+
+---
+
+### GET /api/sources/:id
+
+Fetch a single source by ID. Mirrors the per-item shape from `GET /api/sources`, plus an inline `content_count`.
+
+**Response** `200 OK`
+
+```json
+{
+  "id": "6650b...",
+  "name": "TechCrunch",
+  "type": "rss",
+  "active": true,
+  "fetch_failures": 0,
+  "last_error": null,
+  "created_at": "2026-04-01T10:00:00.000Z",
+  "last_fetched_at": "2026-04-15T08:00:00.000Z",
+  "config": { "feed_url": "https://techcrunch.com/feed/" },
+  "settings": { "schedule": { "cron": "0 */1 * * *" }, "max_items": 50, "filters": {}, "default_expiration_days": null, "retention_days": null },
+  "category_ids": ["6650a..."],
+  "audience_type_ids": [],
+  "classification_override": null,
+  "classification_filter": null,
+  "auto_tags": null,
+  "enrichment": { "auto_summarize": true, "auto_classify": true, "auto_tag": true, "summary_language": null },
+  "content_count": 42
+}
+```
+
+**Errors**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `validation_error` | `id` is not a 24-character hex ObjectId |
+| 404 | `not_found` | Source not found |
+
+**curl example**
+
+```bash
+curl http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/6650b1234567890123456789
+```
 
 ---
 
@@ -460,9 +540,11 @@ Create a new source.
     },
     "default_expiration_days": 14
   },
-  "vertical_id": "6650a...",
-  "category_ids": ["6650c..."],
+  "category_ids": ["6650a...", "6650c..."],
   "audience_type_ids": ["6650e..."],
+  "classification_override": null,
+  "classification_filter": null,
+  "auto_tags": null,
   "enrichment": {
     "auto_summarize": true,
     "auto_classify": true,
@@ -473,6 +555,18 @@ Create a new source.
 ```
 
 **Required fields**: `name`, `type`, `config`
+
+**Source-level taxonomy hint**: pass the source's tier-1 (top-level) category id at index 0 of `category_ids[]`. That tier-1 is the renamed "vertical" semantic — it's used for source-inherited bundle evaluation on ingestion (before AI classification runs) and for the dedup scoping policy on titles.
+
+**Per-source classification gate** (all three optional, all default null = pure additive AI-only behavior):
+
+| Field | Type | Behavior |
+|-------|------|---------|
+| `classification_override` | `ObjectId[]` \| `null` | When set, the AI classifier is **skipped entirely**. The supplied category ids are stamped on every enriched item with `classification_source: 'source_inherited'` (tier-1 first by operator-supplied order). |
+| `classification_filter` | `{ mode: "include" \| "exclude", category_ids: ObjectId[] }` \| `null` | Only fires when override is null. After the AI classifier runs, items are include-or-exclude-filtered by category overlap. **Rejected items are permanently deleted** (reported as `enrichment_type: 'skipped'`, `success: true` — the source's intent succeeded). |
+| `auto_tags` | `ObjectId[]` \| `null` | Additively merged into every enriched item's `tag_ids` after classification (or on its own when override is set). Deduped. Runs even on the AI path. |
+
+The handler validates that every referenced category and tag id exists. On bad refs the response is `400 validation_error` with `missing_category_ids[]` / `missing_tag_ids[]` in the error envelope (mirrors the bundle validation envelope).
 
 **Type-specific config requirements**:
 
@@ -508,7 +602,7 @@ Create a new source.
 **curl example**
 
 ```bash
-curl -X POST http://localhost:3000/api/sources \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources \
   -H "Content-Type: application/json" \
   -d '{
     "name": "TechCrunch",
@@ -529,9 +623,11 @@ Update a source. Supports partial updates with deep merge for `settings` and `en
 {
   "name": "TechCrunch (Updated)",
   "active": true,
-  "vertical_id": "6650a...",
-  "category_ids": ["6650c..."],
+  "category_ids": ["6650a...", "6650c..."],
   "audience_type_ids": [],
+  "classification_override": null,
+  "classification_filter": { "mode": "exclude", "category_ids": ["6650f..."] },
+  "auto_tags": ["6650g..."],
   "settings": {
     "schedule": { "cron": "0 */4 * * *", "description": "Every 4 hours" },
     "max_items": 25
@@ -556,13 +652,26 @@ Returns the full updated source object.
 
 ### DELETE /api/sources/:id
 
-Deactivate a source (sets `active: false`). Does not delete.
+Soft-delete a source by default (sets `active: false`). The source row stays so existing content items keep a valid `source_id`.
+
+**Query params:**
+
+| Param | Description |
+|-------|-------------|
+| `hard=true` | Permanently remove the source row (hard delete) |
+| `delete_content=true` | Also delete every content item from this source (independent of hard/soft) |
 
 **Response** `200 OK`
 
 ```json
-{ "success": true, "name": "TechCrunch" }
+{ "success": true, "hard": false, "name": "TechCrunch", "deleted_content": 0 }
 ```
+
+Combinations:
+- No query → soft-delete source, content preserved.
+- `?hard=true` → hard-delete source, content preserved (becomes unlinked).
+- `?delete_content=true` → soft-delete source + wipe its content.
+- `?hard=true&delete_content=true` → hard-delete source + wipe its content.
 
 ---
 
@@ -589,9 +698,50 @@ Delete all content items from a source while keeping the source itself.
 
 ---
 
+### POST /api/sources/discover
+
+Auto-discover RSS feeds from a website URL. Probes the page's `<link rel="alternate" type="application/rss+xml">` tags and a small set of well-known feed paths. Used by the dashboard's "Add source" flow to suggest feed URLs from a homepage. Always returns 200 — an empty `feeds[]` means no feeds were found.
+
+**Request Body**
+
+```json
+{ "url": "https://techcrunch.com" }
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `url` | string | yes | Website URL (with or without scheme — `https://` is assumed when missing) |
+
+**Response** `200 OK`
+
+```json
+{
+  "url": "https://techcrunch.com",
+  "feeds": [
+    { "url": "https://techcrunch.com/feed/", "title": "TechCrunch", "type": "rss" }
+  ]
+}
+```
+
+**Errors**
+
+| Status | Code | Description |
+|--------|------|-------------|
+| 400 | `validation_error` | Body is malformed JSON or `url` is missing |
+
+**curl example**
+
+```bash
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/discover \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://techcrunch.com"}'
+```
+
+---
+
 ### POST /api/sources/fetch
 
-Trigger content collection from sources.
+Trigger content collection from sources. The matching `GET /api/sources/fetch` is the Cloud Grid cron entrypoint and gated per the rules in Authentication — cluster-internal calls (Cloud Grid cron pods) bypass the token check; public-ingress callers must present `?token=<CRON_SECRET>`.
 
 **Request Body Variants**
 
@@ -624,136 +774,27 @@ Returns a fetch summary with per-source results (items found, new items ingested
 
 ```bash
 # Fetch all active sources
-curl -X POST http://localhost:3000/api/sources/fetch
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch
 
 # Fetch a specific source
-curl -X POST http://localhost:3000/api/sources/fetch \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch \
   -H "Content-Type: application/json" \
   -d '{"source_id": "6650b..."}'
 ```
 
 ---
 
-## Verticals
-
-### GET /api/verticals
-
-List verticals.
-
-**Query Parameters**
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `active` | string | -- | `true` or `false` |
-
-**Response** `200 OK`
-
-```json
-{
-  "total_count": 36,
-  "page": 1,
-  "page_size": 20,
-  "total_pages": 2,
-  "items": [
-    {
-      "id": "6650a...",
-      "name": "Technology & Computing",
-      "iab_code": "596",
-      "description": "Software, hardware, AI, devices",
-      "is_system": true,
-      "active": true,
-      "created_at": "2026-04-20T00:00:00.000Z"
-    }
-  ]
-}
-```
-
-> **`iab_code`** is the canonical IAB Content Taxonomy 3.1 unique_id (case-sensitive string). Examples: `"596"` (Technology & Computing), `"JLBCU7"` (Entertainment), `"v9i3On"` (Sensitive Topics — brand-safety sink). Empty string for operator-created verticals outside the IAB namespace.
-
----
-
-### POST /api/verticals
-
-Create a vertical.
-
-**Request Body**
-
-```json
-{
-  "name": "Finance",
-  "iab_code": "",
-  "description": "Markets, investing, personal finance"
-}
-```
-
-**Required**: `name`. **Optional**: `iab_code` (defaults to empty string for operator-created verticals).
-
-**Response** `201 Created`
-
-```json
-{
-  "id": "665aa...",
-  "name": "Finance",
-  "iab_code": "",
-  "description": "Markets, investing, personal finance",
-  "is_system": false,
-  "active": true,
-  "created_at": "2026-04-20T10:00:00.000Z"
-}
-```
-
-**Errors**
-
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing name |
-| 409 | `duplicate` | Name already exists |
-
----
-
-### PUT /api/verticals/:id
-
-Update a vertical. All fields optional (`name`, `iab_code`, `description`, `active`).
-
-```json
-{
-  "name": "Finance & Business",
-  "iab_code": "",
-  "description": "Updated description",
-  "active": true
-}
-```
-
-**Response** `200 OK` — returns the full updated vertical object with `iab_code`.
-
----
-
-### DELETE /api/verticals/:id
-
-Soft-delete a vertical (sets `active: false`). **Returns 409 when any active bundle references this vertical** — operator must edit those bundles first.
-
-**Response** `200 OK`
-
-```json
-{ "success": true }
-```
-
-**Errors**
-
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Vertical does not exist |
-| 409 | `referenced_by_bundle` | At least one bundle's `rules.vertical_ids` includes this id. Payload includes `error.bundles: [{id, name}]` listing the referencing bundles. |
-
----
-
 ## Categories
+
+The taxonomy is a single-collection tree. Tier-1 (top-level / `parent_id: null`)
+rows are the renamed "verticals" — 36 of them. Children carry their parent
+tier-1's `_id` in `parent_id`. Total 524 rows (36 tier-1 + 488 children, of
+which 466 are seeded from IAB Content Taxonomy 3.1 and 22 are operator-defined
+`source_tier: 'custom'` rows filling 5 IAB-leaf tier-1s with no descendants).
 
 ### GET /api/categories
 
-List categories. Seeded with 466 IAB Content Taxonomy 3.1 categories (274 canonical tier-3 + 131 tier-2 auto-lifts under tier-1s without tier-3 descendants + 61 approved tier-2 exceptions — AI, AR, VR, Robotics, Movies, Television, 51 Sports, 4 Video Gaming platforms).
+List categories.
 
 **Query Parameters**
 
@@ -761,7 +802,7 @@ List categories. Seeded with 466 IAB Content Taxonomy 3.1 categories (274 canoni
 |-----------|------|---------|-------------|
 | `page` | integer | `1` | Page number |
 | `page_size` | integer | `20` | Items per page (max 100) |
-| `vertical_id` | string | -- | Filter by parent vertical |
+| `parent_id` | string | -- | `null` (literal string) narrows to tier-1; a 24-hex id narrows to children of that parent. Malformed → 400. |
 | `active` | string | -- | `true` or `false` |
 
 **Response** `200 OK`
@@ -777,7 +818,7 @@ List categories. Seeded with 466 IAB Content Taxonomy 3.1 categories (274 canoni
       "id": "6650c...",
       "name": "Artificial Intelligence",
       "iab_code": "597",
-      "vertical_id": "6650a...",
+      "parent_id": "6650a...",
       "description": "",
       "is_system": true,
       "active": true,
@@ -791,36 +832,36 @@ List categories. Seeded with 466 IAB Content Taxonomy 3.1 categories (274 canoni
 
 ### POST /api/categories
 
-Create a category.
+Create a category. Omit `parent_id` (or set to `null`) to create a tier-1 (top-level / renamed "vertical") row.
 
 **Request Body**
 
 ```json
 {
   "name": "Quantum Computing",
-  "vertical_id": "6650a...",
+  "parent_id": "6650a...",
   "iab_code": "597-custom",
   "description": "Quantum hardware and algorithms"
 }
 ```
 
-**Required**: `name`, `vertical_id`
+**Required**: `name`. `parent_id` is optional.
 
-**Response** `201 Created` -- returns the created category object.
+**Response** `201 Created` -- returns the created category object with `parent_id`.
 
 **Errors**
 
 | Status | Code | When |
 |--------|------|------|
-| 400 | `validation_error` | Missing name or vertical_id |
-| 404 | `not_found` | Vertical does not exist |
+| 400 | `validation_error` | Missing name, malformed JSON body, or malformed `parent_id` |
+| 404 | `not_found` | Parent category does not exist |
 | 409 | `duplicate` | Category name already exists |
 
 ---
 
 ### PUT /api/categories/:id
 
-Update a category. All fields optional: `name`, `iab_code`, `vertical_id`, `description`, `active`.
+Update a category. All fields optional: `name`, `iab_code`, `parent_id` (null moves to tier-1), `description`, `active`. Cycle-checked: a category cannot be its own parent.
 
 **Response** `200 OK` -- returns the full updated category object.
 
@@ -866,7 +907,7 @@ Blocks if the category is referenced by any content bundle — operator must edi
 
 ### GET /api/tags
 
-List tags.
+List tags. Tags are flat post-collapse — no parent dimension.
 
 **Query Parameters**
 
@@ -874,8 +915,9 @@ List tags.
 |-----------|------|---------|-------------|
 | `page` | integer | `1` | Page number |
 | `page_size` | integer | `20` | Items per page (max 100) |
-| `vertical_id` | string | -- | Filter by vertical |
 | `search` | string | -- | Search tag names (case-insensitive) |
+| `sort` | string | `name` | `name` \| `usage_count` \| `created_at` |
+| `order` | string | -- | `asc` \| `desc` (default `asc` for `name`, `desc` for the other sorts) |
 | `include_usage` | string | -- | Set to `true` to include `usage_count` |
 
 **Response** `200 OK`
@@ -890,7 +932,7 @@ List tags.
     {
       "id": "6650d...",
       "name": "machine learning",
-      "vertical_id": "6650a..."
+      "created_at": "2026-04-15T00:00:00.000Z"
     }
   ]
 }
@@ -907,10 +949,7 @@ Create a tag. Names are auto-lowercased and trimmed.
 **Request Body**
 
 ```json
-{
-  "name": "Machine Learning",
-  "vertical_id": "6650a..."
-}
+{ "name": "Machine Learning" }
 ```
 
 **Required**: `name`
@@ -920,8 +959,7 @@ Create a tag. Names are auto-lowercased and trimmed.
 ```json
 {
   "id": "6650d...",
-  "name": "machine learning",
-  "vertical_id": "6650a..."
+  "name": "machine learning"
 }
 ```
 
@@ -936,7 +974,7 @@ Create a tag. Names are auto-lowercased and trimmed.
 
 ### PUT /api/tags/:id
 
-Update a tag. Fields: `name`, `vertical_id`.
+Update a tag. Fields: `name`.
 
 **Response** `200 OK` -- returns the updated tag object.
 
@@ -1089,8 +1127,7 @@ List bundles.
       "description": "Content about AI applications in medicine",
       "active": true,
       "rules": {
-        "vertical_ids": ["6650b..."],
-        "category_ids": ["6650c...", "6650f..."],
+        "category_ids": ["6650a...", "6650c...", "6650f..."],
         "tag_ids": ["6650d...", "6650e..."]
       },
       "content_count": 47,
@@ -1105,7 +1142,7 @@ List bundles.
 **curl**
 
 ```bash
-curl "http://localhost:3000/api/bundles?active=true"
+curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/bundles?active=true"
 ```
 
 ---
@@ -1136,43 +1173,40 @@ Create a bundle.
   "description": "Content about AI applications in medicine",
   "active": true,
   "rules": {
-    "vertical_ids": ["6650b..."],
-    "category_ids": ["6650c..."],
+    "category_ids": ["6650a...", "6650c..."],
     "tag_ids": ["6650d...", "6650e..."]
   }
 }
 ```
 
-**Rules shape (3 dimensions):**
-- `vertical_ids[]` — OR within: content must have its `vertical_id` in this set.
-- `category_ids[]` — OR within: content must share at least one category id.
+**Rules shape (2 dimensions, post-collapse 2026-04-29):**
+- `category_ids[]` — OR within: content must share at least one category id (a tier-1 / `parent_id:null` id matches every item that classified into that broad bucket — the renamed "vertical" semantic).
 - `tag_ids[]` — OR within: content must share at least one tag id.
-- AND across: if multiple dims are specified, ALL specified dims must match.
+- AND across: if both dims are specified, BOTH must match.
 - Empty array = dim ignored.
 
-**Required**: `name`, and at least **one id total** across `rules.vertical_ids` + `rules.category_ids` + `rules.tag_ids`.
+**Required**: `name`, and at least **one id total** across `rules.category_ids` + `rules.tag_ids`.
 
 On successful create with `active !== false`, an inline re-evaluation runs immediately so `content_count` and every content item's `bundle_ids` reflect the new bundle.
 
-**Response** `201 Created` — returns the created bundle in `BundleResponse` shape (including `rules.vertical_ids`).
+**Response** `201 Created` — returns the created bundle in `BundleResponse` shape.
 
 **Errors**
 
 | Status | Code | When |
 |--------|------|------|
-| 400 | `validation_error` | Missing `name`, empty rules (all three arrays empty), or referenced vertical/category/tag does not exist. Body includes `missing_vertical_ids` / `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 400 | `validation_error` | Missing `name`, empty rules (both arrays empty), or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
 | 409 | `duplicate` | A bundle with this name already exists |
 
 **curl**
 
 ```bash
-curl -X POST http://localhost:3000/api/bundles \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/bundles \
   -H "Content-Type: application/json" \
   -d '{
     "name": "AI for Healthcare",
     "rules": {
-      "vertical_ids": ["6650b..."],
-      "category_ids": ["6650c..."],
+      "category_ids": ["6650a...", "6650c..."],
       "tag_ids": ["6650d..."]
     }
   }'
@@ -1194,7 +1228,7 @@ If `rules` or `active` changes, the server runs a **targeted** re-evaluation:
 
 | Status | Code | When |
 |--------|------|------|
-| 400 | `validation_error` | Empty rules (all 3 dims empty) or referenced vertical/category/tag does not exist. Body includes `missing_vertical_ids` / `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 400 | `validation_error` | Empty rules (both dims empty) or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
 | 404 | `not_found` | Bundle id unknown |
 | 409 | `duplicate` | Renaming to a name that already exists |
 
@@ -1242,7 +1276,7 @@ Force a full re-evaluation of the bundle against all content items. Refreshes `c
     "id": "6651c...",
     "name": "AI for Healthcare",
     "active": true,
-    "rules": { "vertical_ids": ["6650b..."], "category_ids": ["6650c..."], "tag_ids": ["6650d..."] },
+    "rules": { "category_ids": ["6650a...", "6650c..."], "tag_ids": ["6650d..."] },
     "content_count": 49,
     "last_evaluated_at": "2026-04-19T18:00:00.000Z",
     "created_at": "2026-04-15T09:12:00.000Z",
@@ -1273,14 +1307,13 @@ Count the active content items that would match a given rule set, without persis
 ```json
 {
   "rules": {
-    "vertical_ids": ["6650b..."],
-    "category_ids": ["6650c..."],
+    "category_ids": ["6650a...", "6650c..."],
     "tag_ids": ["6650d...", "6650e..."]
   }
 }
 ```
 
-All three arrays are optional; missing fields default to `[]`.
+Both arrays are optional; missing fields default to `[]`.
 
 **Response** `200 OK`
 
@@ -1302,8 +1335,8 @@ List AI-proposed taxonomy items awaiting human review.
 |-----------|------|---------|-------------|
 | `page` | integer | `1` | Page number |
 | `page_size` | integer | `20` | Items per page (max 100) |
-| `status` | string | `pending` | Filter: `pending`, `approved`, `rejected` |
-| `type` | string | -- | Filter: `vertical`, `category`, `audience_type`, `tag` |
+| `status` | string | `pending` | Filter: `pending` \| `approved` \| `rejected`. 400 on unknown. |
+| `type` | string | -- | Filter: `category` \| `audience_type` \| `tag`. 400 on unknown. The legacy `vertical` type was removed in the 2026-04-29 collapse — `category` suggestions with `parent_id: null` create tier-1 rows on approve. |
 
 **Response** `200 OK`
 
@@ -1337,6 +1370,8 @@ Approve or reject a taxonomy suggestion. Approving creates the taxonomy item aut
 
 **Request Body**
 
+`action` is validated against `["approve", "reject"]`. Omitting `action` defaults to `"approve"`. Any other value returns 400 `validation_error` (previously a typo silently approved).
+
 Approve (default):
 ```json
 {}
@@ -1347,19 +1382,14 @@ Reject:
 { "action": "reject" }
 ```
 
-For category suggestions, `vertical_id` is required:
+For category suggestions, `parent_id` is optional. Null/omitted creates a **tier-1** (top-level / renamed "vertical") row; otherwise the new category is created under that parent:
 ```json
-{ "vertical_id": "6650a..." }
+{ "parent_id": "6650a..." }
 ```
 
 For audience_type suggestions, `group` is required:
 ```json
 { "group": "profession" }
-```
-
-For tag suggestions, `vertical_id` is optional:
-```json
-{ "vertical_id": "6650a..." }
 ```
 
 **Response** `200 OK`
@@ -1487,10 +1517,9 @@ System metrics including content counts, source health, enrichment costs, and ta
   "active_sources": 8,
   "total_sources": 10,
   "failing_sources": 1,
-  "dedup_rate": 13.0,
-  "by_vertical": {
-    "Technology": 450,
-    "News": 320,
+  "by_top_category": {
+    "Technology & Computing": 450,
+    "News and Politics": 320,
     "Entertainment": 180,
     "Uncategorized": 50
   },
@@ -1499,7 +1528,8 @@ System metrics including content counts, source health, enrichment costs, and ta
     "video": 250,
     "discussion": 100,
     "social_post": 80,
-    "trend": 20
+    "trend": 20,
+    "unknown": 5
   },
   "by_category": {
     "Artificial Intelligence": 120,
@@ -1522,8 +1552,8 @@ System metrics including content counts, source health, enrichment costs, and ta
     ]
   },
   "taxonomy": {
-    "verticals": 9,
-    "categories": 130
+    "top_categories": 36,
+    "categories": 488
   },
   "total_bundles": 8,
   "active_bundles": 6
@@ -1536,13 +1566,21 @@ System metrics including content counts, source health, enrichment costs, and ta
 
 ### GET /health
 
-Simple health check endpoint.
+Liveness + readiness probe. Pings the MongoDB connection — returns **503** if the DB can't be reached so Cloud Grid won't keep a broken pod in rotation. The AI SDK is intentionally not pinged (calling it would cost tokens per probe).
 
 **Response** `200 OK`
 
 ```json
-{ "status": "ok" }
+{ "status": "ok", "checks": { "mongodb": "ok" }, "latency_ms": 4 }
 ```
+
+**Response** `503 Service Unavailable`
+
+```json
+{ "status": "error", "checks": { "mongodb": "fail" }, "error": { "code": "health_check_failed", "message": "database check failed" }, "latency_ms": 5001 }
+```
+
+The error envelope is intentionally generic. Driver internals (host, replica set, auth source) are logged server-side via `console.error` but never echoed in the response — `/health` is reachable from external probes and shouldn't leak topology.
 
 ---
 
@@ -1551,7 +1589,7 @@ Simple health check endpoint.
 1. **Create a source**
 
 ```bash
-curl -X POST http://localhost:3000/api/sources \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Hacker News",
@@ -1563,7 +1601,7 @@ curl -X POST http://localhost:3000/api/sources \
 2. **Fetch content from it**
 
 ```bash
-curl -X POST http://localhost:3000/api/sources/fetch \
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch \
   -H "Content-Type: application/json" \
   -d '{"source_id": "SOURCE_ID_FROM_STEP_1"}'
 ```
@@ -1571,17 +1609,17 @@ curl -X POST http://localhost:3000/api/sources/fetch \
 3. **Enrich with AI** (generates content briefs, classifies, estimates expiration)
 
 ```bash
-curl -X POST http://localhost:3000/api/content/enrich
+curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content/enrich
 ```
 
 4. **Query enriched content**
 
 ```bash
-curl "http://localhost:3000/api/content?enriched=true&content_type=article&page_size=5"
+curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content?enriched=true&content_type=article&page_size=5"
 ```
 
 5. **Check system stats**
 
 ```bash
-curl http://localhost:3000/api/stats
+curl http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/stats
 ```
