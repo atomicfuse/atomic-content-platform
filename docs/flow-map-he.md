@@ -256,7 +256,7 @@
 ### הסבר 5 דקות
 1. **HTTP call (סינכרוני אבל ארוך):** הדשבורד קורא ל-`POST /api/agent/generate` עם `{domain, count, branch: 'staging/<domain>'}`. הקריאה הזו פותחת חיבור ארוך (long polling) - עד 5 דקות.
 2. **Pipeline בתוך content-pipeline:**
-   - **א. Content Aggregator query:** API call ל-`content-aggregator-cloudgrid` עם `vertical` של האתר → רשימת נושאים פופולריים.
+   - **א. Content Aggregator query:** API call ל-`content-aggregator-v2` עם `vertical` של האתר → רשימת נושאים פופולריים.
    - **ב. Filter:** מסנן נושאים שכבר יש כתבות עליהם באתר (תוך הצלבה עם הכתבות הקיימות ב-`sites/<domain>/articles/`).
    - **ג. Scrape:** עבור כל נושא, מבצע fetch למקור, חולץ טקסט.
    - **ד. Generate:** קוראים ל-Anthropic SDK עם prompt שכולל:
