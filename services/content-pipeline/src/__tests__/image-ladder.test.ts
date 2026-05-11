@@ -121,7 +121,7 @@ describe("generateImageWithLadder", () => {
 
   // ── Tier C: Exhausted ──────────────────────────────────────────────────
 
-  it("returns exhausted when both Gemini and OpenAI fail", async () => {
+  it("returns exhausted when both Gemini and OpenAI fail (no thumbnail)", async () => {
     mockGemini
       .mockResolvedValueOnce(fail(true, "server_error:500"))
       .mockResolvedValueOnce(fail(true, "server_error:502"));
@@ -136,11 +136,12 @@ describe("generateImageWithLadder", () => {
         { provider: "gemini", reason: "server_error:500" },
         { provider: "gemini", reason: "server_error:502" },
         { provider: "openai", reason: "client_error:400" },
+        { provider: "thumbnail", reason: "no_source_url" },
       ]);
     }
   });
 
-  it("returns exhausted with permanent Gemini + OpenAI failure", async () => {
+  it("returns exhausted with permanent Gemini + OpenAI failure (no thumbnail)", async () => {
     mockGemini.mockResolvedValueOnce(fail(false, "no_image_in_response"));
     mockOpenAI.mockResolvedValueOnce(fail(false, "no_image_in_response"));
 
@@ -149,7 +150,8 @@ describe("generateImageWithLadder", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toBe("image_gen_exhausted");
-      expect(result.attempts).toHaveLength(2);
+      // gemini + openai + thumbnail fallback
+      expect(result.attempts).toHaveLength(3);
     }
   });
 
@@ -179,6 +181,7 @@ describe("generateImageWithLadder", () => {
       expect(result.attempts).toEqual([
         { provider: "gemini", reason: "client_error:403" },
         { provider: "openai", reason: "api_key_not_configured" },
+        { provider: "thumbnail", reason: "no_source_url" },
       ]);
     }
   });
@@ -194,6 +197,7 @@ describe("generateImageWithLadder", () => {
       expect(result.attempts).toEqual([
         { provider: "gemini", reason: "api_key_not_configured" },
         { provider: "openai", reason: "api_key_not_configured" },
+        { provider: "thumbnail", reason: "no_source_url" },
       ]);
     }
     expect(mockGemini).not.toHaveBeenCalled();

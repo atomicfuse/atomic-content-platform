@@ -34,9 +34,13 @@ services:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
     # Secrets (via `cloudgrid secrets set KEY=VALUE`):
-    #   GITHUB_TOKEN, GEMINI_API_KEY
+    #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY
     # REDIS_URL is auto-injected by `requires: redis: private`.
     # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
+    # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
+    #   articles) and OpenAI image generator (Tier B fallback). Without it,
+    #   the pipeline relies entirely on Claude + Gemini; if either fails,
+    #   the source thumbnail is used as a last-resort image fallback.
 
   # ---------------------------------------------------------------------------
   # scheduled-publisher — hourly cron that pings the pipeline. The pipeline
