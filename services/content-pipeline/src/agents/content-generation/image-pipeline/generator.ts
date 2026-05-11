@@ -2,7 +2,7 @@
  * Image Generator — three-tier ladder: Gemini → OpenAI → source thumbnail.
  *
  * Tier A: Gemini Flash (2 attempts, retry only on transient errors)
- * Tier B: OpenAI gpt-image-1 (1 attempt, no retry — this IS the fallback)
+ * Tier B: OpenAI gpt-image-2 (1 attempt, no retry — this IS the fallback)
  * Tier C: Source thumbnail (download + optimize — best-effort fallback)
  * Tier D: All exhausted → returns { ok: false, reason: "image_gen_exhausted" }
  *
@@ -18,7 +18,7 @@ import type { ImageGenerationResult, ImageLadderResult, ImageLadderAttemptLog } 
 
 // Model identifiers — included in logs and notifications for traceability
 const GEMINI_MODEL = "gemini-2.5-flash-image";
-const OPENAI_MODEL = "gpt-image-1";
+const OPENAI_MODEL = "gpt-image-2";
 
 export interface ImageGenInput {
   articleTitle: string;
@@ -153,7 +153,7 @@ function generateAltText(input: ImageGenInput): string {
  * Three-tier image generation ladder.
  *
  * Tier A: Gemini (up to 2 attempts — retry only on transient: 5xx/429/timeout)
- * Tier B: OpenAI gpt-image-1 (1 attempt — this IS the fallback)
+ * Tier B: OpenAI gpt-image-2 (1 attempt — this IS the fallback)
  * Tier C: Exhausted → { ok: false, reason: "image_gen_exhausted", attempts }
  */
 export async function generateImageWithLadder(
@@ -220,7 +220,7 @@ export async function generateImageWithLadder(
     }
   }
 
-  // ── Tier B: OpenAI gpt-image-1 (1 attempt) ────────────────────────────
+  // ── Tier B: OpenAI gpt-image-2 (1 attempt) ────────────────────────────
   if (openaiKey) {
     const openaiPrompt = buildImagePrompt(input, false); // no reference for OpenAI
     console.log(`[img-gen] Tier B: OpenAI attempt for "${input.articleTitle}"`);

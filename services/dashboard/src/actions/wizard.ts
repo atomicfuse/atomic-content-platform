@@ -186,7 +186,7 @@ export async function createSiteAndBuildStaging(
     domain: projectName,
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
-    groups: data.groups.length > 0 ? data.groups : ["adsense-default"],
+    groups: data.groups.length > 0 ? data.groups : ["mock-ads"],
     active: true,
     bundle_id: bundleId || undefined,
     iab_vertical_code: data.iabVerticalCode || undefined,

@@ -37,7 +37,10 @@ const placements = ((config.ads_config?.ad_placements as Placement[] | undefined
 );
 
 const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')] ?? 0;
-const slotInlineStyle = reserved ? `min-height:${reserved}px` : '';
+// Sidebar ads are below the fold and load via server island — fixed min-height
+// creates empty space when no ad is configured or the ad is smaller than the
+// reservation. Let sidebar slots size responsively (width: 100%, height: auto).
+const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${reserved}px` : '';
 const isSticky = position === 'sticky-bottom';
 ---
 

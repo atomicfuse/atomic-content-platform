@@ -1,15 +1,15 @@
 /**
- * OpenAI image generation via REST API (gpt-image-1).
+ * OpenAI image generation via REST API (gpt-image-2).
  * Fallback provider in the three-tier image generation ladder.
  */
 
 import type { ImageGenAttempt } from "../agents/content-generation/image-pipeline/types.js";
 
 const OPENAI_IMAGE_API = "https://api.openai.com/v1/images/generations";
-const OPENAI_IMAGE_MODEL = "gpt-image-1";
+const OPENAI_IMAGE_MODEL = "gpt-image-2";
 
 /**
- * Generate an image for the given prompt using OpenAI gpt-image-1.
+ * Generate an image for the given prompt using OpenAI gpt-image-2.
  *
  * Returns a structured result:
  * - `{ ok: true, data }` on success
