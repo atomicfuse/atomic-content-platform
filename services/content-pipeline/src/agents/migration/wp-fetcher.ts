@@ -13,12 +13,19 @@ export function extractBaseUrl(apiUrl: string): string {
 }
 
 /**
- * Fetch all articles from a WP REST API posts endpoint, handling pagination.
- * Forces per_page=100 and iterates through all pages using the X-WP-TotalPages header.
+ * Fetch articles from a WP REST API posts endpoint, handling pagination.
+ *
+ * Respects the `per_page` param from the URL if present (useful for testing
+ * with a small batch). Falls back to 100 per page and paginates all pages.
  */
 export async function fetchWpArticles(postsApiUrl: string): Promise<WpArticle[]> {
   const url = new URL(postsApiUrl);
-  url.searchParams.set("per_page", "100");
+  const userLimit = url.searchParams.has("per_page")
+    ? parseInt(url.searchParams.get("per_page")!, 10)
+    : null;
+
+  const perPage = userLimit ?? 100;
+  url.searchParams.set("per_page", String(perPage));
 
   const articles: WpArticle[] = [];
   let page = 1;
@@ -36,13 +43,16 @@ export async function fetchWpArticles(postsApiUrl: string): Promise<WpArticle[]>
       throw new Error(`WP API error: ${response.status} ${response.statusText} for ${url.toString()}`);
     }
 
-    const pageArticles: WpArticle[] = await response.json() as WpArticle[];
+    const pageArticles = (await response.json()) as WpArticle[];
     articles.push(...pageArticles);
 
     if (page === 1) {
       const header = response.headers.get("X-WP-TotalPages");
       totalPages = header ? parseInt(header, 10) : 1;
     }
+
+    // If the user explicitly set per_page, only fetch that first page
+    if (userLimit !== null) break;
 
     page++;
   } while (page <= totalPages);

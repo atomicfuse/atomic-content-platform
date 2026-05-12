@@ -70,7 +70,25 @@ describe("fetchWpArticles", () => {
     vi.restoreAllMocks();
   });
 
-  it("fetches a single page of articles", async () => {
+  it("respects per_page from URL and fetches only one page", async () => {
+    const articles = [makeArticle(1), makeArticle(2)];
+
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      jsonResponse(articles, { "X-WP-TotalPages": "5" }),
+    );
+
+    const result = await fetchWpArticles(
+      "https://example.com/wp-json/wp/v2/posts?per_page=2",
+    );
+
+    expect(result).toHaveLength(2);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+
+    const calledUrl = vi.mocked(globalThis.fetch).mock.calls[0]![0] as string;
+    expect(calledUrl).toContain("per_page=2");
+  });
+
+  it("defaults to per_page=100 and paginates when no per_page in URL", async () => {
     const articles = [makeArticle(1), makeArticle(2)];
 
     vi.mocked(globalThis.fetch).mockResolvedValueOnce(
@@ -78,17 +96,12 @@ describe("fetchWpArticles", () => {
     );
 
     const result = await fetchWpArticles(
-      "https://example.com/wp-json/wp/v2/posts?per_page=75",
+      "https://example.com/wp-json/wp/v2/posts",
     );
 
     expect(result).toHaveLength(2);
-    expect(result[0]!.id).toBe(1);
-    expect(result[1]!.id).toBe(2);
-
-    // Should have forced per_page=100
     const calledUrl = vi.mocked(globalThis.fetch).mock.calls[0]![0] as string;
     expect(calledUrl).toContain("per_page=100");
-    expect(calledUrl).toContain("page=1");
   });
 
   it("paginates across multiple pages", async () => {
