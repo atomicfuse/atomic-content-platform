@@ -26,7 +26,7 @@ import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
-import { handleMigrationRequest } from "../migration/handler.js";
+import { handleMigrationRequest, handleCreateSites } from "../migration/handler.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -217,6 +217,12 @@ async function handleRequest(
   // WordPress migration — SSE endpoint
   if (req.method === "POST" && req.url === "/wp-migrate") {
     await handleMigrationRequest(req, res);
+    return;
+  }
+
+  // WordPress migration — create sites from CSV
+  if (req.method === "POST" && req.url === "/wp-migrate/create-sites") {
+    await handleCreateSites(req, res);
     return;
   }
 

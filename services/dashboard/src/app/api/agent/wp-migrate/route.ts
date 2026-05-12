@@ -22,6 +22,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const body = (await req.json()) as {
     siteDomain: string;
     wpApiUrl: string;
+    branch?: string;
   };
 
   if (!body.siteDomain || !body.wpApiUrl) {
@@ -40,6 +41,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       body: JSON.stringify({
         siteDomain: body.siteDomain,
         wpApiUrl: body.wpApiUrl,
+        ...(body.branch ? { branch: body.branch } : {}),
       }),
     });
 

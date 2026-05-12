@@ -2,72 +2,67 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/* ------------------------------------------------------------------ */
-/*  Types                                                              */
-/* ------------------------------------------------------------------ */
-
 interface SiteEntry {
   domain: string;
   status: string;
-  vertical?: string;
-  company?: string;
-  custom_domain?: string;
 }
 
 type Phase =
   | "fetching"
   | "converting"
-  | "uploading"
+  | "generating-image"
+  | "uploading-image"
   | "committing"
-  | "done"
+  | "complete"
   | "error";
 
-interface ProgressEvent {
-  phase: Phase;
-  step: number;
-  total: number;
-  current: number;
-  message: string;
-  articleSlug?: string;
+interface SSEProgressEvent {
+  type: "progress" | "complete" | "error";
+  phase?: Phase;
+  totalArticles?: number;
+  processedArticles?: number;
+  currentArticleSlug?: string;
   error?: string;
+  successful?: number;
+  failed?: number;
 }
 
 const PHASE_LABELS: Record<Phase, string> = {
-  fetching: "Fetching posts from WordPress",
-  converting: "Converting to Markdown",
-  uploading: "Uploading articles",
+  fetching: "Fetching articles from WordPress",
+  converting: "Converting & cleaning up articles",
+  "generating-image": "Generating hero images",
+  "uploading-image": "Uploading images to R2",
   committing: "Committing to repository",
-  done: "Import complete",
+  complete: "Import complete",
   error: "Error",
 };
 
-const PHASE_ORDER: Phase[] = [
+const PIPELINE_PHASES: Phase[] = [
   "fetching",
   "converting",
-  "uploading",
+  "generating-image",
+  "uploading-image",
   "committing",
-  "done",
+  "complete",
 ];
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
-
 export function ImportPanel(): React.ReactElement {
-  /* --- state --- */
   const [sites, setSites] = useState<SiteEntry[]>([]);
   const [sitesLoading, setSitesLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState("");
   const [wpUrl, setWpUrl] = useState("");
+  const [target, setTarget] = useState<"staging" | "main">("staging");
   const [running, setRunning] = useState(false);
-  const [progress, setProgress] = useState<ProgressEvent | null>(null);
+  const [currentPhase, setCurrentPhase] = useState<Phase | null>(null);
+  const [totalArticles, setTotalArticles] = useState(0);
+  const [processedArticles, setProcessedArticles] = useState(0);
   const [log, setLog] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [result, setResult] = useState<{ successful: number; failed: number } | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
 
-  /* --- fetch sites on mount --- */
   useEffect(() => {
     let cancelled = false;
     (async (): Promise<void> => {
@@ -82,40 +77,32 @@ export function ImportPanel(): React.ReactElement {
         if (!cancelled) setSitesLoading(false);
       }
     })();
-    return (): void => {
-      cancelled = true;
-    };
+    return (): void => { cancelled = true; };
   }, []);
 
-  /* --- auto-scroll log --- */
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
 
-  /* --- handle site selection --- */
-  const handleSiteChange = useCallback(
-    (domain: string): void => {
-      setSelectedDomain(domain);
-      const match = sites.find((s) => s.domain === domain);
-      if (match?.custom_domain) {
-        setWpUrl(`https://${match.custom_domain}/wp-json/wp/v2`);
-      } else if (domain) {
-        setWpUrl(`https://${domain}/wp-json/wp/v2`);
-      } else {
-        setWpUrl("");
-      }
-    },
-    [sites],
-  );
+  const handleSiteChange = useCallback((domain: string): void => {
+    setSelectedDomain(domain);
+    setWpUrl(domain ? `https://${domain}/wp-json/wp/v2/posts` : "");
+  }, []);
 
-  /* --- start import --- */
+  const appendLog = useCallback((msg: string): void => {
+    setLog((prev) => [...prev, msg]);
+  }, []);
+
   const startImport = useCallback(async (): Promise<void> => {
     if (!selectedDomain || !wpUrl) return;
 
     setRunning(true);
-    setProgress(null);
+    setCurrentPhase(null);
+    setTotalArticles(0);
+    setProcessedArticles(0);
     setLog([]);
     setErrorMsg(null);
+    setResult(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -124,7 +111,11 @@ export function ImportPanel(): React.ReactElement {
       const res = await fetch("/api/agent/wp-migrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteDomain: selectedDomain, wpApiUrl: wpUrl }),
+        body: JSON.stringify({
+          siteDomain: selectedDomain,
+          wpApiUrl: wpUrl,
+          branch: target === "main" ? "main" : `staging/${selectedDomain}`,
+        }),
         signal: controller.signal,
       });
 
@@ -147,16 +138,27 @@ export function ImportPanel(): React.ReactElement {
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const payload = line.slice(6).trim();
-          if (!payload) continue;
-
           try {
-            const evt = JSON.parse(payload) as ProgressEvent;
-            setProgress(evt);
-            setLog((prev) => [...prev, evt.message]);
+            const evt = JSON.parse(line.slice(6)) as SSEProgressEvent;
 
-            if (evt.phase === "error") {
-              setErrorMsg(evt.error ?? evt.message);
+            if (evt.type === "progress" && evt.phase) {
+              setCurrentPhase(evt.phase);
+              if (evt.totalArticles) setTotalArticles(evt.totalArticles);
+              if (evt.processedArticles !== undefined) setProcessedArticles(evt.processedArticles);
+              if (evt.currentArticleSlug) {
+                appendLog(`[${evt.phase}] ${evt.currentArticleSlug}`);
+              }
+            } else if (evt.type === "complete") {
+              setCurrentPhase("complete");
+              setResult({
+                successful: evt.successful ?? 0,
+                failed: evt.failed ?? 0,
+              });
+              appendLog(`Import complete: ${evt.successful} succeeded, ${evt.failed} failed`);
+            } else if (evt.type === "error") {
+              setCurrentPhase("error");
+              setErrorMsg(evt.error ?? "Unknown error");
+              appendLog(`Error: ${evt.error}`);
             }
           } catch {
             /* skip malformed SSE lines */
@@ -165,47 +167,37 @@ export function ImportPanel(): React.ReactElement {
       }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        setLog((prev) => [...prev, "Import cancelled."]);
+        appendLog("Import cancelled.");
       } else {
-        const msg =
-          err instanceof Error ? err.message : "Unknown error";
+        const msg = err instanceof Error ? err.message : "Unknown error";
         setErrorMsg(msg);
-        setLog((prev) => [...prev, `Error: ${msg}`]);
+        appendLog(`Error: ${msg}`);
       }
     } finally {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [selectedDomain, wpUrl]);
+  }, [selectedDomain, wpUrl, target, appendLog]);
 
-  /* --- cancel --- */
   const cancelImport = useCallback((): void => {
     abortRef.current?.abort();
   }, []);
 
-  /* --- derived --- */
-  const isDone = progress?.phase === "done";
-  const isError = progress?.phase === "error";
-  const currentPhaseIdx = progress
-    ? PHASE_ORDER.indexOf(progress.phase)
-    : -1;
-
-  /* ---------------------------------------------------------------- */
-  /*  Render                                                           */
-  /* ---------------------------------------------------------------- */
+  const isDone = currentPhase === "complete";
+  const isError = currentPhase === "error";
+  const currentPhaseIndex = currentPhase ? PIPELINE_PHASES.indexOf(currentPhase) : -1;
 
   return (
-    <div className="max-w-3xl mx-auto py-10 px-4">
-      <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">
-        WordPress Import
-      </h1>
-      <p className="text-sm text-[var(--text-secondary)] mb-8">
-        Migrate content from a WordPress site into the network.
-      </p>
-
-      {/* ---- Form ---- */}
-      <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5 mb-8">
-        {/* Site selector */}
+    <div className="space-y-8">
+      <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Import Articles from WordPress
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Select a site and its WordPress API URL to migrate articles.
+          </p>
+        </div>
         <div>
           <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
             Target Site
@@ -222,31 +214,63 @@ export function ImportPanel(): React.ReactElement {
             {sites.map((s) => (
               <option key={s.domain} value={s.domain}>
                 {s.domain}
-                {s.company ? ` (${s.company})` : ""}
               </option>
             ))}
           </select>
         </div>
 
-        {/* WP API URL */}
         <div>
           <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
-            WordPress API URL
+            WordPress Posts API URL
           </label>
           <input
             type="text"
             value={wpUrl}
             onChange={(e): void => setWpUrl(e.target.value)}
             disabled={running}
-            placeholder="https://example.com/wp-json/wp/v2"
+            placeholder="https://example.com/wp-json/wp/v2/posts"
             className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] disabled:opacity-50"
           />
+        </div>
+
+        {/* Deploy target */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
+            Deploy To
+          </label>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={(): void => setTarget("staging")}
+              disabled={running}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
+                target === "staging"
+                  ? "border-cyan bg-cyan/10 text-cyan"
+                  : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Staging
+            </button>
+            <button
+              type="button"
+              onClick={(): void => setTarget("main")}
+              disabled={running}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
+                target === "main"
+                  ? "border-cyan bg-cyan/10 text-cyan"
+                  : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Live (main)
+            </button>
+          </div>
           <p className="text-xs text-[var(--text-tertiary)] mt-1">
-            The REST API base URL of the source WordPress site.
+            {target === "staging"
+              ? `Articles will be committed to staging/${selectedDomain || "<domain>"}. You can deploy to production after reviewing.`
+              : `Articles will be committed to both main and staging/${selectedDomain || "<domain>"}`}
           </p>
         </div>
 
-        {/* Actions */}
         <div className="flex items-center gap-3 pt-1">
           {!running ? (
             <button
@@ -267,22 +291,26 @@ export function ImportPanel(): React.ReactElement {
         </div>
       </div>
 
-      {/* ---- Progress steps ---- */}
-      {progress && (
-        <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 mb-8">
+      {/* Progress steps */}
+      {currentPhase && (
+        <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">
             Progress
+            {totalArticles > 0 && (
+              <span className="ml-2 font-normal text-[var(--text-secondary)]">
+                ({processedArticles}/{totalArticles} articles)
+              </span>
+            )}
           </h2>
 
           <div className="space-y-3">
-            {PHASE_ORDER.map((phase, idx) => {
-              const isCurrent = phase === progress.phase;
-              const isComplete = idx < currentPhaseIdx || isDone;
-              const isPending = idx > currentPhaseIdx && !isDone;
+            {PIPELINE_PHASES.map((phase, idx) => {
+              const isCurrent = phase === currentPhase;
+              const isComplete = idx < currentPhaseIndex || isDone;
+              const isPending = idx > currentPhaseIndex && !isDone;
 
               return (
                 <div key={phase} className="flex items-center gap-3">
-                  {/* indicator */}
                   <div
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                       isComplete
@@ -302,8 +330,6 @@ export function ImportPanel(): React.ReactElement {
                       idx + 1
                     )}
                   </div>
-
-                  {/* label */}
                   <span
                     className={`text-sm ${
                       isCurrent
@@ -315,41 +341,27 @@ export function ImportPanel(): React.ReactElement {
                   >
                     {PHASE_LABELS[phase]}
                   </span>
-
-                  {/* article progress for current phase */}
-                  {isCurrent && progress.total > 0 && (
-                    <span className="text-xs text-[var(--text-secondary)] ml-auto">
-                      {progress.current}/{progress.total}
-                    </span>
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* error badge */}
           {isError && errorMsg && (
             <div className="mt-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
               {errorMsg}
             </div>
           )}
 
-          {/* done summary */}
-          {isDone && (
+          {isDone && result && (
             <div className="mt-4 rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-400">
-              Import finished successfully.{" "}
-              {progress.current > 0 && (
-                <span className="font-medium">
-                  {progress.current} article{progress.current !== 1 ? "s" : ""}{" "}
-                  imported.
-                </span>
-              )}
+              Import finished: {result.successful} article{result.successful !== 1 ? "s" : ""} imported
+              {result.failed > 0 && `, ${result.failed} failed`}.
             </div>
           )}
         </div>
       )}
 
-      {/* ---- Log ---- */}
+      {/* Log */}
       {log.length > 0 && (
         <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">

@@ -1,11 +1,3 @@
-/**
- * Migration orchestrator — wires all modules together for one site.
- *
- * Fetches WP articles, converts HTML → Markdown, cleans up via Claude,
- * generates hero images via Gemini, uploads to R2, assembles .md files,
- * and batch-commits everything to the network repo.
- */
-
 import type { Octokit } from "@octokit/rest";
 import type {
   CsvSiteRow,
@@ -25,29 +17,19 @@ import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
 export interface MigrationConfig {
   anthropicApiKey: string;
   geminiApiKey: string;
   octokit: Octokit;
-  networkRepo: string;   // e.g. "atomicfuse/atomic-labs-network"
-  branch: string;        // e.g. "staging/travelbeautytips"
+  networkRepo: string;
+  branch: string;
+  /** If set, commit the same files to this branch too (e.g. staging + main). */
+  alsoCommitTo?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Orchestrator
-// ---------------------------------------------------------------------------
-
 /**
- * Run the full migration pipeline for a single site.
- *
- * 1. Fetch all WP articles
- * 2. Fetch WP categories
- * 3. For each article: convert, cleanup, generate image, build .md
- * 4. Batch commit all files to the network repo
+ * Run the full migration pipeline for a single site:
+ * fetch WP articles → convert → cleanup → generate images → commit.
  */
 export async function runMigration(
   site: CsvSiteRow,
@@ -57,8 +39,6 @@ export async function runMigration(
   const startedAt = Date.now();
   const siteId = domainToSiteId(site.name);
 
-  // R2 config is read from env vars inside uploadToR2 — it logs a warning if not configured
-
   const progress: MigrationProgress = {
     site: site.name,
     phase: "fetching",
@@ -67,149 +47,121 @@ export async function runMigration(
     startedAt,
   };
 
-  const emitProgress = (): void => {
-    onProgress?.({ ...progress });
-  };
+  const emit = (): void => { onProgress?.({ ...progress }); };
 
-  // ── Step 1: Fetch WP articles ──────────────────────────────────────────
-
-  emitProgress();
+  // Step 1: Fetch all WP articles
+  emit();
   console.log(`[migration] Fetching articles from ${site.postsApiUrl}`);
   const articles = await fetchWpArticles(site.postsApiUrl);
   progress.totalArticles = articles.length;
-  console.log(`[migration] Fetched ${articles.length} articles for ${site.name}`);
+  console.log(`[migration] Fetched ${articles.length} articles`);
 
-  // ── Step 2: Fetch WP categories ────────────────────────────────────────
-
+  // Step 2: Fetch WP categories referenced by articles
   const allCategoryIds = [...new Set(articles.flatMap((a) => a.categories))];
   const baseUrl = extractBaseUrl(site.postsApiUrl);
-  const wpCategoriesMap = await fetchWpCategories(baseUrl, allCategoryIds);
-  const wpCategoriesArray = [...wpCategoriesMap.values()];
-  console.log(`[migration] Fetched ${wpCategoriesMap.size} categories`);
+  const wpCategories = [...(await fetchWpCategories(baseUrl, allCategoryIds)).values()];
 
-  // ── Step 3: Process each article ───────────────────────────────────────
-
+  // Step 3: Process each article
   progress.phase = "converting";
-  emitProgress();
+  emit();
 
   const results: MigrationArticleResult[] = [];
   const files: BatchFileEntry[] = [];
 
   for (const article of articles) {
     const slug = article.slug;
-    const rawTitle = stripHtmlTags(article.title.rendered);
-
+    const title = stripHtmlTags(article.title.rendered);
     progress.currentArticleSlug = slug;
-    emitProgress();
+    progress.phase = "converting";
+    emit();
 
     try {
-      // 3a. HTML → Markdown
       const rawMarkdown = wpHtmlToMarkdown(article.content.rendered);
+      const excerpt = stripHtmlTags(article.excerpt.rendered);
+      const cleaned = await cleanupArticle(config.anthropicApiKey, title, rawMarkdown, excerpt);
+      const tags = mapCategoriesToTags(article.categories, wpCategories, site.menuItems);
 
-      // 3b. Claude cleanup
-      const rawExcerpt = stripHtmlTags(article.excerpt.rendered);
-      const cleaned = await cleanupArticle(
-        config.anthropicApiKey,
-        rawTitle,
-        rawMarkdown,
-        rawExcerpt,
-      );
-
-      // 3c. Map WP categories → menu tags
-      const tags = mapCategoriesToTags(
-        article.categories,
-        wpCategoriesArray,
-        site.menuItems,
-      );
-
-      // 3d. Generate hero image via Gemini
-      progress.phase = "generating-images";
-      emitProgress();
+      // Generate hero image
+      progress.phase = "generating-image";
+      emit();
 
       let imageGenerated = false;
-      let featuredImageUrl: string | undefined;
+      let featuredImagePath: string | undefined;
 
-      const imagePrompt = buildImagePrompt(rawTitle, cleaned.description, site.websiteCategory);
+      const imagePrompt = buildImagePrompt(title, cleaned.description, site.websiteCategory);
       const imageResult = await generateImageWithGemini(config.geminiApiKey, imagePrompt);
 
       if (imageResult.ok) {
-        // 3e. Optimize and upload to R2
-        progress.phase = "uploading-r2";
-        emitProgress();
+        progress.phase = "uploading-image";
+        emit();
 
         const optimized = await optimizeImage(imageResult.data);
         const r2Key = buildR2Key(siteId, slug, "webp");
         const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
         if (uploaded) {
-          featuredImageUrl = `/assets/images/${slug}.webp`;
+          featuredImagePath = `/assets/images/${slug}.webp`;
           imageGenerated = true;
         }
-      } else if (!imageResult.ok) {
-        console.warn(`[migration] Image generation failed for ${slug}: ${imageResult.reason}`);
+      } else {
+        console.warn(`[migration] Image gen failed for ${slug}: ${imageResult.reason}`);
       }
 
-      // 3f. Build SEO data from Yoast metadata
+      // Build frontmatter + body
       const yoast = article.yoast_head_json;
-      const authorName = yoast?.author ?? yoast?.twitter_misc?.["Written by"] ?? "Editorial Team";
+      const author = yoast?.author ?? yoast?.twitter_misc?.["Written by"] ?? "Editorial Team";
       const publishDate = yoast?.article_published_time ?? article.date;
-      const ogImage = yoast?.og_image?.[0]?.url;
 
       const mdInput: ArticleMdInput = {
-        title: rawTitle,
+        title,
         description: cleaned.description,
         slug,
         publishDate,
-        author: authorName,
+        author,
         tags,
         markdownBody: cleaned.markdown,
-        featuredImage: featuredImageUrl,
+        featuredImage: featuredImagePath,
         wpOriginalId: article.id,
         sourceUrl: article.link ?? `${baseUrl}/${slug}`,
         seo: {
           canonical: yoast?.canonical,
           og_title: yoast?.og_title,
           og_description: yoast?.og_description,
-          og_image: ogImage,
+          og_image: yoast?.og_image?.[0]?.url,
           twitter_card: yoast?.twitter_card,
         },
       };
 
-      // 3g. Assemble final .md
-      const mdContent = buildArticleMd(mdInput);
-      const filePath = `sites/${siteId}/articles/${slug}.md`;
-      files.push({ path: filePath, content: mdContent });
+      files.push({
+        path: `sites/${siteId}/articles/${slug}.md`,
+        content: buildArticleMd(mdInput),
+      });
 
-      results.push({ slug, title: rawTitle, status: "success", imageGenerated });
+      results.push({ slug, title, status: "success", imageGenerated });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.error(`[migration] Error processing article ${slug}:`, errorMessage);
-      results.push({ slug, title: rawTitle, status: "error", error: errorMessage, imageGenerated: false });
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[migration] Error processing ${slug}:`, message);
+      results.push({ slug, title, status: "error", error: message, imageGenerated: false });
     }
 
-    // 3h. Update progress
     progress.processedArticles++;
-    progress.phase = "converting";
-    emitProgress();
+    emit();
   }
 
-  // ── Step 4: Batch commit ───────────────────────────────────────────────
-
+  // Step 4: Batch commit all articles
   if (files.length > 0) {
     progress.phase = "committing";
-    emitProgress();
+    emit();
+
+    const commitMsg = `feat(migration): import ${files.length} articles for ${site.name}`;
 
     console.log(`[migration] Committing ${files.length} articles to ${config.branch}`);
-    await commitBatch(
-      config.octokit,
-      config.networkRepo,
-      files,
-      [],  // no binary files — images go to R2
-      `feat(migration): import ${files.length} articles for ${site.name}`,
-      config.branch,
-    );
-  }
+    await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.branch);
 
-  // ── Done ───────────────────────────────────────────────────────────────
+    if (config.alsoCommitTo) {
+      console.log(`[migration] Also committing to ${config.alsoCommitTo}`);
+      await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.alsoCommitTo);
+    }
+  }
 
   const durationMs = Date.now() - startedAt;
   const successful = results.filter((r) => r.status === "success").length;
@@ -217,32 +169,16 @@ export async function runMigration(
 
   progress.phase = "complete";
   progress.completedAt = Date.now();
-  emitProgress();
+  emit();
 
-  console.log(
-    `[migration] Completed ${site.name}: ${successful} ok, ${failed} failed in ${(durationMs / 1000).toFixed(1)}s`,
-  );
+  console.log(`[migration] Done: ${successful} ok, ${failed} failed in ${(durationMs / 1000).toFixed(1)}s`);
 
-  return {
-    site: site.name,
-    totalArticles: articles.length,
-    successful,
-    failed,
-    results,
-    durationMs,
-  };
+  return { site: site.name, totalArticles: articles.length, successful, failed, results, durationMs };
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build an image generation prompt from article metadata.
- */
-function buildImagePrompt(title: string, description: string, vertical: string): string {
+function buildImagePrompt(title: string, description: string, category: string): string {
   return [
-    `Create a professional hero image for a ${vertical} article.`,
+    `Create a professional hero image for a ${category} article.`,
     `Title: "${title}"`,
     `Description: "${description}"`,
     "Style: Modern editorial photography, clean composition, vibrant colors.",
