@@ -19,8 +19,7 @@ import { cleanupArticle, mapCategoriesToTags } from "./article-cleanup.js";
 import { buildArticleMd, stripHtmlTags } from "./frontmatter-builder.js";
 import type { ArticleMdInput } from "./frontmatter-builder.js";
 import { domainToSiteId } from "./site-scaffolder.js";
-import { uploadImageToR2 } from "../../lib/r2-upload.js";
-import type { R2Config } from "../../lib/r2-upload.js";
+import { uploadToR2, buildR2Key } from "../../lib/r2-upload.js";
 import { generateImageWithGemini } from "../../lib/gemini.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
@@ -58,20 +57,7 @@ export async function runMigration(
   const startedAt = Date.now();
   const siteId = domainToSiteId(site.name);
 
-  // Build R2 config from env — image upload is best-effort
-  const r2Config: R2Config | null =
-    process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.CLOUDFLARE_ACCOUNT_ID
-      ? {
-          accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-          accessKeyId: process.env.R2_ACCESS_KEY_ID,
-          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-          bucket: process.env.R2_BUCKET ?? "atl-assets-prod",
-        }
-      : null;
-
-  if (!r2Config) {
-    console.warn("[migration] R2 not configured — images will be generated but not uploaded");
-  }
+  // R2 config is read from env vars inside uploadToR2 — it logs a warning if not configured
 
   const progress: MigrationProgress = {
     site: site.name,
@@ -146,18 +132,17 @@ export async function runMigration(
       const imagePrompt = buildImagePrompt(rawTitle, cleaned.description, site.websiteCategory);
       const imageResult = await generateImageWithGemini(config.geminiApiKey, imagePrompt);
 
-      if (imageResult.ok && r2Config) {
+      if (imageResult.ok) {
         // 3e. Optimize and upload to R2
         progress.phase = "uploading-r2";
         emitProgress();
 
         const optimized = await optimizeImage(imageResult.data);
-        try {
-          featuredImageUrl = await uploadImageToR2(r2Config, siteId, slug, optimized, "image/webp");
+        const r2Key = buildR2Key(siteId, slug, "webp");
+        const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
+        if (uploaded) {
+          featuredImageUrl = `/assets/images/${slug}.webp`;
           imageGenerated = true;
-        } catch (uploadErr) {
-          const uploadMsg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
-          console.warn(`[migration] R2 upload failed for ${slug}: ${uploadMsg}`);
         }
       } else if (!imageResult.ok) {
         console.warn(`[migration] Image generation failed for ${slug}: ${imageResult.reason}`);

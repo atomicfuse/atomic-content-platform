@@ -1,4 +1,11 @@
 export type * from "./types.js";
+export { parseCsvRow, parseColorPalette, parseGaInfo } from "./csv-parser.js";
+export { fetchWpArticles, fetchWpCategories, extractBaseUrl } from "./wp-fetcher.js";
+export { wpHtmlToMarkdown } from "./html-to-md.js";
+export { cleanupArticle, mapCategoriesToTags, buildCleanupPrompt, parseCleanupResponse } from "./article-cleanup.js";
+export { buildSiteYaml, domainToSiteId } from "./site-scaffolder.js";
+export { buildArticleMd, stripHtmlTags, estimateReadingTime } from "./frontmatter-builder.js";
 export { runMigration } from "./orchestrator.js";
 export type { MigrationConfig } from "./orchestrator.js";
+export { verifyMigrationFiles, validateArticleFrontmatter } from "./verify.js";
 export { handleMigrationRequest } from "./handler.js";
