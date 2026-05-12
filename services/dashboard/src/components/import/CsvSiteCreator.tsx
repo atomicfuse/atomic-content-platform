@@ -63,6 +63,49 @@ function splitCsvLine(line: string): string[] {
   return result;
 }
 
+const CSV_HEADERS = [
+  "Name",
+  "Website Category",
+  "Menu Items",
+  "IAB Top Categories (Vertical)",
+  "Sub Categories",
+  "Color Palette",
+  "Logo",
+  "Favicon",
+  "Posts REST API (articles)",
+  "GA Info",
+];
+
+const CSV_EXAMPLE_ROW = [
+  "coolnews.dev",
+  "Technology",
+  "Tech, Science, Reviews",
+  "Technology & Computing",
+  "Software, Hardware",
+  "primary: #3B82F6, secondary: #1E40AF",
+  "https://coolnews.dev/logo.png",
+  "https://coolnews.dev/favicon.ico",
+  "https://coolnews.dev/wp-json/wp/v2/posts",
+  "328395426, G-HL2D8CQ0Z9, GT-5R65N74B",
+];
+
+function downloadTemplate(): void {
+  const escapeCsvField = (field: string): string =>
+    field.includes(",") || field.includes('"') ? `"${field.replace(/"/g, '""')}"` : field;
+
+  const header = CSV_HEADERS.map(escapeCsvField).join(",");
+  const example = CSV_EXAMPLE_ROW.map(escapeCsvField).join(",");
+  const csv = `${header}\n${example}\n`;
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "site-import-template.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function CsvSiteCreator(): React.ReactElement {
   const [sites, setSites] = useState<ParsedSiteRow[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
@@ -152,8 +195,8 @@ export function CsvSiteCreator(): React.ReactElement {
         </p>
       </div>
 
-      {/* File upload */}
-      <div>
+      {/* File upload + template */}
+      <div className="flex items-center gap-4">
         <input
           ref={fileRef}
           type="file"
@@ -162,6 +205,13 @@ export function CsvSiteCreator(): React.ReactElement {
           disabled={creating}
           className="block text-sm text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-cyan/10 file:text-cyan hover:file:bg-cyan/20 disabled:opacity-50"
         />
+        <button
+          type="button"
+          onClick={downloadTemplate}
+          className="shrink-0 text-sm text-[var(--text-secondary)] hover:text-cyan underline underline-offset-2 transition-colors"
+        >
+          Download template CSV
+        </button>
       </div>
 
       {/* Preview table */}
