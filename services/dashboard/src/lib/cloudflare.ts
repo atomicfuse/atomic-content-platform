@@ -398,6 +398,98 @@ export async function listWorkerCustomDomains(): Promise<WorkerCustomDomain[]> {
   return domains;
 }
 
+// --- DNS Records API ---
+
+interface CloudflareDnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+}
+
+/** Upsert a DNS TXT record on a zone. If a TXT record with the same name
+ *  and content prefix exists, update it; otherwise create a new one.
+ *  Used for facebook-domain-verification and similar verification records. */
+export async function upsertDnsTxtRecord(
+  zoneId: string,
+  name: string,
+  content: string,
+): Promise<void> {
+  // List existing TXT records matching this name
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+    { headers: getHeaders() },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list DNS records: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  // Find an existing record with the same content prefix (e.g. "facebook-domain-verification=")
+  const prefix = content.split("=")[0] + "=";
+  const existing = listData.result.find((r) => r.content.startsWith(prefix));
+
+  if (existing) {
+    if (existing.content === content) return; // Already correct
+    // Update
+    const updateResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
+      {
+        method: "PATCH",
+        headers: getHeaders(),
+        body: JSON.stringify({ content }),
+      },
+    );
+    const updateData = (await updateResp.json()) as CloudflareResponse<CloudflareDnsRecord>;
+    if (!updateData.success) {
+      throw new Error(
+        `Failed to update DNS TXT record: ${updateData.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+  } else {
+    // Create
+    const createResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records`,
+      {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify({ type: "TXT", name: "@", content }),
+      },
+    );
+    const createData = (await createResp.json()) as CloudflareResponse<CloudflareDnsRecord>;
+    if (!createData.success) {
+      throw new Error(
+        `Failed to create DNS TXT record: ${createData.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+  }
+}
+
+/** Delete a DNS TXT record from a zone by content prefix match.
+ *  No-op if no matching record exists. */
+export async function deleteDnsTxtRecord(
+  zoneId: string,
+  name: string,
+  contentPrefix: string,
+): Promise<void> {
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+    { headers: getHeaders() },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) return; // Best-effort
+
+  const existing = listData.result.find((r) => r.content.startsWith(contentPrefix));
+  if (!existing) return;
+
+  await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
+    { method: "DELETE", headers: getHeaders() },
+  );
+}
+
 // --- KV Direct Write API ---
 
 /** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).

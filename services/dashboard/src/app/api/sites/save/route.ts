@@ -6,6 +6,7 @@ import {
   readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
 } from "@/lib/github";
+import { upsertDnsTxtRecord, deleteDnsTxtRecord } from "@/lib/cloudflare";
 import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
@@ -246,6 +247,34 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
+
+    // Auto-upsert Facebook domain verification DNS TXT record when the
+    // tracking field is set and the site has a Cloudflare zone.
+    if (configUpdates?.tracking && site.zone_id) {
+      const fbVerification = (configUpdates.tracking as Record<string, unknown>)
+        .facebook_domain_verification as string | null | undefined;
+      try {
+        if (fbVerification) {
+          await upsertDnsTxtRecord(
+            site.zone_id,
+            domain,
+            `facebook-domain-verification=${fbVerification}`,
+          );
+        } else if (fbVerification === null || fbVerification === "") {
+          await deleteDnsTxtRecord(
+            site.zone_id,
+            domain,
+            "facebook-domain-verification=",
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[sites/save] Failed to upsert Facebook DNS TXT for ${domain}:`,
+          err instanceof Error ? err.message : err,
+        );
+        // Don't fail the save — DNS record can be added manually
+      }
+    }
 
     return NextResponse.json({ status: "ok" });
   } catch (err) {
