@@ -162,6 +162,10 @@ async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number>
     return 0;
   }
   return walkFiles(src, async (abs, rel) => {
+    // Skip images/ — article images are uploaded directly to R2 by the
+    // content pipeline. Only logos, favicons, and other non-image assets
+    // are synced from Git.
+    if (rel.startsWith('images/') || rel.startsWith('images\\')) return;
     const key = `${siteId}/assets/${rel}`;
     runWrangler([
       'r2',
