@@ -482,6 +482,36 @@ function isMergeConflictError(err: unknown): boolean {
   );
 }
 
+/** Binary file extensions that must be read as base64, not UTF-8. */
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
+  ".woff", ".woff2", ".ttf", ".eot", ".otf",
+  ".pdf", ".zip",
+]);
+
+function isBinaryFile(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+  return BINARY_EXTENSIONS.has(ext);
+}
+
+/**
+ * Read a file from the network repo, preserving binary content.
+ * Text files are read as UTF-8 strings; binary files as Buffers.
+ */
+async function readFilePreservingBinary(
+  path: string,
+  branch: string,
+): Promise<{ path: string; content: string | Buffer } | null> {
+  if (isBinaryFile(path)) {
+    const base64 = await readFileBase64(path, branch);
+    if (base64 === null) return null;
+    return { path, content: Buffer.from(base64, "base64") };
+  }
+  const text = await readFileContent(path, branch);
+  if (text === null) return null;
+  return { path, content: text };
+}
+
 /**
  * Merge staging to main, falling back to a direct file copy if there's
  * a merge conflict (409). In the conflict case, staging always wins —
@@ -498,19 +528,19 @@ async function mergeOrCopySiteToMain(
     if (!isMergeConflictError(err)) throw err;
 
     // Conflict: read all site files from staging and commit to main directly
-    const siteFiles: Array<{ path: string; content: string }> = [];
+    const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
     const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
 
     for (const entry of topLevel) {
       if (entry.type === "file") {
-        const content = await readFileContent(entry.path, stagingBranch);
-        if (content !== null) siteFiles.push({ path: entry.path, content });
+        const file = await readFilePreservingBinary(entry.path, stagingBranch);
+        if (file) siteFiles.push(file);
       } else if (entry.type === "dir") {
         const children = await listNetworkDirectory(entry.path, stagingBranch);
         for (const child of children) {
           if (child.type === "file") {
-            const content = await readFileContent(child.path, stagingBranch);
-            if (content !== null) siteFiles.push({ path: child.path, content });
+            const file = await readFilePreservingBinary(child.path, stagingBranch);
+            if (file) siteFiles.push(file);
           }
         }
       }
