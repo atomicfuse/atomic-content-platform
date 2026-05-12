@@ -364,6 +364,8 @@ export interface SiteConfig {
     site_name: string;
     /** Optional tagline shown in headers / meta tags. */
     site_tagline?: string | null;
+    /** Default author name for generated articles. */
+    author?: string;
     /**
      * @deprecated Legacy single-group field. Use `groups` array instead.
      * If only `group` is present, treated as `groups: [group]`.
