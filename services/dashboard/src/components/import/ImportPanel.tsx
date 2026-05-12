@@ -51,6 +51,7 @@ export function ImportPanel(): React.ReactElement {
   const [sitesLoading, setSitesLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState("");
   const [wpUrl, setWpUrl] = useState("");
+  const [target, setTarget] = useState<"staging" | "main">("staging");
   const [running, setRunning] = useState(false);
   const [currentPhase, setCurrentPhase] = useState<Phase | null>(null);
   const [totalArticles, setTotalArticles] = useState(0);
@@ -110,7 +111,11 @@ export function ImportPanel(): React.ReactElement {
       const res = await fetch("/api/agent/wp-migrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteDomain: selectedDomain, wpApiUrl: wpUrl }),
+        body: JSON.stringify({
+          siteDomain: selectedDomain,
+          wpApiUrl: wpUrl,
+          branch: target === "main" ? "main" : `staging/${selectedDomain}`,
+        }),
         signal: controller.signal,
       });
 
@@ -172,7 +177,7 @@ export function ImportPanel(): React.ReactElement {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [selectedDomain, wpUrl, appendLog]);
+  }, [selectedDomain, wpUrl, target, appendLog]);
 
   const cancelImport = useCallback((): void => {
     abortRef.current?.abort();
@@ -226,6 +231,44 @@ export function ImportPanel(): React.ReactElement {
             placeholder="https://example.com/wp-json/wp/v2/posts"
             className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] disabled:opacity-50"
           />
+        </div>
+
+        {/* Deploy target */}
+        <div>
+          <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
+            Deploy To
+          </label>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={(): void => setTarget("staging")}
+              disabled={running}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
+                target === "staging"
+                  ? "border-cyan bg-cyan/10 text-cyan"
+                  : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Staging
+            </button>
+            <button
+              type="button"
+              onClick={(): void => setTarget("main")}
+              disabled={running}
+              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
+                target === "main"
+                  ? "border-cyan bg-cyan/10 text-cyan"
+                  : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              }`}
+            >
+              Live (main)
+            </button>
+          </div>
+          <p className="text-xs text-[var(--text-tertiary)] mt-1">
+            {target === "staging"
+              ? `Articles will be committed to staging/${selectedDomain || "<domain>"}`
+              : "Articles will be committed directly to main (live site)"}
+          </p>
         </div>
 
         <div className="flex items-center gap-3 pt-1">
