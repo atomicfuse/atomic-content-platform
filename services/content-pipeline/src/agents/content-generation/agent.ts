@@ -396,6 +396,7 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
   return {
     domain: siteConfig.domain,
     siteName: siteConfig.site_name,
+    author: siteConfig.author,
     group: siteConfig.group,
     brief: siteConfig.brief,
   };
@@ -476,6 +477,7 @@ async function processItem(
   siteName: string,
   brief: SiteBrief,
   branch?: string,
+  author?: string,
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -611,7 +613,7 @@ async function processItem(
       type: articleType,
       status: articleStatus,
       publishDate,
-      author: "Editorial Team",
+      author: author || "Editorial Team",
       tags,
       slug,
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
@@ -672,7 +674,7 @@ export async function runContentGeneration(
 
   try {
     // Step 1: Read site brief
-    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
+    const { siteName, author: siteAuthor, brief } = await getSiteBrief(config, siteDomain, branch);
 
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);
@@ -801,7 +803,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor),
       (result) => result.status === "created",
     );
 

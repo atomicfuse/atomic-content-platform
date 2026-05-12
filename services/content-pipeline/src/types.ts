@@ -84,5 +84,7 @@ export interface SiteConfig {
   group: string;
   active: boolean;
   brief: SiteBrief;
+  /** Default author name for generated articles. */
+  author?: string;
   [key: string]: unknown;
 }

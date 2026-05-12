@@ -13,6 +13,7 @@ import type { SiteConfig, SiteBrief } from "../types.js";
 export interface SiteBriefData {
   domain: string;
   siteName: string;
+  author?: string;
   group: string;
   brief: SiteBrief;
 }
@@ -42,6 +43,7 @@ export async function readSiteBrief(
   return {
     domain: config.domain,
     siteName: config.site_name,
+    author: config.author,
     group: config.group,
     brief,
   };
