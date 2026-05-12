@@ -188,16 +188,16 @@ export function ImportPanel(): React.ReactElement {
   const currentPhaseIndex = currentPhase ? PIPELINE_PHASES.indexOf(currentPhase) : -1;
 
   return (
-    <div className="max-w-3xl mx-auto py-10 px-4">
-      <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-1">
-        WordPress Import
-      </h1>
-      <p className="text-sm text-[var(--text-secondary)] mb-8">
-        Migrate articles from a WordPress site into the network.
-      </p>
-
-      {/* Form */}
-      <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5 mb-8">
+    <div className="space-y-8">
+      <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Import Articles from WordPress
+          </h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            Select a site and its WordPress API URL to migrate articles.
+          </p>
+        </div>
         <div>
           <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
             Target Site
@@ -293,7 +293,7 @@ export function ImportPanel(): React.ReactElement {
 
       {/* Progress steps */}
       {currentPhase && (
-        <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 mb-8">
+        <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">
             Progress
             {totalArticles > 0 && (
