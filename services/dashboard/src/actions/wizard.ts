@@ -14,6 +14,9 @@ import {
   branchExists,
   triggerWorkflowViaPush,
   readFileBase64,
+  listNetworkDirectory,
+  readFileContent,
+  commitNetworkFiles,
 } from "@/lib/github";
 import {
   listZones,
@@ -468,6 +471,64 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 }
 
 /**
+ * Check if an error is a GitHub 409 merge conflict.
+ */
+function isMergeConflictError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    (err as { status: number }).status === 409
+  );
+}
+
+/**
+ * Merge staging to main, falling back to a direct file copy if there's
+ * a merge conflict (409). In the conflict case, staging always wins —
+ * the user explicitly edited these files.
+ */
+async function mergeOrCopySiteToMain(
+  domain: string,
+  stagingBranch: string,
+  commitMessage: string,
+): Promise<void> {
+  try {
+    await mergeBranchToMain(stagingBranch, commitMessage);
+  } catch (err: unknown) {
+    if (!isMergeConflictError(err)) throw err;
+
+    // Conflict: read all site files from staging and commit to main directly
+    const siteFiles: Array<{ path: string; content: string }> = [];
+    const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
+
+    for (const entry of topLevel) {
+      if (entry.type === "file") {
+        const content = await readFileContent(entry.path, stagingBranch);
+        if (content !== null) siteFiles.push({ path: entry.path, content });
+      } else if (entry.type === "dir") {
+        const children = await listNetworkDirectory(entry.path, stagingBranch);
+        for (const child of children) {
+          if (child.type === "file") {
+            const content = await readFileContent(child.path, stagingBranch);
+            if (content !== null) siteFiles.push({ path: child.path, content });
+          }
+        }
+      }
+    }
+
+    if (siteFiles.length === 0) {
+      throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
+    }
+
+    await commitNetworkFiles(
+      siteFiles,
+      `${commitMessage} (conflict resolved)`,
+      "main",
+    );
+  }
+}
+
+/**
  * Merge staging branch to main and update status to Ready.
  * The staging branch is KEPT (reset to main HEAD) so future edits
  * still go through the staging → preview → approve flow.
@@ -484,8 +545,8 @@ export async function goLive(domain: string): Promise<void> {
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // 3. Merge staging branch to main
-  await mergeBranchToMain(stagingBranch, `site(${domain}): go live`);
+  // 3. Merge staging branch to main (with conflict fallback)
+  await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
 
   // 4. Delete and recreate staging branch from the new main HEAD
   // This resets it to be in sync with production, ready for future edits
@@ -515,10 +576,11 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // Merge staging → main (triggers production deploy via GitHub Actions)
-  await mergeBranchToMain(
+  // Merge staging → main with conflict fallback (triggers production deploy via GitHub Actions)
+  await mergeOrCopySiteToMain(
+    domain,
     stagingBranch,
-    `site(${domain}): publish staging edits to production`
+    `site(${domain}): publish staging edits to production`,
   );
 
   // Reset staging branch to match main (clean slate for next edit cycle)
@@ -629,6 +691,46 @@ async function promoteSiteToProduction(siteId: string): Promise<number> {
   await bulkPutKV(KV_NAMESPACE_PROD, entries);
   console.log(`[promoteSiteToProduction] Copied ${entries.length} KV entries from staging to production for siteId="${siteId}"`);
   return entries.length;
+}
+
+/**
+ * Patch config.domain in both KV namespaces and site.yaml so canonical URLs,
+ * og:url, and Meta verification use the real custom domain instead of the
+ * siteId folder name. Best-effort — failures are logged, not thrown.
+ */
+async function patchSiteConfigDomain(siteId: string, customDomain: string): Promise<void> {
+  const configKey = `site-config:${siteId}`;
+
+  // Patch KV in both namespaces
+  for (const ns of [KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING]) {
+    try {
+      const raw = await getKVEntry(ns, configKey);
+      if (!raw) continue;
+      const config = JSON.parse(raw) as Record<string, unknown>;
+      config.domain = customDomain;
+      await putKVEntry(ns, configKey, JSON.stringify(config));
+    } catch (err) {
+      console.warn(`[patchSiteConfigDomain] Failed to patch KV (${ns})`, err);
+    }
+  }
+
+  // Update site.yaml on the staging branch so next seed-kv picks up the
+  // correct domain. Reads the current file, updates the domain field, commits.
+  const stagingBranch = `staging/${siteId}`;
+  try {
+    const siteConfig = await readSiteConfigFromGit(siteId, stagingBranch);
+    if (siteConfig) {
+      siteConfig.domain = customDomain;
+      await commitSiteFiles(
+        siteId,
+        [{ path: `sites/${siteId}/site.yaml`, content: stringifyYaml(siteConfig) }],
+        `dashboard: update domain to ${customDomain}`,
+        stagingBranch,
+      );
+    }
+  } catch (err) {
+    console.warn('[patchSiteConfigDomain] Failed to update site.yaml', err);
+  }
 }
 
 export async function attachCustomDomain(
@@ -755,6 +857,17 @@ export async function attachCustomDomain(
     console.error('[attachCustomDomain] KV promotion failed (site hostname is registered but config may be missing in prod KV)', err);
   }
 
+  // --- Step 4b: Patch config.domain to the real custom domain ---
+  // site.yaml stores domain as the siteId (e.g. "financenewsbase") but canonical
+  // URLs, og:url, and Meta verification need the real domain ("financenewsbase.com").
+  // Patch KV in both namespaces + update site.yaml on the staging branch.
+  try {
+    await patchSiteConfigDomain(domain, customDomain);
+    console.log(`[attachCustomDomain] Patched config.domain to "${customDomain}" in KV + site.yaml`);
+  } catch (err) {
+    console.error('[attachCustomDomain] config.domain patch failed (canonical URLs may use siteId instead of domain)', err);
+  }
+
   // --- Step 5: Best-effort email routing ---
   if (site.zone_id) {
     try {
@@ -810,6 +923,14 @@ export async function detachCustomDomain(
     );
   } catch (err) {
     console.warn('[detachCustomDomain] KV delete failed (stale entry is harmless)', err);
+  }
+
+  // --- Step 5: Revert config.domain back to siteId (best-effort) ---
+  try {
+    await patchSiteConfigDomain(domain, domain);
+    console.log(`[detachCustomDomain] Reverted config.domain to "${domain}" in KV + site.yaml`);
+  } catch (err) {
+    console.warn('[detachCustomDomain] config.domain revert failed', err);
   }
 
   revalidatePath('/');

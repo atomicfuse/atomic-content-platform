@@ -4,7 +4,7 @@ import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
 import AdSlot from '../components/AdSlot.astro';
-import { getConfig } from '../lib/config';
+import { getConfig, getCanonicalDomain } from '../lib/config';
 
 interface Props {
   title: string;
@@ -19,7 +19,7 @@ interface Props {
 
 const { title, description, author, publishDate, featuredImage, slug, noindex = false, canonicalOverride } = Astro.props;
 const config = getConfig(Astro);
-const canonicalUrl = canonicalOverride ?? `https://${config.domain}/${slug}`;
+const canonicalUrl = canonicalOverride ?? `https://${getCanonicalDomain(Astro)}/${slug}`;
 
 const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   year: 'numeric',

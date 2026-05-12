@@ -5,6 +5,7 @@ import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
 import { StagingTab } from "@/components/site-detail/StagingTab";
+import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -84,6 +85,12 @@ export default async function SiteDetailPage({
             : null
         }
       />
+      {(site.status === "Ready" || site.status === "Live") && site.staging_branch && (
+        <PendingChangesBar
+          domain={decodedDomain}
+          customDomain={site.custom_domain}
+        />
+      )}
       <SiteDetailTabs
         domain={decodedDomain}
         stagingTab={
