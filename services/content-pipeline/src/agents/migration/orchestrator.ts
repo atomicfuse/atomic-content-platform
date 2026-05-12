@@ -23,6 +23,8 @@ export interface MigrationConfig {
   octokit: Octokit;
   networkRepo: string;
   branch: string;
+  /** If set, commit the same files to this branch too (e.g. staging + main). */
+  alsoCommitTo?: string;
 }
 
 /**
@@ -150,15 +152,15 @@ export async function runMigration(
     progress.phase = "committing";
     emit();
 
+    const commitMsg = `feat(migration): import ${files.length} articles for ${site.name}`;
+
     console.log(`[migration] Committing ${files.length} articles to ${config.branch}`);
-    await commitBatch(
-      config.octokit,
-      config.networkRepo,
-      files,
-      [],
-      `feat(migration): import ${files.length} articles for ${site.name}`,
-      config.branch,
-    );
+    await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.branch);
+
+    if (config.alsoCommitTo) {
+      console.log(`[migration] Also committing to ${config.alsoCommitTo}`);
+      await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.alsoCommitTo);
+    }
   }
 
   const durationMs = Date.now() - startedAt;

@@ -62,6 +62,7 @@ export async function handleMigrationRequest(
   }
 
   const branch = body.branch ?? `staging/${body.siteDomain}`;
+  const alsoCommitTo = branch === "main" ? `staging/${body.siteDomain}` : undefined;
 
   const site: CsvSiteRow = {
     name: body.siteDomain,
@@ -90,6 +91,7 @@ export async function handleMigrationRequest(
     octokit,
     networkRepo,
     branch,
+    alsoCommitTo,
   };
 
   const onProgress = (progress: MigrationProgress): void => {

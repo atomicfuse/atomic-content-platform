@@ -266,8 +266,8 @@ export function ImportPanel(): React.ReactElement {
           </div>
           <p className="text-xs text-[var(--text-tertiary)] mt-1">
             {target === "staging"
-              ? `Articles will be committed to staging/${selectedDomain || "<domain>"}`
-              : "Articles will be committed directly to main (live site)"}
+              ? `Articles will be committed to staging/${selectedDomain || "<domain>"}. You can deploy to production after reviewing.`
+              : `Articles will be committed to both main and staging/${selectedDomain || "<domain>"}`}
           </p>
         </div>
 
