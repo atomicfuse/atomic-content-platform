@@ -37,6 +37,7 @@ import {
   enableEmailRouting,
   createEmailRoutingRule,
 } from "@/lib/email-routing";
+import { generateAuthorName } from "@/lib/author-names";
 
 // CONTENT_API_BASE_URL first: CloudGrid auto-injects CONTENT_AGGREGATOR_URL
 // as a platform read-only env pointing to a stale entity URL.
@@ -189,6 +190,7 @@ export async function createSiteAndBuildStaging(
     domain: projectName,
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
+    author: generateAuthorName(),
     groups: data.groups.length > 0 ? data.groups : ["mock-ads"],
     active: true,
     bundle_id: bundleId || undefined,
@@ -993,6 +995,7 @@ export async function saveStagingPreview(
 export interface StagingSiteConfig {
   siteName: string;
   siteTagline: string;
+  author?: string;
   audiences?: string[];
   /** Content Aggregator audience type IDs. */
   audienceIds?: string[];
@@ -1048,6 +1051,7 @@ export async function readStagingConfig(
   return {
     siteName: (config.site_name as string) ?? "",
     siteTagline: (config.site_tagline as string) ?? "",
+    author: (config.author as string) ?? "",
     audiences: (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []),
     tone: (brief?.tone as string) ?? "",
     topics: (brief?.topics as string[]) ?? [],

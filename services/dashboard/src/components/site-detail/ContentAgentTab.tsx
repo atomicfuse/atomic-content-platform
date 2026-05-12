@@ -82,6 +82,8 @@ export function ContentAgentTab({
   const initTone = brief?.tone ?? "";
   const [siteName, setSiteName] = useState(initSiteName);
   const [siteTagline, setSiteTagline] = useState(initSiteTagline);
+  const initAuthor = (siteConfig?.author as string) ?? "";
+  const [author, setAuthor] = useState(initAuthor);
   const [audiences, setAudiences] = useState<string[]>(() => {
     const raw = briefRaw?.audiences;
     if (Array.isArray(raw)) return raw as string[];
@@ -374,7 +376,7 @@ export function ContentAgentTab({
           domain,
           logoBase64: pendingLogo ?? null,
           faviconBase64: effectiveFavicon ?? null,
-          configUpdates: { siteName, siteTagline, audiences, audienceIds, tone },
+          configUpdates: { siteName, siteTagline, author, audiences, audienceIds, tone },
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
@@ -459,6 +461,7 @@ export function ContentAgentTab({
   const identityDirty =
     siteName !== initSiteName ||
     siteTagline !== initSiteTagline ||
+    author !== initAuthor ||
     tone !== initTone ||
     JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
     !!pendingLogo ||
@@ -483,6 +486,7 @@ export function ContentAgentTab({
       <div className="space-y-4">
         <Input label="Site Name" value={siteName} onChange={(e): void => setSiteName(e.target.value)} />
         <Input label="Tagline" value={siteTagline} onChange={(e): void => setSiteTagline(e.target.value)} />
+        <Input label="Default Author" value={author} onChange={(e): void => setAuthor(e.target.value)} placeholder="e.g. Sarah Mitchell" />
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Target Audiences
