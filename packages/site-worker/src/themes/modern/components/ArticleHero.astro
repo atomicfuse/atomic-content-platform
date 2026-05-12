@@ -12,7 +12,15 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
   <div class="article-hero-inner">
     <div class="article-hero-text">
       <h1 class="article-hero-title">{article.title}</h1>
-      <p class="article-hero-date">{date}</p>
+      <p class="article-hero-meta">
+        {article.author && (
+          <>
+            <span class="article-hero-author">By {article.author}</span>
+            <span class="article-hero-separator">&middot;</span>
+          </>
+        )}
+        <span class="article-hero-date">{date}</span>
+      </p>
     </div>
     {article.featuredImage && (
       <div class="article-hero-image-wrap">
@@ -44,10 +52,16 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
     line-height: 1.15;
     margin: 0 0 1rem;
   }
-  .article-hero-date {
+  .article-hero-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
     color: var(--color-accent, #f4c542);
     font-weight: 600;
-    margin: 0;
+  }
+  .article-hero-separator {
+    opacity: 0.6;
   }
   .article-hero-image-wrap img {
     width: 100%; height: auto;
