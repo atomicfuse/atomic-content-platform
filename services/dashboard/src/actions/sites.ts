@@ -18,6 +18,7 @@ import {
   deleteKVEntry,
   deleteKVByPrefix,
   deleteR2ObjectsByPrefix,
+  deleteR2Objects,
 } from "@/lib/cloudflare";
 import {
   KV_NAMESPACE_PROD,
@@ -256,7 +257,7 @@ export async function restoreSiteEntry(domain: string): Promise<void> {
   revalidatePath("/trash");
 }
 
-/** Delete a single article from the staging branch. */
+/** Delete a single article from the staging branch and clean up its R2 image. */
 export async function deleteArticleFromStaging(
   domain: string,
   slug: string
@@ -272,10 +273,21 @@ export async function deleteArticleFromStaging(
   await deleteFileFromBranch(filePath, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
+  // Best-effort R2 image cleanup
+  try {
+    const imageKey = `${domain}/assets/images/${slug}.webp`;
+    await deleteR2Objects(R2_BUCKET_PROD, [imageKey]);
+  } catch (err) {
+    console.warn(
+      `[sites] Failed to delete R2 image for ${domain}/${slug}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Delete multiple articles from the staging branch in a single commit + build. */
+/** Delete multiple articles from the staging branch and clean up their R2 images. */
 export async function deleteArticlesFromStaging(
   domain: string,
   slugs: string[]
@@ -292,6 +304,17 @@ export async function deleteArticlesFromStaging(
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
+
+  // Best-effort R2 image cleanup
+  try {
+    const imageKeys = slugs.map((slug) => `${domain}/assets/images/${slug}.webp`);
+    await deleteR2Objects(R2_BUCKET_PROD, imageKeys);
+  } catch (err) {
+    console.warn(
+      `[sites] Failed to delete R2 images for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 
   revalidatePath(`/sites/${domain}`);
 }
