@@ -2,30 +2,36 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runContentGeneration, ensureTopicTag } from "../agents/content-generation/agent.js";
 import type { AgentConfig } from "../lib/config.js";
 
-// Mock aggregator module
-vi.mock("../agents/content-generation/aggregator.js", () => ({
-  fetchWithFallback: vi.fn().mockResolvedValue([
-    {
+// Mock aggregator API client (v2)
+vi.mock("../agents/content-generation/api-client.js", () => ({
+  getContent: vi.fn().mockResolvedValue({
+    items: [{
+      id: "item-1",
       url: "https://example.com/test-article",
       title: "Test Article",
-      source: "https://rss.app/feeds/test.xml",
-      image_url: "https://img.com/hero.jpg",
-      published_date: "2026-03-30T10:00:00Z",
-      vertical: "Tech",
-      audience_type: "Adult 25-44",
-      content_format: "Opinion",
+      description: "A test article description.",
+      summary: "This is a detailed summary of the test article with enough content to pass the minimum length check for processing.",
+      thumbnail: { url: "https://img.com/hero.jpg" },
+      content_type: "article",
+      vertical: { name: "Tech" },
+      categories: [{ name: "Technology" }],
+      tags: [{ name: "AI" }],
+      audience_types: [{ name: "Adult 25-44" }],
+      source: { name: "TechNews" },
+      published_at: "2026-03-30T10:00:00Z",
       language: "EN",
-      freshness: "This week",
-      source_quality: "High",
-    },
-  ]),
-  filterByRelevance: vi.fn().mockImplementation((articles: unknown[]) => articles),
-  scrapeSourceContent: vi.fn().mockResolvedValue({
-    textBody: "Article content here.",
-    featuredImageUrl: null,
-    inlineImages: [],
-    youtubeEmbeds: [],
+    }],
+    total_count: 1,
+    total_returned: 1,
+    page: 1,
+    page_size: 20,
+    total_pages: 1,
   }),
+  getSettings: vi.fn().mockResolvedValue({
+    classification: { factual_tags: [] },
+    enrichment: { batch_size: 20 },
+  }),
+  resolveTopicTagIds: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../lib/site-brief.js", () => ({
@@ -60,6 +66,29 @@ vi.mock("../lib/ai.js", () => ({
       body: "Generated article body.",
     }),
   ),
+}));
+
+vi.mock("openai", () => ({
+  default: vi.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: vi.fn().mockResolvedValue({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                title: "Generated Title",
+                slug: "generated-title",
+                description: "A description.",
+                type: "standard",
+                tags: ["AI", "tech"],
+                body: "Generated article body.",
+              }),
+            },
+          }],
+        }),
+      },
+    },
+  })),
 }));
 
 vi.mock("../lib/writer.js", () => ({
@@ -138,9 +167,12 @@ describe("runContentGeneration", () => {
     // First call: readdir for getAllExistingArticles
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(readdir).mockResolvedValueOnce(["existing.md"] as any);
-    // First readFile: site.yaml for getSiteBrief (empty → falls through to mock)
+    // First readFile: dedup-index.json attempt (empty → falls through to full scan)
     vi.mocked(readFile).mockResolvedValueOnce("");
-    // Second readFile: existing.md for getAllExistingArticles (gray-matter format)
+    // Second readFile: site.yaml for getSiteBrief (empty → falls through to mock)
+    vi.mocked(readFile).mockResolvedValueOnce("");
+    // Third readFile: existing.md for getAllExistingArticles (gray-matter format)
+    // URL must match the mock item's URL for dedup to work
     vi.mocked(readFile).mockResolvedValueOnce(
       `---\ntitle: Test Article\nsource_url: https://example.com/test-article\n---\nBody`,
     );
@@ -152,7 +184,7 @@ describe("runContentGeneration", () => {
 
     expect(result.results).toHaveLength(1);
     expect(result.results[0]!.status).toBe("skipped");
-    expect(result.results[0]!.reason).toBe("all articles already processed");
+    expect(result.results[0]!.reason).toBe("all items already processed");
     expect(result.duplicateCount).toBe(1);
     expect(result.availableNew).toBe(0);
   });

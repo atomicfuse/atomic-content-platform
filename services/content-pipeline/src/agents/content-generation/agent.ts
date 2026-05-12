@@ -509,8 +509,16 @@ async function processItem(
     } catch (primaryErr) {
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
       console.warn(`[agent] ${primary.name} failed for "${item.title}", falling back to ${fallback.name}: ${msg}`);
-      generated = await fallback.generate(item, genConfig);
-      actualGenerator = fallback.name as "claude" | "openai";
+      try {
+        generated = await fallback.generate(item, genConfig);
+        actualGenerator = fallback.name as "claude" | "openai";
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        throw new Error(
+          `Both generators failed for "${item.title}": ` +
+          `${primary.name}: ${msg} | ${fallback.name}: ${fallbackMsg}`,
+        );
+      }
     }
 
     // Step 3: Generate slug (from SEO module, then deduplicate)
@@ -646,7 +654,10 @@ async function processItem(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[agent] Failed to process item "${item.title}":`, message);
+    console.error(`[agent] Failed to process item "${item.title}" (${siteDomain}):`, message);
+    if (err instanceof Error && err.stack) {
+      console.error(`[agent] Stack trace:`, err.stack);
+    }
     return { status: "error", message };
   }
 }
