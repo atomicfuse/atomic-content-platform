@@ -39,10 +39,11 @@ export async function generateContent(
       );
       useCloudGrid = true;
       return (result as { text: string }).text;
-    } catch {
+    } catch (err) {
       if (useCloudGrid === true) {
-        // Was working before — rethrow
-        throw new Error("CloudGrid AI Gateway error");
+        // Was working before — rethrow with details
+        const detail = err instanceof Error ? err.message : String(err);
+        throw new Error(`CloudGrid AI Gateway error: ${detail}`);
       }
       // First attempt failed — fall back to Anthropic SDK
       useCloudGrid = false;

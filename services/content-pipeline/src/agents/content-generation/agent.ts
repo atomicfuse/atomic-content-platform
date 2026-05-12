@@ -396,6 +396,7 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
   return {
     domain: siteConfig.domain,
     siteName: siteConfig.site_name,
+    author: siteConfig.author,
     group: siteConfig.group,
     brief: siteConfig.brief,
   };
@@ -476,6 +477,7 @@ async function processItem(
   siteName: string,
   brief: SiteBrief,
   branch?: string,
+  author?: string,
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -507,8 +509,16 @@ async function processItem(
     } catch (primaryErr) {
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
       console.warn(`[agent] ${primary.name} failed for "${item.title}", falling back to ${fallback.name}: ${msg}`);
-      generated = await fallback.generate(item, genConfig);
-      actualGenerator = fallback.name as "claude" | "openai";
+      try {
+        generated = await fallback.generate(item, genConfig);
+        actualGenerator = fallback.name as "claude" | "openai";
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        throw new Error(
+          `Both generators failed for "${item.title}": ` +
+          `${primary.name}: ${msg} | ${fallback.name}: ${fallbackMsg}`,
+        );
+      }
     }
 
     // Step 3: Generate slug (from SEO module, then deduplicate)
@@ -611,7 +621,7 @@ async function processItem(
       type: articleType,
       status: articleStatus,
       publishDate,
-      author: "Editorial Team",
+      author: author || "Editorial Team",
       tags,
       slug,
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
@@ -644,7 +654,10 @@ async function processItem(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[agent] Failed to process item "${item.title}":`, message);
+    console.error(`[agent] Failed to process item "${item.title}" (${siteDomain}):`, message);
+    if (err instanceof Error && err.stack) {
+      console.error(`[agent] Stack trace:`, err.stack);
+    }
     return { status: "error", message };
   }
 }
@@ -672,7 +685,7 @@ export async function runContentGeneration(
 
   try {
     // Step 1: Read site brief
-    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
+    const { siteName, author: siteAuthor, brief } = await getSiteBrief(config, siteDomain, branch);
 
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);
@@ -801,7 +814,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor),
       (result) => result.status === "created",
     );
 

@@ -18,6 +18,7 @@ import {
   deleteKVEntry,
   deleteKVByPrefix,
   deleteR2ObjectsByPrefix,
+  deleteR2Objects,
 } from "@/lib/cloudflare";
 import {
   KV_NAMESPACE_PROD,
@@ -256,7 +257,28 @@ export async function restoreSiteEntry(domain: string): Promise<void> {
   revalidatePath("/trash");
 }
 
-/** Delete a single article from the staging branch. */
+/** Build R2 object key for an article's featured image. */
+function articleImageKey(domain: string, slug: string): string {
+  return `${domain}/assets/images/${slug}.webp`;
+}
+
+/** Best-effort deletion of article images from both R2 buckets. */
+async function deleteArticleImages(domain: string, slugs: string[]): Promise<void> {
+  const keys = slugs.map((s) => articleImageKey(domain, s));
+  try {
+    await Promise.all([
+      deleteR2Objects(R2_BUCKET_PROD, keys),
+      deleteR2Objects(R2_BUCKET_STAGING, keys),
+    ]);
+  } catch (err) {
+    console.warn(
+      `[sites] Failed to delete R2 images for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
+/** Delete a single article from the staging branch and clean up its R2 image. */
 export async function deleteArticleFromStaging(
   domain: string,
   slug: string
@@ -271,11 +293,12 @@ export async function deleteArticleFromStaging(
   const filePath = `sites/${domain}/articles/${slug}.md`;
   await deleteFileFromBranch(filePath, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
+  await deleteArticleImages(domain, [slug]);
 
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Delete multiple articles from the staging branch in a single commit + build. */
+/** Delete multiple articles from the staging branch and clean up their R2 images. */
 export async function deleteArticlesFromStaging(
   domain: string,
   slugs: string[]
@@ -292,6 +315,7 @@ export async function deleteArticlesFromStaging(
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
+  await deleteArticleImages(domain, slugs);
 
   revalidatePath(`/sites/${domain}`);
 }

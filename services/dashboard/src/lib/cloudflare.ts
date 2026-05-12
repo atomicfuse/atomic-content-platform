@@ -722,3 +722,27 @@ export async function deleteR2ObjectsByPrefix(
 
   return deleted;
 }
+
+/** Delete specific R2 objects by exact keys.
+ *  Best-effort: returns the number of keys sent for deletion.
+ *  Returns 0 if R2 credentials are not configured. */
+export async function deleteR2Objects(
+  bucket: string,
+  keys: string[],
+): Promise<number> {
+  if (keys.length === 0) return 0;
+  const client = getR2Client();
+  if (!client) return 0;
+
+  await client.send(
+    new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: {
+        Objects: keys.map((k) => ({ Key: k })),
+        Quiet: true,
+      },
+    }),
+  );
+
+  return keys.length;
+}

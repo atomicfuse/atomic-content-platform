@@ -63,11 +63,17 @@ export async function processGenerateJob(
     config,
   );
 
-  // Surface total failure to BullMQ for retry
+  // Surface total failure to BullMQ for retry — but only actual errors,
+  // not skipped items (duplicates, no aggregator results, non-English, etc.)
   const created = result.results.filter((r) => r.status === "created").length;
-  if (created === 0 && result.results.length > 0) {
+  const errors = result.results.filter((r) => r.status === "error");
+  if (created === 0 && errors.length > 0) {
+    const reasons = errors
+      .map((r) => r.message ?? "unknown")
+      .slice(0, 3)
+      .join("; ");
     throw new Error(
-      `All ${result.results.length} articles failed for ${siteDomain}`,
+      `All ${errors.length} article(s) failed for ${siteDomain}: ${reasons}`,
     );
   }
 

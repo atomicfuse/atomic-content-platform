@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { createGitHubClient, commitFile, commitBatch, parseRepo } from "./github.js";
-import type { GitHubConfig, BatchFileEntry, BatchBinaryEntry } from "./github.js";
+import { createGitHubClient, commitFile, commitBatch } from "./github.js";
+import { uploadToR2 } from "./r2-upload.js";
+import type { GitHubConfig, BatchFileEntry } from "./github.js";
 
 export type { BatchFileEntry };
 
@@ -50,7 +51,8 @@ export async function writeArticle(
 }
 
 /**
- * Write a binary asset (e.g. Gemini-generated image) to local filesystem or GitHub.
+ * Write a binary asset to local filesystem or R2.
+ * Local mode writes to disk; GitHub mode uploads directly to R2.
  */
 export async function writeAsset(
   config: WriterConfig,
@@ -58,42 +60,19 @@ export async function writeAsset(
   assetPath: string,
   data: Buffer,
 ): Promise<void> {
-  const filePath = `sites/${siteDomain}/${assetPath}`;
-
   if (shouldWriteLocal(config)) {
-    const fullPath = join(config.localNetworkPath!, filePath);
+    const fullPath = join(config.localNetworkPath!, `sites/${siteDomain}/${assetPath}`);
     await mkdir(dirname(fullPath), { recursive: true });
     await writeFile(fullPath, data);
     return;
   }
 
-  // Bypass commitFile: it re-encodes content via Buffer.from().toString("base64"),
-  // which would double-encode an already-base64 buffer. Call Octokit directly.
-  const octokit = createGitHubClient(config.github);
-  const { owner, repo: repoName } = parseRepo(config.github.repo);
-
-  let sha: string | undefined;
-  try {
-    const existing = await octokit.repos.getContent({
-      owner, repo: repoName, path: filePath,
-      ...(config.branch ? { ref: config.branch } : {}),
-    });
-    if ("sha" in existing.data) sha = existing.data.sha;
-  } catch { /* new file */ }
-
-  await octokit.repos.createOrUpdateFileContents({
-    owner,
-    repo: repoName,
-    path: filePath,
-    message: `feat(assets): add generated image ${assetPath}`,
-    content: data.toString("base64"),
-    ...(sha ? { sha } : {}),
-    ...(config.branch ? { branch: config.branch } : {}),
-  });
+  const r2Key = `${siteDomain}/${assetPath}`;
+  await uploadToR2(r2Key, data);
 }
 
 // ---------------------------------------------------------------------------
-// Batch write — single commit for multiple articles + assets
+// Batch write — articles to Git, images to R2
 // ---------------------------------------------------------------------------
 
 export interface PendingArticle {
@@ -109,8 +88,9 @@ export interface PendingAsset {
 }
 
 /**
- * Write multiple articles (and optional assets) in a SINGLE git commit.
- * Falls back to individual writes in local mode.
+ * Write multiple articles in a single git commit, uploading any assets
+ * directly to R2 (not Git). Falls back to individual file writes in
+ * local mode.
  *
  * `extraFiles` allows including additional text files (e.g. dedup-index.json)
  * in the same atomic commit.
@@ -145,7 +125,13 @@ export async function writeArticleBatch(
     return;
   }
 
-  // GitHub mode: single commit via Git Trees API
+  // GitHub mode: upload images to R2 directly, commit only text to Git
+  // Upload assets to R2 first (best-effort — failure doesn't block article commit)
+  for (const asset of assets) {
+    const r2Key = `${asset.siteDomain}/${asset.assetPath}`;
+    await uploadToR2(r2Key, asset.data);
+  }
+
   const textFiles: BatchFileEntry[] = [
     ...articles.map((a) => ({
       path: `sites/${a.siteDomain}/articles/${a.slug}.md`,
@@ -154,17 +140,13 @@ export async function writeArticleBatch(
     ...(extraFiles ?? []),
   ];
 
-  const binaryFiles: BatchBinaryEntry[] = assets.map((a) => ({
-    path: `sites/${a.siteDomain}/${a.assetPath}`,
-    base64: a.data.toString("base64"),
-  }));
-
+  // No binary files in Git commit — images are in R2
   const octokit = createGitHubClient(config.github);
   await commitBatch(
     octokit,
     config.github.repo,
     textFiles,
-    binaryFiles,
+    [],
     commitMessage,
     config.branch,
   );

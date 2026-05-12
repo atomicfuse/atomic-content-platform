@@ -120,7 +120,7 @@ describe("processGenerateJob", () => {
     });
 
     await expect(processGenerateJob(makeJob(), config)).rejects.toThrow(
-      /All 2 articles failed/,
+      /All 2 article\(s\) failed for test\.com: LLM timeout/,
     );
     // NOT an UnrecoverableError — BullMQ should retry
     try {
@@ -192,8 +192,8 @@ describe("processGenerateJob", () => {
 
   it("returns normally when all results are 'skipped' (no created, no error)", async () => {
     // All articles are duplicates → status "skipped", not "error".
-    // Since there are zero "error" results, the throw guard (created === 0 && results.length > 0)
-    // fires. But "skipped" articles aren't failures — this tests the guard behavior.
+    // Skipped results are NOT failures — retrying won't help (duplicates
+    // won't clear between attempts). The job should complete normally.
     const mockResult = {
       siteDomain: "test.com",
       requested: 3,
@@ -208,12 +208,8 @@ describe("processGenerateJob", () => {
     mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
     mockRunContentGeneration.mockResolvedValue(mockResult);
 
-    // The guard `created === 0 && results.length > 0` triggers because
-    // "skipped" is neither "created" nor "error". This IS a throw case
-    // because BullMQ should retry — maybe the duplicates clear next attempt.
-    await expect(processGenerateJob(makeJob(), config)).rejects.toThrow(
-      /All 2 articles failed/,
-    );
+    const result = await processGenerateJob(makeJob(), config);
+    expect(result).toBe(mockResult);
   });
 
   it("returns normally when results is empty but totalSourced > 0", async () => {
