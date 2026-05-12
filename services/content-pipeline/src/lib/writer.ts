@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { createGitHubClient, commitFile, commitBatch, parseRepo } from "./github.js";
+import { uploadToR2 } from "./r2-upload.js";
 import type { GitHubConfig, BatchFileEntry, BatchBinaryEntry } from "./github.js";
 
 export type { BatchFileEntry };
@@ -145,7 +146,13 @@ export async function writeArticleBatch(
     return;
   }
 
-  // GitHub mode: single commit via Git Trees API
+  // GitHub mode: upload images to R2 directly, commit only text to Git
+  // Upload assets to R2 first (best-effort — failure doesn't block article commit)
+  for (const asset of assets) {
+    const r2Key = `${asset.siteDomain}/${asset.assetPath}`;
+    await uploadToR2(r2Key, asset.data);
+  }
+
   const textFiles: BatchFileEntry[] = [
     ...articles.map((a) => ({
       path: `sites/${a.siteDomain}/articles/${a.slug}.md`,
@@ -154,17 +161,13 @@ export async function writeArticleBatch(
     ...(extraFiles ?? []),
   ];
 
-  const binaryFiles: BatchBinaryEntry[] = assets.map((a) => ({
-    path: `sites/${a.siteDomain}/${a.assetPath}`,
-    base64: a.data.toString("base64"),
-  }));
-
+  // No binary files in Git commit — images are in R2
   const octokit = createGitHubClient(config.github);
   await commitBatch(
     octokit,
     config.github.repo,
     textFiles,
-    binaryFiles,
+    [],
     commitMessage,
     config.branch,
   );
