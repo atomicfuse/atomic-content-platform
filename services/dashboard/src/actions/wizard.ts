@@ -14,6 +14,9 @@ import {
   branchExists,
   triggerWorkflowViaPush,
   readFileBase64,
+  listNetworkDirectory,
+  readFileContent,
+  commitNetworkFiles,
 } from "@/lib/github";
 import {
   listZones,
@@ -468,6 +471,64 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 }
 
 /**
+ * Check if an error is a GitHub 409 merge conflict.
+ */
+function isMergeConflictError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    (err as { status: number }).status === 409
+  );
+}
+
+/**
+ * Merge staging to main, falling back to a direct file copy if there's
+ * a merge conflict (409). In the conflict case, staging always wins —
+ * the user explicitly edited these files.
+ */
+async function mergeOrCopySiteToMain(
+  domain: string,
+  stagingBranch: string,
+  commitMessage: string,
+): Promise<void> {
+  try {
+    await mergeBranchToMain(stagingBranch, commitMessage);
+  } catch (err: unknown) {
+    if (!isMergeConflictError(err)) throw err;
+
+    // Conflict: read all site files from staging and commit to main directly
+    const siteFiles: Array<{ path: string; content: string }> = [];
+    const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
+
+    for (const entry of topLevel) {
+      if (entry.type === "file") {
+        const content = await readFileContent(entry.path, stagingBranch);
+        if (content !== null) siteFiles.push({ path: entry.path, content });
+      } else if (entry.type === "dir") {
+        const children = await listNetworkDirectory(entry.path, stagingBranch);
+        for (const child of children) {
+          if (child.type === "file") {
+            const content = await readFileContent(child.path, stagingBranch);
+            if (content !== null) siteFiles.push({ path: child.path, content });
+          }
+        }
+      }
+    }
+
+    if (siteFiles.length === 0) {
+      throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
+    }
+
+    await commitNetworkFiles(
+      siteFiles,
+      `${commitMessage} (conflict resolved)`,
+      "main",
+    );
+  }
+}
+
+/**
  * Merge staging branch to main and update status to Ready.
  * The staging branch is KEPT (reset to main HEAD) so future edits
  * still go through the staging → preview → approve flow.
@@ -484,8 +545,8 @@ export async function goLive(domain: string): Promise<void> {
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // 3. Merge staging branch to main
-  await mergeBranchToMain(stagingBranch, `site(${domain}): go live`);
+  // 3. Merge staging branch to main (with conflict fallback)
+  await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
 
   // 4. Delete and recreate staging branch from the new main HEAD
   // This resets it to be in sync with production, ready for future edits
@@ -515,10 +576,11 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // Merge staging → main (triggers production deploy via GitHub Actions)
-  await mergeBranchToMain(
+  // Merge staging → main with conflict fallback (triggers production deploy via GitHub Actions)
+  await mergeOrCopySiteToMain(
+    domain,
     stagingBranch,
-    `site(${domain}): publish staging edits to production`
+    `site(${domain}): publish staging edits to production`,
   );
 
   // Reset staging branch to match main (clean slate for next edit cycle)
