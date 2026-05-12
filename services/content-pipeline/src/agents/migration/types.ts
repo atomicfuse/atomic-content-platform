@@ -55,9 +55,18 @@ export interface CategoryMapping {
   atlMenuItemName: string;
 }
 
+export type MigrationPhase =
+  | "fetching"
+  | "converting"
+  | "generating-image"
+  | "uploading-image"
+  | "committing"
+  | "complete"
+  | "error";
+
 export interface MigrationProgress {
   site: string;
-  phase: "fetching" | "converting" | "generating-images" | "uploading-r2" | "committing" | "syncing" | "complete" | "error";
+  phase: MigrationPhase;
   totalArticles: number;
   processedArticles: number;
   currentArticleSlug?: string;

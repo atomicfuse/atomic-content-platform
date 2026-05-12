@@ -22,30 +22,43 @@ export function validateArticleFrontmatter(data: Record<string, unknown>): strin
   return errors;
 }
 
+interface VerificationCheck {
+  name: string;
+  passed: boolean;
+  details?: string;
+}
+
 export interface VerificationReport {
   site: string;
   totalArticles: number;
-  checks: Array<{ name: string; passed: boolean; details?: string }>;
+  checks: VerificationCheck[];
   passed: boolean;
 }
 
 export function verifyMigrationFiles(
+  site: string,
   mdContents: Array<{ path: string; content: string }>,
   expectedSlugs: string[],
   menuItems: string[],
 ): VerificationReport {
-  const checks: Array<{ name: string; passed: boolean; details?: string }> = [];
+  const checks: VerificationCheck[] = [];
 
-  // Check 1: Article count
-  const countMatch = mdContents.length === expectedSlugs.length;
+  // Parse all files once upfront
+  const parsed = mdContents.map((f) => ({
+    path: f.path,
+    ...matter(f.content),
+  }));
+
+  // 1. Article count
+  const countMatch = parsed.length === expectedSlugs.length;
   checks.push({
     name: "Article count match",
     passed: countMatch,
-    details: countMatch ? undefined : `Expected ${expectedSlugs.length}, got ${mdContents.length}`,
+    details: countMatch ? undefined : `Expected ${expectedSlugs.length}, got ${parsed.length}`,
   });
 
-  // Check 2: Slug integrity
-  const fileSlugs = new Set(mdContents.map((f) => f.path.split("/").pop()?.replace(".md", "")));
+  // 2. Slug integrity
+  const fileSlugs = new Set(parsed.map((f) => f.path.split("/").pop()?.replace(".md", "")));
   const missingSlugs = expectedSlugs.filter((s) => !fileSlugs.has(s));
   checks.push({
     name: "Slug integrity",
@@ -53,12 +66,10 @@ export function verifyMigrationFiles(
     details: missingSlugs.length > 0 ? `Missing: ${missingSlugs.slice(0, 5).join(", ")}` : undefined,
   });
 
-  // Check 3: Frontmatter completeness
+  // 3. Frontmatter completeness
   let frontmatterErrors = 0;
-  for (const file of mdContents) {
-    const { data } = matter(file.content);
-    const errors = validateArticleFrontmatter(data);
-    if (errors.length > 0) frontmatterErrors++;
+  for (const file of parsed) {
+    if (validateArticleFrontmatter(file.data).length > 0) frontmatterErrors++;
   }
   checks.push({
     name: "Frontmatter completeness",
@@ -66,28 +77,28 @@ export function verifyMigrationFiles(
     details: frontmatterErrors > 0 ? `${frontmatterErrors} articles with missing fields` : undefined,
   });
 
-  // Check 4: No empty bodies
-  const emptyBodies = mdContents.filter((f) => matter(f.content).content.trim().length < 100);
+  // 4. No empty bodies
+  const emptyBodies = parsed.filter((f) => f.content.trim().length < 100);
   checks.push({
     name: "No empty bodies",
     passed: emptyBodies.length === 0,
     details: emptyBodies.length > 0 ? `${emptyBodies.length} articles with <100 chars body` : undefined,
   });
 
-  // Check 5: Category coverage
-  const noTags = mdContents.filter((f) => {
-    const { data } = matter(f.content);
-    const tags = (data.tags as string[]) ?? [];
-    return tags.length === 0 || !tags.some((t) => menuItems.map((m) => m.toLowerCase()).includes(t.toLowerCase()));
+  // 5. Category coverage — every article should have at least one tag matching a menu item
+  const menuLower = new Set(menuItems.map((m) => m.toLowerCase()));
+  const unmapped = parsed.filter((f) => {
+    const tags = (f.data.tags as string[]) ?? [];
+    return tags.length === 0 || !tags.some((t) => menuLower.has(t.toLowerCase()));
   });
   checks.push({
     name: "Category coverage",
-    passed: noTags.length === 0,
-    details: noTags.length > 0 ? `${noTags.length} articles with no matching menu category` : undefined,
+    passed: unmapped.length === 0,
+    details: unmapped.length > 0 ? `${unmapped.length} articles with no matching menu category` : undefined,
   });
 
-  // Check 6: No duplicate slugs
-  const slugs = mdContents.map((f) => matter(f.content).data.slug);
+  // 6. No duplicate slugs
+  const slugs = parsed.map((f) => f.data.slug as string);
   const dupes = slugs.filter((s, i) => slugs.indexOf(s) !== i);
   checks.push({
     name: "No duplicate slugs",
@@ -96,8 +107,8 @@ export function verifyMigrationFiles(
   });
 
   return {
-    site: "",
-    totalArticles: mdContents.length,
+    site,
+    totalArticles: parsed.length,
     checks,
     passed: checks.every((c) => c.passed),
   };

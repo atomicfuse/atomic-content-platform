@@ -1,112 +1,86 @@
-/**
- * HTTP handler for the WordPress migration endpoint.
- *
- * Accepts POST /wp-migrate with a JSON body containing a site row
- * and optional branch. Streams progress via Server-Sent Events (SSE).
- */
-
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Octokit } from "@octokit/rest";
-import { parseCsvRow } from "./csv-parser.js";
 import { runMigration } from "./orchestrator.js";
 import type { MigrationConfig } from "./orchestrator.js";
-import type { MigrationProgress } from "./types.js";
-
-// ---------------------------------------------------------------------------
-// SSE helpers
-// ---------------------------------------------------------------------------
+import type { CsvSiteRow, MigrationProgress } from "./types.js";
 
 function sendSSE(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-// ---------------------------------------------------------------------------
-// Handler
-// ---------------------------------------------------------------------------
+interface MigrationRequestBody {
+  siteDomain: string;
+  wpApiUrl: string;
+  branch?: string;
+  menuItems?: string[];
+  websiteCategory?: string;
+}
 
 /**
- * Handle POST /wp-migrate requests.
+ * POST /wp-migrate
  *
- * Request body: `{ siteRow: Record<string, string>, branch: string }`
- * Response: SSE stream with progress events, then a final complete/error event.
+ * Accepts `{ siteDomain, wpApiUrl, branch?, menuItems?, websiteCategory? }`.
+ * Streams SSE progress events back to the caller.
  */
 export async function handleMigrationRequest(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  // ── Read body ──────────────────────────────────────────────────────────
-
-  let body = "";
-  req.on("data", (chunk: Buffer) => { body += chunk; });
+  let rawBody = "";
+  req.on("data", (chunk: Buffer) => { rawBody += chunk; });
   await new Promise<void>((resolve) => req.on("end", resolve));
 
-  let payload: { siteRow?: unknown; branch?: unknown };
+  let body: MigrationRequestBody;
   try {
-    payload = JSON.parse(body) as typeof payload;
+    body = JSON.parse(rawBody) as MigrationRequestBody;
   } catch {
     res.writeHead(400, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Invalid JSON body" }));
     return;
   }
 
-  // ── Validate ───────────────────────────────────────────────────────────
-
-  const { siteRow, branch } = payload;
-
-  if (!siteRow || typeof siteRow !== "object" || Array.isArray(siteRow)) {
+  if (!body.siteDomain || !body.wpApiUrl) {
     res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "siteRow is required (object)" }));
+    res.end(JSON.stringify({ error: "siteDomain and wpApiUrl are required" }));
     return;
   }
-
-  if (!branch || typeof branch !== "string") {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "branch is required (string)" }));
-    return;
-  }
-
-  const site = parseCsvRow(siteRow as Record<string, string>);
-
-  if (!site.name || !site.postsApiUrl) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "siteRow must include Name and Posts REST API (articles)" }));
-    return;
-  }
-
-  // ── Env checks ─────────────────────────────────────────────────────────
 
   const githubToken = process.env.GITHUB_TOKEN;
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
   const networkRepo = process.env.NETWORK_REPO ?? "atomicfuse/atomic-labs-network";
 
-  if (!githubToken) {
+  if (!githubToken || !anthropicApiKey || !geminiApiKey) {
+    const missing = [
+      !githubToken && "GITHUB_TOKEN",
+      !anthropicApiKey && "ANTHROPIC_API_KEY",
+      !geminiApiKey && "GEMINI_API_KEY",
+    ].filter(Boolean).join(", ");
     res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "GITHUB_TOKEN not configured" }));
+    res.end(JSON.stringify({ error: `Missing env vars: ${missing}` }));
     return;
   }
 
-  if (!anthropicApiKey) {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }));
-    return;
-  }
+  const branch = body.branch ?? `staging/${body.siteDomain}`;
 
-  if (!geminiApiKey) {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "GEMINI_API_KEY not configured" }));
-    return;
-  }
-
-  // ── Set up SSE ─────────────────────────────────────────────────────────
+  const site: CsvSiteRow = {
+    name: body.siteDomain,
+    websiteCategory: body.websiteCategory ?? "General",
+    menuItems: body.menuItems ?? [],
+    iabCategories: [],
+    subCategories: [],
+    colorPalette: {},
+    logoUrl: "",
+    faviconUrl: "",
+    postsApiUrl: body.wpApiUrl,
+    gaInfo: {},
+  };
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
+    Connection: "keep-alive",
   });
-
-  // ── Run migration ──────────────────────────────────────────────────────
 
   const octokit = new Octokit({ auth: githubToken });
 
@@ -119,17 +93,17 @@ export async function handleMigrationRequest(
   };
 
   const onProgress = (progress: MigrationProgress): void => {
-    sendSSE(res, { type: "progress", progress });
+    sendSSE(res, { type: "progress", ...progress });
   };
 
   try {
     console.log(`[wp-migrate] Starting migration for ${site.name} → ${branch}`);
     const report = await runMigration(site, config, onProgress);
-    sendSSE(res, { type: "complete", report });
-    console.log(`[wp-migrate] Migration complete for ${site.name}: ${report.successful}/${report.totalArticles} articles`);
+    sendSSE(res, { type: "complete", ...report });
+    console.log(`[wp-migrate] Done: ${report.successful}/${report.totalArticles} articles`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[wp-migrate] Migration failed for ${site.name}:`, message);
+    console.error(`[wp-migrate] Failed for ${site.name}:`, message);
     sendSSE(res, { type: "error", error: message });
   }
 

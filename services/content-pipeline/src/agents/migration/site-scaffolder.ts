@@ -6,12 +6,10 @@ import type { CsvSiteRow } from "./types.js";
  * by stripping the TLD, removing non-alphanumeric chars, and lowercasing.
  */
 export function domainToSiteId(domain: string): string {
-  const stripped = domain
-    .trim()
-    .toLowerCase()
-    // Multi-part TLDs first, then single-part
-    .replace(/\.(co\.uk)$/, "")
-    .replace(/\.(com|net|org|io|tv|info|dev)$/, "");
+  const lower = domain.trim().toLowerCase();
+  const stripped = lower
+    .replace(/\.(co\.uk|co\.nz|com\.au)$/, "")  // multi-part TLDs first
+    .replace(/\.[a-z]{2,}$/, "");                // then any single-part TLD
 
   return stripped.replace(/[^a-z0-9]/g, "");
 }
