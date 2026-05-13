@@ -47,5 +47,14 @@ export interface ArticleFrontmatter {
     score_breakdown?: QualityScoreBreakdown;
     /** Brief note from the quality agent explaining the score. */
     quality_note?: string;
+    /** Per-article script injections. */
+    scripts?: ArticleScript[];
+}
+export type ArticleScriptPosition = "head" | "before-content" | "after-content" | `after-paragraph-${number}`;
+export interface ArticleScript {
+    id: string;
+    name: string;
+    position: ArticleScriptPosition;
+    content: string;
 }
 //# sourceMappingURL=article.d.ts.map
