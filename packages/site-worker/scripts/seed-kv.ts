@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { parse as parseYaml } from 'yaml';
 import { marked } from 'marked';
 
-import type { LayoutConfig, ResolvedConfig } from '@atomic-platform/shared-types';
+import type { ArticleScript, LayoutConfig, ResolvedConfig } from '@atomic-platform/shared-types';
 import {
   siteLookupKey,
   siteConfigKey,
@@ -207,6 +207,7 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
       type: (front.type as ArticleIndexEntry['type']) ?? 'standard',
       status: (front.status as ArticleIndexEntry['status']) ?? 'draft',
       featured: parseFeatured(front.featured),
+      scripts: Array.isArray(front.scripts) ? (front.scripts as ArticleScript[]) : undefined,
     };
     const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });
