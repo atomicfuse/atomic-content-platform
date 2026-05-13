@@ -76,7 +76,7 @@ function splitCode(raw?: string): { html: string; scripts: string[] } {
     >
       <Fragment set:html={html} />
       {scripts.map((code) => (
-        <script is:inline set:html={`window.addEventListener('load',function(){${code}});`} />
+        <script is:inline set:html={`if(document.readyState==='complete'){${code}}else{window.addEventListener('load',function(){${code}});}`} />
       ))}
     </div>
   );
@@ -99,7 +99,7 @@ function splitCode(raw?: string): { html: string; scripts: string[] } {
         >
           <Fragment set:html={html} />
           {scripts.map((code) => (
-            <script is:inline set:html={`window.addEventListener('load',function(){${code}});`} />
+            <script is:inline set:html={`if(document.readyState==='complete'){${code}}else{window.addEventListener('load',function(){${code}});}`} />
           ))}
         </div>
       );
