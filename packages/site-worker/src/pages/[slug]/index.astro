@@ -16,6 +16,7 @@ import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../l
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
+import { injectArticleScripts } from '../../lib/inject-scripts';
 
 const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca']);
 
@@ -51,6 +52,10 @@ const articleBodyWithInlineAds = article
       (config.ads_config?.ad_placements as Array<{ id?: string; position?: string }> | undefined) ?? [],
     )
   : '';
+
+const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article
+  ? injectArticleScripts(articleBodyWithInlineAds, article.frontmatter.scripts)
+  : { headScripts: '', bodyHtml: articleBodyWithInlineAds };
 
 // Compute related articles, latest articles, and category-list articles
 let related: ArticleIndexEntry[] = [];
@@ -110,6 +115,7 @@ if (article) {
         publishDate={article.frontmatter.publishDate}
       />
     </Fragment>
+    {articleHeadScripts && <Fragment slot="head" set:html={articleHeadScripts} />}
 
     <Header config={config} currentPath={`/${slug}`} />
     <ArticleHero article={article.frontmatter} />
@@ -117,7 +123,7 @@ if (article) {
     <main class="article-page">
       <div class="article-page-inner">
         <article class="article-prose prose">
-          <Fragment set:html={articleBodyWithInlineAds} />
+          <Fragment set:html={articleBodyFinal} />
           {article.frontmatter.tags && article.frontmatter.tags.length > 0 && (
             <p class="article-tags">{article.frontmatter.tags.map((t: string) => `#${t}`).join(' ')}</p>
           )}
