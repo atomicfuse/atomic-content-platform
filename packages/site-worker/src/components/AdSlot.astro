@@ -44,35 +44,66 @@ const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')]
 const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${reserved}px` : '';
 const isSticky = position === 'sticky-bottom';
 const staging = isStagingEnv(Astro);
+
+/**
+ * Split widget code into HTML (rendered immediately) and script content
+ * (deferred to window load so async SDK scripts in <head> are ready).
+ */
+function splitCode(raw?: string): { html: string; scripts: string[] } {
+  if (!raw) return { html: '', scripts: [] };
+  const scripts: string[] = [];
+  const html = raw.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (_match, body) => {
+    const trimmed = (body as string).trim();
+    if (trimmed) scripts.push(trimmed);
+    return '';
+  });
+  return { html, scripts };
+}
 ---
 
-{!isSticky && placements.map((p) => (
-  <div
-    data-ad-id={p.id ?? `${position}-${pageType}`}
-    data-ad-position={position}
-    data-ad-page-type={pageType}
-    data-ad-device={p.device ?? 'all'}
-    data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
-    data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
-    class={`atl-ad-slot atl-ad-${position}`}
-    style={slotInlineStyle}
-  ><Fragment set:html={staging ? '' : (p.code ?? '')} /></div>
-))}
+{!isSticky && placements.map((p) => {
+  const { html, scripts } = staging ? { html: '', scripts: [] } : splitCode(p.code);
+  return (
+    <div
+      data-ad-id={p.id ?? `${position}-${pageType}`}
+      data-ad-position={position}
+      data-ad-page-type={pageType}
+      data-ad-device={p.device ?? 'all'}
+      data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+      data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+      class={`atl-ad-slot atl-ad-${position}`}
+      style={slotInlineStyle}
+    >
+      <Fragment set:html={html} />
+      {scripts.map((code) => (
+        <script is:inline set:html={`window.addEventListener('load',function(){${code}});`} />
+      ))}
+    </div>
+  );
+})}
 
 {isSticky && placements.length > 0 && (
   <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
-    {placements.map((p) => (
-      <div
-        data-ad-id={p.id ?? `${position}-${pageType}`}
-        data-ad-position={position}
-        data-ad-page-type={pageType}
-        data-ad-device={p.device ?? 'all'}
-        data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
-        data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
-        class={`atl-ad-slot atl-ad-${position}`}
-        style={slotInlineStyle}
-      ><Fragment set:html={staging ? '' : (p.code ?? '')} /></div>
-    ))}
+    {placements.map((p) => {
+      const { html, scripts } = staging ? { html: '', scripts: [] } : splitCode(p.code);
+      return (
+        <div
+          data-ad-id={p.id ?? `${position}-${pageType}`}
+          data-ad-position={position}
+          data-ad-page-type={pageType}
+          data-ad-device={p.device ?? 'all'}
+          data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+          data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+          class={`atl-ad-slot atl-ad-${position}`}
+          style={slotInlineStyle}
+        >
+          <Fragment set:html={html} />
+          {scripts.map((code) => (
+            <script is:inline set:html={`window.addEventListener('load',function(){${code}});`} />
+          ))}
+        </div>
+      );
+    })}
     <button
       class="atl-ad-close"
       aria-label="Close advertisement"
