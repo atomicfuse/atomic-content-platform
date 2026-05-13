@@ -36,12 +36,4 @@ To help us assist you as quickly as possible, please include:
 - **Business or partnership inquiries**
 - **Privacy-related requests** -- please refer to our [Privacy Policy](/privacy) for details on your rights
 
----
 
-## About {{site_name}}
-
-{{site_name}} is operated by **{{company_name}}**, based in {{company_country}}. We cover {{site_description}}.
-
-**Website:** https://{{domain}}
-
-Thank you for visiting {{site_name}}.

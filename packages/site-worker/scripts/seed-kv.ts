@@ -76,7 +76,7 @@ const R2_REMOTE = (process.env.R2_REMOTE ?? 'true') !== 'false';
  *  legacy builder was retired. */
 const BUNDLED_SHARED_PAGES_DIR = join(PACKAGE_ROOT, 'shared-pages');
 
-const SHARED_PAGES = ['about', 'contact', 'privacy', 'terms', 'dmca'] as const;
+const SHARED_PAGES = ['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon'] as const;
 type SharedPageName = typeof SHARED_PAGES[number];
 
 // ---------- YAML / merge helpers ----------

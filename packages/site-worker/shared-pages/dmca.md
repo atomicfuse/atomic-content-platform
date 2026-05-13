@@ -1,94 +1,34 @@
 ---
-title: "DMCA Notice"
+title: "DMCA / Copyrights Disclaimer"
 layout: ../layouts/PageLayout.astro
 ---
 
-# DMCA Notice -- {{site_name}}
+# DMCA / Copyrights Disclaimer
 
-**Effective Date:** {{effective_date}}
+Our use of other group's copyrighted material – **Fair use notice**:
 
-{{company_name}} ("we", "us", or "our") respects the intellectual property rights of others and expects users of the Site at https://{{domain}} to do the same. In accordance with the Digital Millennium Copyright Act of 1998 ("DMCA"), we will respond promptly to claims of copyright infringement committed using our Site.
+**Copyright Disclaimer Under Section 107 of the Copyright Act 1976:** Allowance is made for "fair use" for purposes such as criticism, comment, news reporting, teaching, scholarship, education, and research. Fair use is a use permitted by copyright statute that might otherwise be infringing.
 
----
+This website aggregate content from other sources for informational purposes, and is in no way trying to infringe on the copyrights or businesses of any of the entities.
 
-## Filing a DMCA Takedown Notice
+All content posted up on this site is used under the **Fair Use Copyright Law 107**. All photos, media, and articles are copyright to their original owners.
 
-If you believe that content available on {{site_name}} infringes your copyright, you may submit a written DMCA takedown notice to our designated agent. Your notice must include the following information:
+## Photographic Images
 
-1. **Identification of the copyrighted work** -- A description of the copyrighted work that you claim has been infringed. If multiple works are covered by a single notification, provide a representative list.
+Photographic images are owned by their respective copyright owner. Where possible the appropriate accreditation is given. Due to image alterations ownership of many images can not be verified. Where ownership is known a credit is as given.
 
-2. **Identification of the infringing material** -- A description of the material you claim is infringing, and information reasonably sufficient to permit us to locate the material on the Site (e.g., the specific URL or page where the material appears).
+## Videos
 
-3. **Your contact information** -- Your name, mailing address, telephone number, and email address.
+All videos on this website are embedded from Youtube.com and are owned by their respective Copyright owners. No videos are copied or stored on our servers. The Court ruled that linking or embedding copyrighted videos is not copyright infringement, even if the source video was uploaded without permission. However we will gladly remove any video upon valid request from respective copyright owners. Any owner also have option to disable embedding his Youtube videos on other websites.
 
-4. **Statement of good faith** -- A statement that you have a good faith belief that the use of the material in the manner complained of is not authorized by the copyright owner, its agent, or the law.
+## News and Press Articles
 
-5. **Statement of accuracy** -- A statement, made under penalty of perjury, that the information in the notification is accurate, and that you are authorized to act on behalf of the copyright owner.
+News and Press articles are owned by their respective Copyright owner. Where possible the appropriate accreditation or source of the article is given on the same page.
 
-6. **Your signature** -- A physical or electronic signature of the copyright owner or a person authorized to act on the owner's behalf.
+## Audio / Video Files
 
----
+The audio/video files on this site are for **listening/watching purposes only**. Downloading of these files to one's computer is strictly prohibited. They are owned by their respective copyright owners.
 
-## Where to Send Your Notice
+## Removal Requests
 
-Please send your DMCA takedown notice to:
-
-**{{company_name}}**
-DMCA Designated Agent
-Email: {{support_email}}
-
-Please use "DMCA Takedown Notice" as the subject line of your email.
-
----
-
-## Counter-Notification
-
-If you believe that content you posted on the Site was removed or disabled as a result of a mistake or misidentification, you may submit a written counter-notification. Your counter-notification must include:
-
-1. **Identification of the removed material** -- A description of the material that has been removed or to which access has been disabled, and the location at which the material appeared before it was removed or disabled.
-
-2. **Statement under penalty of perjury** -- A statement, under penalty of perjury, that you have a good faith belief that the material was removed or disabled as a result of mistake or misidentification.
-
-3. **Your contact information** -- Your name, mailing address, telephone number, and email address.
-
-4. **Consent to jurisdiction** -- A statement that you consent to the jurisdiction of the courts in {{company_country}} and that you will accept service of process from the person who provided the original DMCA notification (or an agent of such person).
-
-5. **Your signature** -- A physical or electronic signature.
-
----
-
-## Our Response Process
-
-Upon receiving a valid DMCA takedown notice, we will:
-
-- Promptly remove or disable access to the allegedly infringing material
-- Notify the content provider, member, or user who posted the material (if applicable)
-- Provide a copy of the takedown notice to the affected party
-
-Upon receiving a valid counter-notification, we will:
-
-- Forward the counter-notification to the original complainant
-- Inform the complainant that the removed material will be restored in 10 to 14 business days unless the complainant files a court action against the content provider
-- Restore the material within 10 to 14 business days after receiving the counter-notification, unless we receive notice that a court action has been filed
-
----
-
-## Repeat Infringers
-
-It is our policy, in appropriate circumstances, to disable and/or terminate the accounts of users who are repeat infringers.
-
----
-
-## Good Faith Requirement
-
-Please note that under Section 512(f) of the DMCA, any person who knowingly materially misrepresents that material is infringing, or that material was removed by mistake, may be subject to liability for damages, including costs and attorneys' fees.
-
----
-
-## Contact Us
-
-For questions about this DMCA policy, please contact:
-
-**{{company_name}}**
-Email: {{support_email}}
-Website: https://{{domain}}
+If it is the organization's belief that the usage of specific content used on our site containing copyrighted knowledge conflicts with authorized use, and/or does not comply with fair use as described in this context, contact us through our [contact page](/contact) and we will remove the offending content immediately.

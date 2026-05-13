@@ -66,7 +66,7 @@ export const syncStatusKey = (siteId: string): string => `sync-status:${siteId}`
 export const sharedPageKey = (siteId: string, name: string): string => `shared-page:${siteId}:${name}`;
 
 /** Shared legal/info page rendered into KV at sync time. The Worker
- *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca`)
+ *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca` | `amazon`)
  *  via the [page] route. */
 export interface SharedPage {
   slug: string;
