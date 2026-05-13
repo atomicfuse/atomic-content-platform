@@ -118,14 +118,19 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
       function fire() {
         if (!isAllowed()) return;
         record();
-        var s = document.createElement('script');
-        if (cfg.script_url) {
-          s.src = cfg.script_url;
-          s.async = true;
-        } else {
-          s.textContent = cfg.script_inline;
+        function inject() {
+          var s = document.createElement('script');
+          if (cfg.script_url) {
+            s.src = cfg.script_url;
+            s.async = true;
+          } else {
+            s.textContent = cfg.script_inline;
+          }
+          document.body.appendChild(s);
         }
-        document.body.appendChild(s);
+        // Wait for window load so async head scripts (ad SDKs) are ready.
+        if (document.readyState === 'complete') { inject(); }
+        else { window.addEventListener('load', inject); }
       }
 
       /* ---------- trigger logic ---------- */
