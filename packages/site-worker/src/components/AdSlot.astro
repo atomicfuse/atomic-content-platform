@@ -45,24 +45,10 @@ const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${res
 const isSticky = position === 'sticky-bottom';
 const staging = isStagingEnv(Astro);
 
-/**
- * Split widget code into HTML (rendered immediately) and script content
- * (deferred to window load so async SDK scripts in <head> are ready).
- */
-function splitCode(raw?: string): { html: string; scripts: string[] } {
-  if (!raw) return { html: '', scripts: [] };
-  const scripts: string[] = [];
-  const html = raw.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gi, (_match, body) => {
-    const trimmed = (body as string).trim();
-    if (trimmed) scripts.push(trimmed);
-    return '';
-  });
-  return { html, scripts };
-}
 ---
 
 {!isSticky && placements.map((p) => {
-  const { html, scripts } = staging ? { html: '', scripts: [] } : splitCode(p.code);
+  const widgetCode = staging ? '' : (p.code ?? '');
   return (
     <div
       data-ad-id={p.id ?? `${position}-${pageType}`}
@@ -74,10 +60,7 @@ function splitCode(raw?: string): { html: string; scripts: string[] } {
       class={`atl-ad-slot atl-ad-${position}`}
       style={slotInlineStyle}
     >
-      <Fragment set:html={html} />
-      {scripts.map((code) => (
-        <script is:inline set:html={`(function _run(){try{${code}}catch(e){if(e instanceof ReferenceError){setTimeout(_run,200)}else{throw e}}})()`} />
-      ))}
+      <Fragment set:html={widgetCode} />
     </div>
   );
 })}
@@ -85,7 +68,7 @@ function splitCode(raw?: string): { html: string; scripts: string[] } {
 {isSticky && placements.length > 0 && (
   <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
     {placements.map((p) => {
-      const { html, scripts } = staging ? { html: '', scripts: [] } : splitCode(p.code);
+      const widgetCode = staging ? '' : (p.code ?? '');
       return (
         <div
           data-ad-id={p.id ?? `${position}-${pageType}`}
@@ -97,10 +80,7 @@ function splitCode(raw?: string): { html: string; scripts: string[] } {
           class={`atl-ad-slot atl-ad-${position}`}
           style={slotInlineStyle}
         >
-          <Fragment set:html={html} />
-          {scripts.map((code) => (
-            <script is:inline set:html={`(function _run(){try{${code}}catch(e){if(e instanceof ReferenceError){setTimeout(_run,200)}else{throw e}}})()`} />
-          ))}
+          <Fragment set:html={widgetCode} />
         </div>
       );
     })}
