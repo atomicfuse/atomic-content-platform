@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { publishStagingToProduction } from "@/actions/wizard";
 import { workerPreviewUrl } from "@/lib/constants";
+import { ArticleUploadPanel } from "./ArticleUploadPanel";
 
 interface ContentGenerationPanelProps {
   domain: string;
@@ -966,6 +967,12 @@ export function ContentGenerationPanel({
           </div>
         </div>
       )}
+
+      {/* ─── Divider ─── */}
+      <div className="border-t border-[var(--border-primary)]" />
+
+      {/* ─── Upload Article ─── */}
+      <ArticleUploadPanel domain={domain} stagingBranch={stagingBranch} />
     </div>
   );
 }
