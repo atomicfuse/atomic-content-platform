@@ -80,9 +80,8 @@ describe("integration: WP article → .md conversion pipeline", () => {
     expect(siteYaml.domain).toBe(domainToSiteId("tvshowbox.com"));
     expect(siteYaml.domain).toBe("tvshowbox");
     expect(siteYaml.tracking).toBeDefined();
-    expect(siteYaml.tracking.ga_property_id).toBe("328395426");
-    expect(siteYaml.tracking.ga_measurement_id).toBe("G-HL2D8CQ0Z9");
-    expect(siteYaml.tracking.gtm_id).toBe("GT-5R65N74B");
+    expect(siteYaml.tracking.ga4).toBe("G-HL2D8CQ0Z9");
+    expect(siteYaml.tracking.gtm).toBe("GT-5R65N74B");
     expect(siteYaml.layout.categories).toEqual([
       "News",
       "Reviews",

@@ -43,9 +43,8 @@ interface SiteYamlShape {
     categories: string[];
   };
   tracking?: {
-    ga_property_id?: string;
-    ga_measurement_id?: string;
-    gtm_id?: string;
+    ga4?: string;
+    gtm?: string;
   };
 }
 
@@ -87,13 +86,11 @@ export function buildSiteYaml(row: CsvSiteRow): string {
     },
   };
 
-  // Add tracking if GA info is present
-  const { gaPropertyId, gaMeasurementId, gtmId } = row.gaInfo;
-  if (gaPropertyId || gaMeasurementId || gtmId) {
+  const { gaMeasurementId, gtmId } = row.gaInfo;
+  if (gaMeasurementId || gtmId) {
     const tracking: NonNullable<SiteYamlShape["tracking"]> = {};
-    if (gaPropertyId) tracking.ga_property_id = gaPropertyId;
-    if (gaMeasurementId) tracking.ga_measurement_id = gaMeasurementId;
-    if (gtmId) tracking.gtm_id = gtmId;
+    if (gaMeasurementId) tracking.ga4 = gaMeasurementId;
+    if (gtmId) tracking.gtm = gtmId;
     doc.tracking = tracking;
   }
 
@@ -162,9 +159,8 @@ export interface FullSiteConfig {
     load_more: { page_size: number };
   };
   tracking?: {
-    ga_property_id?: string;
-    ga_measurement_id?: string;
-    gtm_id?: string;
+    ga4?: string;
+    gtm?: string;
   };
 }
 
@@ -225,13 +221,11 @@ export function buildFullSiteConfig(
     },
   };
 
-  // Add tracking if GA info is present
-  const { gaPropertyId, gaMeasurementId, gtmId } = row.gaInfo;
-  if (gaPropertyId || gaMeasurementId || gtmId) {
+  const { gaMeasurementId, gtmId } = row.gaInfo;
+  if (gaMeasurementId || gtmId) {
     const tracking: NonNullable<FullSiteConfig["tracking"]> = {};
-    if (gaPropertyId) tracking.ga_property_id = gaPropertyId;
-    if (gaMeasurementId) tracking.ga_measurement_id = gaMeasurementId;
-    if (gtmId) tracking.gtm_id = gtmId;
+    if (gaMeasurementId) tracking.ga4 = gaMeasurementId;
+    if (gtmId) tracking.gtm = gtmId;
     config.tracking = tracking;
   }
 
