@@ -6,16 +6,16 @@ import {
 } from "../../agents/migration/category-resolver.js";
 
 const MOCK_VERTICALS: AggregatorCategory[] = [
-  { _id: "v1", name: "Style & Fashion", parent_id: null },
-  { _id: "v2", name: "Technology & Computing", parent_id: null },
-  { _id: "v3", name: "Healthy Living", parent_id: null },
+  { id: "v1", name: "Style & Fashion", parent_id: null },
+  { id: "v2", name: "Technology & Computing", parent_id: null },
+  { id: "v3", name: "Healthy Living", parent_id: null },
 ];
 
 const MOCK_SUBCATEGORIES: AggregatorCategory[] = [
-  { _id: "c1", name: "Hair Care", parent_id: "v1" },
-  { _id: "c2", name: "Makeup and Accessories", parent_id: "v1" },
-  { _id: "c3", name: "Nail Care", parent_id: "v1" },
-  { _id: "c4", name: "Skin Care", parent_id: "v1" },
+  { id: "c1", name: "Hair Care", parent_id: "v1" },
+  { id: "c2", name: "Makeup and Accessories", parent_id: "v1" },
+  { id: "c3", name: "Nail Care", parent_id: "v1" },
+  { id: "c4", name: "Skin Care", parent_id: "v1" },
 ];
 
 describe("matchVertical", () => {

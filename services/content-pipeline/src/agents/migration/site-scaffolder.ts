@@ -186,7 +186,7 @@ export function buildFullSiteConfig(
       tone: "Engaging, informative, conversational",
       article_types: { listicle: 40, standard: 30, "how-to": 20, review: 10 },
       topics: row.menuItems.length > 0 ? row.menuItems : [row.websiteCategory || "General"],
-      seo_keywords_focus: [],
+      seo_keywords_focus: row.menuItems.length > 0 ? [...row.menuItems] : [],
       content_guidelines: [
         `Focus on ${row.websiteCategory || "general"} content`,
         "Maintain an engaging, reader-friendly tone",

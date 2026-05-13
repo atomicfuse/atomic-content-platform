@@ -1,5 +1,5 @@
 export interface AggregatorCategory {
-  _id: string;
+  id: string;
   name: string;
   iab_code?: string;
   parent_id: string | null;
@@ -28,8 +28,8 @@ export async function fetchVerticals(): Promise<AggregatorCategory[]> {
   if (!res.ok) {
     throw new Error(`Failed to fetch verticals: ${res.status} ${res.statusText}`);
   }
-  const data = (await res.json()) as { results: AggregatorCategory[] };
-  return data.results;
+  const data = (await res.json()) as { items: AggregatorCategory[] };
+  return data.items;
 }
 
 export async function fetchSubcategories(
@@ -44,8 +44,8 @@ export async function fetchSubcategories(
       `Failed to fetch subcategories for ${parentId}: ${res.status} ${res.statusText}`,
     );
   }
-  const data = (await res.json()) as { results: AggregatorCategory[] };
-  return data.results;
+  const data = (await res.json()) as { items: AggregatorCategory[] };
+  return data.items;
 }
 
 export function matchVertical(
@@ -71,7 +71,7 @@ export function matchSubcategories(
       (c) =>
         c.name === name || c.name.toLowerCase().includes(lower),
     );
-    if (found && !matched.some((m) => m._id === found._id)) {
+    if (found && !matched.some((m) => m.id === found.id)) {
       matched.push(found);
     }
   }
@@ -108,13 +108,13 @@ export async function createBundle(
       body: JSON.stringify(retryPayload),
     });
     if (!retry.ok) return null;
-    const retryData = (await retry.json()) as { _id: string };
-    return retryData._id;
+    const retryData = (await retry.json()) as { id: string };
+    return retryData.id;
   }
 
   if (!res.ok) return null;
-  const data = (await res.json()) as { _id: string };
-  return data._id;
+  const data = (await res.json()) as { id: string };
+  return data.id;
 }
 
 export async function resolveCategories(
@@ -126,7 +126,7 @@ export async function resolveCategories(
   const vertical = matchVertical(websiteCategory, verticals);
   if (!vertical) return null;
 
-  const subcategories = await fetchSubcategories(vertical._id);
+  const subcategories = await fetchSubcategories(vertical.id);
   let matched = matchSubcategories(subCategoryNames, subcategories);
 
   // If no subcategories matched, use ALL available
@@ -134,11 +134,11 @@ export async function resolveCategories(
     matched = subcategories;
   }
 
-  const categoryIds = matched.map((c) => c._id);
-  const bundleId = await createBundle(siteName, vertical._id, categoryIds);
+  const categoryIds = matched.map((c) => c.id);
+  const bundleId = await createBundle(siteName, vertical.id, categoryIds);
 
   return {
-    verticalId: vertical._id,
+    verticalId: vertical.id,
     verticalName: vertical.name,
     categoryIds,
     bundleId,
