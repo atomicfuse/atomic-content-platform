@@ -3,7 +3,6 @@ import { stringify as stringifyYaml } from "yaml";
 import sharp from "sharp";
 import { commitNetworkFiles, readFileContent } from "@/lib/github";
 import { uploadToR2 } from "@/lib/r2-upload";
-import { R2_BUCKET_STAGING, R2_BUCKET_PROD } from "@/lib/constants";
 import {
   parseFrontmatter,
   validateArticleFrontmatter,
@@ -117,15 +116,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       console.log(`[article-upload] Image ${(rawBuffer.length / 1024).toFixed(0)} KB → ${(optimized.length / 1024).toFixed(0)} KB (WebP)`);
 
-      // Always store as .webp regardless of input format
+      // Always store as .webp regardless of input format.
+      // Upload to atl-assets-prod — the site-worker's ASSET_BUCKET binding
+      // points there in both staging and production environments.
       const r2Key = buildImageR2Key(domain, slug, "webp");
-
-      // Upload to both staging and prod buckets. Staging is where the
-      // site-worker preview reads from; prod ensures images survive
-      // publish-to-prod without a separate re-upload step.
-      const uploaded = await uploadToR2(r2Key, optimized, "image/webp", R2_BUCKET_STAGING);
+      const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
       if (uploaded) {
-        await uploadToR2(r2Key, optimized, "image/webp", R2_BUCKET_PROD);
         imagePath = buildImageFrontmatterPath(slug, "webp");
       }
       // If R2 upload fails, continue without image (non-blocking)
