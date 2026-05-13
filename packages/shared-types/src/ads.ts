@@ -65,6 +65,14 @@ export interface AdPlacement {
 
   /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
   dismissible?: boolean;
+
+  /**
+   * Raw HTML/JS widget code to inject inside the ad slot container.
+   * Users can paste ad network widget code as-is (including `<div>` and
+   * `<script>` tags). Rendered server-side inside the ad slot position
+   * so the widget appears in the correct layout location.
+   */
+  code?: string;
 }
 
 /**
