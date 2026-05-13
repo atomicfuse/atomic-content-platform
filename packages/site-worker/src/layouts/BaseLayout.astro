@@ -130,12 +130,16 @@ const cssVars = Object.entries(theme.colors)
 
     <slot />
 
-    {/* Injected body_end scripts from config layers. */}
+    {/* Injected body_end scripts from config layers.
+         External (src) scripts load immediately. Inline scripts are deferred
+         to the window load event so they fire AFTER Server Islands (ad slots)
+         and async head scripts (ad SDKs) have loaded. This lets users paste
+         widget code as-is without worrying about timing. */}
     {bodyEndScripts.map((s) =>
       s.src
         ? <script is:inline async={s.async} src={s.src}></script>
         : s.inline
-          ? <script is:inline set:html={s.inline} />
+          ? <script is:inline set:html={`window.addEventListener('load',function(){${s.inline}});`} />
           : null
     )}
 

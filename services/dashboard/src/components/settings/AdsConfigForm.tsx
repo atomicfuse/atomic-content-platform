@@ -25,6 +25,8 @@ export interface AdPlacement {
   desktopSizeConfig?: AdSizeConfig;
   /** Structured mobile size config for the editor UI. */
   mobileSizeConfig?: AdSizeConfig;
+  /** Raw HTML/JS widget code to inject inside the ad slot container. */
+  code?: string;
 }
 
 export { validatePlacementConfigs } from "./ad-size-config";
@@ -371,6 +373,25 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
                 </div>
               </label>
             )}
+
+            {/* Widget Code — raw HTML+JS to inject inside the ad slot */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Widget Code <span className="font-normal normal-case">(optional)</span>
+              </label>
+              <textarea
+                value={placement.code ?? ""}
+                placeholder={'Paste ad widget code here, e.g.:\n<div id="widget-1"></div>\n<script>loadWidget(...);</script>'}
+                onChange={(e): void => {
+                  updatePlacement(index, { code: e.target.value || undefined });
+                }}
+                rows={4}
+                className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
+              />
+              <p className="text-xs text-[var(--text-muted)]">
+                Raw HTML + script tags from your ad network. Rendered server-side inside this ad position.
+              </p>
+            </div>
           </div>
         ))}
       </div>

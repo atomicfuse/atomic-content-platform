@@ -117,6 +117,7 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
         ...(dismissible !== undefined && { dismissible }),
         desktopSizeConfig: rawDesktopCfg ?? sizeTuplesToConfig(sizes.desktop),
         mobileSizeConfig: rawMobileCfg ?? sizeTuplesToConfig(sizes.mobile),
+        ...(typeof p.code === "string" && p.code.trim() && { code: p.code as string }),
       };
     }),
   };
