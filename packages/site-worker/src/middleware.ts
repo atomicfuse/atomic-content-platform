@@ -110,7 +110,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     );
   }
 
-  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride };
+  const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
+  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
 
   const response = await next();
   applyCacheHeaders(context.url.pathname, response);

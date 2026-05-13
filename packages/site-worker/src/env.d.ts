@@ -17,6 +17,10 @@ declare global {
          *  override. Preview mode bypasses article-status filtering so
          *  review/draft articles are visible for content review. */
         isPreview: boolean;
+        /** True when served from workers.dev or localhost — ad scripts
+         *  and interstitials are suppressed to avoid burning real
+         *  impressions on staging/preview environments. */
+        isStaging: boolean;
       };
     }
   }

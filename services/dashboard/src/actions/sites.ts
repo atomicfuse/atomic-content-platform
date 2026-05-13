@@ -23,7 +23,6 @@ import {
 import {
   KV_NAMESPACE_PROD,
   KV_NAMESPACE_STAGING,
-  R2_BUCKET_STAGING,
   R2_BUCKET_PROD,
 } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
@@ -203,22 +202,15 @@ export async function deleteSiteEntry(domain: string): Promise<{
     let r2Deleted = 0;
     const r2Errors: string[] = [];
 
-    for (const { bucket, label } of [
-      { bucket: R2_BUCKET_STAGING, label: "staging" },
-      { bucket: R2_BUCKET_PROD, label: "prod" },
-    ]) {
-      try {
-        const count = await deleteR2ObjectsByPrefix(bucket, `${siteId}/`);
-        r2Deleted += count;
-      } catch (err) {
-        r2Errors.push(
-          `${label}: ${err instanceof Error ? err.message : "Unknown"}`,
-        );
-      }
+    try {
+      const count = await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${siteId}/`);
+      r2Deleted += count;
+    } catch (err) {
+      r2Errors.push(err instanceof Error ? err.message : "Unknown");
     }
 
     if (r2Errors.length === 0 && r2Deleted > 0) {
-      steps.push({ label: `Deleted ${r2Deleted} R2 assets (staging + prod)`, success: true });
+      steps.push({ label: `Deleted ${r2Deleted} R2 assets`, success: true });
     } else if (r2Errors.length === 0) {
       steps.push({ label: "No R2 assets to clean up", success: true });
     } else {
@@ -266,10 +258,7 @@ function articleImageKey(domain: string, slug: string): string {
 async function deleteArticleImages(domain: string, slugs: string[]): Promise<void> {
   const keys = slugs.map((s) => articleImageKey(domain, s));
   try {
-    await Promise.all([
-      deleteR2Objects(R2_BUCKET_PROD, keys),
-      deleteR2Objects(R2_BUCKET_STAGING, keys),
-    ]);
+    await deleteR2Objects(R2_BUCKET_PROD, keys);
   } catch (err) {
     console.warn(
       `[sites] Failed to delete R2 images for ${domain}:`,
@@ -343,7 +332,6 @@ export async function permanentlyDeleteSite(domain: string): Promise<void> {
   }
 
   // Retry R2 cleanup
-  try { await deleteR2ObjectsByPrefix(R2_BUCKET_STAGING, `${domain}/`); } catch { /* best-effort */ }
   try { await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`); } catch { /* best-effort */ }
 
   await permanentlyRemoveFromTrash(domain);
