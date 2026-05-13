@@ -663,7 +663,7 @@ export async function deleteKVByPrefix(
  *  Requires R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY env vars. */
 let _s3Client: S3Client | null = null;
 
-function getR2Client(): S3Client | null {
+export function getR2Client(): S3Client | null {
   if (_s3Client) return _s3Client;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;

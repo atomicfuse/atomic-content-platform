@@ -5,17 +5,44 @@ import { useCallback, useRef, useState } from "react";
 interface ParsedSiteRow {
   raw: Record<string, string>;
   name: string;
+  domain: string;
   category: string;
   menuItems: string;
   postsApi: string;
 }
 
-interface CreateResult {
+interface SiteProgress {
+  phase: string;
+  status: "pending" | "in-progress" | "complete" | "error";
+  previewUrl?: string;
+  warnings?: string[];
+  postsApiUrl?: string;
+  siteId?: string;
+  error?: string;
+}
+
+interface CreateSiteResult {
   domain: string;
   siteId: string;
   status: "created" | "error";
+  previewUrl?: string;
+  warnings?: string[];
+  postsApiUrl?: string;
   error?: string;
 }
+
+interface ArticleImportState {
+  status: "idle" | "importing" | "complete" | "error";
+  phase?: string;
+  totalArticles?: number;
+  processedArticles?: number;
+  currentArticleSlug?: string;
+  successful?: number;
+  failed?: number;
+  error?: string;
+}
+
+type ComponentPhase = "idle" | "creating" | "results";
 
 function parseCsvText(text: string): Record<string, string>[] {
   const lines = text.split("\n").filter((l) => l.trim());
@@ -30,7 +57,7 @@ function parseCsvText(text: string): Record<string, string>[] {
     for (let j = 0; j < headers.length; j++) {
       row[headers[j]!] = values[j] ?? "";
     }
-    if (row["Name"]?.trim()) {
+    if (row["Site Name"]?.trim()) {
       rows.push(row);
     }
   }
@@ -64,7 +91,9 @@ function splitCsvLine(line: string): string[] {
 }
 
 const CSV_HEADERS = [
-  "Name",
+  "Site Name",
+  "domain",
+  "Company",
   "Website Category",
   "Menu Items",
   "IAB Top Categories (Vertical)",
@@ -77,7 +106,9 @@ const CSV_HEADERS = [
 ];
 
 const CSV_EXAMPLE_ROW = [
+  "Cool News",
   "coolnews.dev",
+  "ATL",
   "Technology",
   "Tech, Science, Reviews",
   "Technology & Computing",
@@ -88,6 +119,16 @@ const CSV_EXAMPLE_ROW = [
   "https://coolnews.dev/wp-json/wp/v2/posts",
   "328395426, G-HL2D8CQ0Z9, GT-5R65N74B",
 ];
+
+const PHASE_LABELS: Record<string, string> = {
+  "resolving-categories": "Resolving categories",
+  "fetching-assets": "Fetching logo & favicon",
+  "building-config": "Building site config",
+  "creating-branch": "Creating staging branch",
+  "committing": "Committing files",
+  "updating-index": "Updating dashboard index",
+  "triggering-sync": "Triggering KV sync",
+};
 
 function downloadTemplate(): void {
   const escapeCsvField = (field: string): string =>
@@ -106,21 +147,94 @@ function downloadTemplate(): void {
   URL.revokeObjectURL(url);
 }
 
+async function consumeSSE<T>(
+  response: Response,
+  onEvent: (event: T) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) return;
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      if (signal?.aborted) {
+        reader.cancel();
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+          try {
+            const parsed = JSON.parse(trimmed.slice(6)) as T;
+            onEvent(parsed);
+          } catch {
+            // skip malformed JSON
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+type SiteCreationEvent =
+  | { type: "site-progress"; domain: string; siteId: string; phase: string }
+  | {
+      type: "site-complete";
+      domain: string;
+      siteId: string;
+      status: "created" | "error";
+      previewUrl?: string;
+      warnings?: string[];
+      postsApiUrl?: string;
+      error?: string;
+    }
+  | { type: "all-complete"; results: CreateSiteResult[] };
+
+type ArticleImportEvent =
+  | {
+      type: "progress";
+      phase: string;
+      totalArticles?: number;
+      processedArticles?: number;
+      currentArticleSlug?: string;
+    }
+  | { type: "complete"; successful: number; failed: number }
+  | { type: "error"; error: string };
+
 export function CsvSiteCreator(): React.ReactElement {
   const [sites, setSites] = useState<ParsedSiteRow[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
-  const [target, setTarget] = useState<"staging" | "main">("main");
-  const [creating, setCreating] = useState(false);
-  const [results, setResults] = useState<CreateResult[] | null>(null);
+  const [phase, setPhase] = useState<ComponentPhase>("idle");
+  const [siteProgress, setSiteProgress] = useState<Map<string, SiteProgress>>(new Map());
+  const [results, setResults] = useState<CreateSiteResult[]>([]);
+  const [articleImports, setArticleImports] = useState<Map<string, ArticleImportState>>(new Map());
   const [error, setError] = useState<string | null>(null);
+
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const createAbortRef = useRef<AbortController | null>(null);
+  const importAbortRefs = useRef<Map<string, AbortController>>(new Map());
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setResults(null);
+    setResults([]);
     setError(null);
+    setPhase("idle");
+    setSiteProgress(new Map());
+    setArticleImports(new Map());
 
     const reader = new FileReader();
     reader.onload = (ev): void => {
@@ -128,7 +242,7 @@ export function CsvSiteCreator(): React.ReactElement {
       const rows = parseCsvText(text);
 
       if (rows.length === 0) {
-        setError("No valid rows found. Make sure the CSV has a 'Name' column.");
+        setError("No valid rows found. Make sure the CSV has a 'Site Name' column.");
         return;
       }
 
@@ -136,7 +250,8 @@ export function CsvSiteCreator(): React.ReactElement {
       setSites(
         rows.map((r) => ({
           raw: r,
-          name: r["Name"] ?? "",
+          name: r["Site Name"] ?? "",
+          domain: r["domain"] ?? "",
           category: r["Website Category"] ?? "",
           menuItems: r["Menu Items"] ?? "",
           postsApi: r["Posts REST API (articles)"] ?? "",
@@ -149,40 +264,202 @@ export function CsvSiteCreator(): React.ReactElement {
   const handleCreate = useCallback(async (): Promise<void> => {
     if (rawRows.length === 0) return;
 
-    setCreating(true);
+    createAbortRef.current?.abort();
+    const controller = new AbortController();
+    createAbortRef.current = controller;
+
+    setPhase("creating");
     setError(null);
-    setResults(null);
+    setResults([]);
+    setArticleImports(new Map());
+
+    const initialProgress = new Map<string, SiteProgress>();
+    for (const site of sites) {
+      const key = site.domain || site.name;
+      initialProgress.set(key, { phase: "", status: "pending" });
+    }
+    setSiteProgress(initialProgress);
 
     try {
       const res = await fetch("/api/agent/wp-migrate/create-sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: rawRows, branch: target }),
+        body: JSON.stringify({ rows: rawRows, branch: "staging" }),
+        signal: controller.signal,
       });
 
-      const data = (await res.json()) as {
-        status?: string;
-        error?: string;
-        results?: CreateResult[];
-        created?: number;
-      };
-
       if (!res.ok) {
-        setError(data.error ?? `HTTP ${res.status}`);
+        const text = await res.text();
+        let msg = `HTTP ${res.status}`;
+        try {
+          const parsed = JSON.parse(text) as { error?: string };
+          if (parsed.error) msg = parsed.error;
+        } catch {
+          // use default message
+        }
+        setError(msg);
+        setPhase("idle");
+        return;
       }
 
-      if (data.results) {
-        setResults(data.results);
+      await consumeSSE<SiteCreationEvent>(
+        res,
+        (event) => {
+          if (event.type === "site-progress") {
+            setSiteProgress((prev) => {
+              const next = new Map(prev);
+              next.set(event.domain, {
+                ...(prev.get(event.domain) ?? { phase: "", status: "pending" }),
+                phase: event.phase,
+                status: "in-progress",
+                siteId: event.siteId,
+              });
+              return next;
+            });
+          } else if (event.type === "site-complete") {
+            setSiteProgress((prev) => {
+              const next = new Map(prev);
+              next.set(event.domain, {
+                phase: "",
+                status: event.status === "created" ? "complete" : "error",
+                previewUrl: event.previewUrl,
+                warnings: event.warnings,
+                postsApiUrl: event.postsApiUrl,
+                siteId: event.siteId,
+                error: event.error,
+              });
+              return next;
+            });
+          } else if (event.type === "all-complete") {
+            setResults(event.results);
+            setPhase("results");
+          }
+        },
+        controller.signal,
+      );
+
+      if (phase !== "results") {
+        setPhase("results");
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Unknown error");
-    } finally {
-      setCreating(false);
+      setPhase("idle");
     }
-  }, [rawRows, target]);
+  }, [rawRows, sites, phase]);
 
-  const createdCount = results?.filter((r) => r.status === "created").length ?? 0;
-  const errorCount = results?.filter((r) => r.status === "error").length ?? 0;
+  const handleImportArticles = useCallback(
+    async (siteId: string, postsApiUrl: string): Promise<void> => {
+      const existingController = importAbortRefs.current.get(siteId);
+      existingController?.abort();
+
+      const controller = new AbortController();
+      importAbortRefs.current.set(siteId, controller);
+
+      setArticleImports((prev) => {
+        const next = new Map(prev);
+        next.set(siteId, { status: "importing" });
+        return next;
+      });
+
+      try {
+        const res = await fetch("/api/agent/wp-migrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteDomain: siteId,
+            wpApiUrl: postsApiUrl,
+            branch: `staging/${siteId}`,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          let msg = `HTTP ${res.status}`;
+          try {
+            const parsed = JSON.parse(text) as { error?: string };
+            if (parsed.error) msg = parsed.error;
+          } catch {
+            // use default message
+          }
+          setArticleImports((prev) => {
+            const next = new Map(prev);
+            next.set(siteId, { status: "error", error: msg });
+            return next;
+          });
+          return;
+        }
+
+        await consumeSSE<ArticleImportEvent>(
+          res,
+          (event) => {
+            if (event.type === "progress") {
+              setArticleImports((prev) => {
+                const next = new Map(prev);
+                next.set(siteId, {
+                  status: "importing",
+                  phase: event.phase,
+                  totalArticles: event.totalArticles,
+                  processedArticles: event.processedArticles,
+                  currentArticleSlug: event.currentArticleSlug,
+                });
+                return next;
+              });
+            } else if (event.type === "complete") {
+              setArticleImports((prev) => {
+                const next = new Map(prev);
+                next.set(siteId, {
+                  status: "complete",
+                  successful: event.successful,
+                  failed: event.failed,
+                });
+                return next;
+              });
+            } else if (event.type === "error") {
+              setArticleImports((prev) => {
+                const next = new Map(prev);
+                next.set(siteId, { status: "error", error: event.error });
+                return next;
+              });
+            }
+          },
+          controller.signal,
+        );
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setArticleImports((prev) => {
+          const next = new Map(prev);
+          next.set(siteId, {
+            status: "error",
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+          return next;
+        });
+      } finally {
+        importAbortRefs.current.delete(siteId);
+      }
+    },
+    [],
+  );
+
+  const handleReset = useCallback((): void => {
+    createAbortRef.current?.abort();
+    for (const controller of importAbortRefs.current.values()) {
+      controller.abort();
+    }
+    importAbortRefs.current.clear();
+    setSites([]);
+    setRawRows([]);
+    setResults([]);
+    setPhase("idle");
+    setSiteProgress(new Map());
+    setArticleImports(new Map());
+    setError(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }, []);
+
+  const isCreating = phase === "creating";
 
   return (
     <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5">
@@ -195,14 +472,13 @@ export function CsvSiteCreator(): React.ReactElement {
         </p>
       </div>
 
-      {/* File upload + template */}
       <div className="flex items-center gap-4">
         <input
           ref={fileRef}
           type="file"
           accept=".csv"
           onChange={handleFile}
-          disabled={creating}
+          disabled={isCreating}
           className="block text-sm text-[var(--text-secondary)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-cyan/10 file:text-cyan hover:file:bg-cyan/20 disabled:opacity-50"
         />
         <button
@@ -214,14 +490,14 @@ export function CsvSiteCreator(): React.ReactElement {
         </button>
       </div>
 
-      {/* Preview table */}
-      {sites.length > 0 && !results && (
+      {sites.length > 0 && phase === "idle" && (
         <>
           <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)]">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
                   <th className="text-left px-3 py-2 font-medium">#</th>
+                  <th className="text-left px-3 py-2 font-medium">Site Name</th>
                   <th className="text-left px-3 py-2 font-medium">Domain</th>
                   <th className="text-left px-3 py-2 font-medium">Category</th>
                   <th className="text-left px-3 py-2 font-medium">Menu Items</th>
@@ -232,6 +508,7 @@ export function CsvSiteCreator(): React.ReactElement {
                   <tr key={i} className="border-t border-[var(--border-secondary)]">
                     <td className="px-3 py-2 text-[var(--text-tertiary)]">{i + 1}</td>
                     <td className="px-3 py-2 text-[var(--text-primary)] font-medium">{s.name}</td>
+                    <td className="px-3 py-2 text-[var(--text-secondary)] font-mono text-xs">{s.domain}</td>
                     <td className="px-3 py-2 text-[var(--text-secondary)]">{s.category}</td>
                     <td className="px-3 py-2 text-[var(--text-secondary)] max-w-xs truncate">{s.menuItems}</td>
                   </tr>
@@ -240,109 +517,178 @@ export function CsvSiteCreator(): React.ReactElement {
             </table>
           </div>
 
-          {/* Target selector */}
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
-              Deploy To
-            </label>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={(): void => setTarget("main")}
-                disabled={creating}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
-                  target === "main"
-                    ? "border-cyan bg-cyan/10 text-cyan"
-                    : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                Live (main)
-              </button>
-              <button
-                type="button"
-                onClick={(): void => setTarget("staging")}
-                disabled={creating}
-                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
-                  target === "staging"
-                    ? "border-cyan bg-cyan/10 text-cyan"
-                    : "border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                Staging
-              </button>
-            </div>
-            <p className="text-xs text-[var(--text-tertiary)] mt-1">
-              {target === "main"
-                ? "Sites will be created on main + each staging/<domain> branch"
-                : "Sites will be created on main only (staging branches created during article import)"}
-            </p>
-          </div>
-
-          {/* Create button */}
           <button
             onClick={handleCreate}
-            disabled={creating}
+            disabled={isCreating}
             className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-cyan hover:bg-cyan/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {creating ? `Creating ${sites.length} sites...` : `Create ${sites.length} Sites`}
+            Create {sites.length} Sites on Staging
           </button>
         </>
       )}
 
-      {/* Results */}
-      {results && (
+      {phase === "creating" && (
         <div className="space-y-3">
-          <div className={`rounded-lg px-4 py-3 text-sm ${
-            errorCount === 0
-              ? "bg-green-500/10 border border-green-500/30 text-green-400"
-              : "bg-amber-500/10 border border-amber-500/30 text-amber-400"
-          }`}>
-            {createdCount} site{createdCount !== 1 ? "s" : ""} created
-            {errorCount > 0 && `, ${errorCount} failed`}.
+          <p className="text-sm font-medium text-[var(--text-primary)]">
+            Creating {sites.length} sites...
+          </p>
+          <div className="grid gap-3">
+            {Array.from(siteProgress.entries()).map(([domain, progress]) => (
+              <div
+                key={domain}
+                className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex-shrink-0">
+                    {progress.status === "pending" && (
+                      <span className="inline-block w-2 h-2 rounded-full bg-[var(--text-tertiary)]" />
+                    )}
+                    {progress.status === "in-progress" && (
+                      <span className="inline-block w-2 h-2 rounded-full bg-cyan animate-pulse" />
+                    )}
+                    {progress.status === "complete" && (
+                      <span className="text-green-400">&#10003;</span>
+                    )}
+                    {progress.status === "error" && (
+                      <span className="text-red-400">&#10005;</span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{domain}</p>
+                    {progress.status === "in-progress" && progress.phase && (
+                      <p className="text-xs text-[var(--text-secondary)]">
+                        {PHASE_LABELS[progress.phase] ?? progress.phase}
+                      </p>
+                    )}
+                    {progress.status === "error" && progress.error && (
+                      <p className="text-xs text-red-400">{progress.error}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-
-          <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)]">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
-                  <th className="text-left px-3 py-2 font-medium">Domain</th>
-                  <th className="text-left px-3 py-2 font-medium">Site ID</th>
-                  <th className="text-left px-3 py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r, i) => (
-                  <tr key={i} className="border-t border-[var(--border-secondary)]">
-                    <td className="px-3 py-2 text-[var(--text-primary)]">{r.domain}</td>
-                    <td className="px-3 py-2 text-[var(--text-secondary)] font-mono text-xs">{r.siteId}</td>
-                    <td className="px-3 py-2">
-                      {r.status === "created" ? (
-                        <span className="text-green-400">Created</span>
-                      ) : (
-                        <span className="text-red-400">{r.error}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <button
-            onClick={(): void => {
-              setSites([]);
-              setRawRows([]);
-              setResults(null);
-              if (fileRef.current) fileRef.current.value = "";
-            }}
-            className="px-4 py-2 rounded-lg text-sm font-medium border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Upload Another CSV
-          </button>
         </div>
       )}
 
-      {/* Error */}
+      {phase === "results" && results.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-[var(--text-primary)]">
+              {results.filter((r) => r.status === "created").length} of {results.length} sites created
+            </p>
+            <button
+              onClick={handleReset}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            >
+              Upload Another CSV
+            </button>
+          </div>
+
+          <div className="grid gap-3">
+            {results.map((result) => {
+              const importState = articleImports.get(result.siteId);
+
+              return (
+                <div
+                  key={result.siteId}
+                  className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-4 py-3 space-y-2"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      {result.status === "created" ? (
+                        <span className="text-green-400 text-lg">&#10003;</span>
+                      ) : (
+                        <span className="text-red-400 text-lg">&#10005;</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2">
+                        <p className="text-sm font-medium text-[var(--text-primary)]">{result.domain}</p>
+                        <span className="text-xs text-[var(--text-tertiary)] font-mono">{result.siteId}</span>
+                      </div>
+
+                      {result.status === "error" && result.error && (
+                        <p className="text-sm text-red-400 mt-1">{result.error}</p>
+                      )}
+
+                      {result.previewUrl && (
+                        <a
+                          href={result.previewUrl}
+                          target="_blank"
+                          rel="noopener"
+                          className="inline-block text-xs text-cyan underline underline-offset-2 hover:text-cyan/80 mt-1"
+                        >
+                          Open staging preview
+                        </a>
+                      )}
+
+                      {result.warnings && result.warnings.length > 0 && (
+                        <div className="mt-1.5 space-y-0.5">
+                          {result.warnings.map((w, i) => (
+                            <p key={i} className="text-xs text-amber-400">{w}</p>
+                          ))}
+                        </div>
+                      )}
+
+                      {importState?.status === "importing" && (
+                        <div className="mt-2 text-xs text-[var(--text-secondary)]">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan animate-pulse mr-1.5 align-middle" />
+                          {importState.phase ?? "Starting import..."}
+                          {importState.processedArticles != null && importState.totalArticles != null && (
+                            <span className="ml-1">
+                              ({importState.processedArticles}/{importState.totalArticles})
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {importState?.status === "complete" && (
+                        <p className="mt-2 text-xs text-green-400">
+                          {importState.successful ?? 0} articles imported
+                          {(importState.failed ?? 0) > 0 && (
+                            <span className="text-red-400 ml-1">({importState.failed} failed)</span>
+                          )}
+                        </p>
+                      )}
+
+                      {importState?.status === "error" && (
+                        <p className="mt-2 text-xs text-red-400">{importState.error}</p>
+                      )}
+                    </div>
+
+                    {result.status === "created" && result.postsApiUrl && (
+                      <div className="flex-shrink-0">
+                        {(!importState || importState.status === "idle" || importState.status === "error") && (
+                          <button
+                            onClick={(): void => {
+                              void handleImportArticles(result.siteId, result.postsApiUrl!);
+                            }}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-cyan hover:bg-cyan/90 transition-colors"
+                          >
+                            Import Articles
+                          </button>
+                        )}
+                        {importState?.status === "importing" && (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-medium text-cyan bg-cyan/10">
+                            Importing...
+                          </span>
+                        )}
+                        {importState?.status === "complete" && (
+                          <span className="px-3 py-1.5 rounded-lg text-xs font-medium text-green-400 bg-green-500/10">
+                            Done
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
           {error}

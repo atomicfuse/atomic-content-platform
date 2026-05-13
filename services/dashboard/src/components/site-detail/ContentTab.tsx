@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import type { ArticleEntry } from "@/types/dashboard";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -250,8 +251,13 @@ export function ContentTab({
                     />
                   </td>
                 )}
-                <td className="px-4 py-3 font-medium text-[var(--text-primary)] max-w-xs truncate">
-                  {article.title}
+                <td className="px-4 py-3 font-medium max-w-xs truncate">
+                  <Link
+                    href={`/sites/${domain}/articles/${article.slug}`}
+                    className="text-[var(--text-primary)] hover:text-cyan hover:underline"
+                  >
+                    {article.title}
+                  </Link>
                 </td>
                 <td className="px-4 py-3">
                   <Badge label={article.type} variant="info" />

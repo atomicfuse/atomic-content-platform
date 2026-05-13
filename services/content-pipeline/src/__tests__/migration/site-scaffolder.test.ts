@@ -55,6 +55,8 @@ describe("domainToSiteId", () => {
 describe("buildSiteYaml", () => {
   const fullRow: CsvSiteRow = {
     name: "travelbeautytips.com",
+    domain: "travelbeautytips.com",
+    company: "ATL",
     websiteCategory: "Style & Fashion",
     menuItems: ["Beauty", "Fashion", "Hair", "Nails"],
     iabCategories: ["Style & Fashion", "Health & Fitness"],
@@ -117,9 +119,8 @@ describe("buildSiteYaml", () => {
 
   it("includes tracking from gaInfo", () => {
     const parsed = parse(buildSiteYaml(fullRow));
-    expect(parsed.tracking.ga_property_id).toBe("328395426");
-    expect(parsed.tracking.ga_measurement_id).toBe("G-HL2D8CQ0Z9");
-    expect(parsed.tracking.gtm_id).toBe("GT-5R65N74B");
+    expect(parsed.tracking.ga4).toBe("G-HL2D8CQ0Z9");
+    expect(parsed.tracking.gtm).toBe("GT-5R65N74B");
   });
 
   it("omits tracking when gaInfo is empty", () => {
@@ -134,7 +135,7 @@ describe("buildSiteYaml", () => {
       gaInfo: { gaMeasurementId: "G-ABC123" },
     };
     const parsed = parse(buildSiteYaml(row));
-    expect(parsed.tracking).toEqual({ ga_measurement_id: "G-ABC123" });
+    expect(parsed.tracking).toEqual({ ga4: "G-ABC123" });
   });
 
   it("falls back to websiteCategory for topics when iabCategories is empty", () => {

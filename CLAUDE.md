@@ -32,6 +32,7 @@ services/
       settings/              Settings (Org, Network, Domains, General Scheduler, Email tabs)
       overrides/             Overrides + Shared Pages (tabbed layout)
       wizard/                New-site flow
+      import/                WordPress import — CSV bulk site creation + article migration
       guide/                 In-app markdown docs (loads /public/guide/*.md)
       api/                   Server routes (shared-pages, sites, groups, agent proxy, scheduler, ads-txt, …)
     src/lib/
@@ -51,6 +52,7 @@ services/
       content-quality/       Claude-based scoring
       article-regeneration/  Low-score rewrite flow
       scheduled-publisher/   Cron-triggered batch publisher (gated by scheduler/config.yaml)
+      migration/             WordPress migration: CSV site creation (SSE), article import, category resolver, theme builder
     src/lib/
       github.ts              Octokit wrappers: readFile, listFiles, commitFile, commitBatch
       writer.ts              shouldWriteLocal(cfg) — local FS iff LOCAL_NETWORK_PATH set AND no branch
@@ -410,4 +412,4 @@ Service contract (both services satisfy):
 
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
-Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site, error-handling, site-deletion.
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site, error-handling, site-deletion, wordpress-import.

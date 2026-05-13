@@ -81,6 +81,7 @@ describe("parseGaInfo", () => {
 describe("parseCsvRow", () => {
   const fullRow: Record<string, string> = {
     Name: "travelbeautytips.com",
+    Company: "ATL",
     "Website Category": "Style & Fashion",
     "Menu Items": "Beauty, Fashion, Hair, Makeup Hacks, Makeup Tutorial, Nails, Weight Loss",
     "IAB Top Categories (Vertical)": "Style & Fashion, Health & Fitness",

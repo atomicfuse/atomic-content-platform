@@ -69,7 +69,9 @@ function splitCommaSeparated(raw: string): string[] {
  */
 export function parseCsvRow(row: Record<string, string>): CsvSiteRow {
   return {
-    name: (row["Name"] ?? "").trim(),
+    name: (row["Site Name"] ?? row["Name"] ?? "").trim(),
+    domain: (row["domain"] ?? "").trim(),
+    company: (row["Company"] ?? "").trim(),
     websiteCategory: (row["Website Category"] ?? "").trim(),
     menuItems: splitCommaSeparated(row["Menu Items"] ?? ""),
     iabCategories: splitCommaSeparated(row["IAB Top Categories (Vertical)"] ?? ""),

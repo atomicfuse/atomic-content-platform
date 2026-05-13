@@ -9,6 +9,11 @@ You need:
 - A site name and general idea of the content niche
 - The rest (theme, schedule, topics) can be configured during or after the wizard
 
+## Two Ways to Create Sites
+
+- **Wizard** — one site at a time, step-by-step (described below)
+- **CSV Import** — bulk-create multiple sites from a spreadsheet. Go to **Import** in the sidebar. See the [WordPress Import](18-wordpress-import) guide for details.
+
 ## The Wizard
 
 Navigate to **Sites** in the sidebar and click **New Site**, or go directly to `/wizard`.
