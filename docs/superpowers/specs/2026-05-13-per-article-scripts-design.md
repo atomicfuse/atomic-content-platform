@@ -52,7 +52,7 @@ export interface ArticleScript {
 }
 ```
 
-Extend `ArticleFrontmatter`:
+Extend `ArticleFrontmatter` (used by the dashboard and content-pipeline):
 
 ```typescript
 export interface ArticleFrontmatter {
@@ -61,12 +61,15 @@ export interface ArticleFrontmatter {
 }
 ```
 
+**Note:** The site-worker uses `ArticleIndexEntry` (from `kv-schema.ts`) at runtime, not `ArticleFrontmatter`. Both types need the `scripts?` field, but the rendering path depends on `ArticleIndexEntry`. See the KV Schema section below.
+
 ### Validation Rules
 
 - `name`: non-empty string, max 100 characters.
 - `position`: must match one of the valid position patterns (`head`, `before-content`, `after-content`, or `after-paragraph-{N}` where N is a positive integer).
 - `content`: must contain at least one `<script` tag (case-insensitive). Max 50 KB.
 - `id`: non-empty string, unique within the article's scripts array.
+- Maximum 20 scripts per article.
 
 ---
 
@@ -78,15 +81,18 @@ export interface ArticleFrontmatter {
 
 **File:** `services/dashboard/src/app/sites/[domain]/articles/[slug]/page.tsx`
 
+This is a **standalone page** — it does NOT render inside `SiteDetailTabs`. It uses the same top-level dashboard layout but has its own page structure.
+
 A server component page that:
-1. Reads the article markdown from the network repo (staging branch with main fallback).
-2. Parses frontmatter to extract metadata and scripts.
-3. Renders an article metadata summary header and the `ArticleScriptsPanel` client component.
+1. Looks up the site entry from `dashboard-index.yaml` to get the staging branch.
+2. Reads the article markdown from the network repo (staging branch first, falls back to main).
+3. Parses frontmatter to extract metadata and scripts.
+4. Renders an article metadata summary header and the `ArticleScriptsPanel` client component.
 
 **Article metadata header** (read-only):
+- Back link to `/sites/[domain]` ("Back to Site" navigation)
 - Title, status badge, quality score, type, publish date, author
 - Preview link (opens Worker staging URL)
-- Back link to `/sites/[domain]` (Content tab)
 
 ### 2. ArticleScriptsPanel Component
 
@@ -143,7 +149,7 @@ Make the article title in the table a clickable link to `/sites/[domain]/article
 
 **File:** `services/dashboard/src/app/api/articles/[domain]/[slug]/route.ts`
 
-Reads the article markdown from the network repo. Tries staging branch first, falls back to main.
+Reads the article **raw markdown** from the network repo (Git source, not KV). Determines the staging branch by looking up the site in `dashboard-index.yaml`. Tries staging branch first, falls back to main.
 
 **Response (200):**
 ```json
@@ -184,11 +190,11 @@ Updates only the `scripts` field in the article's frontmatter. Does not touch th
 ```
 
 **Flow:**
-1. Read current article markdown from staging branch.
-2. Parse frontmatter.
-3. Validate each script entry (name, position format, content contains `<script`).
+1. Read current article markdown from staging branch (looked up via `dashboard-index.yaml`).
+2. Parse frontmatter using `parseFrontmatter()` from `@/lib/article-upload`.
+3. Validate each script entry (name, position format, content contains `<script`, max 20 scripts).
 4. Replace `scripts` field in frontmatter, preserve everything else.
-5. Reconstruct markdown (updated YAML frontmatter + original body).
+5. Reconstruct markdown using `stringifyYaml(fm, { lineWidth: 0 })` + original body. The `lineWidth: 0` setting ensures the `yaml` library correctly handles multiline script content (inline JS with special characters like `:`, `#`, `{`, `}`, quotes) by choosing appropriate YAML scalar styles.
 6. Commit via `commitNetworkFiles()` to staging branch.
 7. Return 200 with updated frontmatter.
 
@@ -198,6 +204,15 @@ Updates only the `scripts` field in the article's frontmatter. Does not touch th
 
 ## Site-Worker Rendering Changes
 
+### Data Flow Overview
+
+Articles flow through three stages:
+1. **Git (network repo):** Raw markdown with YAML frontmatter — this is what the dashboard reads and writes.
+2. **seed-kv.ts:** Converts markdown body to HTML via `marked.parse()`, stores `ArticleRecord` in KV.
+3. **Site-worker (runtime):** Reads HTML body from KV, injects ads and scripts, renders via `set:html`.
+
+The `injectArticleScripts()` function operates on **HTML** (stage 3), not raw markdown.
+
 ### Script Injection Function
 
 **New file:** `packages/site-worker/src/lib/inject-scripts.ts`
@@ -205,7 +220,7 @@ Updates only the `scripts` field in the article's frontmatter. Does not touch th
 ```typescript
 export interface InjectionResult {
   headScripts: string;      // HTML to inject in <head>
-  bodyHtml: string;          // Article body with before/after/paragraph scripts injected
+  bodyHtml: string;          // Article body HTML with before/after/paragraph scripts injected
 }
 
 export function injectArticleScripts(
@@ -218,40 +233,50 @@ export function injectArticleScripts(
 - If `scripts` is undefined or empty, return `{ headScripts: "", bodyHtml: body }`.
 - Partition scripts by position type:
   - `head` → concatenate into `headScripts` string
-  - `before-content` → prepend to body
-  - `after-content` → append to body
+  - `before-content` → prepend to body HTML
+  - `after-content` → append to body HTML
   - `after-paragraph-N` → insert after the Nth `</p>` tag (1-indexed). If N exceeds paragraph count, append to end. Uses the same paragraph-counting pattern as `injectInlineAds()`.
 
 ### Article Page Update
 
 **Modify:** `packages/site-worker/src/pages/[slug]/index.astro`
 
-1. Call `injectArticleScripts(article.body, article.frontmatter.scripts)` to get `headScripts` and `bodyHtml`.
-2. Pass `headScripts` to the layout for `<head>` injection (via a slot or prop).
-3. Use `bodyHtml` instead of `article.body` for the `set:html` fragment (after inline ad injection — scripts inject first, then ads, or vice versa; order: ads first since they're positional, then scripts on the ad-injected body).
+**Injection order:** `injectInlineAds(body)` first, then `injectArticleScripts(adsInjectedBody)`. Ad slots inject `<div>` elements (not `<p>` tags), so paragraph numbering for `after-paragraph-N` scripts is unaffected by the ad injection step.
 
-**Injection order:** `injectInlineAds(body)` → `injectArticleScripts(adsInjectedBody)`. This way paragraph numbering for scripts refers to the final rendered paragraph positions including any ad-injected wrappers.
+1. Run `injectInlineAds(article.body, placements)` as before.
+2. Call `injectArticleScripts(adsInjectedBody, article.frontmatter.scripts)` to get `{ headScripts, bodyHtml }`.
+3. Use `bodyHtml` for the `set:html` article body fragment.
+4. Inject `headScripts` in `<head>` via Astro's named slot: add a second `<Fragment slot="head" set:html={headScripts} />` after the existing SEO head fragment. `BaseLayout.astro` already has `<slot name="head" />` which accepts multiple contributions.
 
 ### KV Schema Update
 
 **Modify:** `packages/site-worker/src/lib/kv-schema.ts`
 
-Add `scripts` to `ArticleIndexEntry`:
+Add `scripts` to `ArticleIndexEntry` (this is the runtime type the Worker reads from KV):
 
 ```typescript
+import type { ArticleScript } from "@atomic-platform/shared-types";
+
 export interface ArticleIndexEntry {
   // ... existing fields ...
   scripts?: ArticleScript[];
 }
 ```
 
-The `scripts` array is already in the frontmatter YAML, so `seed-kv.ts` will pick it up automatically when it reads frontmatter fields into `ArticleIndexEntry`. Verify that `seed-kv.ts` passes through unknown frontmatter fields or explicitly add `scripts` to the field mapping.
+### Seed-KV Update (Required)
 
-### Seed-KV Passthrough
+**Modify:** `packages/site-worker/scripts/seed-kv.ts`
 
-**Verify/Modify:** `packages/site-worker/scripts/seed-kv.ts`
+The `loadArticles` function constructs `ArticleIndexEntry` with an **explicit field whitelist** — it does NOT pass through unknown frontmatter fields. The `scripts` field must be explicitly added to the construction.
 
-Ensure that when building `ArticleIndexEntry` from parsed frontmatter, the `scripts` field is included. If seed-kv uses an explicit field whitelist, add `scripts` to it.
+In the `loadArticles` function, add to the frontmatter object construction:
+
+```typescript
+const frontmatter: ArticleIndexEntry = {
+  // ... existing fields ...
+  scripts: Array.isArray(front.scripts) ? (front.scripts as ArticleScript[]) : undefined,
+};
+```
 
 ---
 
@@ -261,7 +286,7 @@ Ensure that when building `ArticleIndexEntry` from parsed frontmatter, the `scri
 
 | File | Purpose |
 |------|---------|
-| `services/dashboard/src/app/sites/[domain]/articles/[slug]/page.tsx` | Article detail page (server component) |
+| `services/dashboard/src/app/sites/[domain]/articles/[slug]/page.tsx` | Article detail page (standalone server component, not inside SiteDetailTabs) |
 | `services/dashboard/src/components/site-detail/ArticleScriptsPanel.tsx` | Scripts management UI (client component) |
 | `services/dashboard/src/app/api/articles/[domain]/[slug]/route.ts` | GET article content API |
 | `services/dashboard/src/app/api/articles/[domain]/[slug]/scripts/route.ts` | PUT scripts update API |
@@ -272,9 +297,9 @@ Ensure that when building `ArticleIndexEntry` from parsed frontmatter, the `scri
 | File | Change |
 |------|--------|
 | `packages/shared-types/src/article.ts` | Add `ArticleScript` interface, `ArticleScriptPosition` type, `scripts?` field to `ArticleFrontmatter` |
-| `packages/site-worker/src/lib/kv-schema.ts` | Add `scripts?` to `ArticleIndexEntry` |
-| `packages/site-worker/src/pages/[slug]/index.astro` | Call `injectArticleScripts()`, pass head scripts to layout |
-| `packages/site-worker/scripts/seed-kv.ts` | Ensure `scripts` frontmatter field passes through to KV |
+| `packages/site-worker/src/lib/kv-schema.ts` | Add `scripts?` to `ArticleIndexEntry` (import `ArticleScript` from shared-types) |
+| `packages/site-worker/src/pages/[slug]/index.astro` | Call `injectArticleScripts()`, add head scripts via `<Fragment slot="head">` |
+| `packages/site-worker/scripts/seed-kv.ts` | Add `scripts` to the explicit field whitelist in `loadArticles` |
 | `services/dashboard/src/components/site-detail/ContentTab.tsx` | Make article titles clickable links to detail page |
 
 ---
