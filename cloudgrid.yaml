@@ -31,8 +31,6 @@ services:
   content-pipeline:
     type: node
     lang: typescript
-    build: npm run build
-    start: npm start
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       # IMPORTANT: CloudGrid auto-injects CONTENT_AGGREGATOR_URL as a
