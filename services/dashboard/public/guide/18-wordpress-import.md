@@ -14,6 +14,7 @@ Download the template from the Import page. Required columns:
 |--------|---------|-------------|
 | Site Name | Travel Beauty Tips | Display name for the site |
 | domain | travelbeautytips.com | Domain slug (used to derive siteId) |
+| Company | ATL | Company name shown on dashboard |
 | Website Category | Style & Fashion | Primary vertical for content |
 | Menu Items | Beauty, Fashion, Hair | Comma-separated topic list |
 | IAB Top Categories (Vertical) | Style & Fashion, Healthy Living | IAB vertical names |

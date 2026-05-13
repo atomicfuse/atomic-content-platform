@@ -73,6 +73,7 @@ export async function handleMigrationRequest(
   const site: CsvSiteRow = {
     name: body.siteDomain,
     domain: body.siteDomain,
+    company: "",
     websiteCategory: body.websiteCategory ?? "General",
     menuItems: body.menuItems ?? [],
     iabCategories: [],
@@ -285,12 +286,24 @@ export async function handleCreateSites(
           const now = new Date().toISOString();
           index.sites.push({
             domain: siteId,
+            company: site.company || null,
+            vertical: site.websiteCategory || null,
             status: "Staging",
             site_id: `${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
-            staging_branch: `staging/${siteId}`,
-            preview_url: previewUrl,
+            exclusivity: null,
+            ob_epid: null,
+            ga_info: null,
+            cf_apo: false,
+            fixed_ad: false,
             last_updated: now,
             created_at: now,
+            pages_project: null,
+            pages_subdomain: null,
+            zone_id: null,
+            staging_branch: `staging/${siteId}`,
+            preview_url: previewUrl,
+            saved_previews: null,
+            custom_domain: null,
           });
           await commitBatch(
             octokit, networkRepo,

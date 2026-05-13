@@ -56,6 +56,7 @@ describe("buildSiteYaml", () => {
   const fullRow: CsvSiteRow = {
     name: "travelbeautytips.com",
     domain: "travelbeautytips.com",
+    company: "ATL",
     websiteCategory: "Style & Fashion",
     menuItems: ["Beauty", "Fashion", "Hair", "Nails"],
     iabCategories: ["Style & Fashion", "Health & Fitness"],

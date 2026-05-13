@@ -93,6 +93,7 @@ function splitCsvLine(line: string): string[] {
 const CSV_HEADERS = [
   "Site Name",
   "domain",
+  "Company",
   "Website Category",
   "Menu Items",
   "IAB Top Categories (Vertical)",
@@ -107,6 +108,7 @@ const CSV_HEADERS = [
 const CSV_EXAMPLE_ROW = [
   "Cool News",
   "coolnews.dev",
+  "ATL",
   "Technology",
   "Tech, Science, Reviews",
   "Technology & Computing",

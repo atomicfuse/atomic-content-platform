@@ -1,6 +1,7 @@
 export interface CsvSiteRow {
   name: string;                    // site display name, e.g. "Travel Beauty Tips"
   domain: string;                  // e.g. "travelbeautytips.com"
+  company: string;                 // e.g. "ATL"
   websiteCategory: string;         // e.g. "Style & Fashion"
   menuItems: string[];             // parsed from comma-separated
   iabCategories: string[];         // parsed from comma-separated
