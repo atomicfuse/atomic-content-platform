@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
+import sharp from "sharp";
 import { commitNetworkFiles, readFileContent } from "@/lib/github";
 import { uploadToR2 } from "@/lib/r2-upload";
+import { R2_BUCKET_STAGING, R2_BUCKET_PROD } from "@/lib/constants";
 import {
   parseFrontmatter,
   validateArticleFrontmatter,
@@ -18,6 +20,11 @@ const IMAGE_TYPES: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif",
 };
+
+/** Max width for hero images — matches content-pipeline's image-optimizer. */
+const IMG_MAX_WIDTH = 1200;
+/** Max acceptable file size after optimization (350 KB). */
+const IMG_MAX_SIZE_BYTES = 350 * 1024;
 
 const MAX_MD_SIZE = 2 * 1024 * 1024;  // 2 MB
 const MAX_IMG_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -85,12 +92,41 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         );
       }
 
-      const imageBuffer = Buffer.from(await imageFile.arrayBuffer());
-      const r2Key = buildImageR2Key(domain, slug, ext);
-      const uploaded = await uploadToR2(r2Key, imageBuffer, imageFile.type);
+      // Optimize: resize to max 1200px wide, convert to WebP with quality
+      // ladder (80→60→40). Same strategy as content-pipeline image-optimizer.
+      const rawBuffer = Buffer.from(await imageFile.arrayBuffer());
+      const metadata = await sharp(rawBuffer).metadata();
+      let pipeline = sharp(rawBuffer);
+      if (metadata.width && metadata.width > IMG_MAX_WIDTH) {
+        pipeline = pipeline.resize({ width: IMG_MAX_WIDTH, withoutEnlargement: true });
+      }
+      let optimized = await pipeline.webp({ quality: 80 }).toBuffer();
+      if (optimized.length > IMG_MAX_SIZE_BYTES) {
+        pipeline = sharp(rawBuffer);
+        if (metadata.width && metadata.width > IMG_MAX_WIDTH) {
+          pipeline = pipeline.resize({ width: IMG_MAX_WIDTH, withoutEnlargement: true });
+        }
+        optimized = await pipeline.webp({ quality: 60 }).toBuffer();
+      }
+      if (optimized.length > IMG_MAX_SIZE_BYTES) {
+        pipeline = sharp(rawBuffer);
+        if (metadata.width && metadata.width > IMG_MAX_WIDTH) {
+          pipeline = pipeline.resize({ width: IMG_MAX_WIDTH, withoutEnlargement: true });
+        }
+        optimized = await pipeline.webp({ quality: 40 }).toBuffer();
+      }
+      console.log(`[article-upload] Image ${(rawBuffer.length / 1024).toFixed(0)} KB → ${(optimized.length / 1024).toFixed(0)} KB (WebP)`);
 
+      // Always store as .webp regardless of input format
+      const r2Key = buildImageR2Key(domain, slug, "webp");
+
+      // Upload to both staging and prod buckets. Staging is where the
+      // site-worker preview reads from; prod ensures images survive
+      // publish-to-prod without a separate re-upload step.
+      const uploaded = await uploadToR2(r2Key, optimized, "image/webp", R2_BUCKET_STAGING);
       if (uploaded) {
-        imagePath = buildImageFrontmatterPath(slug, ext);
+        await uploadToR2(r2Key, optimized, "image/webp", R2_BUCKET_PROD);
+        imagePath = buildImageFrontmatterPath(slug, "webp");
       }
       // If R2 upload fails, continue without image (non-blocking)
     }
