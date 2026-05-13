@@ -12,9 +12,8 @@ function getAgentUrl(): string {
   return CONTENT_AGENT_URL;
 }
 
-export async function POST(req: NextRequest): Promise<NextResponse> {
+export async function POST(req: NextRequest): Promise<Response> {
   const body = await req.json();
-
   const agentUrl = getAgentUrl();
 
   try {
@@ -24,13 +23,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: JSON.stringify(body),
     });
 
-    const result = (await response.json()) as Record<string, unknown>;
-    return NextResponse.json(result, { status: response.status });
+    if (!response.ok || !response.body) {
+      const text = await response.text();
+      return NextResponse.json(
+        { status: "error", message: text || `Upstream returned ${response.status}` },
+        { status: response.status },
+      );
+    }
+
+    return new Response(response.body, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+    });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "Failed to reach content agent";
     return NextResponse.json(
-      { error: `Content agent unavailable: ${message}` },
+      { status: "error", message: `Content agent unavailable: ${message}` },
       { status: 502 },
     );
   }
