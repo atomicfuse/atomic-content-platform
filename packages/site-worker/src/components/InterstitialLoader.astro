@@ -159,11 +159,15 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
             if (e.target === overlay && !btn.disabled) overlay.remove();
           });
 
+          // Widget container — the inline script targets this div by ID.
+          var content = document.createElement('div');
+          content.id = 'atl-interstitial-content';
           box.appendChild(btn);
+          box.appendChild(content);
           overlay.appendChild(box);
           document.body.appendChild(overlay);
 
-          // Inject the ad script into the content box
+          // Inject the ad script into the content container
           var s = document.createElement('script');
           if (cfg.script_url) {
             s.src = cfg.script_url;
@@ -171,7 +175,7 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
           } else {
             s.textContent = cfg.script_inline;
           }
-          box.appendChild(s);
+          content.appendChild(s);
         }
         // Wait for window load so async head scripts (ad SDKs) are ready.
         if (document.readyState === 'complete') { inject(); }
