@@ -114,11 +114,56 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
         }
       }
 
-      /* ---------- load ad network script ---------- */
+      /* ---------- load ad network script inside modal overlay ---------- */
       function fire() {
         if (!isAllowed()) return;
         record();
         function inject() {
+          var closeDelay = cfg.close_delay_seconds || 3;
+
+          // Backdrop
+          var overlay = document.createElement('div');
+          overlay.id = 'atl-interstitial-overlay';
+          overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;';
+
+          // Content container
+          var box = document.createElement('div');
+          box.style.cssText = 'position:relative;background:#fff;border-radius:8px;max-width:90vw;max-height:85vh;overflow:auto;padding:16px;';
+
+          // Close button (disabled during countdown)
+          var btn = document.createElement('button');
+          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:1px solid #333;border-radius:50%;background:rgba(255,255,255,0.95);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;';
+          btn.disabled = true;
+          btn.textContent = closeDelay.toString();
+          btn.setAttribute('aria-label', 'Close advertisement');
+
+          // Countdown then enable close
+          var remaining = closeDelay;
+          var timer = setInterval(function() {
+            remaining--;
+            if (remaining > 0) { btn.textContent = remaining.toString(); }
+            else {
+              clearInterval(timer);
+              btn.disabled = false;
+              btn.textContent = '×';
+              btn.style.cursor = 'pointer';
+            }
+          }, 1000);
+
+          btn.addEventListener('click', function() {
+            if (!btn.disabled) overlay.remove();
+          });
+
+          // Close on backdrop click (not on content)
+          overlay.addEventListener('click', function(e) {
+            if (e.target === overlay && !btn.disabled) overlay.remove();
+          });
+
+          box.appendChild(btn);
+          overlay.appendChild(box);
+          document.body.appendChild(overlay);
+
+          // Inject the ad script into the content box
           var s = document.createElement('script');
           if (cfg.script_url) {
             s.src = cfg.script_url;
@@ -126,7 +171,7 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
           } else {
             s.textContent = cfg.script_inline;
           }
-          document.body.appendChild(s);
+          box.appendChild(s);
         }
         // Wait for window load so async head scripts (ad SDKs) are ready.
         if (document.readyState === 'complete') { inject(); }
