@@ -13,7 +13,7 @@ import { NETWORK_REPO_OWNER } from "@/lib/constants";
  * and ads-txt profiles that haven't been committed to the network data repo yet.
  */
 const PLATFORM_REPO = { owner: NETWORK_REPO_OWNER, name: "atomic-content-platform" };
-const BUNDLED_SHARED_PAGES = "packages/site-builder/shared-pages";
+const BUNDLED_SHARED_PAGES = "packages/site-worker/shared-pages";
 
 export interface SharedPageInfo {
   name: string;
