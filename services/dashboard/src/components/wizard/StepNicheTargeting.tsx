@@ -374,6 +374,26 @@ export function StepNicheTargeting({
                 value={categorySearch}
                 onChange={(e): void => setCategorySearch(e.target.value)}
               />
+              {categorySearch.trim() && filteredCategories.length > 0 && (() => {
+                const unselectedCount = filteredCategories.filter(
+                  (c) => !data.selectedCategories.some((s) => s.id === c.id),
+                ).length;
+                return unselectedCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      const newCats = filteredCategories
+                        .filter((c) => !data.selectedCategories.some((s) => s.id === c.id))
+                        .map((c) => ({ id: c.id, name: c.name, iabCode: c.iab_code }));
+                      onChange({ selectedCategories: [...data.selectedCategories, ...newCats] });
+                      setPreviewCount(null);
+                    }}
+                    className="text-xs font-semibold text-cyan hover:text-cyan/80 transition-colors"
+                  >
+                    + Select all filtered ({unselectedCount})
+                  </button>
+                ) : null;
+              })()}
               {data.selectedCategories.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {data.selectedCategories.map((cat) => (

@@ -14,11 +14,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const qs = parentId
       ? `?parent_id=${parentId}&active=true&page_size=100`
       : "?active=true&page_size=100";
-    const res = await fetch(`${AGGREGATOR_URL}/api/categories${qs}`, {
+    const url = `${AGGREGATOR_URL}/api/categories${qs}`;
+    const res = await fetch(url, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 3600 },
+      redirect: "manual",
+      cache: "no-store",
     });
     if (!res.ok) {
+      console.error(`[categories] ${res.status} from ${url}`);
       return NextResponse.json([], { status: res.status });
     }
     const data: unknown = await res.json();
