@@ -28,7 +28,7 @@ import {
   listKVKeys,
   bulkPutKV,
 } from "@/lib/cloudflare";
-import { workerPreviewUrl, KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING } from "@/lib/constants";
+import { workerPreviewUrl, getKvNamespaces } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
@@ -663,8 +663,9 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
-  const [zones, index] = await Promise.all([
+  const [assetsZones, dev1Zones, index] = await Promise.all([
     listZones(),
+    listZones("financenewsbase"), // any Dev1 domain triggers Dev1 creds
     readDashboardIndex(),
   ]);
 
@@ -672,7 +673,15 @@ export async function getAvailableZones(): Promise<
     index.sites.map((s) => s.custom_domain).filter((d): d is string => Boolean(d)),
   );
 
-  return zones
+  // Merge and dedupe by zone name
+  const seen = new Set<string>();
+  const allZones = [...assetsZones, ...dev1Zones].filter((z) => {
+    if (seen.has(z.name)) return false;
+    seen.add(z.name);
+    return true;
+  });
+
+  return allZones
     .filter((z) => z.status === "active" && !usedCustomDomains.has(z.name))
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
@@ -690,9 +699,10 @@ async function promoteSiteToProduction(siteId: string): Promise<number> {
   ];
 
   // Prefix-based entries (articles + shared pages)
+  const kv = getKvNamespaces(siteId);
   const [articleKeys, sharedPageKeys] = await Promise.all([
-    listKVKeys(KV_NAMESPACE_STAGING, `article:${siteId}:`),
-    listKVKeys(KV_NAMESPACE_STAGING, `shared-page:${siteId}:`),
+    listKVKeys(kv.staging, `article:${siteId}:`, siteId),
+    listKVKeys(kv.staging, `shared-page:${siteId}:`, siteId),
   ]);
 
   const allKeys = [...singleKeys, ...articleKeys, ...sharedPageKeys];
@@ -705,7 +715,7 @@ async function promoteSiteToProduction(siteId: string): Promise<number> {
     const batch = allKeys.slice(i, i + BATCH_SIZE);
     const results = await Promise.all(
       batch.map(async (key) => {
-        const value = await getKVEntry(KV_NAMESPACE_STAGING, key);
+        const value = await getKVEntry(kv.staging, key, siteId);
         return value ? { key, value } : null;
       }),
     );
@@ -720,7 +730,7 @@ async function promoteSiteToProduction(siteId: string): Promise<number> {
   }
 
   // Bulk write to production KV
-  await bulkPutKV(KV_NAMESPACE_PROD, entries);
+  await bulkPutKV(kv.prod, entries, siteId);
   console.log(`[promoteSiteToProduction] Copied ${entries.length} KV entries from staging to production for siteId="${siteId}"`);
   return entries.length;
 }
@@ -734,13 +744,14 @@ async function patchSiteConfigDomain(siteId: string, customDomain: string): Prom
   const configKey = `site-config:${siteId}`;
 
   // Patch KV in both namespaces
-  for (const ns of [KV_NAMESPACE_PROD, KV_NAMESPACE_STAGING]) {
+  const kv = getKvNamespaces(siteId);
+  for (const ns of [kv.prod, kv.staging]) {
     try {
-      const raw = await getKVEntry(ns, configKey);
+      const raw = await getKVEntry(ns, configKey, siteId);
       if (!raw) continue;
       const config = JSON.parse(raw) as Record<string, unknown>;
       config.domain = customDomain;
-      await putKVEntry(ns, configKey, JSON.stringify(config));
+      await putKVEntry(ns, configKey, JSON.stringify(config), siteId);
     } catch (err) {
       console.warn(`[patchSiteConfigDomain] Failed to patch KV (${ns})`, err);
     }
@@ -816,7 +827,7 @@ export async function attachCustomDomain(
 
   // --- Step 2: Register custom domain on CF worker ---
   try {
-    await registerWorkerCustomDomain(customDomain, resolvedZoneId);
+    await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
   } catch (err) {
     // Roll back index write
     console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
@@ -842,16 +853,17 @@ export async function attachCustomDomain(
   // doesn't route to the Worker while KV has no site:<hostname> entry (→ 404).
   try {
     await putKVEntry(
-      KV_NAMESPACE_PROD,
+      getKvNamespaces(domain).prod,
       `site:${customDomain.toLowerCase()}`,
       JSON.stringify({ siteId: domain }),
+      domain,
     );
   } catch (kvErr) {
     console.error('[attachCustomDomain] KV seed failed, rolling back CF + index', kvErr);
 
     // Best-effort CF deregistration
     try {
-      await deregisterWorkerCustomDomain(customDomain);
+      await deregisterWorkerCustomDomain(customDomain, domain);
     } catch (cfErr) {
       console.error(
         '[attachCustomDomain] CF deregistration also failed — may need manual cleanup in Cloudflare dashboard',
@@ -903,7 +915,7 @@ export async function attachCustomDomain(
   // --- Step 5: Best-effort email routing ---
   if (site.zone_id) {
     try {
-      await enableEmailRouting(site.zone_id);
+      await enableEmailRouting(site.zone_id, domain);
       await createEmailRoutingRule(site.zone_id, customDomain);
     } catch (err) {
       console.error('[attachCustomDomain] email routing setup failed', err);
@@ -942,7 +954,7 @@ export async function detachCustomDomain(
 
   // --- Step 3: Deregister from CF worker (best-effort) ---
   try {
-    await deregisterWorkerCustomDomain(removedDomain);
+    await deregisterWorkerCustomDomain(removedDomain, domain);
   } catch (err) {
     console.warn('[detachCustomDomain] CF deregistration failed (will self-heal on next deploy)', err);
   }
@@ -950,8 +962,9 @@ export async function detachCustomDomain(
   // --- Step 4: Delete KV hostname entry (best-effort) ---
   try {
     await deleteKVEntry(
-      KV_NAMESPACE_PROD,
+      getKvNamespaces(domain).prod,
       `site:${removedDomain.toLowerCase()}`,
+      domain,
     );
   } catch (err) {
     console.warn('[detachCustomDomain] KV delete failed (stale entry is harmless)', err);

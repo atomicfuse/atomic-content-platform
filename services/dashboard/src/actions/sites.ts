@@ -21,9 +21,8 @@ import {
   deleteR2Objects,
 } from "@/lib/cloudflare";
 import {
-  KV_NAMESPACE_PROD,
-  KV_NAMESPACE_STAGING,
   R2_BUCKET_PROD,
+  getKvNamespaces,
 } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
@@ -89,7 +88,7 @@ export async function deleteSiteEntry(domain: string): Promise<{
   // 3. Delete CF Pages project if it exists
   if (site.pages_project) {
     try {
-      await deletePagesProject(site.pages_project);
+      await deletePagesProject(site.pages_project, domain);
       steps.push({ label: `Deleted CF Pages project: ${site.pages_project}`, success: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -118,16 +117,17 @@ export async function deleteSiteEntry(domain: string): Promise<{
       `article-index:${siteId}`,
       `sync-status:${siteId}`,
     ];
+    const kv = getKvNamespaces(domain);
     const namespaces = [
-      { id: KV_NAMESPACE_STAGING, label: "staging" },
-      { id: KV_NAMESPACE_PROD, label: "prod" },
+      { id: kv.staging, label: "staging" },
+      { id: kv.prod, label: "prod" },
     ];
     let kvDeleted = 0;
     const kvErrors: string[] = [];
     for (const ns of namespaces) {
       for (const key of kvKeys) {
         try {
-          await deleteKVEntry(ns.id, key);
+          await deleteKVEntry(ns.id, key, domain);
           kvDeleted++;
         } catch (err) {
           kvErrors.push(`${ns.label}/${key}: ${err instanceof Error ? err.message : "Unknown"}`);
@@ -156,13 +156,14 @@ export async function deleteSiteEntry(domain: string): Promise<{
     let totalDeleted = 0;
     const prefixErrors: string[] = [];
 
+    const kv = getKvNamespaces(domain);
     for (const ns of [
-      { id: KV_NAMESPACE_STAGING, label: "staging" },
-      { id: KV_NAMESPACE_PROD, label: "prod" },
+      { id: kv.staging, label: "staging" },
+      { id: kv.prod, label: "prod" },
     ]) {
       for (const { prefix, label } of prefixes) {
         try {
-          const count = await deleteKVByPrefix(ns.id, prefix);
+          const count = await deleteKVByPrefix(ns.id, prefix, domain);
           totalDeleted += count;
         } catch (err) {
           prefixErrors.push(
@@ -172,7 +173,7 @@ export async function deleteSiteEntry(domain: string): Promise<{
       }
       for (const key of extraKeys) {
         try {
-          await deleteKVEntry(ns.id, key);
+          await deleteKVEntry(ns.id, key, domain);
           totalDeleted++;
         } catch (err) {
           prefixErrors.push(
@@ -203,7 +204,7 @@ export async function deleteSiteEntry(domain: string): Promise<{
     const r2Errors: string[] = [];
 
     try {
-      const count = await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${siteId}/`);
+      const count = await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${siteId}/`, domain);
       r2Deleted += count;
     } catch (err) {
       r2Errors.push(err instanceof Error ? err.message : "Unknown");
@@ -258,7 +259,7 @@ function articleImageKey(domain: string, slug: string): string {
 async function deleteArticleImages(domain: string, slugs: string[]): Promise<void> {
   const keys = slugs.map((s) => articleImageKey(domain, s));
   try {
-    await deleteR2Objects(R2_BUCKET_PROD, keys);
+    await deleteR2Objects(R2_BUCKET_PROD, keys, domain);
   } catch (err) {
     console.warn(
       `[sites] Failed to delete R2 images for ${domain}:`,
@@ -320,19 +321,20 @@ export async function permanentlyDeleteSite(domain: string): Promise<void> {
   }
 
   // Retry KV cleanup (all key patterns)
-  for (const nsId of [KV_NAMESPACE_STAGING, KV_NAMESPACE_PROD]) {
-    try { await deleteKVByPrefix(nsId, `article:${domain}:`); } catch { /* best-effort */ }
-    try { await deleteKVByPrefix(nsId, `shared-page:${domain}:`); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `site-config-prev:${domain}`); } catch { /* best-effort */ }
+  const kv = getKvNamespaces(domain);
+  for (const nsId of [kv.staging, kv.prod]) {
+    try { await deleteKVByPrefix(nsId, `article:${domain}:`, domain); } catch { /* best-effort */ }
+    try { await deleteKVByPrefix(nsId, `shared-page:${domain}:`, domain); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `site-config-prev:${domain}`, domain); } catch { /* best-effort */ }
     // Also retry the known keys in case soft delete missed them
-    try { await deleteKVEntry(nsId, `site:${domain}`); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `site-config:${domain}`); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `article-index:${domain}`); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `sync-status:${domain}`); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `site:${domain}`, domain); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `site-config:${domain}`, domain); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `article-index:${domain}`, domain); } catch { /* best-effort */ }
+    try { await deleteKVEntry(nsId, `sync-status:${domain}`, domain); } catch { /* best-effort */ }
   }
 
   // Retry R2 cleanup
-  try { await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`); } catch { /* best-effort */ }
+  try { await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`, domain); } catch { /* best-effort */ }
 
   await permanentlyRemoveFromTrash(domain);
   revalidatePath("/");

@@ -90,9 +90,9 @@ export async function DELETE(
     }
 
     const email = buildContactEmail(domain);
-    const rule = await findEmailRule(site.zone_id, email);
+    const rule = await findEmailRule(site.zone_id, email, domain);
     if (rule) {
-      await deleteEmailRoutingRule(site.zone_id, rule.id);
+      await deleteEmailRoutingRule(site.zone_id, rule.id, domain);
     }
 
     return NextResponse.json({ ok: true });

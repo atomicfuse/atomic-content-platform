@@ -118,7 +118,7 @@ Deploys your site to staging and shows a live preview.
 
 If the preview times out, you can click **Check Again** to re-poll, or **Show Preview Anyway** to force-display the URL.
 
-The staging URL looks like: `https://atomic-site-worker-staging.dev1-953.workers.dev?_atl_site={slug}`
+The staging URL looks like: `https://atomic-site-worker-staging.accounts-4a8.workers.dev?_atl_site={slug}`
 
 ---
 
@@ -163,7 +163,7 @@ The scheduler also generates content automatically based on your articles-per-da
 Click the **Worker Preview** button on the Deployments tab, or visit the staging URL directly:
 
 ```
-https://atomic-site-worker-staging.dev1-953.workers.dev?_atl_site={slug}
+https://atomic-site-worker-staging.accounts-4a8.workers.dev?_atl_site={slug}
 ```
 
 The `?_atl_site={slug}` parameter tells the staging Worker which site to serve. This parameter propagates automatically when you click links on the preview -- you do not need to add it manually to every URL.

@@ -57,7 +57,7 @@ describe('env config emit', () => {
 
     const kv = cfg.kv_namespaces as Array<{ binding: string; id?: string }>;
     const configKv = kv.find((b) => b.binding === 'CONFIG_KV');
-    expect(configKv?.id).toBe('4673c82cdd7f41d49e93d938fb1c6848');
+    expect(configKv?.id).toBe('f6c35e1fa8c841b8b193509a3a237f7f');
 
     const r2 = cfg.r2_buckets as Array<{ binding: string; bucket_name?: string }>;
     const assetBucket = r2.find((b) => b.binding === 'ASSET_BUCKET');
@@ -72,7 +72,7 @@ describe('env config emit', () => {
 
     const kv = cfg.kv_namespaces as Array<{ binding: string; id?: string }>;
     const configKv = kv.find((b) => b.binding === 'CONFIG_KV');
-    expect(configKv?.id).toBe('a69cb2c59507482ca5e6d114babdd098');
+    expect(configKv?.id).toBe('b258e47065274b8b8af1a0b6d6529c1d');
 
     const r2 = cfg.r2_buckets as Array<{ binding: string; bucket_name?: string }>;
     const assetBucket = r2.find((b) => b.binding === 'ASSET_BUCKET');

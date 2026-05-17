@@ -73,7 +73,7 @@ export const DASHBOARD_INDEX_PATH = "dashboard-index.yaml";
  */
 export const WORKER_STAGING_URL =
   process.env.NEXT_PUBLIC_WORKER_STAGING_URL ??
-  "https://atomic-site-worker-staging.dev1-953.workers.dev";
+  "https://atomic-site-worker-staging.accounts-4a8.workers.dev";
 
 /** Build a Worker preview URL that forces a specific siteId via the
  *  preview-override query param. The Worker only honours this on
@@ -85,7 +85,8 @@ export const WORKER_STAGING_URL =
  *  CI writes for any push to `staging/<domain>` branches). */
 export function workerPreviewUrl(siteId: string, path = "/"): string {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  return `${WORKER_STAGING_URL}${cleanPath}?_atl_site=${encodeURIComponent(siteId)}`;
+  const base = getWorkerStagingUrl(siteId);
+  return `${base}${cleanPath}?_atl_site=${encodeURIComponent(siteId)}`;
 }
 
 // --- Cloudflare Worker + KV identifiers (production) ---
@@ -93,14 +94,61 @@ export function workerPreviewUrl(siteId: string, path = "/"): string {
 /** Production worker name — used for Workers Custom Domains API. */
 export const WORKER_NAME_PROD = "atomic-site-worker";
 
-/** Production CONFIG_KV namespace ID. */
-export const KV_NAMESPACE_PROD = "a69cb2c59507482ca5e6d114babdd098";
+/** Production CONFIG_KV namespace ID — Assets @ AtomicLabs. */
+export const KV_NAMESPACE_PROD = "b258e47065274b8b8af1a0b6d6529c1d";
 
-/** Staging CONFIG_KV namespace ID (not used by attach/detach — included for reference). */
-export const KV_NAMESPACE_STAGING = "4673c82cdd7f41d49e93d938fb1c6848";
+/** Staging CONFIG_KV namespace ID — Assets @ AtomicLabs. */
+export const KV_NAMESPACE_STAGING = "f6c35e1fa8c841b8b193509a3a237f7f";
 
 // --- R2 bucket identifier ---
 
 /** R2 bucket for all per-site assets. The site-worker's ASSET_BUCKET
  *  binding points here in both staging and production environments. */
 export const R2_BUCKET_PROD = "atl-assets-prod";
+
+// --- Dev1 legacy account (temporary — remove after zone transfer to Assets) ---
+
+/** Site identifiers whose zones still live on the Dev1 Cloudflare account.
+ *  These are dashboard-index `domain` values (site folder names).
+ *  Remove a domain from this set after its zone is transferred to Assets. */
+export const DEV1_SITE_IDS = new Set(["financenewsbase", "coolnews-atl"]);
+
+/** Custom domains (hostnames) that belong to Dev1 sites.
+ *  Used by functions that receive a custom domain instead of a siteId
+ *  (e.g. email routing's `createEmailRoutingRule`). */
+export const DEV1_CUSTOM_DOMAINS = new Set(["financenewsbase.com", "coolnews.dev"]);
+
+/** Check if a domain identifier (siteId OR custom domain) belongs to the Dev1 account. */
+export function isDev1Domain(domain: string): boolean {
+  return DEV1_SITE_IDS.has(domain) || DEV1_CUSTOM_DOMAINS.has(domain);
+}
+
+/** Dev1 account ID. */
+export const DEV1_ACCOUNT_ID = "953511f6356ff606d84ac89bba3eff50";
+
+/** Dev1 production CONFIG_KV namespace ID. */
+export const DEV1_KV_NAMESPACE_PROD = "a69cb2c59507482ca5e6d114babdd098";
+
+/** Dev1 staging CONFIG_KV namespace ID. */
+export const DEV1_KV_NAMESPACE_STAGING = "4673c82cdd7f41d49e93d938fb1c6848";
+
+/** Dev1 staging Worker preview URL. */
+export const DEV1_WORKER_STAGING_URL =
+  "https://atomic-site-worker-staging.dev1-953.workers.dev";
+
+/** Get the KV namespace IDs for a domain (Dev1 or Assets). */
+export function getKvNamespaces(domain: string): {
+  prod: string;
+  staging: string;
+} {
+  if (isDev1Domain(domain)) {
+    return { prod: DEV1_KV_NAMESPACE_PROD, staging: DEV1_KV_NAMESPACE_STAGING };
+  }
+  return { prod: KV_NAMESPACE_PROD, staging: KV_NAMESPACE_STAGING };
+}
+
+/** Get the Worker staging preview URL for a domain (Dev1 or Assets). */
+export function getWorkerStagingUrl(domain: string): string {
+  if (isDev1Domain(domain)) return DEV1_WORKER_STAGING_URL;
+  return WORKER_STAGING_URL;
+}

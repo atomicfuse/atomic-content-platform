@@ -212,7 +212,7 @@ export async function handleCreateSites(
     const site = parseCsvRow(row);
     const domainOrName = site.domain || site.name;
     const siteId = domainToSiteId(domainOrName);
-    const previewUrl = `https://atomic-site-worker-staging.dev1-953.workers.dev/?_atl_site=${siteId}`;
+    const previewUrl = `https://atomic-site-worker-staging.accounts-4a8.workers.dev/?_atl_site=${siteId}`;
     const warnings: string[] = [];
 
     if (!domainOrName) {

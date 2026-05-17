@@ -64,7 +64,7 @@ const PLATFORM_ROOT = join(__dirname, '..', '..', '..');
 const DEFAULT_NETWORK_PATH = join(PLATFORM_ROOT, '..', 'atomic-labs-network');
 
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH ?? DEFAULT_NETWORK_PATH;
-const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? '4673c82cdd7f41d49e93d938fb1c6848';
+const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? 'f6c35e1fa8c841b8b193509a3a237f7f'; // CONFIG_KV_STAGING — Assets @ AtomicLabs
 const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
 /** R2 bucket name for per-site assets. Shared across environments.
  *  Override with `R2_BUCKET=<name> pnpm seed:kv ...` if needed. */

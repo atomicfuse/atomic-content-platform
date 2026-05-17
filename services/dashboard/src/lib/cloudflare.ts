@@ -1,4 +1,4 @@
-import { WORKER_NAME_PROD } from "@/lib/constants";
+import { WORKER_NAME_PROD, isDev1Domain, DEV1_ACCOUNT_ID } from "@/lib/constants";
 import {
   S3Client,
   ListObjectsV2Command,
@@ -67,36 +67,55 @@ export interface WorkerCustomDomain {
   environment: string;
 }
 
-// --- Helpers ---
+// --- Credential resolver ---
 
-function getHeaders(): HeadersInit {
+export interface CfCredentials {
+  accountId: string;
+  token: string;
+}
+
+/** Resolve CF credentials for a domain. Dev1 domains use DEV1_CLOUDFLARE_API_TOKEN;
+ *  everything else uses the primary CLOUDFLARE_API_TOKEN.
+ *  Accepts both siteIds ("financenewsbase") and custom domains ("financenewsbase.com"). */
+export function getCredentials(domain?: string): CfCredentials {
+  if (domain && isDev1Domain(domain)) {
+    const token = process.env.DEV1_CLOUDFLARE_API_TOKEN;
+    if (!token) throw new Error("DEV1_CLOUDFLARE_API_TOKEN is not set");
+    return { accountId: DEV1_ACCOUNT_ID, token };
+  }
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set");
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accountId) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
+  return { accountId, token };
+}
+
+export function headersFromCreds(creds: CfCredentials): HeadersInit {
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${creds.token}`,
     "Content-Type": "application/json",
   };
 }
 
+// Backward-compat wrapper for callers that don't have domain context.
 export function getAccountId(): string {
-  const id = process.env.CLOUDFLARE_ACCOUNT_ID;
-  if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
-  return id;
+  return getCredentials().accountId;
 }
 
 // --- Zones API ---
 
 /** Fetch all domains (zones) from the Cloudflare account. */
-export async function listZones(): Promise<CloudflareZone[]> {
-  const accountId = getAccountId();
+export async function listZones(domain?: string): Promise<CloudflareZone[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const zones: CloudflareZone[] = [];
   let page = 1;
   let hasMore = true;
 
   while (hasMore) {
     const response = await fetch(
-      `${CF_API_BASE}/zones?account.id=${accountId}&per_page=50&page=${page}`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/zones?account.id=${creds.accountId}&per_page=50&page=${page}`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<CloudflareZone[]>;
     if (!data.success) {
@@ -115,11 +134,12 @@ export async function listZones(): Promise<CloudflareZone[]> {
 // --- Pages API ---
 
 /** Fetch all Cloudflare Pages projects. */
-export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
-  const accountId = getAccountId();
+export async function listPagesProjects(domain?: string): Promise<CloudflarePagesProject[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects`,
-    { headers: getHeaders() }
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects`,
+    { headers }
   );
   const data = (await response.json()) as CloudflareResponse<CloudflarePagesProject[]>;
   if (!data.success) {
@@ -132,13 +152,15 @@ export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
 
 /** Get custom domains for a specific Pages project. */
 export async function getPagesProjectDomains(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<string[]> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   try {
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/domains`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<
       Array<{ id: string; name: string; status: string }>
@@ -158,10 +180,10 @@ export async function getPagesProjectDomains(
  * For each zone (domain), checks if any Pages project has that domain
  * as a custom domain. This tells us if the domain is deployed.
  */
-export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]> {
+export async function listDomainsWithPagesInfo(domain?: string): Promise<CloudflareDomainInfo[]> {
   const [zones, projects] = await Promise.all([
-    listZones(),
-    listPagesProjects(),
+    listZones(domain),
+    listPagesProjects(domain),
   ]);
 
   // Build a map: custom domain → Pages project
@@ -172,10 +194,10 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
   // First pass: use the `domains` field from project list
   for (const project of projects) {
     if (project.domains) {
-      for (const domain of project.domains) {
+      for (const d of project.domains) {
         // Skip *.pages.dev subdomains — we want custom domains only
-        if (!domain.endsWith(".pages.dev")) {
-          domainToProject.set(domain, project);
+        if (!d.endsWith(".pages.dev")) {
+          domainToProject.set(d, project);
         }
       }
     }
@@ -188,9 +210,9 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
       (d) => !d.endsWith(".pages.dev")
     );
     if (!hasCustomDomain) {
-      const customDomains = await getPagesProjectDomains(project.name);
-      for (const domain of customDomains) {
-        domainToProject.set(domain, project);
+      const customDomains = await getPagesProjectDomains(project.name, domain);
+      for (const d of customDomains) {
+        domainToProject.set(d, project);
       }
     }
   }
@@ -214,14 +236,16 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
 
 /** Trigger a Cloudflare Pages deployment. */
 export async function triggerPagesBuild(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<{ id: string; url: string }> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/deployments`,
     {
       method: "POST",
-      headers: getHeaders(),
+      headers,
     }
   );
   const data = (await response.json()) as CloudflareResponse<{
@@ -238,7 +262,8 @@ export async function triggerPagesBuild(
 
 /** Get the latest deployment for a Pages project. */
 export async function getLatestDeployment(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<{
   id: string;
   url: string;
@@ -246,11 +271,12 @@ export async function getLatestDeployment(
   created_on: string;
   latest_stage?: { name: string; status: string };
 } | null> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   try {
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments?per_page=1`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/deployments?per_page=1`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<
       Array<{
@@ -271,11 +297,12 @@ export async function getLatestDeployment(
 }
 
 /** Check if Cloudflare APO is enabled for a zone. */
-export async function getAPOStatus(zoneId: string): Promise<boolean> {
+export async function getAPOStatus(zoneId: string, domain?: string): Promise<boolean> {
+  const headers = headersFromCreds(getCredentials(domain));
   try {
     const response = await fetch(
       `${CF_API_BASE}/zones/${zoneId}/settings/automatic_platform_optimization`,
-      { headers: getHeaders() }
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<{
       value: { enabled: boolean };
@@ -289,13 +316,14 @@ export async function getAPOStatus(zoneId: string): Promise<boolean> {
 // --- Pages Project Management ---
 
 /** Delete a Cloudflare Pages project. */
-export async function deletePagesProject(name: string): Promise<void> {
-  const accountId = getAccountId();
+export async function deletePagesProject(name: string, domain?: string): Promise<void> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${name}`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${name}`,
     {
       method: "DELETE",
-      headers: getHeaders(),
+      headers,
     }
   );
   const data = (await response.json()) as CloudflareResponse<null>;
@@ -314,13 +342,15 @@ export async function deletePagesProject(name: string): Promise<void> {
 export async function registerWorkerCustomDomain(
   hostname: string,
   zoneId: string,
+  domain?: string,
 ): Promise<{ id: string }> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/workers/domains`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains`,
     {
       method: "PUT",
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify({
         zone_id: zoneId,
         hostname,
@@ -342,12 +372,14 @@ export async function registerWorkerCustomDomain(
  *  No-op if the domain is not currently registered. */
 export async function deregisterWorkerCustomDomain(
   hostname: string,
+  domain?: string,
 ): Promise<void> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   // Find the domain ID by hostname (server-side filter avoids pagination)
   const listResp = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}&service=${WORKER_NAME_PROD}`,
-    { headers: getHeaders() },
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}&service=${WORKER_NAME_PROD}`,
+    { headers },
   );
   const listData = (await listResp.json()) as CloudflareResponse<WorkerCustomDomain[]>;
   if (!listData.success) {
@@ -360,8 +392,8 @@ export async function deregisterWorkerCustomDomain(
   if (!match) return; // Already removed — no-op
 
   const delResp = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/workers/domains/${match.id}`,
-    { method: "DELETE", headers: getHeaders() },
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains/${match.id}`,
+    { method: "DELETE", headers },
   );
   const delData = (await delResp.json()) as CloudflareResponse<null>;
   if (!delData.success) {
@@ -373,16 +405,17 @@ export async function deregisterWorkerCustomDomain(
 
 /** List all Workers Custom Domains registered for the production worker.
  *  Handles pagination (same pattern as listZones). */
-export async function listWorkerCustomDomains(): Promise<WorkerCustomDomain[]> {
-  const accountId = getAccountId();
+export async function listWorkerCustomDomains(domain?: string): Promise<WorkerCustomDomain[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const domains: WorkerCustomDomain[] = [];
   let page = 1;
   let hasMore = true;
 
   while (hasMore) {
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/workers/domains?service=${WORKER_NAME_PROD}&per_page=50&page=${page}`,
-      { headers: getHeaders() },
+      `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains?service=${WORKER_NAME_PROD}&per_page=50&page=${page}`,
+      { headers },
     );
     const data = (await response.json()) as CloudflareResponse<WorkerCustomDomain[]>;
     if (!data.success) {
@@ -414,11 +447,14 @@ export async function upsertDnsTxtRecord(
   zoneId: string,
   name: string,
   content: string,
+  domain?: string,
 ): Promise<void> {
+  const headers = headersFromCreds(getCredentials(domain));
+
   // List existing TXT records matching this name
   const listResp = await fetch(
     `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
-    { headers: getHeaders() },
+    { headers },
   );
   const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
   if (!listData.success) {
@@ -438,7 +474,7 @@ export async function upsertDnsTxtRecord(
       `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
       {
         method: "PATCH",
-        headers: getHeaders(),
+        headers,
         body: JSON.stringify({ content }),
       },
     );
@@ -454,7 +490,7 @@ export async function upsertDnsTxtRecord(
       `${CF_API_BASE}/zones/${zoneId}/dns_records`,
       {
         method: "POST",
-        headers: getHeaders(),
+        headers,
         body: JSON.stringify({ type: "TXT", name: "@", content }),
       },
     );
@@ -473,10 +509,13 @@ export async function deleteDnsTxtRecord(
   zoneId: string,
   name: string,
   contentPrefix: string,
+  domain?: string,
 ): Promise<void> {
+  const headers = headersFromCreds(getCredentials(domain));
+
   const listResp = await fetch(
     `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
-    { headers: getHeaders() },
+    { headers },
   );
   const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
   if (!listData.success) return; // Best-effort
@@ -486,7 +525,7 @@ export async function deleteDnsTxtRecord(
 
   await fetch(
     `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
-    { method: "DELETE", headers: getHeaders() },
+    { method: "DELETE", headers },
   );
 }
 
@@ -494,19 +533,20 @@ export async function deleteDnsTxtRecord(
 
 /** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
  *  Content-Type is overridden to text/plain because the KV values API expects a raw
- *  body — the default application/json from getHeaders() would be semantically incorrect. */
+ *  body — the default application/json from headersFromCreds() would be semantically incorrect. */
 export async function putKVEntry(
   namespaceId: string,
   key: string,
   value: string,
+  domain?: string,
 ): Promise<void> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
     {
       method: "PUT",
       headers: {
-        ...getHeaders(),
+        ...headersFromCreds(creds),
         "Content-Type": "text/plain",
       },
       body: value,
@@ -524,13 +564,15 @@ export async function putKVEntry(
 export async function deleteKVEntry(
   namespaceId: string,
   key: string,
+  domain?: string,
 ): Promise<void> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
     {
       method: "DELETE",
-      headers: getHeaders(),
+      headers,
     },
   );
   const data = (await response.json()) as CloudflareResponse<null>;
@@ -547,11 +589,13 @@ export async function deleteKVEntry(
 export async function getKVEntry(
   namespaceId: string,
   key: string,
+  domain?: string,
 ): Promise<string | null> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
-    { headers: getHeaders() },
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    { headers },
   );
   if (response.status === 404) return null;
   if (!response.ok) {
@@ -565,8 +609,10 @@ export async function getKVEntry(
 export async function listKVKeys(
   namespaceId: string,
   prefix: string,
+  domain?: string,
 ): Promise<string[]> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const keys: string[] = [];
   let cursor: string | undefined;
 
@@ -576,8 +622,8 @@ export async function listKVKeys(
     if (cursor) params.set('cursor', cursor);
 
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/keys?${params}`,
-      { headers: getHeaders() },
+      `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/keys?${params}`,
+      { headers },
     );
     const data = (await response.json()) as CloudflareResponse<Array<{ name: string }>> & {
       result_info?: { cursor?: string };
@@ -599,14 +645,16 @@ export async function listKVKeys(
 export async function bulkPutKV(
   namespaceId: string,
   entries: Array<{ key: string; value: string }>,
+  domain?: string,
 ): Promise<void> {
   if (entries.length === 0) return;
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
     {
       method: "PUT",
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify(entries),
     },
   );
@@ -623,14 +671,16 @@ export async function bulkPutKV(
 export async function bulkDeleteKV(
   namespaceId: string,
   keys: string[],
+  domain?: string,
 ): Promise<void> {
   if (keys.length === 0) return;
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
     {
       method: "DELETE",
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify(keys),
     },
   );
@@ -647,37 +697,45 @@ export async function bulkDeleteKV(
 export async function deleteKVByPrefix(
   namespaceId: string,
   prefix: string,
+  domain?: string,
 ): Promise<number> {
-  const keys = await listKVKeys(namespaceId, prefix);
+  const keys = await listKVKeys(namespaceId, prefix, domain);
   if (keys.length === 0) return 0;
   // CF bulk delete supports up to 10,000 keys per call
   for (let i = 0; i < keys.length; i += 10_000) {
-    await bulkDeleteKV(namespaceId, keys.slice(i, i + 10_000));
+    await bulkDeleteKV(namespaceId, keys.slice(i, i + 10_000), domain);
   }
   return keys.length;
 }
 
 // --- R2 Cleanup (S3-compatible API) ---
 
-/** Lazily-initialised S3 client for R2 operations.
- *  Requires R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY env vars. */
-let _s3Client: S3Client | null = null;
+/** Account-keyed S3 client cache for R2 operations.
+ *  Requires R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY env vars (or DEV1_ variants). */
+const _s3Clients = new Map<string, S3Client>();
 
-export function getR2Client(): S3Client | null {
-  if (_s3Client) return _s3Client;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+export function getR2Client(domain?: string): S3Client | null {
+  const creds = getCredentials(domain);
+  const existing = _s3Clients.get(creds.accountId);
+  if (existing) return existing;
+
+  const accessKeyId = domain && isDev1Domain(domain)
+    ? process.env.DEV1_R2_ACCESS_KEY_ID
+    : process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = domain && isDev1Domain(domain)
+    ? process.env.DEV1_R2_SECRET_ACCESS_KEY
+    : process.env.R2_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) {
-    console.warn("R2 cleanup skipped: R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY not configured");
+    console.warn("R2 cleanup skipped: R2 credentials not configured");
     return null;
   }
-  const accountId = getAccountId();
-  _s3Client = new S3Client({
+  const client = new S3Client({
     region: "auto",
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
   });
-  return _s3Client;
+  _s3Clients.set(creds.accountId, client);
+  return client;
 }
 
 /** Delete all R2 objects matching a prefix from a bucket.
@@ -686,8 +744,9 @@ export function getR2Client(): S3Client | null {
 export async function deleteR2ObjectsByPrefix(
   bucket: string,
   prefix: string,
+  domain?: string,
 ): Promise<number> {
-  const client = getR2Client();
+  const client = getR2Client(domain);
   if (!client) return 0;
 
   let deleted = 0;
@@ -729,9 +788,10 @@ export async function deleteR2ObjectsByPrefix(
 export async function deleteR2Objects(
   bucket: string,
   keys: string[],
+  domain?: string,
 ): Promise<number> {
   if (keys.length === 0) return 0;
-  const client = getR2Client();
+  const client = getR2Client(domain);
   if (!client) return 0;
 
   await client.send(

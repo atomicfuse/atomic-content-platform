@@ -18,7 +18,7 @@ assets = { directory = "./dist", binding = "ASSETS", run_worker_first = true }
 # namespace differs per env so staging and prod don't share state.
 [[kv_namespaces]]
 binding = "CONFIG_KV"
-id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING (default env)
+id = "f6c35e1fa8c841b8b193509a3a237f7f" # CONFIG_KV_STAGING — Assets @ AtomicLabs
 
 # R2 bucket for per-site assets. Keys are `<siteId>/assets/<path>`.
 # sync-kv.yml uploads on push; the /<siteId>/assets/[...path] route
@@ -38,7 +38,7 @@ name = "atomic-site-worker-staging"
 
 [[env.staging.kv_namespaces]]
 binding = "CONFIG_KV"
-id = "4673c82cdd7f41d49e93d938fb1c6848" # CONFIG_KV_STAGING
+id = "f6c35e1fa8c841b8b193509a3a237f7f" # CONFIG_KV_STAGING — Assets @ AtomicLabs
 
 [[env.staging.r2_buckets]]
 binding = "ASSET_BUCKET"
@@ -56,7 +56,7 @@ routes = [
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_KV"
-id = "a69cb2c59507482ca5e6d114babdd098" # CONFIG_KV (prod)
+id = "b258e47065274b8b8af1a0b6d6529c1d" # CONFIG_KV — Assets @ AtomicLabs (prod)
 
 [[env.production.r2_buckets]]
 binding = "ASSET_BUCKET"

@@ -12,9 +12,9 @@
  *   - writing a session summary that claims the system is healthy
  *
  * Required env:
- *   CLOUDFLARE_ACCOUNT_ID  — Dev1 (953511f6...)
+ *   CLOUDFLARE_ACCOUNT_ID  — Assets @ AtomicLabs (4a8cfd85...)
  *   CLOUDFLARE_API_TOKEN   — token with Workers Scripts:Read +
- *                            Workers KV Storage:Read + Pages:Read
+ *                            Workers KV Storage:Read + R2:Read
  *   GH_TOKEN  (optional)   — defaults to whatever `gh auth status` provides
  *
  * Output: human-readable checklist with ✓ / ⚠ / ✗ markers + a final
@@ -40,8 +40,8 @@ interface ExpectedWorker {
 }
 
 const EXPECTED_KV: ExpectedKv[] = [
-  { binding: 'CONFIG_KV_STAGING', id: '4673c82cdd7f41d49e93d938fb1c6848', description: 'staging' },
-  { binding: 'CONFIG_KV', id: 'a69cb2c59507482ca5e6d114babdd098', description: 'prod' },
+  { binding: 'CONFIG_KV_STAGING', id: 'f6c35e1fa8c841b8b193509a3a237f7f', description: 'staging' },
+  { binding: 'CONFIG_KV', id: 'b258e47065274b8b8af1a0b6d6529c1d', description: 'prod' },
 ];
 
 const EXPECTED_R2_BUCKETS: Array<{ name: string; description: string }> = [
@@ -51,12 +51,12 @@ const EXPECTED_R2_BUCKETS: Array<{ name: string; description: string }> = [
 const EXPECTED_WORKERS: ExpectedWorker[] = [
   {
     name: 'atomic-site-worker-staging',
-    expectedKv: { CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848' },
+    expectedKv: { CONFIG_KV: 'f6c35e1fa8c841b8b193509a3a237f7f' },
     expectedR2: { ASSET_BUCKET: 'atl-assets-prod' },
   },
   {
     name: 'atomic-site-worker',
-    expectedKv: { CONFIG_KV: 'a69cb2c59507482ca5e6d114babdd098' },
+    expectedKv: { CONFIG_KV: 'b258e47065274b8b8af1a0b6d6529c1d' },
     expectedR2: { ASSET_BUCKET: 'atl-assets-prod' },
   },
 ];
