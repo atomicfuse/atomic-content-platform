@@ -13,8 +13,9 @@ export async function uploadToR2(
   key: string,
   data: Buffer,
   contentType: string,
+  domain?: string,
 ): Promise<boolean> {
-  const client = getR2Client();
+  const client = getR2Client(domain);
   if (!client) {
     console.warn("[r2-upload] R2 not configured — skipping upload");
     return false;
