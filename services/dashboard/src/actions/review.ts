@@ -20,7 +20,7 @@ import type { ArticleEntry } from "@/types/dashboard";
 export interface ReviewArticle extends ArticleEntry {
   domain: string;
   /** Worker preview base URL — origin only (e.g.,
-   *  "https://atomic-site-worker-staging.dev1-953.workers.dev"). Caller
+   *  "https://atomic-site-worker-staging.accounts-4a8.workers.dev"). Caller
    *  appends `/<slug>?_atl_site=<domain>` to build the article preview
    *  link. Replaces the pre-Phase-7 `*.pages.dev` URL pattern; the
    *  staging Pages projects no longer exist. */

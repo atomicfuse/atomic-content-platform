@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
  * Override base URL via env:
  *   WORKER_URL=https://… pnpm test:live
  */
-const WORKER_URL = process.env.WORKER_URL ?? 'https://atomic-site-worker-staging.dev1-953.workers.dev';
+const WORKER_URL = process.env.WORKER_URL ?? 'https://atomic-site-worker-staging.accounts-4a8.workers.dev';
 
 /** A slug that exists in `article-index:coolnews-atl` per the seeded KV.
  *  If the staging KV is wiped, update this constant. */
