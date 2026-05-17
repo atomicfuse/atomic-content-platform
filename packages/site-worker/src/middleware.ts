@@ -45,6 +45,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
   }
 
+  // Query handler bypass — forward to the bound service when ?x=1 is present.
+  // The query handler worker renders its own response (e.g. landing pages).
+  if (context.url.searchParams.get('x') === '1' && env.QUERY_HANDLER) {
+    return env.QUERY_HANDLER.fetch(context.request);
+  }
+
   if (!env.CONFIG_KV) {
     return new Response(
       'CONFIG_KV binding not configured. Run `wrangler dev` or bind a namespace.',

@@ -29,6 +29,13 @@ id = "f6c35e1fa8c841b8b193509a3a237f7f" # CONFIG_KV_STAGING — Assets @ AtomicL
 binding = "ASSET_BUCKET"
 bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and additive
 
+# Service binding — query handler worker. When a request carries a
+# recognised query param (e.g. ?x=1), middleware forwards to this
+# service instead of rendering the site.
+[[services]]
+binding = "QUERY_HANDLER"
+service = "atl-query-handler-t"
+
 # Observability — Workers Logs (enabled by default on Workers Paid).
 [observability]
 enabled = true
@@ -46,13 +53,11 @@ bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and 
 
 [env.production]
 name = "atomic-site-worker"
-# Phase-7 cutover: route live coolnews.dev traffic to this Worker. The
-# `*.pages.dev` hostnames are kept in CONFIG_KV as fallback identifiers
-# but are NOT routed here (Pages-managed subdomains aren't customer-
-# routable). Removing this route restores Pages instantly on rollback.
-routes = [
-  { pattern = "coolnews.dev/*", zone_id = "505b529c5928da452abb172f685d97a7" },
-]
+# Routes are derived from dashboard-index.yaml at build time via
+# emit-env-configs.ts → loadCustomDomains(). Dev1 domains (coolnews.dev,
+# financenewsbase.com) are filtered out — they're registered on the
+# Dev1 account's worker, not this one.
+routes = []
 
 [[env.production.kv_namespaces]]
 binding = "CONFIG_KV"

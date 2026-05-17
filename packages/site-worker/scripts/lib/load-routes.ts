@@ -8,8 +8,14 @@ export interface CustomDomainRoute {
 }
 
 interface IndexEntry {
+  domain?: string;
   custom_domain?: string | null;
 }
+
+/** Domains whose zones live on the Dev1 Cloudflare account.
+ *  These are registered on the Dev1 worker, NOT the Assets worker.
+ *  Keep in sync with dashboard constants.ts DEV1_SITE_IDS / DEV1_CUSTOM_DOMAINS. */
+const DEV1_CUSTOM_DOMAINS = new Set(['financenewsbase.com', 'coolnews.dev']);
 
 interface DashboardIndex {
   sites?: IndexEntry[];
@@ -46,7 +52,9 @@ export async function loadCustomDomains(networkPath: string): Promise<CustomDoma
   }
   return (sites ?? [])
     .filter((s): s is IndexEntry & { custom_domain: string } =>
-      typeof s.custom_domain === 'string' && s.custom_domain.length > 0,
+      typeof s.custom_domain === 'string' &&
+      s.custom_domain.length > 0 &&
+      !DEV1_CUSTOM_DOMAINS.has(s.custom_domain),
     )
     .map((s) => ({ pattern: s.custom_domain, custom_domain: true as const }));
 }
