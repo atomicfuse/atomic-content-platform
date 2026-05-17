@@ -111,7 +111,7 @@ export const R2_BUCKET_PROD = "atl-assets-prod";
 /** Site identifiers whose zones still live on the Dev1 Cloudflare account.
  *  These are dashboard-index `domain` values (site folder names).
  *  Remove a domain from this set after its zone is transferred to Assets. */
-export const DEV1_SITE_IDS = new Set(["financenewsbase", "coolnews-atl"]);
+export const DEV1_SITE_IDS = new Set(["financenewsbase", "muvizzcom"]);
 
 /** Custom domains (hostnames) that belong to Dev1 sites.
  *  Used by functions that receive a custom domain instead of a siteId
