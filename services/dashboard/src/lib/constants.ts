@@ -73,7 +73,7 @@ export const DASHBOARD_INDEX_PATH = "dashboard-index.yaml";
  */
 export const WORKER_STAGING_URL =
   process.env.NEXT_PUBLIC_WORKER_STAGING_URL ??
-  "https://atomic-site-worker-staging.dev1-953.workers.dev";
+  "https://atomic-site-worker-staging.accounts-4a8.workers.dev";
 
 /** Build a Worker preview URL that forces a specific siteId via the
  *  preview-override query param. The Worker only honours this on
@@ -93,11 +93,11 @@ export function workerPreviewUrl(siteId: string, path = "/"): string {
 /** Production worker name — used for Workers Custom Domains API. */
 export const WORKER_NAME_PROD = "atomic-site-worker";
 
-/** Production CONFIG_KV namespace ID. */
-export const KV_NAMESPACE_PROD = "a69cb2c59507482ca5e6d114babdd098";
+/** Production CONFIG_KV namespace ID — Assets @ AtomicLabs. */
+export const KV_NAMESPACE_PROD = "b258e47065274b8b8af1a0b6d6529c1d";
 
-/** Staging CONFIG_KV namespace ID (not used by attach/detach — included for reference). */
-export const KV_NAMESPACE_STAGING = "4673c82cdd7f41d49e93d938fb1c6848";
+/** Staging CONFIG_KV namespace ID — Assets @ AtomicLabs. */
+export const KV_NAMESPACE_STAGING = "f6c35e1fa8c841b8b193509a3a237f7f";
 
 // --- R2 bucket identifier ---
 
