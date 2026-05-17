@@ -1,4 +1,4 @@
-import { WORKER_NAME_PROD } from "@/lib/constants";
+import { WORKER_NAME_PROD, isDev1Domain, DEV1_ACCOUNT_ID } from "@/lib/constants";
 import {
   S3Client,
   ListObjectsV2Command,
@@ -67,21 +67,43 @@ export interface WorkerCustomDomain {
   environment: string;
 }
 
-// --- Helpers ---
+// --- Credential resolver ---
 
-function getHeaders(): HeadersInit {
+export interface CfCredentials {
+  accountId: string;
+  token: string;
+}
+
+/** Resolve CF credentials for a domain. Dev1 domains use DEV1_CLOUDFLARE_API_TOKEN;
+ *  everything else uses the primary CLOUDFLARE_API_TOKEN.
+ *  Accepts both siteIds ("financenewsbase") and custom domains ("financenewsbase.com"). */
+export function getCredentials(domain?: string): CfCredentials {
+  if (domain && isDev1Domain(domain)) {
+    const token = process.env.DEV1_CLOUDFLARE_API_TOKEN;
+    if (!token) throw new Error("DEV1_CLOUDFLARE_API_TOKEN is not set");
+    return { accountId: DEV1_ACCOUNT_ID, token };
+  }
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set");
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accountId) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
+  return { accountId, token };
+}
+
+export function headersFromCreds(creds: CfCredentials): HeadersInit {
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${creds.token}`,
     "Content-Type": "application/json",
   };
 }
 
+// Keep backward-compat wrappers for callers that don't have domain context.
+function getHeaders(): HeadersInit {
+  return headersFromCreds(getCredentials());
+}
+
 export function getAccountId(): string {
-  const id = process.env.CLOUDFLARE_ACCOUNT_ID;
-  if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
-  return id;
+  return getCredentials().accountId;
 }
 
 // --- Zones API ---
