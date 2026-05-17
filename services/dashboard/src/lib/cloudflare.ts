@@ -97,11 +97,7 @@ export function headersFromCreds(creds: CfCredentials): HeadersInit {
   };
 }
 
-// Keep backward-compat wrappers for callers that don't have domain context.
-function getHeaders(): HeadersInit {
-  return headersFromCreds(getCredentials());
-}
-
+// Backward-compat wrapper for callers that don't have domain context.
 export function getAccountId(): string {
   return getCredentials().accountId;
 }
@@ -537,7 +533,7 @@ export async function deleteDnsTxtRecord(
 
 /** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
  *  Content-Type is overridden to text/plain because the KV values API expects a raw
- *  body — the default application/json from getHeaders() would be semantically incorrect. */
+ *  body — the default application/json from headersFromCreds() would be semantically incorrect. */
 export async function putKVEntry(
   namespaceId: string,
   key: string,
