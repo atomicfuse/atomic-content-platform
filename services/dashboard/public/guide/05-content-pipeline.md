@@ -1,6 +1,6 @@
 # Content Pipeline
 
-The content pipeline is an autonomous service that generates articles for sites in the network. It consumes pre-enriched content from the **Content Aggregator v2 API** and routes articles through a dual-model generation pipeline — Claude Sonnet for news/factual content, OpenAI GPT-4o-mini for general/evergreen content. It runs as a CloudGrid service, triggered on-demand from the dashboard or by a scheduled cron job. Jobs are processed through a **BullMQ queue** backed by Redis for reliability and observability.
+The content pipeline is an autonomous service that generates articles for sites in the network. It consumes pre-enriched content from the **Content Aggregator v2 API** and routes articles through a dual-model generation pipeline — Claude Sonnet for news/factual content, OpenAI GPT-4o-mini for general/evergreen content. Article images are generated **asynchronously** by an external **n8n workflow** — articles are committed immediately with a default image, and real images arrive via callback. It runs as a CloudGrid service, triggered on-demand from the dashboard or by a scheduled cron job. Jobs are processed through a **BullMQ queue** backed by Redis for reliability and observability.
 
 ## Architecture
 
@@ -11,6 +11,7 @@ services/content-pipeline/
       content-generation/
         index.ts                          -- HTTP server + queue bootstrap
         agent.ts                          -- v2 orchestrator (fetch, route, generate, image, SEO, write)
+        n8n-image.ts                      -- Async n8n image generation (trigger + callback handler)
         api-client.ts                     -- Content Aggregator v2 typed HTTP client
         router.ts                         -- isFactual() classifier (Claude or OpenAI)
         types.ts                          -- ContentItem, ArticlePackage, SEOMetadata, etc.
@@ -21,9 +22,6 @@ services/content-pipeline/
         prompts/
           news-article.ts                 -- Factual prompt: journalist tone, no invented facts
           general-article.ts              -- General prompt: engagement + SEO, conversational, TL;DR
-        image-pipeline/
-          generator.ts                    -- Three-tier image ladder (Gemini, OpenAI, exhausted)
-          types.ts                        -- ImageGenAttempt, ImageLadderResult
         seo/
           slug-generator.ts               -- Title to kebab-case slug, stop-word removal
           metadata-generator.ts           -- Meta tags, schema.org, OG tags, reading time
@@ -41,8 +39,8 @@ services/content-pipeline/
       writer.ts                          -- Markdown file generation (local or GitHub)
       site-brief.ts                      -- Read site briefs from data repo
       config.ts                          -- Environment config loader
-      gemini.ts                          -- Gemini Flash image generation (Tier A)
-      openai-image.ts                    -- OpenAI gpt-image-1 generation (Tier B)
+      image-optimizer.ts                 -- Sharp-based image optimization (WebP)
+      r2-upload.ts                       -- R2 S3-compatible upload client
       concurrency.ts                     -- processWithConcurrency helper
     queue/
       connection.ts                      -- Redis / IORedis connection factory
@@ -74,8 +72,7 @@ services/content-pipeline/
   4. Generate article from structured summary (NO URL scraping)
         |
         v
-  5. Image pipeline: three-tier ladder (Gemini -> OpenAI -> exhausted)
-     Image is MANDATORY -- article is skipped if all tiers fail
+  5. Assign per-site default image (e.g. /assets/images/{site-slug}-general-article.webp)
         |
         v
   6. SEO metadata: slug, meta title/description, schema.org, OG tags, reading time
@@ -87,7 +84,11 @@ services/content-pipeline/
   8. Status assignment: score >= threshold -> "published", below -> "review"
         |
         v
-  9. Batch commit all articles + images + dedup index to data repo (single git commit)
+  9. Batch commit all articles + dedup index to data repo (single git commit)
+        |
+        v
+  10. Trigger async image generation via n8n (fire-and-forget)
+      n8n generates images and POSTs results back to /image-callback
 ```
 
 ## BullMQ Queue
@@ -203,40 +204,64 @@ If the primary model fails, the pipeline falls back to the other model:
 - OpenAI fails -> falls back to Claude for that item
 - The fallback is logged so you can see which model actually generated each article
 
-## Image Pipeline
+## Image Generation (n8n Async)
 
-Every article **requires** an original image. Image generation is mandatory — if all providers fail, the article is skipped and the pipeline moves to the next source item.
+Image generation is **asynchronous** and **decoupled** from article creation. Articles are committed immediately with a per-site default image. Real images are generated in the background by an n8n workflow and arrive via callback.
 
-### Three-Tier Ladder
+### Flow
 
-The image pipeline uses a three-tier fallback ladder:
+```
+Article commit (with default image)
+        |
+        v
+POST to n8n webhook (fire-and-forget, ~100ms)
+        |  (returns immediately — article job is complete)
+        |
+        v  ... n8n generates image (~46s) ...
+        |
+n8n POSTs result to /image-callback
+        |
+        v
+Content pipeline: optimize (sharp/WebP) -> upload to R2 -> update Git frontmatter
+```
 
-**Tier A: Gemini Flash (2 attempts)**
-- Model: `gemini-2.5-flash-image` via Google's Generative Language API
-- If the source item has a `thumbnail.url`, the thumbnail is fetched and sent as a reference image for style matching
-- Transient failures (HTTP 5xx, 429 rate limit, timeouts) trigger a second attempt
-- Permanent failures (HTTP 4xx, auth errors, content policy blocks) skip the retry and fall through immediately
+### Default Images
 
-**Tier B: OpenAI gpt-image-1 (1 attempt)**
-- Model: `gpt-image-1` via OpenAI Images API
-- Size: 1536x1024
-- Always generates from the text prompt alone (no reference image)
-- One attempt only — if it fails, the ladder is exhausted
+Each site has a generic default image in R2 at `{site-slug}/assets/images/{site-slug}-general-article.webp`. Articles reference it as `/assets/images/{site-slug}-general-article.webp` in frontmatter (the `seed-kv` script adds the siteId prefix at sync time).
 
-**Tier C: Exhausted**
-- If both Gemini and OpenAI fail, the article is skipped
-- The full error chain is logged (e.g. "gemini:server_error:500, gemini:timeout, openai:client_error:400")
-- The error appears in the Queue Monitor with the reason chain
+If n8n fails to generate an image, the article keeps the default image and a Slack notification is sent.
 
-### Error Classification
+### n8n Workflow
 
-Each image generation attempt returns a structured result:
-- **Success**: `{ ok: true, data: Buffer }` — raw PNG image data
-- **Transient failure**: `{ ok: false, retriable: true, reason: "server_error:500" }` — worth retrying
-- **Permanent failure**: `{ ok: false, retriable: false, reason: "client_error:403" }` — skip retry
+The n8n workflow (`ACP - Image Generation`) handles image creation externally:
 
-Transient errors: HTTP 5xx, 429 (rate limit), network timeouts, connection errors
-Permanent errors: HTTP 4xx (bad request, auth, content policy), missing API keys, malformed responses
+1. Receives article context (title, summary, vertical, thumbnail URL)
+2. If source thumbnail exists: fetches it and uses GPT vision to describe the style
+3. Builds an image generation prompt via GPT (art-directed per vertical)
+4. Generates image with Gemini 3.1 Flash Image Preview (2 attempts with prompt revision)
+5. POSTs the result (base64 image + alt text) to our `/image-callback` endpoint
+
+The request payload includes `callback_url`, `site_domain`, `slug`, and `branch` so the callback handler knows where to commit the updated frontmatter.
+
+### Callback Endpoint
+
+`POST /image-callback` on the content pipeline receives n8n results:
+
+1. Validates the payload (`site_domain`, `slug`, `branch`, `data_base64`)
+2. Optimizes the image via sharp (resize, WebP quality ladder, target ≤350KB)
+3. Uploads to R2 at key `{site_domain}/assets/images/{slug}.webp`
+4. Reads the article from Git, updates `featuredImage` and `image_alt` in frontmatter
+5. Commits the updated article to the staging branch
+
+### Failure Handling
+
+| Failure | Result |
+|---------|--------|
+| n8n webhook trigger fails | Article keeps default image, Slack alert sent |
+| n8n image generation fails | n8n POSTs error status to callback, article keeps default image |
+| R2 upload fails | Git update skipped, article keeps default image |
+| Git commit fails | Image exists in R2 but frontmatter not updated (manual fix needed) |
+| Content pipeline restarts | No impact — n8n still POSTs to callback when the service is back up |
 
 ## SEO Metadata
 
@@ -294,10 +319,9 @@ The pipeline is designed to degrade gracefully — no single failure kills the b
 | All aggregator results are duplicates | Retry with broader search (categories only, drop tags) |
 | Claude generation fails | Fall back to OpenAI for that item |
 | OpenAI generation fails | Fall back to Claude for that item |
-| Gemini image fails (transient) | Retry once, then fall through to OpenAI gpt-image-1 |
-| Gemini image fails (permanent) | Skip retry, fall through to OpenAI gpt-image-1 immediately |
-| OpenAI image fails | Article skipped (image is mandatory), move to next source item |
-| Both image providers fail | Article skipped with "image_gen_exhausted" error |
+| n8n webhook trigger fails | Article committed with default image, Slack alert sent |
+| n8n image generation fails | Article keeps default image, n8n POSTs error to callback |
+| R2 image upload fails | Git update skipped, article keeps default image |
 | SEO generation fails | Generate basic metadata algorithmically |
 | Quality scoring fails | Default to `published` status |
 | BullMQ job fails | Retry up to 3 times with exponential backoff |
@@ -315,7 +339,7 @@ status: published
 publishDate: 2026-04-19
 author: "Editorial Team"
 tags: ["travel", "beaches", "destinations"]
-featuredImage: "/assets/images/hidden-beaches-2026.png"
+featuredImage: "/assets/images/hidden-beaches-2026.webp"
 slug: "hidden-beaches-2026"
 source_url: "https://example.com/original-article"
 source_item_id: "agg-12345"
@@ -383,9 +407,13 @@ The scheduled publisher calls `runContentGeneration()` via BullMQ child jobs (or
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | For GPT-4o-mini (general articles) + gpt-image-1 (image Tier B) |
+| `OPENAI_API_KEY` | Yes | For GPT-4o-mini (general articles) |
 | `ANTHROPIC_API_KEY` | Local dev | For Claude (news articles) — not needed in CloudGrid |
-| `GEMINI_API_KEY` | Yes | For Gemini Flash image generation (image Tier A) |
+| `N8N_IMAGE_WEBHOOK_URL` | Yes | n8n webhook URL for async image generation |
+| `IMAGE_CALLBACK_URL` | No | Override callback URL (defaults to CloudGrid production URL) |
+| `R2_ACCESS_KEY_ID` | Yes | R2 S3 access key for image uploads |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 S3 secret for image uploads |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | For R2 endpoint |
 | `CONTENT_API_BASE_URL` | No | Content Aggregator v2 URL (has default) |
 | `GITHUB_TOKEN` | Yes | For committing articles to network repo |
 | `NETWORK_REPO` | Yes | Network repo in `owner/repo` format |
