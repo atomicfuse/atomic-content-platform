@@ -27,6 +27,8 @@ import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { handleMigrationRequest, handleCreateSites } from "../migration/handler.js";
+import { handleImageCallback } from "./n8n-image.js";
+import type { N8nCallbackPayload } from "./n8n-image.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -210,6 +212,36 @@ async function handleRequest(
       sendJson(res, 200, { status: "failed", error: job.failedReason, attempts: job.attemptsMade });
     } else {
       sendJson(res, 200, { status: state, attempts: job.attemptsMade });
+    }
+    return;
+  }
+
+  // n8n image callback — receives generated images asynchronously
+  if (req.method === "POST" && req.url === "/image-callback") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    await new Promise<void>((resolve) => req.on("end", resolve));
+
+    let payload: N8nCallbackPayload;
+    try {
+      payload = JSON.parse(body) as N8nCallbackPayload;
+    } catch {
+      sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+      return;
+    }
+
+    try {
+      const result = await handleImageCallback(payload, config.github);
+      if (result.ok) {
+        sendJson(res, 200, { status: "ok", message: result.message });
+      } else {
+        console.error(`[server] Image callback failed: ${result.message}`);
+        sendJson(res, 422, { status: "error", message: result.message });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[server] Image callback error: ${message}`);
+      sendJson(res, 500, { status: "error", message });
     }
     return;
   }

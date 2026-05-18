@@ -29,7 +29,7 @@ import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
 import { randomUUID } from "node:crypto";
-import { requestImageFromN8n, processN8nImageResult } from "./n8n-image.js";
+import { triggerN8nImage } from "./n8n-image.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
@@ -853,9 +853,10 @@ export async function runContentGeneration(
       );
     }
 
-    // Step 7: Fire n8n image generation in the background (non-blocking).
-    // Only in GitHub mode (branch set) — local dev mode writes to disk,
-    // and the background handler commits to Git which would conflict.
+    // Step 7: Trigger n8n image generation (fire-and-forget).
+    // POSTs to n8n webhook with a callback_url. n8n generates the image
+    // async and POSTs the result back to our /image-callback endpoint.
+    // Only in GitHub mode (branch set) — local dev writes to disk.
     if (config.n8nImageWebhookUrl && branch) {
       const imageRequests = created
         .filter((r) => r._imageRequest)
@@ -863,59 +864,40 @@ export async function runContentGeneration(
 
       if (imageRequests.length > 0) {
         const webhookUrl = config.n8nImageWebhookUrl;
-        const callbackUrl = "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
-        const github = config.github;
-        const notifications = config.notifications;
-        const effectiveBranch = branch;
+        const callbackUrl = config.imageCallbackUrl ?? "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
 
-        console.log(`[agent] Firing ${imageRequests.length} n8n image request(s) in background`);
+        console.log(`[agent] Triggering ${imageRequests.length} n8n image request(s) → ${webhookUrl}`);
 
-        // Fire-and-forget — don't await. Images arrive asynchronously.
-        void processWithConcurrency(
-          imageRequests,
-          5, // max 5 concurrent n8n requests
-          imageRequests.length,
-          async (req) => {
-            const result = await requestImageFromN8n({
-              request_id: req.requestId,
-              callback_url: callbackUrl,
-              site_domain: req.siteDomain,
-              slug: req.slug,
-              article: {
-                title: req.articleTitle,
-                description: req.articleDescription,
-                summary: req.articleSummary,
-                vertical: req.vertical,
-                source_thumbnail_url: req.sourceThumbnailUrl ?? null,
-                image_guidelines: Array.isArray(req.imageGuidelines)
-                  ? req.imageGuidelines.join("\n")
-                  : req.imageGuidelines,
-              },
-            });
-
-            if (result.ok) {
-              await processN8nImageResult({
-                siteDomain: req.siteDomain,
-                slug: req.slug,
-                imageData: result.data,
-                altText: result.altText,
-                branch: effectiveBranch,
-                github,
-              });
-            } else {
-              console.error(`[agent] n8n image failed for ${req.slug}: ${result.reason}`);
-              void notifyImageDefaultFallback(notifications, {
+        // Fire-and-forget — trigger all requests, don't wait for images.
+        // n8n will POST results to our /image-callback endpoint.
+        for (const req of imageRequests) {
+          void triggerN8nImage(webhookUrl, {
+            request_id: req.requestId,
+            callback_url: callbackUrl,
+            site_domain: req.siteDomain,
+            slug: req.slug,
+            branch,
+            article: {
+              title: req.articleTitle,
+              description: req.articleDescription,
+              summary: req.articleSummary,
+              vertical: req.vertical,
+              source_thumbnail_url: req.sourceThumbnailUrl ?? null,
+              image_guidelines: Array.isArray(req.imageGuidelines)
+                ? req.imageGuidelines.join("\n")
+                : req.imageGuidelines,
+            },
+          }).then((accepted) => {
+            if (!accepted) {
+              void notifyImageDefaultFallback(config.notifications, {
                 site: req.siteDomain,
                 articleTitle: req.articleTitle,
                 slug: req.slug,
-                reason: result.reason,
+                reason: "n8n webhook trigger failed",
               });
             }
-
-            return result.ok;
-          },
-          () => true, // process all items, don't stop early
-        );
+          });
+        }
       }
     }
 

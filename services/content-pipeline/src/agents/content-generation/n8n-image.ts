@@ -1,9 +1,12 @@
 /**
- * n8n webhook client for async image generation.
+ * n8n async image generation — fire-and-forget + callback.
  *
- * Sends image generation requests to the n8n webhook and handles the
- * inline response (~46s). Also provides a processor to optimize the
- * returned image, upload to R2, and update Git frontmatter.
+ * Flow:
+ *   1. After article commit, agent.ts calls `triggerN8nImage()` for each article.
+ *      This POSTs to the n8n webhook with a `callback_url` and returns immediately.
+ *   2. n8n generates the image (~46s) and POSTs the result to our callback.
+ *   3. `handleImageCallback()` receives the result, optimizes the image,
+ *      uploads to R2, and updates the article frontmatter in Git.
  */
 
 import matter from "gray-matter";
@@ -29,41 +32,32 @@ export interface N8nImageArticle {
   image_guidelines: string | null;
 }
 
-export interface N8nImageRequest {
+export interface N8nTriggerRequest {
   request_id: string;
   callback_url: string;
   site_domain: string;
   slug: string;
+  branch: string;
   article: N8nImageArticle;
 }
 
-export interface N8nImageAttempt {
-  provider: string;
-  reason: string | null;
-  ok: boolean;
-  attempt: number;
-}
-
-export interface N8nImageMeta {
-  provider: string;
-  prompt: string;
-  duration_ms: number;
-  attempts: N8nImageAttempt[];
-}
-
-export interface N8nImageResponse {
+/** Shape of the payload n8n POSTs to our /image-callback endpoint. */
+export interface N8nCallbackPayload {
   request_id: string;
+  site_domain: string;
+  slug: string;
+  branch: string;
   status: string;
-  delivery: string;
-  mime_type: string;
-  data_base64: string;
-  alt_text: string;
-  meta: N8nImageMeta;
+  mime_type?: string;
+  data_base64?: string;
+  alt_text?: string;
+  meta?: {
+    provider: string;
+    prompt?: string;
+    duration_ms?: number;
+  };
+  error?: string;
 }
-
-export type N8nRequestResult =
-  | { ok: true; data: Buffer; altText: string; meta: N8nImageResponse["meta"] }
-  | { ok: false; reason: string };
 
 export interface ProcessImageParams {
   siteDomain: string;
@@ -75,29 +69,32 @@ export interface ProcessImageParams {
 }
 
 // ---------------------------------------------------------------------------
-// Timeout constant (90 seconds — n8n inference can take ~46s)
+// Trigger timeout (10s — just firing the webhook, not waiting for image)
 // ---------------------------------------------------------------------------
 
-const WEBHOOK_TIMEOUT_MS = 90_000;
+const TRIGGER_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
-// requestImageFromN8n
+// triggerN8nImage — fire-and-forget POST to n8n
 // ---------------------------------------------------------------------------
 
 /**
- * POST to the n8n webhook and wait for the inline image response.
+ * POST to the n8n webhook to trigger image generation.
+ * Returns immediately after n8n acknowledges (HTTP 200).
+ * n8n will POST the result to `callbackUrl` when the image is ready.
  *
- * @param req  The image generation request payload
- * @returns    A decoded image Buffer on success, or an error reason on failure
+ * @returns true if n8n accepted the request, false on error
  */
-export async function requestImageFromN8n(
-  req: N8nImageRequest,
-): Promise<N8nRequestResult> {
-  const webhookUrl = req.callback_url;
+export async function triggerN8nImage(
+  webhookUrl: string,
+  req: N8nTriggerRequest,
+): Promise<boolean> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), TRIGGER_TIMEOUT_MS);
 
   try {
+    console.log(`[n8n-image] Triggering image for ${req.slug} (${req.site_domain})`);
+
     const response = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -106,44 +103,88 @@ export async function requestImageFromN8n(
     });
 
     if (!response.ok) {
-      return {
-        ok: false,
-        reason: `n8n returned ${response.status}: ${response.statusText}`,
-      };
+      console.error(
+        `[n8n-image] Trigger failed for ${req.slug}: ${response.status} ${response.statusText}`,
+      );
+      return false;
     }
 
-    const body = (await response.json()) as N8nImageResponse;
-
-    if (body.status !== "ok") {
-      return { ok: false, reason: `n8n status: ${body.status}` };
-    }
-
-    if (!body.data_base64) {
-      return { ok: false, reason: "n8n returned empty image data" };
-    }
-
-    const data = Buffer.from(body.data_base64, "base64");
-
-    return { ok: true, data, altText: body.alt_text, meta: body.meta };
+    console.log(`[n8n-image] Trigger accepted for ${req.slug} (request_id: ${req.request_id})`);
+    return true;
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      return { ok: false, reason: `n8n webhook timeout (${WEBHOOK_TIMEOUT_MS}ms)` };
-    }
-    return {
-      ok: false,
-      reason: err instanceof Error ? err.message : String(err),
-    };
+    const reason = err instanceof Error
+      ? (err.name === "AbortError" ? `timeout (${TRIGGER_TIMEOUT_MS}ms)` : err.message)
+      : String(err);
+    console.error(`[n8n-image] Trigger error for ${req.slug}: ${reason}`);
+    return false;
   } finally {
     clearTimeout(timer);
   }
 }
 
 // ---------------------------------------------------------------------------
-// processN8nImageResult
+// handleImageCallback — process the async result from n8n
 // ---------------------------------------------------------------------------
 
 /**
- * Take a successful image result from n8n, optimize it, upload to R2,
+ * Handle the callback POST from n8n containing the generated image.
+ * Validates the payload, optimizes the image, uploads to R2,
+ * and updates the article's Git frontmatter.
+ *
+ * @returns A result object for the HTTP response
+ */
+export async function handleImageCallback(
+  payload: N8nCallbackPayload,
+  github: GitHubConfig,
+): Promise<{ ok: boolean; message: string }> {
+  const { request_id, site_domain, slug, branch, status } = payload;
+
+  console.log(
+    `[n8n-image] Callback received: request_id=${request_id}, slug=${slug}, ` +
+    `status=${status}, has_data=${!!payload.data_base64}`,
+  );
+
+  // Check for error status from n8n
+  if (status && status !== "ok") {
+    const reason = payload.error ?? `n8n status: ${status}`;
+    console.error(`[n8n-image] n8n reported failure for ${slug}: ${reason}`);
+    return { ok: false, message: reason };
+  }
+
+  if (!payload.data_base64) {
+    console.error(`[n8n-image] No image data in callback for ${slug}`);
+    return { ok: false, message: "No image data in callback" };
+  }
+
+  if (!site_domain || !slug || !branch) {
+    return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
+  }
+
+  const imageData = Buffer.from(payload.data_base64, "base64");
+
+  try {
+    await processN8nImageResult({
+      siteDomain: site_domain,
+      slug,
+      imageData,
+      altText: payload.alt_text ?? "",
+      branch,
+      github,
+    });
+    return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[n8n-image] Processing failed for ${slug}: ${message}`);
+    return { ok: false, message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// processN8nImageResult — optimize, R2 upload, Git update
+// ---------------------------------------------------------------------------
+
+/**
+ * Take image data, optimize it, upload to R2,
  * and update the article's Git frontmatter with the image URL and alt text.
  *
  * Skips the Git update entirely if R2 upload fails.
@@ -172,7 +213,9 @@ export async function processN8nImageResult(
 
   // 4. Parse frontmatter, inject image fields, stringify
   const parsed = matter(rawContent);
-  const imageUrl = `https://assets.atomicfuse.io/${r2Key}`;
+  // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
+  // adds the `/<siteId>/` prefix at sync time when writing to KV.
+  const imageUrl = `/assets/images/${slug}.webp`;
   parsed.data["featuredImage"] = imageUrl;
   parsed.data["image_alt"] = altText;
 

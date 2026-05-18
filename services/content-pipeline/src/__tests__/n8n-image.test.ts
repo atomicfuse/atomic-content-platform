@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  requestImageFromN8n,
+  triggerN8nImage,
+  handleImageCallback,
   processN8nImageResult,
 } from "../agents/content-generation/n8n-image.js";
 import type {
-  N8nImageRequest,
+  N8nTriggerRequest,
+  N8nCallbackPayload,
   ProcessImageParams,
 } from "../agents/content-generation/n8n-image.js";
 
@@ -53,12 +55,14 @@ import { createGitHubClient, readFile, commitFile } from "../lib/github.js";
 
 const FAKE_IMAGE_BYTES = Buffer.from("fake-jpeg-image-data");
 const FAKE_BASE64 = FAKE_IMAGE_BYTES.toString("base64");
+const WEBHOOK_URL = "https://atomics.app.n8n.cloud/webhook/acn-image-generation";
 
-const baseRequest: N8nImageRequest = {
+const baseTriggerRequest: N8nTriggerRequest = {
   request_id: "img_test_001",
-  callback_url: "https://example.com/callback",
+  callback_url: "https://content-pipeline-app.apps.cloudgrid.io/image-callback",
   site_domain: "muvizzcom",
   slug: "cannes-2026-most-anticipated-films",
+  branch: "staging/muvizzcom",
   article: {
     title: "Cannes 2026: Most Anticipated Films",
     description: "A roundup of the most anticipated films at Cannes 2026.",
@@ -69,20 +73,22 @@ const baseRequest: N8nImageRequest = {
   },
 };
 
-const successResponse = {
+const baseCallbackPayload: N8nCallbackPayload = {
   request_id: "img_test_001",
+  site_domain: "muvizzcom",
+  slug: "cannes-2026-most-anticipated-films",
+  branch: "staging/muvizzcom",
   status: "ok",
-  delivery: "inline",
   mime_type: "image/jpeg",
   data_base64: FAKE_BASE64,
   alt_text: "A poster showcasing the most anticipated films at Cannes 2026.",
   meta: {
     provider: "gemini-3.1-flash-image-preview",
-    prompt: "Create a cinematic poster...",
     duration_ms: 46000,
-    attempts: [{ provider: "gemini", reason: null, ok: true, attempt: 1 }],
   },
 };
+
+const github = { token: "ghp_test", repo: "atomicfuse/atomic-labs-network" };
 
 beforeEach(() => {
   mockFetch.mockReset();
@@ -110,104 +116,107 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// requestImageFromN8n
+// triggerN8nImage
 // ---------------------------------------------------------------------------
 
-describe("requestImageFromN8n", () => {
-  it("returns success with decoded image buffer on 200 + status ok", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => successResponse,
-    });
+describe("triggerN8nImage", () => {
+  it("returns true when n8n accepts the request (200)", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200 });
 
-    const result = await requestImageFromN8n(baseRequest);
+    const result = await triggerN8nImage(WEBHOOK_URL, baseTriggerRequest);
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.data).toBeInstanceOf(Buffer);
-      expect(result.data.equals(FAKE_IMAGE_BYTES)).toBe(true);
-      expect(result.altText).toBe(successResponse.alt_text);
-      expect(result.meta.provider).toBe("gemini-3.1-flash-image-preview");
-      expect(result.meta.duration_ms).toBe(46000);
-    }
-  });
-
-  it("returns failure when n8n returns non-200", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: "Internal Server Error",
-    });
-
-    const result = await requestImageFromN8n(baseRequest);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toMatch(/500/);
-    }
-  });
-
-  it("returns failure when response status !== 'ok'", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        ...successResponse,
-        status: "error",
-        data_base64: "",
+    expect(result).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      WEBHOOK_URL,
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("cannes-2026"),
       }),
-    });
-
-    const result = await requestImageFromN8n(baseRequest);
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toMatch(/error/);
-    }
+    );
   });
 
-  it("returns failure when data_base64 is empty", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        ...successResponse,
-        data_base64: "",
-      }),
-    });
+  it("returns false when n8n returns non-200", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500, statusText: "Internal Server Error" });
 
-    const result = await requestImageFromN8n(baseRequest);
+    const result = await triggerN8nImage(WEBHOOK_URL, baseTriggerRequest);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toMatch(/empty/i);
-    }
+    expect(result).toBe(false);
   });
 
-  it("returns failure on fetch timeout (AbortError)", async () => {
+  it("returns false on network error", async () => {
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+
+    const result = await triggerN8nImage(WEBHOOK_URL, baseTriggerRequest);
+
+    expect(result).toBe(false);
+  });
+
+  it("returns false on timeout", async () => {
     const abortErr = Object.assign(new Error("The operation was aborted"), {
       name: "AbortError",
     });
     mockFetch.mockRejectedValueOnce(abortErr);
 
-    const result = await requestImageFromN8n(baseRequest);
+    const result = await triggerN8nImage(WEBHOOK_URL, baseTriggerRequest);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toMatch(/timeout/i);
-    }
+    expect(result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleImageCallback
+// ---------------------------------------------------------------------------
+
+describe("handleImageCallback", () => {
+  it("processes a successful callback — optimize, R2, Git", async () => {
+    const articleMd = [
+      "---",
+      "title: Cannes 2026",
+      "slug: cannes-2026-most-anticipated-films",
+      "status: published",
+      "---",
+      "",
+      "Body text here.",
+    ].join("\n");
+    vi.mocked(readFile).mockResolvedValueOnce(articleMd);
+
+    const result = await handleImageCallback(baseCallbackPayload, github);
+
+    expect(result.ok).toBe(true);
+    expect(optimizeImage).toHaveBeenCalled();
+    expect(uploadToR2).toHaveBeenCalled();
+    expect(commitFile).toHaveBeenCalledOnce();
   });
 
-  it("returns failure on network error", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
-
-    const result = await requestImageFromN8n(baseRequest);
+  it("returns error when n8n reports failure status", async () => {
+    const result = await handleImageCallback(
+      { ...baseCallbackPayload, status: "error", error: "Generation failed" },
+      github,
+    );
 
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain("ECONNREFUSED");
-    }
+    expect(result.message).toContain("Generation failed");
+    expect(optimizeImage).not.toHaveBeenCalled();
+  });
+
+  it("returns error when data_base64 is missing", async () => {
+    const result = await handleImageCallback(
+      { ...baseCallbackPayload, data_base64: undefined },
+      github,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("No image data");
+  });
+
+  it("returns error when required fields are missing", async () => {
+    const result = await handleImageCallback(
+      { ...baseCallbackPayload, branch: "" },
+      github,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("Missing required fields");
   });
 });
 
@@ -222,10 +231,7 @@ describe("processN8nImageResult", () => {
     imageData: FAKE_IMAGE_BYTES,
     altText: "A cinematic poster for Cannes 2026.",
     branch: "staging/muvizzcom",
-    github: {
-      token: "ghp_test",
-      repo: "atomicfuse/atomic-labs-network",
-    },
+    github,
   };
 
   it("optimizes image, uploads to R2, and updates Git frontmatter", async () => {
@@ -254,7 +260,6 @@ describe("processN8nImageResult", () => {
     );
 
     // 3. Optimized image was uploaded to R2
-    const optimizedBuf = Buffer.from("optimized-fake-jpeg-image-data");
     expect(uploadToR2).toHaveBeenCalledWith(
       "muvizzcom/assets/images/cannes-2026-most-anticipated-films.webp",
       expect.any(Buffer),
@@ -263,7 +268,7 @@ describe("processN8nImageResult", () => {
 
     // 4. Article was read from Git on the correct branch
     expect(readFile).toHaveBeenCalledWith(
-      expect.anything(), // octokit
+      expect.anything(),
       "atomicfuse/atomic-labs-network",
       "sites/muvizzcom/articles/cannes-2026-most-anticipated-films.md",
       "staging/muvizzcom",
@@ -272,18 +277,18 @@ describe("processN8nImageResult", () => {
     // 5. Article was committed with updated frontmatter
     expect(commitFile).toHaveBeenCalledOnce();
     const commitCall = vi.mocked(commitFile).mock.calls[0]!;
-    const commitArg = commitCall[2]; // FileCommit argument
+    const commitArg = commitCall[2];
     expect(commitArg.branch).toBe("staging/muvizzcom");
     expect(commitArg.path).toBe(
       "sites/muvizzcom/articles/cannes-2026-most-anticipated-films.md",
     );
 
-    // 6. Frontmatter in committed content includes featuredImage and image_alt
+    // 6. Frontmatter uses relative path without siteId (seed-kv rewrites at sync time)
     const committed = commitArg.content;
     expect(committed).toContain("featuredImage:");
     expect(committed).toContain("image_alt:");
-    expect(committed).toContain("cannes-2026-most-anticipated-films.webp");
-    expect(committed).toContain("A cinematic poster for Cannes 2026.");
+    expect(committed).toContain("/assets/images/cannes-2026-most-anticipated-films.webp");
+    expect(committed).not.toContain("/muvizzcom/assets/");
   });
 
   it("skips Git update if R2 upload fails", async () => {
@@ -291,11 +296,8 @@ describe("processN8nImageResult", () => {
 
     await processN8nImageResult(baseParams);
 
-    // optimizeImage and uploadToR2 should have been called
     expect(optimizeImage).toHaveBeenCalled();
     expect(uploadToR2).toHaveBeenCalled();
-
-    // But Git operations should NOT have been called
     expect(readFile).not.toHaveBeenCalled();
     expect(commitFile).not.toHaveBeenCalled();
   });
