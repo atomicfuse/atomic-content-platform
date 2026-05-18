@@ -133,6 +133,35 @@ export async function notifyImageGeneration(
   ]);
 }
 
+
+/**
+ * Send a notification when n8n image generation fails and the article
+ * falls back to the default site image.
+ */
+export async function notifyImageDefaultFallback(
+  config: NotificationConfig,
+  params: {
+    site: string;
+    articleTitle: string;
+    slug: string;
+    reason: string;
+  },
+): Promise<void> {
+  const articleUrl = `https://${params.site}/articles/${params.slug}`;
+  const message =
+    `Image generation failed for site: ${params.site}\n` +
+    `Article: "${params.articleTitle}" (${articleUrl})\n` +
+    `Reason: ${params.reason}\n` +
+    `The article is using the default site image.`;
+
+  await Promise.allSettled([
+    config.telegramBotToken
+      ? sendTelegram(config, message)
+      : Promise.resolve(),
+    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
+  ]);
+}
+
 async function sendTelegram(
   config: NotificationConfig,
   text: string,
