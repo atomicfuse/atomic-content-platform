@@ -28,7 +28,9 @@ import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
-import { generateImageWithLadder } from "./image-pipeline/generator.js";
+import { randomUUID } from "node:crypto";
+import { requestImageFromN8n, processN8nImageResult } from "./n8n-image.js";
+import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
@@ -38,7 +40,7 @@ import type { Generator, GeneratorConfig } from "./generators/base-generator.js"
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { writeArticleBatch } from "../../lib/writer.js";
-import type { PendingArticle, PendingAsset, BatchFileEntry } from "../../lib/writer.js";
+import type { PendingArticle, BatchFileEntry } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -69,8 +71,18 @@ export interface ContentGenerationResult {
   generatedBy?: "claude" | "openai";
   /** @internal Pending file data — used for batch commit, stripped before API response. */
   _pendingArticle?: PendingArticle;
-  /** @internal Pending asset data — used for batch commit, stripped before API response. */
-  _pendingAsset?: PendingAsset;
+  /** @internal n8n image request data — used to fire background image generation. */
+  _imageRequest?: {
+    requestId: string;
+    siteDomain: string;
+    slug: string;
+    articleTitle: string;
+    articleDescription: string;
+    articleSummary: string;
+    vertical: string;
+    sourceThumbnailUrl?: string;
+    imageGuidelines: string | string[] | null;
+  };
 }
 
 export interface BatchContentGenerationResult {
@@ -525,41 +537,9 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — four-tier ladder (Gemini → OpenAI → thumbnail → no image)
-    const ladderResult = await generateImageWithLadder(
-      {
-        articleTitle: generated.title,
-        articleDescription: generated.description,
-        articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
-        sourceThumbnailUrl: item.thumbnail?.url,
-        imageGuidelines: brief.image_guidelines,
-      },
-      config.notifications,
-      siteDomain,
-    );
-
-    let pendingImageAsset: PendingAsset | undefined;
-    let featuredImageUrl: string | undefined;
-
-    if (ladderResult.ok) {
-      const assetPath = `assets/images/${slug}.webp`;
-      pendingImageAsset = {
-        siteDomain,
-        assetPath,
-        data: ladderResult.result.data,
-      };
-      featuredImageUrl = `/assets/images/${slug}.webp`;
-      console.log(`[agent] Generated image: ${assetPath}`);
-    } else {
-      const reasonChain = ladderResult.attempts
-        .map((a) => `${a.provider}:${a.reason}`)
-        .join(", ");
-      console.warn(
-        `[agent] Image generation exhausted for "${item.title}": ${reasonChain}. ` +
-        `Proceeding without featured image.`,
-      );
-    }
+    // Step 4: Default image — real image generated async by n8n after commit
+    const defaultImagePath = `/assets/images/${siteDomain}-general-article.webp`;
+    const featuredImageUrl = defaultImagePath;
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);
@@ -650,7 +630,17 @@ async function processItem(
       articleStatus,
       generatedBy: actualGenerator,
       _pendingArticle: { siteDomain, slug, content: markdown },
-      _pendingAsset: pendingImageAsset,
+      _imageRequest: {
+        requestId: `img_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+        siteDomain,
+        slug,
+        articleTitle: generated.title,
+        articleDescription: generated.description,
+        articleSummary: item.summary,
+        vertical: item.vertical?.name ?? "General",
+        sourceThumbnailUrl: item.thumbnail?.url,
+        imageGuidelines: brief.image_guidelines ?? null,
+      },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -833,9 +823,6 @@ export async function runContentGeneration(
       const pendingArticles = created
         .map((r) => r._pendingArticle)
         .filter((a): a is PendingArticle => !!a);
-      const pendingAssets = created
-        .map((r) => r._pendingAsset)
-        .filter((a): a is PendingAsset => !!a);
 
       // Build updated dedup index — add newly created articles to the existing sets
       const updatedExisting: ExistingArticles = {
@@ -860,14 +847,80 @@ export async function runContentGeneration(
       await writeArticleBatch(
         { localNetworkPath: config.localNetworkPath, github: config.github, branch },
         pendingArticles,
-        pendingAssets,
+        [], // images handled async by n8n — no pending assets
         commitMsg,
         [dedupIndexFile],
       );
     }
 
+    // Step 7: Fire n8n image generation in the background (non-blocking).
+    // Only in GitHub mode (branch set) — local dev mode writes to disk,
+    // and the background handler commits to Git which would conflict.
+    if (config.n8nImageWebhookUrl && branch) {
+      const imageRequests = created
+        .filter((r) => r._imageRequest)
+        .map((r) => r._imageRequest!);
+
+      if (imageRequests.length > 0) {
+        const webhookUrl = config.n8nImageWebhookUrl;
+        const callbackUrl = "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
+        const github = config.github;
+        const notifications = config.notifications;
+        const effectiveBranch = branch;
+
+        console.log(`[agent] Firing ${imageRequests.length} n8n image request(s) in background`);
+
+        // Fire-and-forget — don't await. Images arrive asynchronously.
+        void processWithConcurrency(
+          imageRequests,
+          5, // max 5 concurrent n8n requests
+          imageRequests.length,
+          async (req) => {
+            const result = await requestImageFromN8n({
+              request_id: req.requestId,
+              callback_url: callbackUrl,
+              site_domain: req.siteDomain,
+              slug: req.slug,
+              article: {
+                title: req.articleTitle,
+                description: req.articleDescription,
+                summary: req.articleSummary,
+                vertical: req.vertical,
+                source_thumbnail_url: req.sourceThumbnailUrl ?? null,
+                image_guidelines: Array.isArray(req.imageGuidelines)
+                  ? req.imageGuidelines.join("\n")
+                  : req.imageGuidelines,
+              },
+            });
+
+            if (result.ok) {
+              await processN8nImageResult({
+                siteDomain: req.siteDomain,
+                slug: req.slug,
+                imageData: result.data,
+                altText: result.altText,
+                branch: effectiveBranch,
+                github,
+              });
+            } else {
+              console.error(`[agent] n8n image failed for ${req.slug}: ${result.reason}`);
+              void notifyImageDefaultFallback(notifications, {
+                site: req.siteDomain,
+                articleTitle: req.articleTitle,
+                slug: req.slug,
+                reason: result.reason,
+              });
+            }
+
+            return result.ok;
+          },
+          () => true, // process all items, don't stop early
+        );
+      }
+    }
+
     // Strip internal fields before returning API response
-    const cleanResults = results.map(({ _pendingArticle, _pendingAsset, ...rest }) => rest);
+    const cleanResults = results.map(({ _pendingArticle, _imageRequest, ...rest }) => rest);
 
     return {
       siteDomain,
