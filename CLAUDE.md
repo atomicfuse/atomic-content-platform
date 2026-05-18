@@ -341,6 +341,9 @@ Service contract (both services satisfy):
 | `CLOUDFLARE_ACCOUNT_ID` | dashboard, site-worker (dev + CI) | `4a8cfd85d617b38ce1813a552132bc86` for Assets @ AtomicLabs (production). Legacy Dev1 account is `953511f6356ff606d84ac89bba3eff50` (still hosts `coolnews.dev` during migration). Required for `wrangler deploy`, `wrangler kv ...`, `pnpm seed:kv`, and dashboard domain management. |
 | `CLOUDFLARE_API_TOKEN` | dashboard, CI | Needed by dashboard (domain attach/detach, zone listing) and sync-kv.yml workflow. Required scopes: Zone:Read, DNS:Edit, Workers Scripts:Edit, Workers KV Storage:Edit, R2:Edit. Set in `.env.local` for local dev, CloudGrid secrets for production. |
 | `KV_NAMESPACE_ID` | seed-kv.ts | Defaults to CONFIG_KV_STAGING (`f6c35e1fa8c841b8b193509a3a237f7f` on Assets account). Set to `b258e47065274b8b8af1a0b6d6529c1d` for CONFIG_KV (prod). Legacy Dev1 IDs: staging `4673c82cdd7f41d49e93d938fb1c6848`, prod `a69cb2c59507482ca5e6d114babdd098`. |
+| `DEV1_CLOUDFLARE_API_TOKEN` | dashboard | API token for Dev1 account. Only accessed when a Dev1 domain is requested (`isDev1Domain()`). Set in `.env.local` + CloudGrid secrets. Temporary — remove after zone transfers. |
+| `DEV1_R2_ACCESS_KEY_ID` | dashboard | R2 S3 access key for Dev1 account. Paired with `DEV1_R2_SECRET_ACCESS_KEY`. Temporary. |
+| `DEV1_R2_SECRET_ACCESS_KEY` | dashboard | R2 S3 secret for Dev1 account. Temporary. |
 
 ## Conventions
 
@@ -392,18 +395,22 @@ Service contract (both services satisfy):
 26. **Content Aggregator URL requires `/api` suffix.** The aggregator base URL (`CONTENT_AGGREGATOR_URL`) defaults to the CloudGrid URL which does NOT include `/api`. All fetch calls must append `/api/...` to the base. See `wizard.ts` `getAggregatorApiBase()` which strips a trailing `/api` if present, then re-adds it per-call.
 27. **`createBundleForSite` in wizard.ts.** Site settings (ContentAgentTab) can create a content bundle from existing category + subcategory + tag selections. Calls `POST /api/bundles` on the aggregator. Handles 409 (duplicate name) by retrying with " (2)" suffix. Requires at least one subcategory selected.
 29. **Single R2 bucket — `atl-assets-prod` serves both staging and production.** The site-worker's `ASSET_BUCKET` binding points to `atl-assets-prod` in both wrangler environments. The `atl-assets-staging` bucket was retired (2026-05-13) — it was never read by any runtime. All image uploads (dashboard article upload, content-pipeline generation, seed-kv) write to `atl-assets-prod`. Dashboard article upload optimizes images via sharp (resize to max 1200px, WebP quality ladder 80→60→40, target ≤350KB) — see `src/app/api/articles/upload/route.ts`.
-30. **CloudGrid auto-injects `CONTENT_AGGREGATOR_URL` as a stale platform read-only env.** It points to `content-aggregator-cloudgrid.apps.cloudgrid.io` (wrong). The correct aggregator is `content-aggregator-v2-34cd.atomic.cloudgrid.io`. All code must check `CONTENT_API_BASE_URL` **before** `CONTENT_AGGREGATOR_URL` in the env var fallback chain. Both `cloudgrid.yaml` services set `CONTENT_API_BASE_URL` to the correct URL. Never add new code that reads `CONTENT_AGGREGATOR_URL` first.
+30. **site-worker — `QUERY_HANDLER` Service Binding intercepts `?x=1`.** Middleware checks `context.url.searchParams.get('x') === '1'` before KV lookup and forwards to `env.QUERY_HANDLER.fetch(request)`. The binding is defined in `wrangler.toml` `[[services]]` pointing to `atl-query-handler-t` on the Assets account. If you add new query-param-based routing, check middleware order — `?x=1` is checked early, before site resolution.
+31. **site-worker — `load-routes.ts` filters Dev1 domains from production routes.** `DEV1_CUSTOM_DOMAINS` in `scripts/lib/load-routes.ts` prevents `financenewsbase.com` and `coolnews.dev` from being registered as Custom Domains on the Assets worker. Without this filter, `pnpm deploy:production` fails with "Can't infer zone from route". Keep this set in sync with `constants.ts`. Remove entries after zone transfer.
+32. **Dashboard dual-account routing is opt-in per call.** All `cloudflare.ts` functions accept an optional `domain?: string` last parameter. If omitted, they default to Assets account. Only pass `domain` when you know the operation targets a specific site. Functions that list across accounts (e.g. `getAvailableZones()` in `wizard.ts`) explicitly query both accounts and merge results.
+33. **CloudGrid auto-injects `CONTENT_AGGREGATOR_URL` as a stale platform read-only env.** It points to `content-aggregator-cloudgrid.apps.cloudgrid.io` (wrong). The correct aggregator is `content-aggregator-v2-34cd.atomic.cloudgrid.io`. All code must check `CONTENT_API_BASE_URL` **before** `CONTENT_AGGREGATOR_URL` in the env var fallback chain. Both `cloudgrid.yaml` services set `CONTENT_API_BASE_URL` to the correct URL. Never add new code that reads `CONTENT_AGGREGATOR_URL` first.
 
-## Cloudflare Account Migration (in progress)
+## Cloudflare Account Migration & WordPress Migration
 
-Infrastructure is migrating from the Dev1 testing account to the Assets @ AtomicLabs production account. See `docs/superpowers/specs/2026-05-14-cloudflare-account-migration-design.md` for the full spec.
+Full status doc: `docs/superpowers/specs/2026-05-17-migration-status-and-remaining-work.md`.
+Original design: `docs/superpowers/specs/2026-05-14-cloudflare-account-migration-design.md`.
 
 ### Two Cloudflare Accounts
 
-| Account | ID | Role | Status |
-|---------|----|------|--------|
-| **Assets @ AtomicLabs** | `4a8cfd85d617b38ce1813a552132bc86` | Production | Active — new Workers, KV, R2 deployed |
-| **Dev1@AtomicLabs** | `953511f6356ff606d84ac89bba3eff50` | Legacy testing | Still hosts `coolnews.dev` |
+| Account | ID | Role | What lives here |
+|---------|----|------|-----------------|
+| **Assets @ AtomicLabs** | `4a8cfd85d617b38ce1813a552132bc86` | Production | `atomic-site-worker` (prod+staging), `atl-query-handler-t`, `atl-streamed-lander`, `green-dream-b06f`, KV, R2. All new sites deploy here. |
+| **Dev1 @ AtomicLabs** | `953511f6356ff606d84ac89bba3eff50` | Legacy (temporary) | `atomic-site-worker` (prod+staging) for 2 legacy sites only: `financenewsbase.com`, `coolnews.dev` (muvizzcom). Will be decommissioned after zone transfers. |
 
 ### Assets @ AtomicLabs Resources
 
@@ -413,26 +420,69 @@ Infrastructure is migrating from the Dev1 testing account to the Assets @ Atomic
 | CONFIG_KV_STAGING | `f6c35e1fa8c841b8b193509a3a237f7f` |
 | R2 bucket | `atl-assets-prod` |
 | Staging worker | `https://atomic-site-worker-staging.accounts-4a8.workers.dev` |
-| Production worker | `https://atomic-site-worker.accounts-4a8.workers.dev` (no public routes) |
+| Production worker | `https://atomic-site-worker.accounts-4a8.workers.dev` |
 
-### Existing Workers on Assets Account (DO NOT TOUCH)
+### Workers on Assets Account
 
-| Worker | Routes | Purpose |
-|--------|--------|---------|
-| `atl-streamed-lander` | `domain.com/*` (23 routes) | WordPress proxy + monetization landing pages |
-| `green-dream-b06f` | `*domain.com/atl/*` (39 routes) | Monetization, ads, tracking — critical revenue |
+| Worker | Routes/Binding | Purpose | Touch? |
+|--------|----------------|---------|--------|
+| `atomic-site-worker` | Workers Custom Domains (e.g. `travelswire.com`) | Our platform — Astro SSR from KV + R2 | YES — this is ours |
+| `atomic-site-worker-staging` | `*.workers.dev` only | Staging preview via `?_atl_site=` | YES — this is ours |
+| `atl-query-handler-t` | Service Binding from `atomic-site-worker` (`QUERY_HANDLER`) | Handles `?x=1` query param requests | YES — this is ours |
+| `atl-streamed-lander` | `domain.com/*` (~23 WordPress routes) | WordPress proxy + monetization landing pages | CAREFUL — will need Service Binding added for WP migration |
+| `green-dream-b06f` | `*domain.com/atl/*` (~39 routes) | Monetization, ads, tracking — critical revenue | DO NOT TOUCH |
 
-### Branch-based targeting
+### Dual-Account Credential Routing (completed 2026-05-17)
 
-- `michal-dev` branch: KV IDs + staging URL point to **Assets @ AtomicLabs**
-- `main` branch: KV IDs still point to **Dev1** (fallback until migration complete)
-- Deploy to Assets: use `michal-dev`. Deploy to Dev1 (emergency): use `main`.
+Dashboard and CI route CF API calls to the correct account per site. Implemented in:
+- `services/dashboard/src/lib/constants.ts` — `DEV1_SITE_IDS`, `DEV1_CUSTOM_DOMAINS`, `isDev1Domain()`, `getKvNamespaces()`, `getWorkerStagingUrl()`
+- `services/dashboard/src/lib/cloudflare.ts` — `getCredentials(domain?)`, `headersFromCreds()` — all CF functions accept optional `domain` param
+- `atomic-labs-network/.github/workflows/sync-kv.yml` — `DEV1_SITES` conditional for KV seeding
 
-### WordPress site migration architecture
+**Dev1 legacy sites (temporary):** `financenewsbase` + `muvizzcom` (custom domains: `financenewsbase.com`, `coolnews.dev`). Remove from sets after zone transfer to Assets.
 
-WordPress domains go through `atl-streamed-lander` (front door) which delegates to `atomic-site-worker` via **Service Binding**. Our worker claims no public routes on WordPress domains. The lander checks a hardcoded `Set<string>` of migrated domains — if migrated, delegates to our worker; otherwise proxies to WordPress.
+### Current Sites (dashboard-index.yaml, 2026-05-17)
 
-`coolnews.dev` is the exception: it gets a **direct Worker Route** (not through the lander) since it has no monetization logic.
+| Site ID | Status | Custom Domain | Account | Service Binding |
+|---------|--------|---------------|---------|-----------------|
+| `travelswire` | Live | `travelswire.com` | Assets | Direct Custom Domain |
+| `financenewsbase` | Live | `financenewsbase.com` | Dev1 | Direct Custom Domain |
+| `muvizzcom` | Live | `coolnews.dev` | Dev1 | Direct Custom Domain |
+| `chaibeseret` | Staging | — | Assets | — |
+| `wtpop` | Staging | — | Assets | — |
+
+### Query Handler Service Binding (completed 2026-05-17)
+
+`atl-query-handler-t` Worker on Assets account, bound to `atomic-site-worker` via `QUERY_HANDLER` Service Binding. Middleware intercepts `?x=1` before KV lookup and forwards to the bound service. Configured in `wrangler.toml` `[[services]]` and `src/middleware.ts`.
+
+### Workers Custom Domains vs Workers Routes
+
+**Our platform uses Custom Domains** — one domain = one Worker, auto-managed DNS + SSL, account-level.
+
+**WordPress sites use Routes** — zone-level patterns (`domain.com/*` -> `atl-streamed-lander`, `*domain.com/atl/*` -> `green-dream-b06f`). Routes enable path-based splitting across two Workers on the same domain.
+
+During WordPress migration, the lander's Routes stay in place. A Service Binding on the lander delegates migrated domains to our Worker. After full migration, Routes can optionally be cleaned up.
+
+### Dev1 Route Filtering
+
+`packages/site-worker/scripts/lib/load-routes.ts` filters Dev1 custom domains (`financenewsbase.com`, `coolnews.dev`) from production route emission. Without this, `pnpm deploy:production` fails because wrangler can't register those domains on the Assets account. The filter set `DEV1_CUSTOM_DOMAINS` must stay in sync with `constants.ts`.
+
+### WordPress Migration Architecture
+
+WordPress domains enter through `atl-streamed-lander` (Routes unchanged). Migration adds a Service Binding (`SITE_WORKER` -> `atomic-site-worker`) to the lander. A hardcoded `Set<string>` of migrated domains controls delegation — if domain is in the set, lander calls `env.SITE_WORKER.fetch(request)` instead of proxying to WordPress.
+
+Per-domain rollback: remove from set, redeploy lander. Instant.
+
+**Migration pipeline:** Design complete (`docs/plans/2026-05-12-wp-migration-design.md`), implementation plan ready (`docs/plans/2026-05-12-wp-migration-plan.md`, 15 tasks). Not yet implemented.
+
+### What's Left (priority order)
+
+1. **WordPress migration pipeline** — implement the 15-task content import plan (CSV -> WP REST API -> turndown -> Claude cleanup -> Gemini images -> R2 -> git -> KV)
+2. **Pilot WordPress migration** — 1 site end-to-end through lander Service Binding
+3. **Batch WordPress migration** — remaining ~44 sites
+4. **Dev1 zone transfers** — move `financenewsbase.com` + `coolnews.dev` to Assets account
+5. **Dev1 decommission** — remove all dual-account code, delete Dev1 KV/R2
+6. **Legacy Routes cleanup** — remove WordPress-era Routes from zone configs after full migration
 
 ### Article images in R2
 
