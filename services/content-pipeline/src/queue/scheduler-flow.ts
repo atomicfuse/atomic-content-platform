@@ -226,6 +226,10 @@ export function setupSchedulerFlow(
     { connection },
   );
 
+  schedulerRunWorker.on("error", (err) => {
+    console.error(`[scheduler-run] Worker connection error: ${err.message}`);
+  });
+
   schedulerRunWorker.on("failed", (job, err) => {
     console.error(
       `[scheduler-run] Parent job ${job?.id} failed: ${err.message}`,

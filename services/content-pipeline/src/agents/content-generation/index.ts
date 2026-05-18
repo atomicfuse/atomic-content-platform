@@ -295,7 +295,13 @@ try {
 
 let queueInstances: QueueInstances | undefined;
 if (config.redisUrl) {
-  queueInstances = startWorkers(config.redisUrl, config);
+  try {
+    queueInstances = startWorkers(config.redisUrl, config);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[server] Failed to initialize queue workers: ${message}`);
+    console.error("[server] Continuing in direct execution mode");
+  }
 } else {
   console.log("[server] REDIS_URL not set — queue workers disabled (direct execution mode)");
 }

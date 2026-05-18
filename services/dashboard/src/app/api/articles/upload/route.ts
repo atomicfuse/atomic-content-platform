@@ -120,7 +120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // Upload to atl-assets-prod — the site-worker's ASSET_BUCKET binding
       // points there in both staging and production environments.
       const r2Key = buildImageR2Key(domain, slug, "webp");
-      const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
+      const uploaded = await uploadToR2(r2Key, optimized, "image/webp", domain);
       if (uploaded) {
         imagePath = buildImageFrontmatterPath(slug, "webp");
       }
