@@ -3,7 +3,10 @@
  * Returns structured result indicating success or classified failure.
  */
 
-import type { ImageGenAttempt } from "../agents/content-generation/image-pipeline/types.js";
+/** Result of a single image-generation attempt (Gemini or OpenAI). */
+export type ImageGenAttempt =
+  | { ok: true; data: Buffer }
+  | { ok: false; retriable: boolean; reason: string };
 
 const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";

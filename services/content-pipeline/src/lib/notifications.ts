@@ -94,50 +94,6 @@ export async function notifySummary(
   ]);
 }
 
-/**
- * Send a notification about image generation progress through the ladder.
- * Called at each tier transition so operators can see which providers fail.
- */
-export async function notifyImageGeneration(
-  config: NotificationConfig,
-  params: {
-    article: string;
-    site?: string;
-    provider: string;
-    success: boolean;
-    reason?: string;
-    nextProvider?: string;
-  },
-): Promise<void> {
-  let message: string;
-
-  if (params.success) {
-    message =
-      `Image generation with ${params.provider} succeeded` +
-      ` for "${params.article}"` +
-      (params.site ? ` (${params.site})` : "");
-  } else {
-    message =
-      `Image generation with ${params.provider} failed` +
-      ` for "${params.article}"` +
-      (params.site ? ` (${params.site})` : "") +
-      ` because ${params.reason ?? "unknown error"}` +
-      (params.nextProvider ? `. Trying now with ${params.nextProvider}...` : "");
-  }
-
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
-}
-
-
-/**
- * Send a notification when n8n image generation fails and the article
- * falls back to the default site image.
- */
 export async function notifyImageDefaultFallback(
   config: NotificationConfig,
   params: {
