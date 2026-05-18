@@ -51,6 +51,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return env.QUERY_HANDLER.fetch(context.request);
   }
 
+  // Streamed lander bypass — forward monetization landing page requests
+  // to atl-streamed-lander when ?agi=1011 is present.
+  if (context.url.searchParams.get('agi') === '1011' && env.ATL_STREAMED_LANDER) {
+    return env.ATL_STREAMED_LANDER.fetch(context.request);
+  }
+
+
+
   if (!env.CONFIG_KV) {
     return new Response(
       'CONFIG_KV binding not configured. Run `wrangler dev` or bind a namespace.',

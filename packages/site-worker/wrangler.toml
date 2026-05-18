@@ -36,6 +36,12 @@ bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and 
 binding = "QUERY_HANDLER"
 service = "atl-query-handler-t"
 
+# Service binding — streamed lander. When a request carries monetization
+# params (e.g. ?agi=1011), middleware forwards to this service.
+[[services]]
+binding = "ATL_STREAMED_LANDER"
+service = "atl-streamed-lander"
+
 # Observability — Workers Logs (enabled by default on Workers Paid).
 [observability]
 enabled = true
