@@ -60,6 +60,7 @@ const WEBHOOK_URL = "https://atomics.app.n8n.cloud/webhook/acn-image-generation"
 const baseTriggerRequest: N8nTriggerRequest = {
   request_id: "img_test_001",
   callback_url: "https://content-pipeline-app.apps.cloudgrid.io/image-callback",
+  job_id: "gen_test_job_001",
   site_domain: "muvizzcom",
   slug: "cannes-2026-most-anticipated-films",
   branch: "staging/muvizzcom",
@@ -75,6 +76,7 @@ const baseTriggerRequest: N8nTriggerRequest = {
 
 const baseCallbackPayload: N8nCallbackPayload = {
   request_id: "img_test_001",
+  job_id: "gen_test_job_001",
   site_domain: "muvizzcom",
   slug: "cannes-2026-most-anticipated-films",
   branch: "staging/muvizzcom",
@@ -291,14 +293,62 @@ describe("processN8nImageResult", () => {
     expect(committed).not.toContain("/muvizzcom/assets/");
   });
 
-  it("skips Git update if R2 upload fails", async () => {
+  it("throws when R2 upload fails — does not update Git", async () => {
     vi.mocked(uploadToR2).mockResolvedValueOnce(false);
 
-    await processN8nImageResult(baseParams);
+    await expect(processN8nImageResult(baseParams)).rejects.toThrow(
+      "R2 upload failed",
+    );
 
     expect(optimizeImage).toHaveBeenCalled();
     expect(uploadToR2).toHaveBeenCalled();
     expect(readFile).not.toHaveBeenCalled();
     expect(commitFile).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleImageCallback — R2 failure propagation
+// ---------------------------------------------------------------------------
+
+describe("handleImageCallback — R2 failure", () => {
+  it("returns ok: false when R2 upload fails (image not persisted)", async () => {
+    vi.mocked(uploadToR2).mockResolvedValueOnce(false);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      ["---", "title: Test", "---", "", "Body."].join("\n"),
+    );
+
+    const result = await handleImageCallback(baseCallbackPayload, github);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("R2 upload failed");
+    expect(commitFile).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleImageCallback — validation order (required fields before status)
+// ---------------------------------------------------------------------------
+
+describe("handleImageCallback — validation order", () => {
+  it("rejects missing site_domain even when status is ok and data present", async () => {
+    const result = await handleImageCallback(
+      { ...baseCallbackPayload, site_domain: "" },
+      github,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("Missing required fields");
+    expect(optimizeImage).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing slug even when status is ok and data present", async () => {
+    const result = await handleImageCallback(
+      { ...baseCallbackPayload, slug: "" },
+      github,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain("Missing required fields");
   });
 });

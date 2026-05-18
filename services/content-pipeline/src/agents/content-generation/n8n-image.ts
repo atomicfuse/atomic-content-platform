@@ -35,6 +35,7 @@ export interface N8nImageArticle {
 export interface N8nTriggerRequest {
   request_id: string;
   callback_url: string;
+  job_id: string;
   site_domain: string;
   slug: string;
   branch: string;
@@ -44,6 +45,7 @@ export interface N8nTriggerRequest {
 /** Shape of the payload n8n POSTs to our /image-callback endpoint. */
 export interface N8nCallbackPayload {
   request_id: string;
+  job_id?: string;
   site_domain: string;
   slug: string;
   branch: string;
@@ -144,6 +146,11 @@ export async function handleImageCallback(
     `status=${status}, has_data=${!!payload.data_base64}`,
   );
 
+  // Validate required routing fields first — these are needed for any processing
+  if (!site_domain || !slug || !branch) {
+    return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
+  }
+
   // Check for error status from n8n
   if (status && status !== "ok") {
     const reason = payload.error ?? `n8n status: ${status}`;
@@ -154,10 +161,6 @@ export async function handleImageCallback(
   if (!payload.data_base64) {
     console.error(`[n8n-image] No image data in callback for ${slug}`);
     return { ok: false, message: "No image data in callback" };
-  }
-
-  if (!site_domain || !slug || !branch) {
-    return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
   }
 
   const imageData = Buffer.from(payload.data_base64, "base64");
@@ -187,7 +190,7 @@ export async function handleImageCallback(
  * Take image data, optimize it, upload to R2,
  * and update the article's Git frontmatter with the image URL and alt text.
  *
- * Skips the Git update entirely if R2 upload fails.
+ * Throws if R2 upload fails — caller should not count this as a completed image.
  */
 export async function processN8nImageResult(
   params: ProcessImageParams,
@@ -202,8 +205,7 @@ export async function processN8nImageResult(
   const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
 
   if (!uploaded) {
-    console.warn(`[n8n-image] R2 upload failed for ${slug} — skipping Git update`);
-    return;
+    throw new Error(`R2 upload failed for ${slug} — image not persisted`);
   }
 
   // 3. Read the article markdown from Git

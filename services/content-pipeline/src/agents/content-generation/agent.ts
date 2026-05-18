@@ -55,6 +55,8 @@ export interface ContentGenerationParams {
   branch?: string;
   /** Override article count — for on-demand generation from dashboard. */
   count?: number;
+  /** BullMQ job ID — passed to n8n for image callback tracking. */
+  jobId?: string;
 }
 
 export interface ContentGenerationResult {
@@ -95,6 +97,8 @@ export interface BatchContentGenerationResult {
   duplicateCount: number;
   /** How many new items were available after dedup */
   availableNew: number;
+  /** How many n8n image requests were triggered (0 if n8n not configured) */
+  n8nImagesTriggered: number;
   results: ContentGenerationResult[];
 }
 
@@ -670,7 +674,7 @@ export async function runContentGeneration(
   params: ContentGenerationParams,
   config: AgentConfig,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count } = params;
+  const { siteDomain, branch, count, jobId } = params;
   const targetCount = count ?? 3;
 
   try {
@@ -778,6 +782,7 @@ export async function runContentGeneration(
         totalSourced: 0,
         duplicateCount: 0,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "no items found from aggregator" }],
       };
     }
@@ -789,6 +794,7 @@ export async function runContentGeneration(
         totalSourced: totalFetched,
         duplicateCount,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "all items already processed" }],
       };
     }
@@ -857,12 +863,14 @@ export async function runContentGeneration(
     // POSTs to n8n webhook with a callback_url. n8n generates the image
     // async and POSTs the result back to our /image-callback endpoint.
     // Only in GitHub mode (branch set) — local dev writes to disk.
+    let n8nImagesTriggered = 0;
     if (config.n8nImageWebhookUrl && branch) {
       const imageRequests = created
         .filter((r) => r._imageRequest)
         .map((r) => r._imageRequest!);
 
       if (imageRequests.length > 0) {
+        n8nImagesTriggered = imageRequests.length;
         const webhookUrl = config.n8nImageWebhookUrl;
         const callbackUrl = config.imageCallbackUrl ?? "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
 
@@ -874,6 +882,8 @@ export async function runContentGeneration(
           void triggerN8nImage(webhookUrl, {
             request_id: req.requestId,
             callback_url: callbackUrl,
+            // Empty string when not via BullMQ — callback handler skips Redis tracking for falsy job_id
+            job_id: jobId ?? "",
             site_domain: req.siteDomain,
             slug: req.slug,
             branch,
@@ -910,6 +920,7 @@ export async function runContentGeneration(
       totalSourced: totalFetched,
       duplicateCount,
       availableNew: newItems.length,
+      n8nImagesTriggered,
       results: cleanResults,
     };
   } catch (err) {
@@ -921,6 +932,7 @@ export async function runContentGeneration(
       totalSourced: 0,
       duplicateCount: 0,
       availableNew: 0,
+      n8nImagesTriggered: 0,
       results: [{ status: "error", message }],
     };
   }
