@@ -12,6 +12,7 @@ export interface AgentConfig {
   contentAggregatorUrl: string;
   port: number;
   redisUrl?: string;
+  n8nImageWebhookUrl?: string;
   notifications: {
     telegramBotToken?: string;
     telegramChatId?: string;
@@ -42,6 +43,7 @@ export function loadConfig(): AgentConfig {
     contentAggregatorUrl: process.env.CONTENT_AGGREGATOR_URL ?? "https://content-aggregator-v2-34cd.atomic.cloudgrid.io",
     port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
     redisUrl: process.env.REDIS_URL,
+    n8nImageWebhookUrl: process.env.N8N_IMAGE_WEBHOOK_URL,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,
