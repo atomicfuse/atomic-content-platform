@@ -332,6 +332,7 @@ Service contract (both services satisfy):
 | `CONTENT_AGENT_URL` | dashboard | `http://content-pipeline-app` in CloudGrid / cloudgrid dev; needs NODE_ENV fallback to `http://localhost:5000`. |
 | `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-v2-34cd.atomic.cloudgrid.io`. |
 | `GEMINI_API_KEY` | content-pipeline | For image generation. |
+| `N8N_IMAGE_WEBHOOK_URL` | content-pipeline | n8n webhook for async image generation. If not set, articles are created without triggering image generation. |
 | `NETWORK_DATA_PATH` | site-worker (seed-kv) | Absolute path to network repo checkout. seed-kv resolves config + reads articles + uploads R2 assets from this path. Use `git worktree` for cross-branch seeding. |
 | `R2_BUCKET` | site-worker (seed-kv) | R2 bucket name. Defaults to `atl-assets-prod`. There is only one R2 bucket — `atl-assets-staging` was retired (2026-05-13). |
 | `R2_ACCESS_KEY_ID` | dashboard | R2 S3-compatible API access key. Required for article image uploads and R2 asset cleanup on site deletion. Skipped with warning if not set. |
@@ -399,6 +400,8 @@ Service contract (both services satisfy):
 31. **site-worker — `load-routes.ts` filters Dev1 domains from production routes.** `DEV1_CUSTOM_DOMAINS` in `scripts/lib/load-routes.ts` prevents `financenewsbase.com` and `coolnews.dev` from being registered as Custom Domains on the Assets worker. Without this filter, `pnpm deploy:production` fails with "Can't infer zone from route". Keep this set in sync with `constants.ts`. Remove entries after zone transfer.
 32. **Dashboard dual-account routing is opt-in per call.** All `cloudflare.ts` functions accept an optional `domain?: string` last parameter. If omitted, they default to Assets account. Only pass `domain` when you know the operation targets a specific site. Functions that list across accounts (e.g. `getAvailableZones()` in `wizard.ts`) explicitly query both accounts and merge results.
 33. **CloudGrid auto-injects `CONTENT_AGGREGATOR_URL` as a stale platform read-only env.** It points to `content-aggregator-cloudgrid.apps.cloudgrid.io` (wrong). The correct aggregator is `content-aggregator-v2-34cd.atomic.cloudgrid.io`. All code must check `CONTENT_API_BASE_URL` **before** `CONTENT_AGGREGATOR_URL` in the env var fallback chain. Both `cloudgrid.yaml` services set `CONTENT_API_BASE_URL` to the correct URL. Never add new code that reads `CONTENT_AGGREGATOR_URL` first.
+
+34. **n8n image generation is fire-and-forget.** Articles are created with a default site image (`{site-slug}-general-article`). n8n webhooks fire in the background after article commit. If n8n is down or slow, articles are unaffected — they just keep the default image. Slack alerts fire on failure. If the worker process exits during background delivery, in-flight images are silently lost (no retry mechanism).
 
 ## Cloudflare Account Migration & WordPress Migration
 
