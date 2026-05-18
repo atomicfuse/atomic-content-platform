@@ -97,11 +97,9 @@ vi.mock("../lib/writer.js", () => ({
   writeArticleBatch: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../agents/content-generation/image-pipeline/generator.js", () => ({
-  generateImageWithLadder: vi.fn().mockResolvedValue({
-    ok: true,
-    result: { data: Buffer.from("test-image"), altText: "Test image", prompt: "test prompt" },
-  }),
+vi.mock("../agents/content-generation/n8n-image.js", () => ({
+  requestImageFromN8n: vi.fn().mockResolvedValue({ ok: false, reason: "disabled-in-test" }),
+  processN8nImageResult: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../agents/content-quality/scorer.js", () => ({
