@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useToast } from "@/components/ui/Toast";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -20,6 +19,8 @@ interface QueueJob {
   requested?: number;
   totalSourced?: number;
   duplicateCount?: number;
+  n8nImagesTriggered?: number;
+  n8nImagesCompleted?: number;
   failedReason?: string;
   errorReasons?: string[];
   attemptsMade: number;
@@ -111,6 +112,12 @@ function JobCard({ job }: { job: QueueJob }): React.ReactElement {
   const cfg = STATUS_CONFIG[job.status];
   const [expanded, setExpanded] = useState(false);
 
+  // Derived image tracking values — computed once, used in header + expanded section
+  const imgTriggered = job.n8nImagesTriggered ?? 0;
+  const imgCompleted = job.n8nImagesCompleted ?? 0;
+  const hasImages = imgTriggered > 0;
+  const imagesDone = imgCompleted >= imgTriggered;
+
   const hasErrors =
     job.status === "failed" ||
     (job.errorReasons && job.errorReasons.length > 0);
@@ -152,6 +159,19 @@ function JobCard({ job }: { job: QueueJob }): React.ReactElement {
           {job.status === "completed" && (
             <span className="text-xs font-mono text-green-400">
               {job.articlesCreated}/{job.requested ?? job.count ?? "?"} articles
+            </span>
+          )}
+          {hasImages && (
+            <span
+              className={`text-xs font-mono px-2 py-0.5 rounded-full ${
+                imagesDone
+                  ? "bg-green-500/10 text-green-400"
+                  : "bg-amber-500/10 text-amber-400 animate-pulse"
+              }`}
+            >
+              {imagesDone
+                ? `${imgTriggered} images`
+                : `Images ${imgCompleted}/${imgTriggered}`}
             </span>
           )}
           {job.status === "failed" && job.attemptsMade > 1 && (
@@ -215,6 +235,21 @@ function JobCard({ job }: { job: QueueJob }): React.ReactElement {
             </div>
           )}
 
+          {/* Image generation status */}
+          {hasImages && (
+            <div className="flex gap-4 font-mono text-[var(--text-secondary)]">
+              <span className="text-[var(--text-muted)]">Images:</span>
+              <span className={imagesDone ? "text-green-400" : "text-amber-400"}>
+                {imgCompleted}/{imgTriggered} completed
+              </span>
+              {!imagesDone && (
+                <span className="text-amber-400/60">
+                  (generating via n8n)
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Job-level failure reason (BullMQ) */}
           {job.failedReason && (
             <div className="rounded-lg bg-red-500/10 px-3 py-2">
@@ -258,7 +293,6 @@ const FILTER_TABS: Array<{ key: StatusFilter; label: string }> = [
 ];
 
 export default function QueuePage(): React.ReactElement {
-  const { toast } = useToast();
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

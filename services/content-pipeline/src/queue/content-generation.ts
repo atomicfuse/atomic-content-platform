@@ -59,7 +59,7 @@ export async function processGenerateJob(
 
   // Run the agent (never throws — returns error results)
   const result = await runContentGeneration(
-    { siteDomain, branch, count },
+    { siteDomain, branch, count, jobId: job.id },
     config,
   );
 

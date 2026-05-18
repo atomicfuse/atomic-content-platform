@@ -28,7 +28,9 @@ import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
-import { generateImageWithLadder } from "./image-pipeline/generator.js";
+import { randomUUID } from "node:crypto";
+import { triggerN8nImage } from "./n8n-image.js";
+import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
@@ -38,7 +40,7 @@ import type { Generator, GeneratorConfig } from "./generators/base-generator.js"
 import { createGitHubClient } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { writeArticleBatch } from "../../lib/writer.js";
-import type { PendingArticle, PendingAsset, BatchFileEntry } from "../../lib/writer.js";
+import type { PendingArticle, BatchFileEntry } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -53,6 +55,8 @@ export interface ContentGenerationParams {
   branch?: string;
   /** Override article count — for on-demand generation from dashboard. */
   count?: number;
+  /** BullMQ job ID — passed to n8n for image callback tracking. */
+  jobId?: string;
 }
 
 export interface ContentGenerationResult {
@@ -69,8 +73,18 @@ export interface ContentGenerationResult {
   generatedBy?: "claude" | "openai";
   /** @internal Pending file data — used for batch commit, stripped before API response. */
   _pendingArticle?: PendingArticle;
-  /** @internal Pending asset data — used for batch commit, stripped before API response. */
-  _pendingAsset?: PendingAsset;
+  /** @internal n8n image request data — used to fire background image generation. */
+  _imageRequest?: {
+    requestId: string;
+    siteDomain: string;
+    slug: string;
+    articleTitle: string;
+    articleDescription: string;
+    articleSummary: string;
+    vertical: string;
+    sourceThumbnailUrl?: string;
+    imageGuidelines: string | string[] | null;
+  };
 }
 
 export interface BatchContentGenerationResult {
@@ -83,6 +97,8 @@ export interface BatchContentGenerationResult {
   duplicateCount: number;
   /** How many new items were available after dedup */
   availableNew: number;
+  /** How many n8n image requests were triggered (0 if n8n not configured) */
+  n8nImagesTriggered: number;
   results: ContentGenerationResult[];
 }
 
@@ -525,41 +541,9 @@ async function processItem(
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — four-tier ladder (Gemini → OpenAI → thumbnail → no image)
-    const ladderResult = await generateImageWithLadder(
-      {
-        articleTitle: generated.title,
-        articleDescription: generated.description,
-        articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
-        sourceThumbnailUrl: item.thumbnail?.url,
-        imageGuidelines: brief.image_guidelines,
-      },
-      config.notifications,
-      siteDomain,
-    );
-
-    let pendingImageAsset: PendingAsset | undefined;
-    let featuredImageUrl: string | undefined;
-
-    if (ladderResult.ok) {
-      const assetPath = `assets/images/${slug}.webp`;
-      pendingImageAsset = {
-        siteDomain,
-        assetPath,
-        data: ladderResult.result.data,
-      };
-      featuredImageUrl = `/assets/images/${slug}.webp`;
-      console.log(`[agent] Generated image: ${assetPath}`);
-    } else {
-      const reasonChain = ladderResult.attempts
-        .map((a) => `${a.provider}:${a.reason}`)
-        .join(", ");
-      console.warn(
-        `[agent] Image generation exhausted for "${item.title}": ${reasonChain}. ` +
-        `Proceeding without featured image.`,
-      );
-    }
+    // Step 4: Default image — real image generated async by n8n after commit
+    const defaultImagePath = `/assets/images/${siteDomain}-general-article.webp`;
+    const featuredImageUrl = defaultImagePath;
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);
@@ -650,7 +634,17 @@ async function processItem(
       articleStatus,
       generatedBy: actualGenerator,
       _pendingArticle: { siteDomain, slug, content: markdown },
-      _pendingAsset: pendingImageAsset,
+      _imageRequest: {
+        requestId: `img_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+        siteDomain,
+        slug,
+        articleTitle: generated.title,
+        articleDescription: generated.description,
+        articleSummary: item.summary,
+        vertical: item.vertical?.name ?? "General",
+        sourceThumbnailUrl: item.thumbnail?.url,
+        imageGuidelines: brief.image_guidelines ?? null,
+      },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -680,7 +674,7 @@ export async function runContentGeneration(
   params: ContentGenerationParams,
   config: AgentConfig,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count } = params;
+  const { siteDomain, branch, count, jobId } = params;
   const targetCount = count ?? 3;
 
   try {
@@ -788,6 +782,7 @@ export async function runContentGeneration(
         totalSourced: 0,
         duplicateCount: 0,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "no items found from aggregator" }],
       };
     }
@@ -799,6 +794,7 @@ export async function runContentGeneration(
         totalSourced: totalFetched,
         duplicateCount,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "all items already processed" }],
       };
     }
@@ -833,9 +829,6 @@ export async function runContentGeneration(
       const pendingArticles = created
         .map((r) => r._pendingArticle)
         .filter((a): a is PendingArticle => !!a);
-      const pendingAssets = created
-        .map((r) => r._pendingAsset)
-        .filter((a): a is PendingAsset => !!a);
 
       // Build updated dedup index — add newly created articles to the existing sets
       const updatedExisting: ExistingArticles = {
@@ -860,14 +853,66 @@ export async function runContentGeneration(
       await writeArticleBatch(
         { localNetworkPath: config.localNetworkPath, github: config.github, branch },
         pendingArticles,
-        pendingAssets,
+        [], // images handled async by n8n — no pending assets
         commitMsg,
         [dedupIndexFile],
       );
     }
 
+    // Step 7: Trigger n8n image generation (fire-and-forget).
+    // POSTs to n8n webhook with a callback_url. n8n generates the image
+    // async and POSTs the result back to our /image-callback endpoint.
+    // Only in GitHub mode (branch set) — local dev writes to disk.
+    let n8nImagesTriggered = 0;
+    if (config.n8nImageWebhookUrl && branch) {
+      const imageRequests = created
+        .filter((r) => r._imageRequest)
+        .map((r) => r._imageRequest!);
+
+      if (imageRequests.length > 0) {
+        n8nImagesTriggered = imageRequests.length;
+        const webhookUrl = config.n8nImageWebhookUrl;
+        const callbackUrl = config.imageCallbackUrl ?? "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
+
+        console.log(`[agent] Triggering ${imageRequests.length} n8n image request(s) → ${webhookUrl}`);
+
+        // Fire-and-forget — trigger all requests, don't wait for images.
+        // n8n will POST results to our /image-callback endpoint.
+        for (const req of imageRequests) {
+          void triggerN8nImage(webhookUrl, {
+            request_id: req.requestId,
+            callback_url: callbackUrl,
+            // Empty string when not via BullMQ — callback handler skips Redis tracking for falsy job_id
+            job_id: jobId ?? "",
+            site_domain: req.siteDomain,
+            slug: req.slug,
+            branch,
+            article: {
+              title: req.articleTitle,
+              description: req.articleDescription,
+              summary: req.articleSummary,
+              vertical: req.vertical,
+              source_thumbnail_url: req.sourceThumbnailUrl ?? null,
+              image_guidelines: Array.isArray(req.imageGuidelines)
+                ? req.imageGuidelines.join("\n")
+                : req.imageGuidelines,
+            },
+          }).then((accepted) => {
+            if (!accepted) {
+              void notifyImageDefaultFallback(config.notifications, {
+                site: req.siteDomain,
+                articleTitle: req.articleTitle,
+                slug: req.slug,
+                reason: "n8n webhook trigger failed",
+              });
+            }
+          });
+        }
+      }
+    }
+
     // Strip internal fields before returning API response
-    const cleanResults = results.map(({ _pendingArticle, _pendingAsset, ...rest }) => rest);
+    const cleanResults = results.map(({ _pendingArticle, _imageRequest, ...rest }) => rest);
 
     return {
       siteDomain,
@@ -875,6 +920,7 @@ export async function runContentGeneration(
       totalSourced: totalFetched,
       duplicateCount,
       availableNew: newItems.length,
+      n8nImagesTriggered,
       results: cleanResults,
     };
   } catch (err) {
@@ -886,6 +932,7 @@ export async function runContentGeneration(
       totalSourced: 0,
       duplicateCount: 0,
       availableNew: 0,
+      n8nImagesTriggered: 0,
       results: [{ status: "error", message }],
     };
   }

@@ -3,15 +3,11 @@ import { writeArticle, writeAsset, type WriterConfig } from "../lib/writer.js";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-const mockCreateOrUpdateFileContents = vi.fn().mockResolvedValue({ data: { commit: { sha: "abc123" } } });
-const mockGetContent = vi.fn().mockRejectedValue(new Error("Not Found"));
-
 const mockOctokit = {
-  repos: {
-    getContent: mockGetContent,
-    createOrUpdateFileContents: mockCreateOrUpdateFileContents,
-  },
+  repos: {},
 };
+
+const mockUploadToR2 = vi.fn().mockResolvedValue(true);
 
 vi.mock("node:fs/promises");
 vi.mock("../lib/github.js", () => ({
@@ -22,14 +18,15 @@ vi.mock("../lib/github.js", () => ({
     return { owner, repo: repoName };
   }),
 }));
+vi.mock("../lib/r2-upload.js", () => ({
+  uploadToR2: (...args: unknown[]): unknown => mockUploadToR2(...args),
+}));
 
 const mockFs = vi.mocked(fs);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Reset getContent to simulate "file does not exist" by default
-  mockGetContent.mockRejectedValue(new Error("Not Found"));
-  mockCreateOrUpdateFileContents.mockResolvedValue({ data: { commit: { sha: "abc123" } } });
+  mockUploadToR2.mockResolvedValue(true);
 });
 
 const sampleContent = `---\ntitle: Test\n---\n\nBody`;
@@ -101,27 +98,22 @@ describe("writeAsset (GitHub mode)", () => {
     github: { token: "token", repo: "owner/repo" },
   };
 
-  it("calls Octokit createOrUpdateFileContents with base64-encoded content directly", async () => {
+  it("uploads asset to R2 with the correct key", async () => {
     const data = Buffer.from("fake-image-bytes");
     await writeAsset(config, "coolnews.dev", "images/hero.png", data);
 
-    expect(mockCreateOrUpdateFileContents).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "owner",
-        repo: "repo",
-        path: "sites/coolnews.dev/images/hero.png",
-        content: data.toString("base64"),
-      }),
+    expect(mockUploadToR2).toHaveBeenCalledWith(
+      "coolnews.dev/images/hero.png",
+      data,
     );
   });
 
-  it("does not double-encode: content passed to Octokit equals data.toString('base64')", async () => {
+  it("passes raw Buffer to R2 without encoding", async () => {
     const data = Buffer.from("binary\x00data\xff");
     await writeAsset(config, "coolnews.dev", "images/test.png", data);
 
-    const call = mockCreateOrUpdateFileContents.mock.calls[0]![0];
-    expect(call.content).toBe(data.toString("base64"));
-    // Ensure it was NOT re-encoded (double-encoding would differ)
-    expect(call.content).not.toBe(Buffer.from(data.toString("base64")).toString("base64"));
+    const [r2Key, uploadedData] = mockUploadToR2.mock.calls[0]!;
+    expect(r2Key).toBe("coolnews.dev/images/test.png");
+    expect(uploadedData).toBe(data);
   });
 });
