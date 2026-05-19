@@ -313,7 +313,7 @@ async function handleRequest(
 
     const cbTag = `[server] [image-callback] [${payload.site_domain ?? "?"}/${payload.slug ?? "?"}]`;
     try {
-      const result = await handleImageCallback(payload, config.github);
+      const result = await handleImageCallback(payload, config.github, config.notifications);
       if (result.ok) {
         // Track image completion in Redis (keyed by BullMQ job ID).
         // Empty job_id means this was a direct invocation (not via BullMQ) — skip tracking.
