@@ -87,15 +87,16 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
         if (device === 'mobile' && !isMobile) return;
       }
 
-      // Exclude pages check — map current_page_type to exclude_pages values
+      // Exclude pages check
       var excludes = cfg.exclude_pages || [];
       if (excludes.length > 0) {
         var pt = cfg.current_page_type || '';
-        // shared pages use pageType='article' in BaseLayout but are served via PageLayout
-        // detect shared pages by checking the URL path against known shared slugs
         var path = location.pathname.replace(/^\//, '').replace(/\/$/, '');
-        var isSharedPage = ['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon'].indexOf(path) !== -1;
-        if (isSharedPage && excludes.indexOf('shared_pages') !== -1) return;
+        // Check individual shared page slug exclusions (about, contact, privacy, terms, dmca, amazon)
+        if (excludes.indexOf(path) !== -1) return;
+        // Check page-type exclusions (homepage, articles, categories)
+        var sharedSlugs = ['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon'];
+        var isSharedPage = sharedSlugs.indexOf(path) !== -1;
         if (pt === 'article' && !isSharedPage && excludes.indexOf('articles') !== -1) return;
         if (pt === 'homepage' && excludes.indexOf('homepage') !== -1) return;
         if (pt === 'category' && excludes.indexOf('categories') !== -1) return;

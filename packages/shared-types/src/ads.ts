@@ -135,8 +135,10 @@ export interface InterstitialConfig {
   exclude_pages?: InterstitialExcludePage[];
 }
 
-/** Page categories that can be excluded from interstitial display. */
-export type InterstitialExcludePage = "shared_pages" | "categories" | "articles" | "homepage";
+/** Page types/slugs that can be excluded from interstitial display. */
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 
 /**
  * Full advertising configuration for a site or group.
