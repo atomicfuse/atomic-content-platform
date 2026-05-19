@@ -219,7 +219,10 @@ POST to n8n webhook (fire-and-forget, ~100ms)
         |
         v  ... n8n generates image (~46s) ...
         |
-n8n POSTs result to /image-callback
+n8n POSTs result to dashboard proxy /api/agent/image-callback
+        |
+        v
+Dashboard proxies to internal content-pipeline /image-callback
         |
         v
 Content pipeline: optimize (sharp/WebP) -> upload to R2 -> update Git frontmatter
@@ -243,7 +246,17 @@ The n8n workflow (`ACP - Image Generation`) handles image creation externally:
 
 The request payload includes `callback_url`, `site_domain`, `slug`, and `branch` so the callback handler knows where to commit the updated frontmatter.
 
-### Callback Endpoint
+### Callback Routing
+
+The content-pipeline is an **internal-only CloudGrid service** with no public URL. n8n cannot reach it directly. Callbacks are routed through the dashboard:
+
+1. n8n POSTs to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`
+2. Dashboard API route (`/api/agent/image-callback`) proxies to `http://content-pipeline-app/image-callback`
+3. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work
+
+The default callback URL is set in `agent.ts`. Override with the `IMAGE_CALLBACK_URL` env var.
+
+### Callback Processing
 
 `POST /image-callback` on the content pipeline receives n8n results:
 
@@ -251,16 +264,17 @@ The request payload includes `callback_url`, `site_domain`, `slug`, and `branch`
 2. Optimizes the image via sharp (resize, WebP quality ladder, target ≤350KB)
 3. Uploads to R2 at key `{site_domain}/assets/images/{slug}.webp`
 4. Reads the article from Git, updates `featuredImage` and `image_alt` in frontmatter
-5. Commits the updated article to the staging branch
+5. Commits the updated article to the staging branch (retries up to 3x on SHA conflicts from concurrent callbacks)
 
 ### Failure Handling
 
 | Failure | Result |
 |---------|--------|
 | n8n webhook trigger fails | Article keeps default image, Slack alert sent |
-| n8n image generation fails | n8n POSTs error status to callback, article keeps default image |
-| R2 upload fails | Git update skipped, article keeps default image |
-| Git commit fails | Image exists in R2 but frontmatter not updated (manual fix needed) |
+| n8n image generation fails | n8n POSTs error status to callback, article keeps default image, Slack alert sent |
+| R2 upload fails | Git update skipped, article keeps default image, Slack alert sent |
+| Git SHA conflict (concurrent callbacks) | Retries up to 3x with 2s/4s backoff — re-reads file to get fresh SHA |
+| Git commit fails (after retries) | Image exists in R2 but frontmatter not updated, Slack alert sent |
 | Content pipeline restarts | No impact — n8n still POSTs to callback when the service is back up |
 
 ## SEO Metadata
