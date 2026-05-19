@@ -22,17 +22,28 @@ interface ColorState {
   muted: string;
   surface: string;
   border: string;
+  // New globals (Tier 4 — decouple from text/primary/accent)
+  heading: string;
+  link: string;
+  link_hover: string;
   footer_bg: string;
   must_reads_bg: string;
   hero_title: string;
   must_reads_title: string;
   article_hero_title: string;
+  // New article-hero byline override (Tier 1 fix)
+  article_hero_meta: string;
   feed_title: string;
   feed_desc: string;
   feed_date: string;
   prose_heading: string;
   prose_body: string;
   category_header_text: string;
+  // New footer text fields (Tier 2)
+  footer_text: string;
+  footer_heading: string;
+  footer_link: string;
+  footer_link_hover: string;
 }
 
 interface ThemeState {
@@ -41,6 +52,10 @@ interface ThemeState {
   fontHeading: string;
   fontBody: string;
   layout: LayoutState;
+  /** Header logo height in pixels. Defaults to 52. */
+  logoHeight: number;
+  /** Footer logo height in pixels. null = auto (92% of header). */
+  logoHeightFooter: number | null;
 }
 
 const DEFAULT_LAYOUT: LayoutState = {
@@ -56,10 +71,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
       text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
+      heading: "#1a1a2e", link: "#1a1a2e", link_hover: "#f4c542",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#6b7280",
       feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
       prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+      footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
   bold: {
@@ -67,10 +85,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#E50914", accent: "#B81D24", background: "#141414", secondary: "#1a1a2e",
       text: "#ffffff", muted: "#8C8C8C", surface: "#2a2a2a", border: "#333333",
+      heading: "#ffffff", link: "#E50914", link_hover: "#B81D24",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#8C8C8C",
       feed_title: "#ffffff", feed_desc: "#e0e0e0", feed_date: "#8C8C8C",
       prose_heading: "#ffffff", prose_body: "#e0e0e0", category_header_text: "#ffffff",
+      footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
   ocean: {
@@ -78,10 +99,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#0f4c81", accent: "#10b981", background: "#f8fafc", secondary: "#0f172a",
       text: "#0f172a", muted: "#64748b", surface: "#e2e8f0", border: "#cbd5e1",
+      heading: "#0f172a", link: "#0f4c81", link_hover: "#10b981",
       footer_bg: "#0f172a", must_reads_bg: "#0f172a",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#64748b",
       feed_title: "#0f172a", feed_desc: "#0f172a", feed_date: "#64748b",
       prose_heading: "#0f172a", prose_body: "#1e293b", category_header_text: "#ffffff",
+      footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
   warm: {
@@ -89,10 +113,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#7c2d12", accent: "#ea580c", background: "#fffbeb", secondary: "#1c1917",
       text: "#1c1917", muted: "#78716c", surface: "#fef3c7", border: "#d6d3d1",
+      heading: "#1c1917", link: "#7c2d12", link_hover: "#ea580c",
       footer_bg: "#1c1917", must_reads_bg: "#1c1917",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#78716c",
       feed_title: "#1c1917", feed_desc: "#1c1917", feed_date: "#78716c",
       prose_heading: "#1c1917", prose_body: "#292524", category_header_text: "#ffffff",
+      footer_text: "#a8a29e", footer_heading: "#ffffff", footer_link: "#a8a29e", footer_link_hover: "#ffffff",
     },
   },
   slate: {
@@ -100,10 +127,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#334155", accent: "#6366f1", background: "#ffffff", secondary: "#1e293b",
       text: "#1e293b", muted: "#94a3b8", surface: "#f1f5f9", border: "#e2e8f0",
+      heading: "#1e293b", link: "#334155", link_hover: "#6366f1",
       footer_bg: "#1e293b", must_reads_bg: "#1e293b",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#94a3b8",
       feed_title: "#1e293b", feed_desc: "#334155", feed_date: "#94a3b8",
       prose_heading: "#1e293b", prose_body: "#334155", category_header_text: "#ffffff",
+      footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
   midnight: {
@@ -111,20 +141,25 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#581c87", accent: "#a855f7", background: "#0f0720", secondary: "#1e1038",
       text: "#f0e6ff", muted: "#a78bfa", surface: "#1e1038", border: "#2e1a50",
+      heading: "#f0e6ff", link: "#a855f7", link_hover: "#c084fc",
       footer_bg: "#1e1038", must_reads_bg: "#1e1038",
       hero_title: "#ffffff", must_reads_title: "#f0e6ff", article_hero_title: "#ffffff",
+      article_hero_meta: "#a78bfa",
       feed_title: "#f0e6ff", feed_desc: "#d8c8f0", feed_date: "#a78bfa",
       prose_heading: "#f0e6ff", prose_body: "#d8c8f0", category_header_text: "#ffffff",
+      footer_text: "#a78bfa", footer_heading: "#ffffff", footer_link: "#a78bfa", footer_link_hover: "#ffffff",
     },
   },
 };
 
 const ALL_COLOR_KEYS: (keyof ColorState)[] = [
   "primary", "accent", "background", "secondary", "text", "muted", "surface", "border",
+  "heading", "link", "link_hover",
   "footer_bg", "must_reads_bg",
-  "hero_title", "must_reads_title", "article_hero_title",
+  "hero_title", "must_reads_title", "article_hero_title", "article_hero_meta",
   "feed_title", "feed_desc", "feed_date",
   "prose_heading", "prose_body", "category_header_text",
+  "footer_text", "footer_heading", "footer_link", "footer_link_hover",
 ];
 
 function detectPreset(colors: ColorState): string {
@@ -181,13 +216,24 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     fontHeading: "Inter",
     fontBody: "Inter",
     layout: { ...DEFAULT_LAYOUT },
+    logoHeight: 52,
+    logoHeightFooter: null,
   });
   const [topicInput, setTopicInput] = useState("");
+  // Footer logo upload state — tracked separately from ThemeState because
+  // it's a transient file upload, not a value that round-trips with the YAML.
+  const [existingFooterLogo, setExistingFooterLogo] = useState<string | null>(null);
+  // null = no pending change, string = newly uploaded (base64), "" = pending removal
+  const [footerLogoPending, setFooterLogoPending] = useState<string | null>(null);
+  const footerLogoInputRef = useRef<HTMLInputElement>(null);
   const initialState = useRef<ThemeState | null>(null);
 
   // Compute on every render — avoids stale memoization issues.
   const dirty = initialState.current !== null
-    && JSON.stringify(state) !== JSON.stringify(initialState.current);
+    && (
+      JSON.stringify(state) !== JSON.stringify(initialState.current)
+      || footerLogoPending !== null
+    );
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -212,9 +258,13 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           fontHeading: fonts.heading ?? "Inter",
           fontBody: fonts.body ?? "Inter",
           layout: parseLayout(layout),
+          logoHeight: typeof theme.logo_height === "number" ? theme.logo_height : 52,
+          logoHeightFooter:
+            typeof theme.logo_height_footer === "number" ? theme.logo_height_footer : null,
         };
         setState(loaded);
         initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
+        setExistingFooterLogo(typeof theme.footer_logo === "string" ? theme.footer_logo : null);
       } catch {
         // keep defaults — snapshot the defaults as initial state
         initialState.current = {
@@ -223,6 +273,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           fontHeading: "Inter",
           fontBody: "Inter",
           layout: { ...DEFAULT_LAYOUT },
+          logoHeight: 52,
+          logoHeightFooter: null,
         };
       } finally {
         setLoading(false);
@@ -245,19 +297,55 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     });
   }
 
+  function handleFooterLogoUpload(e: React.ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const result = reader.result as string;
+      const base64Data = result.split(",")[1];
+      if (base64Data) setFooterLogoPending(base64Data);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  // Empty string in footerLogoPending means "user clicked Remove"
+  // null means "no pending change"
+  // any other string is a base64 of the new upload
+  const footerLogoPreviewSrc = footerLogoPending
+    ? footerLogoPending === ""
+      ? null
+      : `data:image/png;base64,${footerLogoPending}`
+    : existingFooterLogo;
+
   async function save(): Promise<void> {
     setSaving(true);
     try {
+      // Translate pending footer-logo state into the API contract:
+      //   undefined → no change      (omitted from payload)
+      //   null      → remove existing
+      //   string    → new upload
+      let footerLogoBase64: string | null | undefined = undefined;
+      if (footerLogoPending !== null) {
+        footerLogoBase64 = footerLogoPending === "" ? null : footerLogoPending;
+      }
+
       const res = await fetch("/api/sites/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
           logoBase64: null,
+          ...(footerLogoBase64 !== undefined ? { footerLogoBase64 } : {}),
           faviconBase64: null,
           configUpdates: {
             theme_colors: state.colors,
             theme_fonts: { heading: state.fontHeading, body: state.fontBody },
+            theme_logo_height: state.logoHeight,
+            theme_logo_height_footer: state.logoHeightFooter,
             layout: state.layout,
           },
         }),
@@ -266,6 +354,13 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
       if (data.status === "ok") {
         toast("Theme saved — changes will appear on the staging site in a few minutes", "success");
         initialState.current = JSON.parse(JSON.stringify(state)) as ThemeState;
+        // Settle pending footer-logo state into the new "existing" baseline
+        if (footerLogoPending !== null) {
+          setExistingFooterLogo(
+            footerLogoPending === "" ? null : "/assets/logo-footer.png",
+          );
+          setFooterLogoPending(null);
+        }
       } else {
         toast(data.message ?? "Failed to save", "error");
       }
@@ -398,8 +493,11 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Text Colors</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ColorPickerField label="Headings & body" value={state.colors.text} onChange={(v): void => setColor("text", v)} helperText="Primary text color" />
+          <ColorPickerField label="Body text" value={state.colors.text} onChange={(v): void => setColor("text", v)} helperText="Default body color (paragraphs, etc.)" />
+          <ColorPickerField label="Headings" value={state.colors.heading} onChange={(v): void => setColor("heading", v)} helperText="Page headings (h1–h6). Defaults to body text." />
           <ColorPickerField label="Muted (dates, meta)" value={state.colors.muted} onChange={(v): void => setColor("muted", v)} helperText="Secondary text" />
+          <ColorPickerField label="Link" value={state.colors.link} onChange={(v): void => setColor("link", v)} helperText="Inline links. Defaults to main color." />
+          <ColorPickerField label="Link hover" value={state.colors.link_hover} onChange={(v): void => setColor("link_hover", v)} helperText="Link color on hover. Defaults to accent." />
           <ColorPickerField label="Borders" value={state.colors.border} onChange={(v): void => setColor("border", v)} helperText="Dividers and outlines" />
           <ColorPickerField label="Surface (card bg)" value={state.colors.surface} onChange={(v): void => setColor("surface", v)} helperText="Card backgrounds" />
           <ColorPickerField label="Secondary (dark sections)" value={state.colors.secondary} onChange={(v): void => setColor("secondary", v)} helperText="Dark section fallback" />
@@ -423,6 +521,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                 <ColorPickerField label="Hero card title" value={state.colors.hero_title} onChange={(v): void => setColor("hero_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Must Reads card title" value={state.colors.must_reads_title} onChange={(v): void => setColor("must_reads_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Article hero title" value={state.colors.article_hero_title} onChange={(v): void => setColor("article_hero_title", v)} helperText="Default: white" />
+                <ColorPickerField label="Article hero byline (date/author)" value={state.colors.article_hero_meta} onChange={(v): void => setColor("article_hero_meta", v)} helperText="Default: muted" />
               </div>
             </div>
             <div>
@@ -439,6 +538,15 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                 <ColorPickerField label="Prose headings (h2, h3)" value={state.colors.prose_heading} onChange={(v): void => setColor("prose_heading", v)} helperText="Default: text color" />
                 <ColorPickerField label="Prose body text" value={state.colors.prose_body} onChange={(v): void => setColor("prose_body", v)} helperText="Default: text color" />
                 <ColorPickerField label="Category header text" value={state.colors.category_header_text} onChange={(v): void => setColor("category_header_text", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Footer</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ColorPickerField label="Footer text" value={state.colors.footer_text} onChange={(v): void => setColor("footer_text", v)} helperText="Tagline, description, copyright. Default: muted." />
+                <ColorPickerField label="Footer column headings" value={state.colors.footer_heading} onChange={(v): void => setColor("footer_heading", v)} helperText="Default: white" />
+                <ColorPickerField label="Footer link" value={state.colors.footer_link} onChange={(v): void => setColor("footer_link", v)} helperText="Quick Links and similar. Default: muted." />
+                <ColorPickerField label="Footer link hover" value={state.colors.footer_link_hover} onChange={(v): void => setColor("footer_link_hover", v)} helperText="Default: white" />
               </div>
             </div>
             <p className="text-xs text-[var(--text-muted)] border-t border-[var(--border-secondary)] pt-2">
@@ -462,6 +570,109 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             value={state.fontBody}
             onChange={(v): void => setState((s) => ({ ...s, fontBody: v }))}
           />
+        </div>
+      </div>
+
+      {/* Logo */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Logo</h3>
+        <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+              Header logo height
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={32}
+                max={96}
+                step={2}
+                value={state.logoHeight}
+                onChange={(e): void =>
+                  setState((s) => ({ ...s, logoHeight: parseInt(e.target.value, 10) }))
+                }
+                className="flex-1 accent-cyan"
+              />
+              <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                {state.logoHeight}px
+              </span>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+              Footer logo height
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={24}
+                max={96}
+                step={2}
+                value={state.logoHeightFooter ?? Math.round(state.logoHeight * 0.92)}
+                onChange={(e): void =>
+                  setState((s) => ({ ...s, logoHeightFooter: parseInt(e.target.value, 10) }))
+                }
+                className="flex-1 accent-cyan"
+              />
+              <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                {state.logoHeightFooter ?? Math.round(state.logoHeight * 0.92)}px
+              </span>
+              {state.logoHeightFooter != null && (
+                <button
+                  type="button"
+                  onClick={(): void => setState((s) => ({ ...s, logoHeightFooter: null }))}
+                  className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                  title="Reset to auto (92% of header)"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              Defaults to 92% of header height. Click Reset to return to auto.
+            </p>
+          </div>
+
+          {/* Footer logo variant */}
+          <div className="pt-3 border-t border-[var(--border-secondary)] space-y-2">
+            <div>
+              <h4 className="text-xs font-semibold text-[var(--text-primary)]">Footer logo (optional)</h4>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Different logo for the footer (e.g. light variant on dark bg). Defaults to the main logo.
+              </p>
+            </div>
+            {footerLogoPreviewSrc && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={footerLogoPreviewSrc}
+                  alt="Footer logo preview"
+                  className="w-16 h-16 rounded-lg object-contain bg-[#1a1a2e] border border-[var(--border-secondary)] p-1"
+                />
+                <button
+                  type="button"
+                  onClick={(): void => setFooterLogoPending("")}
+                  className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={(): void => footerLogoInputRef.current?.click()}
+              className="px-3 py-1.5 text-xs font-semibold border border-[var(--border-secondary)] rounded hover:border-[var(--border-primary)] text-[var(--text-primary)]"
+            >
+              {footerLogoPreviewSrc ? "Replace Footer Logo" : "Upload Footer Logo"}
+            </button>
+            <input
+              ref={footerLogoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml"
+              className="hidden"
+              onChange={handleFooterLogoUpload}
+            />
+            <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
+          </div>
         </div>
       </div>
 

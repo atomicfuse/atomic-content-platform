@@ -233,6 +233,10 @@ export async function createSiteAndBuildStaging(
     theme: {
       base: data.themePreset,
       colors: data.themeColors,
+      logo_height: data.logoHeight ?? 52,
+      // Omit logo_height_footer entirely when auto so saved YAML signals
+      // "let CSS auto-derive (92% of header)".
+      ...(data.logoHeightFooter != null ? { logo_height_footer: data.logoHeightFooter } : {}),
       fonts: {
         heading: data.fontHeading,
         body: data.fontBody,
@@ -334,6 +338,21 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     if (!faviconBuffer) {
       siteConfig.theme.favicon = "/assets/logo.png";
     }
+  }
+
+  // Add separate footer logo if uploaded (light/dark variant for footer)
+  if (data.footerLogoBase64) {
+    let footerLogoBuffer: Buffer;
+    try {
+      footerLogoBuffer = await removeBackground(Buffer.from(data.footerLogoBase64, "base64"));
+    } catch {
+      footerLogoBuffer = Buffer.from(data.footerLogoBase64, "base64");
+    }
+    files.push({
+      path: `sites/${siteFolder}/assets/logo-footer.png`,
+      content: footerLogoBuffer,
+    });
+    siteConfig.theme.footer_logo = "/assets/logo-footer.png";
   }
 
   // Add separate favicon if uploaded
@@ -1057,6 +1076,9 @@ export interface StagingSiteConfig {
   // Layout v2 theme fields
   theme_colors?: Record<string, string>;
   theme_fonts?: { heading: string; body: string };
+  theme_logo_height?: number;
+  /** `null` clears the field (auto-derive). `undefined` leaves it untouched. */
+  theme_logo_height_footer?: number | null;
   layout?: Record<string, unknown>;
 }
 

@@ -33,6 +33,20 @@
     --color-prose_heading: var(--color-text, #1a1a2e);
     --color-prose_body: var(--color-text, #1a1a2e);
     --color-category_header_text: #ffffff;
+    /* New globals — decouple heading/link from text/primary/accent */
+    --color-heading: var(--color-text, #1a1a2e);
+    --color-link: var(--color-primary, #1a1a2e);
+    --color-link_hover: var(--color-accent, #f4c542);
+    /* Article hero byline — was hardcoded to accent */
+    --color-article_hero_meta: var(--color-muted, #6b7280);
+    /* Footer text — was hardcoded #fff / #9ca3af / #6b7280 */
+    --color-footer_text: var(--color-muted, #9ca3af);
+    --color-footer_heading: #ffffff;
+    --color-footer_link: var(--color-muted, #9ca3af);
+    --color-footer_link_hover: #ffffff;
+    /* Logo sizing — footer auto-derives 92% of header unless overridden */
+    --logo-height: 52px;
+    --logo-height-footer: calc(var(--logo-height) * 0.92);
   }
 }
 
@@ -96,7 +110,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--fontHeading), system-ui, -apple-system, sans-serif;
   font-weight: 700;
   line-height: 1.25;
-  color: var(--color-text);
+  color: var(--color-heading, var(--color-text, #1a1a2e));
 }
 
 h1 { font-size: var(--text-4xl); }
@@ -112,13 +126,13 @@ p {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-link, var(--color-primary, #1a1a2e));
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 
 a:hover {
-  color: var(--color-accent);
+  color: var(--color-link_hover, var(--color-accent, #f4c542));
 }
 
 img {
@@ -152,7 +166,7 @@ img {
   font-size: var(--text-2xl);
   font-weight: 700;
   margin-bottom: 1.5rem;
-  color: var(--color-text);
+  color: var(--color-heading, var(--color-text, #1a1a2e));
 }
 
 .visually-hidden {
