@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { expandThemeColors, buildTheme } from "../../agents/migration/theme-builder.js";
 
-const ALL_19_KEYS = [
+const ALL_27_KEYS = [
   "primary",
   "secondary",
   "accent",
@@ -10,21 +10,29 @@ const ALL_19_KEYS = [
   "muted",
   "surface",
   "border",
+  "heading",
+  "link",
+  "link_hover",
   "footer_bg",
   "hero_title",
   "must_reads_title",
   "must_reads_bg",
   "article_hero_title",
+  "article_hero_meta",
   "feed_title",
   "feed_desc",
   "feed_date",
   "category_header_text",
   "prose_heading",
   "prose_body",
+  "footer_text",
+  "footer_heading",
+  "footer_link",
+  "footer_link_hover",
 ] as const;
 
 describe("expandThemeColors", () => {
-  it("returns all 19 color keys when given full CSV colors", () => {
+  it("returns all 27 color keys when given full CSV colors", () => {
     const colors = expandThemeColors({
       primary: "#F43656",
       secondary: "#C87137",
@@ -33,8 +41,8 @@ describe("expandThemeColors", () => {
       background: "#FFFFFF",
     });
 
-    expect(Object.keys(colors)).toHaveLength(19);
-    for (const key of ALL_19_KEYS) {
+    expect(Object.keys(colors)).toHaveLength(27);
+    for (const key of ALL_27_KEYS) {
       expect(colors[key]).toBeDefined();
       expect(colors[key]).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
@@ -87,6 +95,6 @@ describe("buildTheme", () => {
 
     expect(theme.base).toBe("modern");
     expect(theme.fonts).toEqual({ heading: "Poppins", body: "Inter" });
-    expect(Object.keys(theme.colors)).toHaveLength(19);
+    expect(Object.keys(theme.colors)).toHaveLength(27);
   });
 });

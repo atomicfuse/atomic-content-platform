@@ -56,30 +56,40 @@ export function expandThemeColors(csv: CsvColors): Record<string, string> {
 
   const bgIsDark = isDark(background);
 
+  const mutedColor = mixColors(text, background, 0.5);
+
   return {
     primary,
     secondary,
     accent,
     background,
     text,
-    muted: mixColors(text, background, 0.5),
+    muted: mutedColor,
     surface: bgIsDark
       ? adjustBrightness(background, 0.1)
       : adjustBrightness(background, -0.03),
     border: bgIsDark
       ? adjustBrightness(background, 0.2)
       : adjustBrightness(background, -0.1),
+    heading: text,
+    link: primary,
+    link_hover: accent,
     footer_bg: isDark(primary) ? primary : secondary,
     hero_title: "#ffffff",
     must_reads_title: "#ffffff",
     must_reads_bg: isDark(primary) ? primary : secondary,
     article_hero_title: "#ffffff",
+    article_hero_meta: mutedColor,
     feed_title: text,
     feed_desc: mixColors(text, background, 0.2),
-    feed_date: mixColors(text, background, 0.5),
+    feed_date: mutedColor,
     category_header_text: bgIsDark ? "#ffffff" : "#1a1a1a",
     prose_heading: text,
     prose_body: mixColors(text, background, 0.15),
+    footer_text: "#9ca3af",
+    footer_heading: "#ffffff",
+    footer_link: "#9ca3af",
+    footer_link_hover: "#ffffff",
   };
 }
 
