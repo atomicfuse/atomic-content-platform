@@ -11,6 +11,7 @@ services:
   dashboard:
     type: nextjs
     path: /
+    depends_on: [redis]
     env:
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
       CONTENT_AGENT_URL: http://content-pipeline-app
@@ -31,6 +32,7 @@ services:
   content-pipeline:
     type: node
     lang: typescript
+    depends_on: [redis]
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
       # IMPORTANT: CloudGrid auto-injects CONTENT_AGGREGATOR_URL as a
