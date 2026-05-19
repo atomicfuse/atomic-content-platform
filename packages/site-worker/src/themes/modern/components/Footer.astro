@@ -14,6 +14,7 @@ interface Props {
 
 const { config } = Astro.props;
 const year = new Date().getFullYear();
+const footerLogoSrc = config.theme.footer_logo || config.theme.logo;
 
 const quickLinks = [
   { label: 'Home', href: '/' },
@@ -31,8 +32,8 @@ const quickLinks = [
     {/* Column 1: About */}
     <div class="footer-col footer-about">
       <div class="footer-logo-group">
-        {config.theme.logo ? (
-          <img src={config.theme.logo} alt={config.site_name} class="footer-logo" />
+        {footerLogoSrc ? (
+          <img src={footerLogoSrc} alt={config.site_name} class="footer-logo" />
         ) : (
           <span class="footer-logo-text">{config.site_name}</span>
         )}

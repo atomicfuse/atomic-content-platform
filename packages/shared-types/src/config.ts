@@ -125,6 +125,9 @@ export interface ThemeConfig {
   /** URL or path to the site logo. */
   logo?: string;
 
+  /** Optional alternate logo shown only in the footer (e.g. a light-on-dark variant). Falls back to `logo` when unset. */
+  footer_logo?: string;
+
   /** Header logo height in pixels. Defaults to 52. */
   logo_height?: number;
 
@@ -156,6 +159,9 @@ export interface ResolvedThemeConfig {
 
   /** URL or path to the site logo. */
   logo: string;
+
+  /** Alternate footer logo. Empty string when unset (falls back to `logo`). */
+  footer_logo: string;
 
   /** Header logo height in pixels. */
   logo_height: number;
