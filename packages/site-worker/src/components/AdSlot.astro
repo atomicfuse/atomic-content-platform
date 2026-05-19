@@ -14,7 +14,7 @@
  * sticky bar (not the viewport corner) and survives mock-ad-fill.js
  * replacing the inner ad div content.
  */
-import { getConfig } from '../lib/config';
+import { getConfig, isStagingEnv } from '../lib/config';
 
 export interface Props {
   position: string;
@@ -27,6 +27,7 @@ interface Placement {
   device?: 'all' | 'desktop' | 'mobile';
   sizes?: { desktop?: number[][]; mobile?: number[][] };
   pages?: string[];
+  code?: string;
 }
 
 const { position, pageType } = Astro.props;
@@ -42,35 +43,47 @@ const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')]
 // reservation. Let sidebar slots size responsively (width: 100%, height: auto).
 const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${reserved}px` : '';
 const isSticky = position === 'sticky-bottom';
+const staging = isStagingEnv(Astro);
+
 ---
 
-{!isSticky && placements.map((p) => (
-  <div
-    data-ad-id={p.id ?? `${position}-${pageType}`}
-    data-ad-position={position}
-    data-ad-page-type={pageType}
-    data-ad-device={p.device ?? 'all'}
-    data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
-    data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
-    class={`atl-ad-slot atl-ad-${position}`}
-    style={slotInlineStyle}
-  ></div>
-))}
+{!isSticky && placements.map((p) => {
+  const widgetCode = staging ? '' : (p.code ?? '');
+  return (
+    <div
+      data-ad-id={p.id ?? `${position}-${pageType}`}
+      data-ad-position={position}
+      data-ad-page-type={pageType}
+      data-ad-device={p.device ?? 'all'}
+      data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+      data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+      class={`atl-ad-slot atl-ad-${position}`}
+      style={slotInlineStyle}
+    >
+      <Fragment set:html={widgetCode} />
+    </div>
+  );
+})}
 
 {isSticky && placements.length > 0 && (
   <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
-    {placements.map((p) => (
-      <div
-        data-ad-id={p.id ?? `${position}-${pageType}`}
-        data-ad-position={position}
-        data-ad-page-type={pageType}
-        data-ad-device={p.device ?? 'all'}
-        data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
-        data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
-        class={`atl-ad-slot atl-ad-${position}`}
-        style={slotInlineStyle}
-      ></div>
-    ))}
+    {placements.map((p) => {
+      const widgetCode = staging ? '' : (p.code ?? '');
+      return (
+        <div
+          data-ad-id={p.id ?? `${position}-${pageType}`}
+          data-ad-position={position}
+          data-ad-page-type={pageType}
+          data-ad-device={p.device ?? 'all'}
+          data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+          data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+          class={`atl-ad-slot atl-ad-${position}`}
+          style={slotInlineStyle}
+        >
+          <Fragment set:html={widgetCode} />
+        </div>
+      );
+    })}
     <button
       class="atl-ad-close"
       aria-label="Close advertisement"
@@ -120,6 +133,13 @@ const isSticky = position === 'sticky-bottom';
   .atl-ad-slot {
     display: block;
     margin: 0.75rem auto;
+  }
+  /* Hide desktop-only ads on mobile, mobile-only ads on desktop */
+  @media (max-width: 959px) {
+    .atl-ad-slot[data-ad-device="desktop"] { display: none !important; }
+  }
+  @media (min-width: 960px) {
+    .atl-ad-slot[data-ad-device="mobile"] { display: none !important; }
   }
   .atl-ad-sticky-wrapper {
     position: fixed;

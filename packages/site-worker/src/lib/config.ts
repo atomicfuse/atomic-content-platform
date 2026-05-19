@@ -27,6 +27,10 @@ export function isPreviewMode(astro: APIContext | { locals: App.Locals }): boole
   return astro.locals.site?.isPreview ?? false;
 }
 
+export function isStagingEnv(astro: APIContext | { locals: App.Locals }): boolean {
+  return astro.locals.site?.isStaging ?? false;
+}
+
 /**
  * Returns the best hostname for canonical URLs and og:url tags.
  *

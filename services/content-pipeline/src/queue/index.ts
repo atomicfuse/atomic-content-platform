@@ -40,6 +40,12 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
   const generateQueueEvents = createGenerateQueueEvents(connection);
   const generateWorker = createGenerateWorker(connection, WORKER_CONCURRENCY, config);
 
+  // CRITICAL: Workers emit 'error' for Redis connection issues.
+  // Without this handler, an unhandled 'error' event crashes the process.
+  generateWorker.on("error", (err) => {
+    console.error(`[worker] Connection error: ${err.message}`);
+  });
+
   generateWorker.on("failed", (job, err) => {
     console.error(
       `[worker] Job ${job?.id} failed (attempt ${job?.attemptsMade}): ${err.message}`,

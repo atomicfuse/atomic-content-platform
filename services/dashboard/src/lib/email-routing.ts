@@ -1,12 +1,12 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readFileContent, commitNetworkFiles } from "@/lib/github";
-import { getAccountId } from "@/lib/cloudflare";
+import { getCredentials, headersFromCreds } from "@/lib/cloudflare";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
-const DEFAULT_DESTINATION = "michal@atomiclabs.io";
-const DEFAULT_LOCAL_PART = "contact";
-const FALLBACK_EMAIL = "hello@atomiclabs.io";
+const DEFAULT_DESTINATION = "accounts+travelgeek@ngcdigital.io";
+const DEFAULT_LOCAL_PART = "info";
+const FALLBACK_EMAIL = "accounts+travelgeek@ngcdigital.io";
 const EMAIL_CONFIG_PATH = "email-config.yaml";
 
 interface EmailRoutingRule {
@@ -41,15 +41,6 @@ export interface DestinationAddress {
   verified?: string | null;
   created?: string;
   modified?: string;
-}
-
-function getHeaders(): HeadersInit {
-  const token = process.env.CLOUDFLARE_API_TOKEN;
-  if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set");
-  return {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -93,13 +84,14 @@ export async function getDestinationForDomain(domain: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 /** Add a destination address to the Cloudflare account (triggers verification email). */
-export async function addDestinationAddress(email: string): Promise<DestinationAddress> {
-  const accountId = getAccountId();
+export async function addDestinationAddress(email: string, domain?: string): Promise<DestinationAddress> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const res = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/email/routing/addresses`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/email/routing/addresses`,
     {
       method: "POST",
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify({ email }),
     },
   );
@@ -113,11 +105,12 @@ export async function addDestinationAddress(email: string): Promise<DestinationA
 }
 
 /** List all destination addresses on the Cloudflare account. */
-export async function listDestinationAddresses(): Promise<DestinationAddress[]> {
-  const accountId = getAccountId();
+export async function listDestinationAddresses(domain?: string): Promise<DestinationAddress[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const res = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/email/routing/addresses`,
-    { headers: getHeaders() },
+    `${CF_API_BASE}/accounts/${creds.accountId}/email/routing/addresses`,
+    { headers },
   );
   const data = (await res.json()) as CloudflareResponse<DestinationAddress[]>;
   if (!data.success) return [];
@@ -148,10 +141,11 @@ export function getDestinationEmail(): string {
 // ---------------------------------------------------------------------------
 
 /** Check if email routing is enabled for a zone. */
-export async function getEmailRoutingStatus(zoneId: string): Promise<boolean> {
+export async function getEmailRoutingStatus(zoneId: string, domain?: string): Promise<boolean> {
   try {
+    const headers = headersFromCreds(getCredentials(domain));
     const res = await fetch(`${CF_API_BASE}/zones/${zoneId}/email/routing`, {
-      headers: getHeaders(),
+      headers,
     });
     const data = (await res.json()) as CloudflareResponse<{ enabled: boolean }>;
     return data.success && data.result.enabled;
@@ -161,13 +155,14 @@ export async function getEmailRoutingStatus(zoneId: string): Promise<boolean> {
 }
 
 /** Enable email routing on a zone. No-op if already enabled. */
-export async function enableEmailRouting(zoneId: string): Promise<void> {
-  const alreadyEnabled = await getEmailRoutingStatus(zoneId);
+export async function enableEmailRouting(zoneId: string, domain?: string): Promise<void> {
+  const alreadyEnabled = await getEmailRoutingStatus(zoneId, domain);
   if (alreadyEnabled) return;
 
+  const headers = headersFromCreds(getCredentials(domain));
   const res = await fetch(
     `${CF_API_BASE}/zones/${zoneId}/email/routing/enable`,
-    { method: "POST", headers: getHeaders() },
+    { method: "POST", headers },
   );
   const data = (await res.json()) as CloudflareResponse<unknown>;
   if (!data.success) {
@@ -200,11 +195,13 @@ export async function enableEmailRouting(zoneId: string): Promise<void> {
 /** List email routing rules for a zone. */
 export async function listEmailRoutingRules(
   zoneId: string,
+  domain?: string,
 ): Promise<EmailRoutingRule[]> {
   try {
+    const headers = headersFromCreds(getCredentials(domain));
     const res = await fetch(
       `${CF_API_BASE}/zones/${zoneId}/email/routing/rules`,
-      { headers: getHeaders() },
+      { headers },
     );
     const data = (await res.json()) as CloudflareResponse<EmailRoutingRule[]>;
     if (!data.success) return [];
@@ -218,8 +215,9 @@ export async function listEmailRoutingRules(
 export async function findEmailRule(
   zoneId: string,
   email: string,
+  domain?: string,
 ): Promise<EmailRoutingRule | null> {
-  const rules = await listEmailRoutingRules(zoneId);
+  const rules = await listEmailRoutingRules(zoneId, domain);
   return (
     rules.find((r) =>
       r.matchers.some((m) => m.field === "to" && m.value === email),
@@ -227,24 +225,26 @@ export async function findEmailRule(
   );
 }
 
-/** Create an email routing rule to forward contact@domain to the destination. */
+/** Create an email routing rule to forward contact@domain to the destination.
+ *  Returns null when the API token lacks Email Routing permissions (auth error). */
 export async function createEmailRoutingRule(
   zoneId: string,
   domain: string,
   destination?: string,
-): Promise<EmailRoutingRule> {
+): Promise<EmailRoutingRule | null> {
   const email = buildContactEmail(domain);
   const dest = destination ?? (await getDestinationForDomain(domain));
 
   // Check if rule already exists
-  const existing = await findEmailRule(zoneId, email);
+  const existing = await findEmailRule(zoneId, email, domain);
   if (existing) return existing;
 
+  const headers = headersFromCreds(getCredentials(domain));
   const res = await fetch(
     `${CF_API_BASE}/zones/${zoneId}/email/routing/rules`,
     {
       method: "POST",
-      headers: getHeaders(),
+      headers,
       body: JSON.stringify({
         name: `Forward ${email} to ${dest}`,
         enabled: true,
@@ -256,6 +256,19 @@ export async function createEmailRoutingRule(
 
   const data = (await res.json()) as CloudflareResponse<EmailRoutingRule>;
   if (!data.success) {
+    // Auth error — token likely lacks Email Routing:Edit scope. This is a
+    // known condition (the main CF token doesn't include email permissions).
+    // Log a warning and return null so callers aren't disrupted.
+    const isAuthError = data.errors.some(
+      (e) => e.code === 10000 || /authentication/i.test(e.message),
+    );
+    if (isAuthError) {
+      console.warn(
+        `[createEmailRoutingRule] Auth error for zone ${zoneId} — token may lack Email Routing permissions. Skipping.`,
+      );
+      return null;
+    }
+
     throw new Error(
       `Failed to create email routing rule: ${data.errors.map((e) => e.message).join(", ")}`,
     );
@@ -263,17 +276,28 @@ export async function createEmailRoutingRule(
   return data.result;
 }
 
-/** Delete an email routing rule. */
+/** Delete an email routing rule. No-op when token lacks Email Routing permissions. */
 export async function deleteEmailRoutingRule(
   zoneId: string,
   ruleId: string,
+  domain?: string,
 ): Promise<void> {
+  const headers = headersFromCreds(getCredentials(domain));
   const res = await fetch(
     `${CF_API_BASE}/zones/${zoneId}/email/routing/rules/${ruleId}`,
-    { method: "DELETE", headers: getHeaders() },
+    { method: "DELETE", headers },
   );
   const data = (await res.json()) as CloudflareResponse<null>;
   if (!data.success) {
+    const isAuthError = data.errors.some(
+      (e) => e.code === 10000 || /authentication/i.test(e.message),
+    );
+    if (isAuthError) {
+      console.warn(
+        `[deleteEmailRoutingRule] Auth error for zone ${zoneId} — token may lack Email Routing permissions. Skipping.`,
+      );
+      return;
+    }
     throw new Error(
       `Failed to delete email routing rule: ${data.errors.map((e) => e.message).join(", ")}`,
     );
@@ -295,7 +319,7 @@ export async function getSiteEmailConfig(
   }
 
   // Check if the rule exists
-  const rule = await findEmailRule(zoneId, address);
+  const rule = await findEmailRule(zoneId, address, domain);
   return {
     address,
     destination,

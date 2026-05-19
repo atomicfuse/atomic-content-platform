@@ -301,12 +301,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             site.zone_id,
             domain,
             `facebook-domain-verification=${fbVerification}`,
+            domain,
           );
         } else if (fbVerification === null || fbVerification === "") {
           await deleteDnsTxtRecord(
             site.zone_id,
             domain,
             "facebook-domain-verification=",
+            domain,
           );
         }
       } catch (err) {

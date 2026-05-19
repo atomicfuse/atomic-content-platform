@@ -8,7 +8,7 @@ import {
 
 describe('isPreviewableHost', () => {
   it('allows workers.dev subdomains', () => {
-    expect(isPreviewableHost('atomic-site-worker-staging.dev1-953.workers.dev')).toBe(true);
+    expect(isPreviewableHost('atomic-site-worker-staging.accounts-4a8.workers.dev')).toBe(true);
     expect(isPreviewableHost('foo.workers.dev')).toBe(true);
   });
 
@@ -61,7 +61,7 @@ describe('parseCookie', () => {
 });
 
 describe('resolvePreview', () => {
-  const wdHost = 'atomic-site-worker-staging.dev1-953.workers.dev';
+  const wdHost = 'atomic-site-worker-staging.accounts-4a8.workers.dev';
   const prodHost = 'coolnews.dev';
 
   it('returns null on non-previewable hosts', () => {

@@ -7,7 +7,7 @@ import type {
 } from "./types.js";
 import { fetchWpArticles, fetchWpCategories, extractBaseUrl } from "./wp-fetcher.js";
 import { wpHtmlToMarkdown } from "./html-to-md.js";
-import { cleanupArticle, mapCategoriesToTags } from "./article-cleanup.js";
+import { cleanupArticle, mapCategoriesToTags, ensureTopicTag } from "./article-cleanup.js";
 import { buildArticleMd, stripHtmlTags } from "./frontmatter-builder.js";
 import type { ArticleMdInput } from "./frontmatter-builder.js";
 import { domainToSiteId } from "./site-scaffolder.js";
@@ -79,7 +79,8 @@ export async function runMigration(
       const rawMarkdown = wpHtmlToMarkdown(article.content.rendered);
       const excerpt = stripHtmlTags(article.excerpt.rendered);
       const cleaned = await cleanupArticle(config.anthropicApiKey, title, rawMarkdown, excerpt);
-      const tags = mapCategoriesToTags(article.categories, wpCategories, site.menuItems);
+      const rawTags = mapCategoriesToTags(article.categories, wpCategories, site.menuItems);
+      const tags = ensureTopicTag(rawTags, site.menuItems, title);
 
       // Generate hero image
       progress.phase = "generating-image";

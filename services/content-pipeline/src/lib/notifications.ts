@@ -94,36 +94,21 @@ export async function notifySummary(
   ]);
 }
 
-/**
- * Send a notification about image generation progress through the ladder.
- * Called at each tier transition so operators can see which providers fail.
- */
-export async function notifyImageGeneration(
+export async function notifyImageDefaultFallback(
   config: NotificationConfig,
   params: {
-    article: string;
-    site?: string;
-    provider: string;
-    success: boolean;
-    reason?: string;
-    nextProvider?: string;
+    site: string;
+    articleTitle: string;
+    slug: string;
+    reason: string;
   },
 ): Promise<void> {
-  let message: string;
-
-  if (params.success) {
-    message =
-      `Image generation with ${params.provider} succeeded` +
-      ` for "${params.article}"` +
-      (params.site ? ` (${params.site})` : "");
-  } else {
-    message =
-      `Image generation with ${params.provider} failed` +
-      ` for "${params.article}"` +
-      (params.site ? ` (${params.site})` : "") +
-      ` because ${params.reason ?? "unknown error"}` +
-      (params.nextProvider ? `. Trying now with ${params.nextProvider}...` : "");
-  }
+  const articleUrl = `https://${params.site}/articles/${params.slug}`;
+  const message =
+    `Image generation failed for site: ${params.site}\n` +
+    `Article: "${params.articleTitle}" (${articleUrl})\n` +
+    `Reason: ${params.reason}\n` +
+    `The article is using the default site image.`;
 
   await Promise.allSettled([
     config.telegramBotToken

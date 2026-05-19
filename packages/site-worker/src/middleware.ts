@@ -45,6 +45,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
     });
   }
 
+  // Query handler bypass — forward to the bound service when ?x=1 is present.
+  // The query handler worker renders its own response (e.g. landing pages).
+  if (context.url.searchParams.get('x') === '1' && env.QUERY_HANDLER) {
+    return env.QUERY_HANDLER.fetch(context.request);
+  }
+
+  // Streamed lander bypass — forward monetization landing page requests
+  // to atl-streamed-lander when ?agi=1011 is present.
+  if (context.url.searchParams.get('agi') === '1011' && env.ATL_STREAMED_LANDER) {
+    return env.ATL_STREAMED_LANDER.fetch(context.request);
+  }
+
+
+
   if (!env.CONFIG_KV) {
     return new Response(
       'CONFIG_KV binding not configured. Run `wrangler dev` or bind a namespace.',
@@ -110,7 +124,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     );
   }
 
-  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride };
+  const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
+  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
 
   const response = await next();
   applyCacheHeaders(context.url.pathname, response);

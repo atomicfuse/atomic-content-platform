@@ -27,6 +27,8 @@ import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { handleMigrationRequest, handleCreateSites } from "../migration/handler.js";
+import { handleImageCallback } from "./n8n-image.js";
+import type { N8nCallbackPayload } from "./n8n-image.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -35,6 +37,25 @@ function sendJson(
 ): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+/** Read the full request body as a string, with an optional size limit (bytes). */
+function readBody(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = "";
+    let bytes = 0;
+    req.on("data", (chunk: Buffer | string) => {
+      bytes += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+      if (bytes > maxBytes) {
+        req.destroy();
+        reject(new Error(`Body exceeds ${maxBytes} bytes`));
+        return;
+      }
+      body += chunk;
+    });
+    req.on("end", () => resolve(body));
+    req.on("error", reject);
+  });
 }
 
 async function handleRequest(
@@ -121,7 +142,30 @@ async function handleRequest(
         200,
       );
 
-      const allJobs: Array<Record<string, unknown>> = [];
+      // --- Pass 1: collect all BullMQ jobs and extract metadata ---
+      interface JobSummary {
+        id: string | undefined;
+        status: string;
+        domain: string;
+        triggeredBy: string;
+        branch?: string;
+        count?: number;
+        articlesCreated: number;
+        articlesErrored: number;
+        totalResults: number;
+        requested?: number;
+        totalSourced?: number;
+        duplicateCount?: number;
+        n8nImagesTriggered: number;
+        failedReason?: string;
+        errorReasons?: string[];
+        attemptsMade: number;
+        timestamp: number;
+        processedOn?: number;
+        finishedOn?: number;
+      }
+
+      const jobSummaries: JobSummary[] = [];
 
       for (const status of statuses) {
         const jobs = await queueInstances.generateQueue.getJobs(
@@ -130,19 +174,16 @@ async function handleRequest(
           limit - 1,
         );
         for (const job of jobs) {
-          // Extract summary from returnvalue without sending the full results array
           const rv = job.returnvalue as
             | {
                 results?: Array<{ status: string; reason?: string; message?: string }>;
                 requested?: number;
                 totalSourced?: number;
                 duplicateCount?: number;
+                n8nImagesTriggered?: number;
               }
             | undefined;
           const results = rv?.results ?? [];
-          const created = results.filter((r) => r.status === "created").length;
-          const errored = results.filter((r) => r.status === "error").length;
-          // Collect error reasons from individual article results
           const errorReasons = results
             .filter((r) => r.status === "error")
             .map((r) => r.message ?? r.reason ?? "unknown")
@@ -155,19 +196,20 @@ async function handleRequest(
             count?: number;
           } | undefined;
 
-          allJobs.push({
+          jobSummaries.push({
             id: job.id,
             status,
             domain: data?.siteDomain ?? "unknown",
             triggeredBy: data?.triggeredBy ?? "unknown",
             branch: data?.branch,
             count: data?.count,
-            articlesCreated: created,
-            articlesErrored: errored,
+            articlesCreated: results.filter((r) => r.status === "created").length,
+            articlesErrored: results.filter((r) => r.status === "error").length,
             totalResults: results.length,
             requested: rv?.requested,
             totalSourced: rv?.totalSourced,
             duplicateCount: rv?.duplicateCount,
+            n8nImagesTriggered: rv?.n8nImagesTriggered ?? 0,
             failedReason: job.failedReason ?? undefined,
             errorReasons: errorReasons.length > 0 ? errorReasons : undefined,
             attemptsMade: job.attemptsMade,
@@ -177,6 +219,32 @@ async function handleRequest(
           });
         }
       }
+
+      // --- Pass 2: batch-fetch image completion counts from Redis (single MGET) ---
+      const imageJobIds = jobSummaries
+        .filter((j) => j.n8nImagesTriggered > 0 && j.id)
+        .map((j) => j.id!);
+      const imageKeys = imageJobIds.map((id) => `img-done:${id}`);
+      const imageCounts = imageKeys.length > 0
+        ? await queueInstances.connection.mget(...imageKeys)
+        : [];
+      // Build a lookup: jobId → completed count
+      const imageCompletedMap = new Map<string, number>();
+      for (let i = 0; i < imageJobIds.length; i++) {
+        const jobId = imageJobIds[i]!;     // safe — iterating within bounds
+        const count = imageCounts[i] ?? "0";
+        imageCompletedMap.set(jobId, parseInt(count, 10));
+      }
+
+      // --- Pass 3: build response, merging image counts ---
+      const allJobs: Array<Record<string, unknown>> = jobSummaries.map((j) => {
+        const hasImages = j.n8nImagesTriggered > 0;
+        return {
+          ...j,
+          n8nImagesTriggered: hasImages ? j.n8nImagesTriggered : undefined,
+          n8nImagesCompleted: hasImages ? (imageCompletedMap.get(j.id!) ?? 0) : undefined,
+        };
+      });
 
       // Sort by timestamp descending (most recent first)
       allJobs.sort(
@@ -214,6 +282,63 @@ async function handleRequest(
     return;
   }
 
+  // n8n image callback — receives generated images asynchronously
+  if (req.method === "POST" && req.url === "/image-callback") {
+    // Verify shared secret if configured (prevents unauthorized image injection)
+    const expectedSecret = process.env.N8N_CALLBACK_SECRET;
+    if (expectedSecret) {
+      const provided = req.headers["x-callback-secret"];
+      if (provided !== expectedSecret) {
+        sendJson(res, 401, { status: "error", message: "Invalid callback secret" });
+        return;
+      }
+    }
+
+    // 50 MB limit — images are base64-encoded (~33% overhead)
+    let body: string;
+    try {
+      body = await readBody(req, 50 * 1024 * 1024);
+    } catch {
+      sendJson(res, 413, { status: "error", message: "Payload too large" });
+      return;
+    }
+
+    let payload: N8nCallbackPayload;
+    try {
+      payload = JSON.parse(body) as N8nCallbackPayload;
+    } catch {
+      sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+      return;
+    }
+
+    const cbTag = `[server] [image-callback] [${payload.site_domain ?? "?"}/${payload.slug ?? "?"}]`;
+    try {
+      const result = await handleImageCallback(payload, config.github, config.notifications);
+      if (result.ok) {
+        // Track image completion in Redis (keyed by BullMQ job ID).
+        // Empty job_id means this was a direct invocation (not via BullMQ) — skip tracking.
+        if (payload.job_id && queueInstances) {
+          const key = `img-done:${payload.job_id}`;
+          const newCount = await queueInstances.connection.incr(key);
+          // Set TTL only on the first increment to avoid resetting expiry on each callback
+          if (newCount === 1) {
+            await queueInstances.connection.expire(key, 7 * 24 * 60 * 60);
+          }
+        }
+        console.log(`${cbTag} → 200 OK`);
+        sendJson(res, 200, { status: "ok", message: result.message });
+      } else {
+        console.error(`${cbTag} → 422 FAIL: ${result.message}`);
+        sendJson(res, 422, { status: "error", message: result.message });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`${cbTag} → 500 ERROR: ${message}`);
+      sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
   // WordPress migration — SSE endpoint
   if (req.method === "POST" && req.url === "/wp-migrate") {
     await handleMigrationRequest(req, res);
@@ -231,14 +356,18 @@ async function handleRequest(
     return;
   }
 
-  // Read request body
-  let body = "";
-  req.on("data", (chunk) => { body += chunk; });
-  await new Promise<void>((resolve) => req.on("end", resolve));
+  // Read request body (1 MB limit — this is a small JSON payload)
+  let rawBody: string;
+  try {
+    rawBody = await readBody(req);
+  } catch {
+    sendJson(res, 413, { status: "error", message: "Payload too large" });
+    return;
+  }
 
   let payload: { siteDomain?: unknown; branch?: unknown; count?: unknown };
   try {
-    payload = JSON.parse(body) as typeof payload;
+    payload = JSON.parse(rawBody) as typeof payload;
   } catch {
     sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
     return;
@@ -295,7 +424,13 @@ try {
 
 let queueInstances: QueueInstances | undefined;
 if (config.redisUrl) {
-  queueInstances = startWorkers(config.redisUrl, config);
+  try {
+    queueInstances = startWorkers(config.redisUrl, config);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[server] Failed to initialize queue workers: ${message}`);
+    console.error("[server] Continuing in direct execution mode");
+  }
 } else {
   console.log("[server] REDIS_URL not set — queue workers disabled (direct execution mode)");
 }

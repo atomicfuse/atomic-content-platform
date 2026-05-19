@@ -62,7 +62,7 @@ const ENVS: Record<string, EnvOverrides> = {
   staging: {
     name: 'atomic-site-worker-staging',
     kvNamespaces: {
-      CONFIG_KV: '4673c82cdd7f41d49e93d938fb1c6848', // CONFIG_KV_STAGING
+      CONFIG_KV: 'f6c35e1fa8c841b8b193509a3a237f7f', // CONFIG_KV_STAGING — Assets @ AtomicLabs
     },
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-prod', // shared bucket — assets are site-scoped and additive
@@ -72,7 +72,7 @@ const ENVS: Record<string, EnvOverrides> = {
   production: {
     name: 'atomic-site-worker',
     kvNamespaces: {
-      CONFIG_KV: 'a69cb2c59507482ca5e6d114babdd098', // CONFIG_KV (prod)
+      CONFIG_KV: 'b258e47065274b8b8af1a0b6d6529c1d', // CONFIG_KV — Assets @ AtomicLabs (prod)
     },
     r2Buckets: {
       ASSET_BUCKET: 'atl-assets-prod',

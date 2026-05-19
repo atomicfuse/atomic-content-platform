@@ -25,11 +25,16 @@ export interface AdPlacement {
   desktopSizeConfig?: AdSizeConfig;
   /** Structured mobile size config for the editor UI. */
   mobileSizeConfig?: AdSizeConfig;
+  /** Raw HTML/JS widget code to inject inside the ad slot container. */
+  code?: string;
 }
 
 export { validatePlacementConfigs } from "./ad-size-config";
 
 export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 
 export interface InterstitialConfigFormValue {
   script_url: string;
@@ -45,6 +50,8 @@ export interface InterstitialConfigFormValue {
   };
   page_types: InterstitialPageType[];
   close_delay_seconds: number;
+  device: "both" | "desktop" | "mobile";
+  exclude_pages: InterstitialExcludePage[];
 }
 
 export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
@@ -54,6 +61,8 @@ export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
   frequency: { type: "once_per_session", max_per_session: 1 },
   page_types: ["all"],
   close_delay_seconds: 3,
+  device: "both",
+  exclude_pages: [],
 };
 
 export interface AdsConfigFormValue {
@@ -371,6 +380,25 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
                 </div>
               </label>
             )}
+
+            {/* Widget Code — raw HTML+JS to inject inside the ad slot */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Widget Code <span className="font-normal normal-case">(optional)</span>
+              </label>
+              <textarea
+                value={placement.code ?? ""}
+                placeholder={'Paste ad widget code here, e.g.:\n<div id="widget-1"></div>\n<script>loadWidget(...);</script>'}
+                onChange={(e): void => {
+                  updatePlacement(index, { code: e.target.value || undefined });
+                }}
+                rows={4}
+                className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
+              />
+              <p className="text-xs text-[var(--text-muted)]">
+                Raw HTML + script tags from your ad network. Rendered server-side inside this ad position.
+              </p>
+            </div>
           </div>
         ))}
       </div>
@@ -402,6 +430,24 @@ const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> =
   { value: "homepage", label: "Homepage" },
   { value: "article", label: "Articles" },
   { value: "category", label: "Categories" },
+];
+
+const INTERSTITIAL_DEVICE_OPTIONS: Array<{ value: InterstitialConfigFormValue["device"]; label: string }> = [
+  { value: "both", label: "Both" },
+  { value: "desktop", label: "Desktop Only" },
+  { value: "mobile", label: "Mobile Only" },
+];
+
+const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string; group?: string }> = [
+  { value: "homepage", label: "Homepage" },
+  { value: "articles", label: "Articles" },
+  { value: "categories", label: "Categories" },
+  { value: "about", label: "About", group: "Shared Pages" },
+  { value: "contact", label: "Contact", group: "Shared Pages" },
+  { value: "privacy", label: "Privacy", group: "Shared Pages" },
+  { value: "terms", label: "Terms", group: "Shared Pages" },
+  { value: "dmca", label: "DMCA", group: "Shared Pages" },
+  { value: "amazon", label: "Amazon Disclosure", group: "Shared Pages" },
 ];
 
 function InterstitialConfigPanel({
@@ -643,24 +689,113 @@ function InterstitialConfigPanel({
         </div>
       </div>
 
-      {/* Close Button Delay */}
-      <div className="space-y-1.5">
-        <label className={labelClass}>Close Button Delay</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            max={30}
-            value={config.close_delay_seconds}
-            onChange={(e): void => {
-              update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
-            }}
-            className={inputClass + " w-20"}
-          />
-          <span className="text-xs text-[var(--text-muted)]">seconds</span>
+      {/* Close Button Delay + Device row */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <label className={labelClass}>Close Button Delay</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={config.close_delay_seconds}
+              onChange={(e): void => {
+                update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+              }}
+              className={inputClass + " w-20"}
+            />
+            <span className="text-xs text-[var(--text-muted)]">seconds</span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+          </p>
         </div>
+
+        {/* Device targeting */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Show On Device</label>
+          <select
+            value={config.device}
+            onChange={(e): void => {
+              update("device", e.target.value as InterstitialConfigFormValue["device"]);
+            }}
+            className={selectClass}
+          >
+            {INTERSTITIAL_DEVICE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Exclude Pages */}
+      <div className="space-y-2">
+        <label className={labelClass}>Exclude From Pages</label>
+        <select
+          value=""
+          onChange={(e): void => {
+            const val = e.target.value as InterstitialExcludePage;
+            if (val && !config.exclude_pages.includes(val)) {
+              update("exclude_pages", [...config.exclude_pages, val]);
+            }
+            e.target.value = "";
+          }}
+          className={selectClass}
+        >
+          <option value="">+ Add page to exclude...</option>
+          {(() => {
+            let lastGroup = "";
+            const elements: React.ReactElement[] = [];
+            for (const opt of EXCLUDE_PAGE_OPTIONS) {
+              if (config.exclude_pages.includes(opt.value)) continue;
+              if (opt.group && opt.group !== lastGroup) {
+                lastGroup = opt.group;
+                elements.push(
+                  <option key={`group-${opt.group}`} disabled className="font-semibold">
+                    {"── " + opt.group + " ──"}
+                  </option>,
+                );
+              } else if (!opt.group && lastGroup) {
+                lastGroup = "";
+              }
+              elements.push(
+                <option key={opt.value} value={opt.value}>
+                  {opt.group ? "  " + opt.label : opt.label}
+                </option>,
+              );
+            }
+            return elements;
+          })()}
+        </select>
+        {config.exclude_pages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {config.exclude_pages.map((p) => {
+              const opt = EXCLUDE_PAGE_OPTIONS.find((o) => o.value === p);
+              return (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-500/10 border border-red-500/30 px-2.5 py-1 text-xs font-medium text-red-400"
+                >
+                  {opt?.label ?? p}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      update("exclude_pages", config.exclude_pages.filter((x) => x !== p));
+                    }}
+                    className="ml-0.5 text-red-400/70 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${opt?.label ?? p}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         <p className="text-xs text-[var(--text-muted)]">
-          How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+          Interstitial will not appear on selected pages, even if they match &ldquo;Show On Page Types&rdquo; above.
         </p>
       </div>
     </div>

@@ -3,6 +3,8 @@ import { Queue, QueueEvents } from "bullmq";
 import { Redis } from "ioredis";
 
 const GENERATE_QUEUE = "content-generation";
+const MAX_RETRY_DELAY_MS = 30_000;
+const KEEP_ALIVE_MS = 30_000;
 
 function getRedisUrl(): string {
   const url = process.env.REDIS_URL;
@@ -15,6 +17,20 @@ function getConnection(): Redis {
   if (!_connection) {
     _connection = new Redis(getRedisUrl(), {
       maxRetriesPerRequest: null,
+      enableOfflineQueue: true,
+      keepAlive: KEEP_ALIVE_MS,
+      retryStrategy(times: number): number {
+        const delay = Math.min(times * 1_000, MAX_RETRY_DELAY_MS);
+        console.warn(`[redis:dashboard] Reconnect attempt ${times} — retrying in ${delay}ms`);
+        return delay;
+      },
+      reconnectOnError(err: Error): boolean {
+        return err.message.includes("READONLY");
+      },
+    });
+
+    _connection.on("error", (err: Error) => {
+      console.error(`[redis:dashboard] Connection error: ${err.message}`);
     });
   }
   return _connection;

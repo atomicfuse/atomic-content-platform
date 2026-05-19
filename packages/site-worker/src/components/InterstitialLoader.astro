@@ -50,6 +50,9 @@ const clientConfig = enabled
       frequency: ic!.frequency ?? { type: 'once_per_session' },
       page_types: ic!.page_types ?? ['all'],
       close_delay_seconds: ic!.close_delay_seconds ?? 3,
+      device: ic!.device ?? 'both',
+      exclude_pages: ic!.exclude_pages ?? [],
+      current_page_type: pageType,
     })
   : null;
 const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
@@ -75,6 +78,29 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
       }
 
       if (!cfg.script_url && !cfg.script_inline) return;
+
+      // Device check — skip on wrong device
+      var device = cfg.device || 'both';
+      if (device !== 'both') {
+        var isMobile = window.innerWidth < 768;
+        if (device === 'desktop' && isMobile) return;
+        if (device === 'mobile' && !isMobile) return;
+      }
+
+      // Exclude pages check
+      var excludes = cfg.exclude_pages || [];
+      if (excludes.length > 0) {
+        var pt = cfg.current_page_type || '';
+        var path = location.pathname.replace(/^\//, '').replace(/\/$/, '');
+        // Check individual shared page slug exclusions (about, contact, privacy, terms, dmca, amazon)
+        if (excludes.indexOf(path) !== -1) return;
+        // Check page-type exclusions (homepage, articles, categories)
+        var sharedSlugs = ['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon'];
+        var isSharedPage = sharedSlugs.indexOf(path) !== -1;
+        if (pt === 'article' && !isSharedPage && excludes.indexOf('articles') !== -1) return;
+        if (pt === 'homepage' && excludes.indexOf('homepage') !== -1) return;
+        if (pt === 'category' && excludes.indexOf('categories') !== -1) return;
+      }
 
       // Expose config for mock-ad-fill.js to read
       window.__ATL_INTERSTITIAL_CONFIG__ = cfg;
@@ -114,18 +140,74 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
         }
       }
 
-      /* ---------- load ad network script ---------- */
+      /* ---------- load ad network script inside modal overlay ---------- */
       function fire() {
         if (!isAllowed()) return;
         record();
-        var s = document.createElement('script');
-        if (cfg.script_url) {
-          s.src = cfg.script_url;
-          s.async = true;
-        } else {
-          s.textContent = cfg.script_inline;
+        function inject() {
+          var closeDelay = cfg.close_delay_seconds || 3;
+
+          // Backdrop
+          var overlay = document.createElement('div');
+          overlay.id = 'atl-interstitial-overlay';
+          overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;';
+
+          // Content container
+          var box = document.createElement('div');
+          box.style.cssText = 'position:relative;background:#fff;border-radius:8px;width:90vw;max-width:700px;max-height:85vh;overflow:hidden;padding:16px;';
+
+          // Close button (disabled during countdown)
+          var btn = document.createElement('button');
+          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:none;border-radius:0;background:transparent;cursor:pointer;font-size:13px;font-weight:400;color:#666;display:flex;align-items:center;justify-content:center;line-height:1;';
+          btn.disabled = true;
+          btn.textContent = closeDelay.toString();
+          btn.setAttribute('aria-label', 'Close advertisement');
+
+          // Countdown then enable close
+          var remaining = closeDelay;
+          var timer = setInterval(function() {
+            remaining--;
+            if (remaining > 0) { btn.textContent = remaining.toString(); }
+            else {
+              clearInterval(timer);
+              btn.disabled = false;
+              btn.textContent = '×';
+              btn.style.fontSize = '24px';
+              btn.style.fontWeight = '300';
+              btn.style.cursor = 'pointer';
+            }
+          }, 1000);
+
+          btn.addEventListener('click', function() {
+            if (!btn.disabled) overlay.remove();
+          });
+
+          // Close on backdrop click (not on content)
+          overlay.addEventListener('click', function(e) {
+            if (e.target === overlay && !btn.disabled) overlay.remove();
+          });
+
+          // Widget container — the inline script targets this div by ID.
+          var content = document.createElement('div');
+          content.id = 'atl-interstitial-content';
+          box.appendChild(btn);
+          box.appendChild(content);
+          overlay.appendChild(box);
+          document.body.appendChild(overlay);
+
+          // Inject the ad script into the content container
+          var s = document.createElement('script');
+          if (cfg.script_url) {
+            s.src = cfg.script_url;
+            s.async = true;
+          } else {
+            s.textContent = cfg.script_inline;
+          }
+          content.appendChild(s);
         }
-        document.body.appendChild(s);
+        // Wait for window load so async head scripts (ad SDKs) are ready.
+        if (document.readyState === 'complete') { inject(); }
+        else { window.addEventListener('load', inject); }
       }
 
       /* ---------- trigger logic ---------- */

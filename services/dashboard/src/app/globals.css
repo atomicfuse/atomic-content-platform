@@ -80,6 +80,11 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Number inputs should size to content, not stretch full width */
+input[type="number"] {
+  width: fit-content;
+}
+
 /* Scrollbar styling for dark mode */
 ::-webkit-scrollbar {
   width: 8px;

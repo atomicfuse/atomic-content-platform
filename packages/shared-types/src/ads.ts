@@ -65,6 +65,14 @@ export interface AdPlacement {
 
   /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
   dismissible?: boolean;
+
+  /**
+   * Raw HTML/JS widget code to inject inside the ad slot container.
+   * Users can paste ad network widget code as-is (including `<div>` and
+   * `<script>` tags). Rendered server-side inside the ad slot position
+   * so the widget appears in the correct layout location.
+   */
+  code?: string;
 }
 
 /**
@@ -119,7 +127,18 @@ export interface InterstitialConfig {
 
   /** Seconds the close button is disabled (countdown). Default: 3. */
   close_delay_seconds?: number;
+
+  /** Which devices the interstitial appears on. Default: "both". */
+  device?: "both" | "desktop" | "mobile";
+
+  /** Page types to exclude the interstitial from (overrides page_types). */
+  exclude_pages?: InterstitialExcludePage[];
 }
+
+/** Page types/slugs that can be excluded from interstitial display. */
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 
 /**
  * Full advertising configuration for a site or group.

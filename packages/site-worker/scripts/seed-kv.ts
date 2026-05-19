@@ -64,7 +64,7 @@ const PLATFORM_ROOT = join(__dirname, '..', '..', '..');
 const DEFAULT_NETWORK_PATH = join(PLATFORM_ROOT, '..', 'atomic-labs-network');
 
 const NETWORK_DATA_PATH = process.env.NETWORK_DATA_PATH ?? DEFAULT_NETWORK_PATH;
-const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? '4673c82cdd7f41d49e93d938fb1c6848';
+const KV_NAMESPACE_ID = process.env.KV_NAMESPACE_ID ?? 'f6c35e1fa8c841b8b193509a3a237f7f'; // CONFIG_KV_STAGING — Assets @ AtomicLabs
 const KV_REMOTE = (process.env.KV_REMOTE ?? 'true') !== 'false';
 /** R2 bucket name for per-site assets. Shared across environments.
  *  Override with `R2_BUCKET=<name> pnpm seed:kv ...` if needed. */
@@ -257,7 +257,7 @@ function buildSharedPageVars(config: ResolvedConfig): Record<string, string> {
   // Resolve support_email from support_email_pattern if not already set.
   const pattern = (config as Record<string, unknown>).support_email_pattern as string | undefined;
   const supportEmail = config.support_email
-    ?? (pattern ? pattern.replaceAll('{{domain}}', domain) : `contact@${domain}`);
+    ?? (pattern ? pattern.replaceAll('{{domain}}', domain) : `info@${domain}`);
 
   return {
     site_name: config.site_name ?? '',
@@ -434,7 +434,7 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
   if (!config.support_email && typeof pattern === 'string') {
     (config as Record<string, unknown>).support_email = pattern.replaceAll('{{domain}}', domain);
   } else if (!config.support_email) {
-    (config as Record<string, unknown>).support_email = `contact@${domain}`;
+    (config as Record<string, unknown>).support_email = `info@${domain}`;
   }
 
   // Rewrite theme.logo / theme.favicon `/assets/...` paths the same way

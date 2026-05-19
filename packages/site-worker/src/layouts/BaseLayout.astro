@@ -6,7 +6,7 @@
  * head + body slots. Inline ads, pixels, and the ad-loader.js script
  * are intentionally absent — Phase 4 brings them back as Server Islands.
  */
-import { getConfig } from '../lib/config';
+import { getConfig, isStagingEnv } from '../lib/config';
 import PixelLoader from '../components/PixelLoader.astro';
 import InterstitialLoader from '../components/InterstitialLoader.astro';
 import '../themes/modern/styles/theme.css';
@@ -19,12 +19,22 @@ interface Props {
 
 const { title, description, pageType = 'article' } = Astro.props;
 const config = getConfig(Astro);
+const staging = isStagingEnv(Astro);
 const { theme, scripts, tracking } = config;
 const facebookDomainVerification = (tracking?.facebook_domain_verification as string | null | undefined) ?? null;
 
-const headScripts = scripts?.head ?? [];
-const bodyStartScripts = scripts?.body_start ?? [];
-const bodyEndScripts = scripts?.body_end ?? [];
+// On staging (workers.dev / localhost), only allow local scripts (src starts
+// with "/") so mock-ad-fill.js works for QA. External ad SDKs and inline
+// widget loaders are suppressed to avoid burning real impressions.
+function isLocalScript(s: { src?: string }): boolean {
+  return !!s.src?.startsWith('/');
+}
+const allHeadScripts = scripts?.head ?? [];
+const allBodyStartScripts = scripts?.body_start ?? [];
+const allBodyEndScripts = scripts?.body_end ?? [];
+const headScripts = staging ? allHeadScripts.filter(isLocalScript) : allHeadScripts;
+const bodyStartScripts = staging ? allBodyStartScripts.filter(isLocalScript) : allBodyStartScripts;
+const bodyEndScripts = staging ? allBodyEndScripts.filter(isLocalScript) : allBodyEndScripts;
 
 const fontFamilies = [theme.fonts.heading, theme.fonts.body]
   .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
@@ -131,17 +141,22 @@ const cssVars = [
 
     <slot />
 
-    {/* Injected body_end scripts from config layers. */}
+    {/* Injected body_end scripts from config layers.
+         External (src) scripts load immediately. Inline scripts are deferred
+         to the window load event so they fire AFTER Server Islands (ad slots)
+         and async head scripts (ad SDKs) have loaded. This lets users paste
+         widget code as-is without worrying about timing. */}
     {bodyEndScripts.map((s) =>
       s.src
         ? <script is:inline async={s.async} src={s.src}></script>
         : s.inline
-          ? <script is:inline set:html={s.inline} />
+          ? <script is:inline set:html={`window.addEventListener('load',function(){${s.inline}});`} />
           : null
     )}
 
-    {/* Interstitial ad loader — trigger + frequency + external script. */}
-    <InterstitialLoader pageType={pageType} />
+    {/* Interstitial ad loader — trigger + frequency + external script.
+         Suppressed on staging to avoid burning real ad impressions. */}
+    {!staging && <InterstitialLoader pageType={pageType} />}
 
     {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
     <script is:inline>
