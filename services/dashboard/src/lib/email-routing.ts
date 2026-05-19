@@ -4,9 +4,9 @@ import { getCredentials, headersFromCreds } from "@/lib/cloudflare";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
-const DEFAULT_DESTINATION = "michal@atomiclabs.io";
-const DEFAULT_LOCAL_PART = "contact";
-const FALLBACK_EMAIL = "hello@atomiclabs.io";
+const DEFAULT_DESTINATION = "accounts+travelgeek@ngcdigital.io";
+const DEFAULT_LOCAL_PART = "info";
+const FALLBACK_EMAIL = "accounts+travelgeek@ngcdigital.io";
 const EMAIL_CONFIG_PATH = "email-config.yaml";
 
 interface EmailRoutingRule {
