@@ -34,7 +34,7 @@ services/
       wizard/                New-site flow
       import/                WordPress import — CSV bulk site creation + article migration
       guide/                 In-app markdown docs (loads /public/guide/*.md)
-      api/                   Server routes (shared-pages, sites, groups, agent proxy, scheduler, ads-txt, …)
+      api/                   Server routes (shared-pages, sites, groups, agent proxy, scheduler, ads-txt, n8n image callback proxy, …)
     src/lib/
       github.ts              readFileContent, commitNetworkFiles, updateSiteInIndex, dashboard-index helpers
       scheduler.ts           readSchedulerConfig / writeSchedulerConfig / triggerSchedulerRun
@@ -333,6 +333,7 @@ Service contract (both services satisfy):
 | `CONTENT_AGGREGATOR_URL` | content-pipeline | Defaults to `https://content-aggregator-v2-34cd.atomic.cloudgrid.io`. |
 | `GEMINI_API_KEY` | content-pipeline | For image generation. |
 | `N8N_IMAGE_WEBHOOK_URL` | content-pipeline | n8n webhook for async image generation. If not set, articles are created without triggering image generation. |
+| `IMAGE_CALLBACK_URL` | content-pipeline | Override for n8n callback URL. Defaults to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback` (dashboard proxy). |
 | `NETWORK_DATA_PATH` | site-worker (seed-kv) | Absolute path to network repo checkout. seed-kv resolves config + reads articles + uploads R2 assets from this path. Use `git worktree` for cross-branch seeding. |
 | `R2_BUCKET` | site-worker (seed-kv) | R2 bucket name. Defaults to `atl-assets-prod`. There is only one R2 bucket — `atl-assets-staging` was retired (2026-05-13). |
 | `R2_ACCESS_KEY_ID` | dashboard | R2 S3-compatible API access key. Required for article image uploads and R2 asset cleanup on site deletion. Skipped with warning if not set. |
@@ -402,6 +403,7 @@ Service contract (both services satisfy):
 33. **CloudGrid auto-injects `CONTENT_AGGREGATOR_URL` as a stale platform read-only env.** It points to `content-aggregator-cloudgrid.apps.cloudgrid.io` (wrong). The correct aggregator is `content-aggregator-v2-34cd.atomic.cloudgrid.io`. All code must check `CONTENT_API_BASE_URL` **before** `CONTENT_AGGREGATOR_URL` in the env var fallback chain. Both `cloudgrid.yaml` services set `CONTENT_API_BASE_URL` to the correct URL. Never add new code that reads `CONTENT_AGGREGATOR_URL` first.
 
 34. **n8n image generation is fire-and-forget.** Articles are created with a default site image (`{site-slug}-general-article`). n8n webhooks fire in the background after article commit. If n8n is down or slow, articles are unaffected — they just keep the default image. Slack alerts fire on failure. If the worker process exits during background delivery, in-flight images are silently lost (no retry mechanism).
+35. **n8n image callback routes through the dashboard proxy.** The content-pipeline is an internal-only CloudGrid service (no public URL). n8n cannot reach it directly. The callback URL points to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`, which is a dashboard API route that proxies to `http://content-pipeline-app/image-callback` inside the cluster. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work. If you change the CloudGrid entity slug, update the default callback URL in `agent.ts`.
 
 ## Cloudflare Account Migration & WordPress Migration
 
