@@ -91,8 +91,11 @@ export function workerPreviewUrl(siteId: string, path = "/"): string {
 
 // --- Cloudflare Worker + KV identifiers (production) ---
 
-/** Production worker name — used for Workers Custom Domains API. */
-export const WORKER_NAME_PROD = "atomic-site-worker";
+/** Production worker name — used for Workers Custom Domains API.
+ *  Custom domains are registered on the manager worker, which routes
+ *  traffic to atomic-site-worker (via ATL_SITES_MAIN Service Binding),
+ *  green-dream-b06f (via ATL_GREEN), and atl-streamed-lander (via ATL_LANDER). */
+export const WORKER_NAME_PROD = "atl-sites-workers-manager";
 
 /** Production CONFIG_KV namespace ID — Assets @ AtomicLabs. */
 export const KV_NAMESPACE_PROD = "b258e47065274b8b8af1a0b6d6529c1d";

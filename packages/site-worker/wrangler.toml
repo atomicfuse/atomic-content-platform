@@ -59,10 +59,10 @@ bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and 
 
 [env.production]
 name = "atomic-site-worker"
-# Routes are derived from dashboard-index.yaml at build time via
-# emit-env-configs.ts → loadCustomDomains(). Dev1 domains (coolnews.dev,
-# financenewsbase.com) are filtered out — they're registered on the
-# Dev1 account's worker, not this one.
+# No custom domain routes — all custom domains are registered on the
+# atl-sites-workers-manager worker, which routes traffic here via the
+# ATL_SITES_MAIN Service Binding. This worker is reachable only via
+# the manager (production) and workers.dev (staging).
 routes = []
 
 [[env.production.kv_namespaces]]
