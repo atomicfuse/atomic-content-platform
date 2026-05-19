@@ -110,6 +110,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         theme.fonts = configUpdates.theme_fonts;
         existing.theme = theme;
       }
+      if (configUpdates.theme_logo_height !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.logo_height = configUpdates.theme_logo_height;
+        existing.theme = theme;
+      }
+      if (configUpdates.theme_logo_height_footer !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        if (configUpdates.theme_logo_height_footer === null) {
+          delete theme.logo_height_footer;
+        } else {
+          theme.logo_height_footer = configUpdates.theme_logo_height_footer;
+        }
+        existing.theme = theme;
+      }
       if (configUpdates.layout !== undefined) {
         existing.layout = configUpdates.layout;
       }

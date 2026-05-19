@@ -52,6 +52,10 @@ interface ThemeState {
   fontHeading: string;
   fontBody: string;
   layout: LayoutState;
+  /** Header logo height in pixels. Defaults to 52. */
+  logoHeight: number;
+  /** Footer logo height in pixels. null = auto (92% of header). */
+  logoHeightFooter: number | null;
 }
 
 const DEFAULT_LAYOUT: LayoutState = {
@@ -212,6 +216,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     fontHeading: "Inter",
     fontBody: "Inter",
     layout: { ...DEFAULT_LAYOUT },
+    logoHeight: 52,
+    logoHeightFooter: null,
   });
   const [topicInput, setTopicInput] = useState("");
   const initialState = useRef<ThemeState | null>(null);
@@ -243,6 +249,9 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           fontHeading: fonts.heading ?? "Inter",
           fontBody: fonts.body ?? "Inter",
           layout: parseLayout(layout),
+          logoHeight: typeof theme.logo_height === "number" ? theme.logo_height : 52,
+          logoHeightFooter:
+            typeof theme.logo_height_footer === "number" ? theme.logo_height_footer : null,
         };
         setState(loaded);
         initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
@@ -254,6 +263,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           fontHeading: "Inter",
           fontBody: "Inter",
           layout: { ...DEFAULT_LAYOUT },
+          logoHeight: 52,
+          logoHeightFooter: null,
         };
       } finally {
         setLoading(false);
@@ -289,6 +300,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           configUpdates: {
             theme_colors: state.colors,
             theme_fonts: { heading: state.fontHeading, body: state.fontBody },
+            theme_logo_height: state.logoHeight,
+            theme_logo_height_footer: state.logoHeightFooter,
             layout: state.layout,
           },
         }),
@@ -429,8 +442,11 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Text Colors</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ColorPickerField label="Headings & body" value={state.colors.text} onChange={(v): void => setColor("text", v)} helperText="Primary text color" />
+          <ColorPickerField label="Body text" value={state.colors.text} onChange={(v): void => setColor("text", v)} helperText="Default body color (paragraphs, etc.)" />
+          <ColorPickerField label="Headings" value={state.colors.heading} onChange={(v): void => setColor("heading", v)} helperText="Page headings (h1–h6). Defaults to body text." />
           <ColorPickerField label="Muted (dates, meta)" value={state.colors.muted} onChange={(v): void => setColor("muted", v)} helperText="Secondary text" />
+          <ColorPickerField label="Link" value={state.colors.link} onChange={(v): void => setColor("link", v)} helperText="Inline links. Defaults to main color." />
+          <ColorPickerField label="Link hover" value={state.colors.link_hover} onChange={(v): void => setColor("link_hover", v)} helperText="Link color on hover. Defaults to accent." />
           <ColorPickerField label="Borders" value={state.colors.border} onChange={(v): void => setColor("border", v)} helperText="Dividers and outlines" />
           <ColorPickerField label="Surface (card bg)" value={state.colors.surface} onChange={(v): void => setColor("surface", v)} helperText="Card backgrounds" />
           <ColorPickerField label="Secondary (dark sections)" value={state.colors.secondary} onChange={(v): void => setColor("secondary", v)} helperText="Dark section fallback" />
@@ -454,6 +470,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                 <ColorPickerField label="Hero card title" value={state.colors.hero_title} onChange={(v): void => setColor("hero_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Must Reads card title" value={state.colors.must_reads_title} onChange={(v): void => setColor("must_reads_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Article hero title" value={state.colors.article_hero_title} onChange={(v): void => setColor("article_hero_title", v)} helperText="Default: white" />
+                <ColorPickerField label="Article hero byline (date/author)" value={state.colors.article_hero_meta} onChange={(v): void => setColor("article_hero_meta", v)} helperText="Default: muted" />
               </div>
             </div>
             <div>
@@ -470,6 +487,15 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                 <ColorPickerField label="Prose headings (h2, h3)" value={state.colors.prose_heading} onChange={(v): void => setColor("prose_heading", v)} helperText="Default: text color" />
                 <ColorPickerField label="Prose body text" value={state.colors.prose_body} onChange={(v): void => setColor("prose_body", v)} helperText="Default: text color" />
                 <ColorPickerField label="Category header text" value={state.colors.category_header_text} onChange={(v): void => setColor("category_header_text", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Footer</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ColorPickerField label="Footer text" value={state.colors.footer_text} onChange={(v): void => setColor("footer_text", v)} helperText="Tagline, description, copyright. Default: muted." />
+                <ColorPickerField label="Footer column headings" value={state.colors.footer_heading} onChange={(v): void => setColor("footer_heading", v)} helperText="Default: white" />
+                <ColorPickerField label="Footer link" value={state.colors.footer_link} onChange={(v): void => setColor("footer_link", v)} helperText="Quick Links and similar. Default: muted." />
+                <ColorPickerField label="Footer link hover" value={state.colors.footer_link_hover} onChange={(v): void => setColor("footer_link_hover", v)} helperText="Default: white" />
               </div>
             </div>
             <p className="text-xs text-[var(--text-muted)] border-t border-[var(--border-secondary)] pt-2">
@@ -493,6 +519,68 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             value={state.fontBody}
             onChange={(v): void => setState((s) => ({ ...s, fontBody: v }))}
           />
+        </div>
+      </div>
+
+      {/* Logo */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Logo</h3>
+        <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+              Header logo height
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={32}
+                max={96}
+                step={2}
+                value={state.logoHeight}
+                onChange={(e): void =>
+                  setState((s) => ({ ...s, logoHeight: parseInt(e.target.value, 10) }))
+                }
+                className="flex-1 accent-cyan"
+              />
+              <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                {state.logoHeight}px
+              </span>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+              Footer logo height
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={24}
+                max={96}
+                step={2}
+                value={state.logoHeightFooter ?? Math.round(state.logoHeight * 0.92)}
+                onChange={(e): void =>
+                  setState((s) => ({ ...s, logoHeightFooter: parseInt(e.target.value, 10) }))
+                }
+                className="flex-1 accent-cyan"
+              />
+              <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                {state.logoHeightFooter ?? Math.round(state.logoHeight * 0.92)}px
+              </span>
+              {state.logoHeightFooter != null && (
+                <button
+                  type="button"
+                  onClick={(): void => setState((s) => ({ ...s, logoHeightFooter: null }))}
+                  className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                  title="Reset to auto (92% of header)"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              Defaults to 92% of header height. Click Reset to return to auto.
+            </p>
+          </div>
         </div>
       </div>
 

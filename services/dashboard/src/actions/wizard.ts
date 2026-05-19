@@ -1035,6 +1035,9 @@ export interface StagingSiteConfig {
   // Layout v2 theme fields
   theme_colors?: Record<string, string>;
   theme_fonts?: { heading: string; body: string };
+  theme_logo_height?: number;
+  /** `null` clears the field (auto-derive). `undefined` leaves it untouched. */
+  theme_logo_height_footer?: number | null;
   layout?: Record<string, unknown>;
 }
 
