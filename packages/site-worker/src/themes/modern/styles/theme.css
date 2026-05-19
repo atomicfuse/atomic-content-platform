@@ -44,6 +44,9 @@
     --color-footer_heading: #ffffff;
     --color-footer_link: var(--color-muted, #9ca3af);
     --color-footer_link_hover: #ffffff;
+    /* Logo sizing — footer auto-derives 92% of header unless overridden */
+    --logo-height: 52px;
+    --logo-height-footer: calc(var(--logo-height) * 0.92);
   }
 }
 

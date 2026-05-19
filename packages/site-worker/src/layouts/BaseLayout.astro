@@ -36,8 +36,19 @@ const googleFontsUrl =
     ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
     : null;
 
-const cssVars = Object.entries(theme.colors)
+const logoHeight = typeof theme.logo_height === 'number' ? theme.logo_height : 52;
+const logoHeightFooter = typeof theme.logo_height_footer === 'number' ? theme.logo_height_footer : null;
+
+const colorVars = Object.entries(theme.colors)
   .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+
+const cssVars = [
+  colorVars,
+  `--logo-height: ${logoHeight}px;`,
+  logoHeightFooter != null ? `--logo-height-footer: ${logoHeightFooter}px;` : '',
+]
+  .filter(Boolean)
   .join(' ');
 ---
 
