@@ -170,6 +170,7 @@ export function StepTheme({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [topicInput, setTopicInput] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const footerLogoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
 
   const colors = data.themeColors;
@@ -232,6 +233,21 @@ export function StepTheme({
       const result = reader.result as string;
       const base64Data = result.split(",")[1];
       if (base64Data) onChange({ logoBase64: base64Data });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handleFooterLogoUpload(e: React.ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const result = reader.result as string;
+      const base64Data = result.split(",")[1];
+      if (base64Data) onChange({ footerLogoBase64: base64Data });
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -733,6 +749,47 @@ export function StepTheme({
                 </p>
               </div>
             </div>
+          </div>
+
+          {/* Footer logo (optional) */}
+          <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4 space-y-3">
+            <div>
+              <h4 className="text-sm font-semibold text-[var(--text-primary)]">Footer logo</h4>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Optional — use if your footer background needs a different logo variant (e.g. light-on-dark). Defaults to the main logo.
+              </p>
+            </div>
+            {data.footerLogoBase64 && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={`data:image/png;base64,${data.footerLogoBase64}`}
+                  alt="Footer logo preview"
+                  className="w-16 h-16 rounded-lg object-contain bg-[#1a1a2e] border border-[var(--border-secondary)] p-1"
+                />
+                <button
+                  type="button"
+                  onClick={(): void => onChange({ footerLogoBase64: undefined })}
+                  className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={(): void => footerLogoInputRef.current?.click()}
+            >
+              {data.footerLogoBase64 ? "Replace Footer Logo" : "Upload Footer Logo"}
+            </Button>
+            <input
+              ref={footerLogoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml"
+              className="hidden"
+              onChange={handleFooterLogoUpload}
+            />
+            <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
           </div>
 
           {/* Favicon upload */}

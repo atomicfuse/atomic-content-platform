@@ -137,6 +137,8 @@ export interface WizardFormData {
   scriptsVars: Record<string, string>;
   /** Base64-encoded logo uploaded by user (skips AI generation). */
   logoBase64?: string;
+  /** Base64-encoded alternate footer logo (light/dark variant). Falls back to logoBase64 when unset. */
+  footerLogoBase64?: string;
   /** Base64-encoded favicon uploaded by user. */
   faviconBase64?: string;
   /** Header logo height in pixels (default 52). */

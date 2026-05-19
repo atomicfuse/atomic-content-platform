@@ -340,6 +340,21 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     }
   }
 
+  // Add separate footer logo if uploaded (light/dark variant for footer)
+  if (data.footerLogoBase64) {
+    let footerLogoBuffer: Buffer;
+    try {
+      footerLogoBuffer = await removeBackground(Buffer.from(data.footerLogoBase64, "base64"));
+    } catch {
+      footerLogoBuffer = Buffer.from(data.footerLogoBase64, "base64");
+    }
+    files.push({
+      path: `sites/${siteFolder}/assets/logo-footer.png`,
+      content: footerLogoBuffer,
+    });
+    siteConfig.theme.footer_logo = "/assets/logo-footer.png";
+  }
+
   // Add separate favicon if uploaded
   if (faviconBuffer) {
     files.push({
