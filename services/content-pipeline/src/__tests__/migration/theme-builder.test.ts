@@ -66,6 +66,19 @@ describe("expandThemeColors", () => {
     expect(colors.secondary).toBe("#1a1a2e");
     expect(colors.hero_title).toBe("#ffffff");
   });
+
+  it("defaults feed_date to the muted color, not accent", () => {
+    const colors = expandThemeColors({
+      primary: "#1a1a2e",
+      accent: "#f4c542",
+      text: "#000000",
+      background: "#ffffff",
+    });
+    // feed_date should follow the muted (secondary text) color,
+    // not the bright CTA accent.
+    expect(colors.feed_date).toBe(colors.muted);
+    expect(colors.feed_date).not.toBe(colors.accent);
+  });
 });
 
 describe("buildTheme", () => {

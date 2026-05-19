@@ -76,7 +76,7 @@ export function expandThemeColors(csv: CsvColors): Record<string, string> {
     article_hero_title: "#ffffff",
     feed_title: text,
     feed_desc: mixColors(text, background, 0.2),
-    feed_date: accent,
+    feed_date: mixColors(text, background, 0.5),
     category_header_text: bgIsDark ? "#ffffff" : "#1a1a1a",
     prose_heading: text,
     prose_body: mixColors(text, background, 0.15),
