@@ -42,6 +42,18 @@ service = "atl-query-handler-t"
 binding = "ATL_STREAMED_LANDER"
 service = "atl-streamed-lander"
 
+# Service binding — green-dream monetization test. Middleware forwards
+# requests matching /atl-test/* to this service.
+[[services]]
+binding = "GREEN_DREAM_TEST"
+service = "green-dream-b06f-test"
+
+# Service binding — green-dream monetization. Middleware forwards
+# requests matching /atl/* to this service.
+[[services]]
+binding = "GREEN_DREAM"
+service = "green-dream-b06f"
+
 # Observability — Workers Logs (enabled by default on Workers Paid).
 [observability]
 enabled = true

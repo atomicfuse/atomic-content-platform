@@ -57,6 +57,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return env.ATL_STREAMED_LANDER.fetch(context.request);
   }
 
+  // Green-dream-test path bypass — forward /atl-test/* requests to the bound service.
+  if (context.url.pathname.startsWith('/atl-test/') && env.GREEN_DREAM_TEST) {
+    return env.GREEN_DREAM_TEST.fetch(context.request);
+  }
+
+  // Green-dream path bypass — forward /atl/* requests to the bound service.
+  if (context.url.pathname.startsWith('/atl/') && env.GREEN_DREAM) {
+    return env.GREEN_DREAM.fetch(context.request);
+  }
+
 
 
   if (!env.CONFIG_KV) {
