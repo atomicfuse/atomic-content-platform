@@ -121,6 +121,7 @@ if (article) {
     <ArticleHero article={article.frontmatter} />
 
     <main class="article-page">
+      <AdSlot position="above-content" pageType="article" server:defer />
       <div class="article-page-inner">
         <article class="article-prose prose">
           <Fragment set:html={articleBodyFinal} />
