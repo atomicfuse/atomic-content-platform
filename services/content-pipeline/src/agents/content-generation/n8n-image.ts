@@ -141,29 +141,36 @@ export async function handleImageCallback(
 ): Promise<{ ok: boolean; message: string }> {
   const { request_id, site_domain, slug, branch, status } = payload;
 
+  const meta = payload.meta;
+  const provider = meta?.provider ?? "unknown";
+  const durationMs = meta?.duration_ms;
+  const tag = `[n8n-image] [${site_domain}/${slug}]`;
+
   console.log(
-    `[n8n-image] Callback received: request_id=${request_id}, slug=${slug}, ` +
-    `status=${status}, has_data=${!!payload.data_base64}`,
+    `${tag} Callback received: request_id=${request_id}, status=${status}, ` +
+    `provider=${provider}, duration=${durationMs ?? "?"}ms, has_data=${!!payload.data_base64}`,
   );
 
   // Validate required routing fields first — these are needed for any processing
   if (!site_domain || !slug || !branch) {
+    console.error(`${tag} FAIL — missing required fields (site_domain=${site_domain}, slug=${slug}, branch=${branch})`);
     return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
   }
 
   // Check for error status from n8n
   if (status && status !== "ok") {
     const reason = payload.error ?? `n8n status: ${status}`;
-    console.error(`[n8n-image] n8n reported failure for ${slug}: ${reason}`);
+    console.error(`${tag} FAIL — n8n error: ${reason} (provider=${provider}, duration=${durationMs ?? "?"}ms)`);
     return { ok: false, message: reason };
   }
 
   if (!payload.data_base64) {
-    console.error(`[n8n-image] No image data in callback for ${slug}`);
+    console.error(`${tag} FAIL — no image data in payload`);
     return { ok: false, message: "No image data in callback" };
   }
 
   const imageData = Buffer.from(payload.data_base64, "base64");
+  const rawSizeKB = (imageData.length / 1024).toFixed(0);
 
   try {
     await processN8nImageResult({
@@ -174,10 +181,14 @@ export async function handleImageCallback(
       branch,
       github,
     });
+    console.log(
+      `${tag} SUCCESS — image delivered (provider=${provider}, ` +
+      `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
+    );
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[n8n-image] Processing failed for ${slug}: ${message}`);
+    console.error(`${tag} FAIL — processing error: ${message} (raw_size=${rawSizeKB}KB)`);
     return { ok: false, message };
   }
 }
@@ -196,17 +207,22 @@ export async function processN8nImageResult(
   params: ProcessImageParams,
 ): Promise<void> {
   const { siteDomain, slug, imageData, altText, branch, github } = params;
+  const tag = `[n8n-image] [${siteDomain}/${slug}]`;
 
   // 1. Optimize the raw image to WebP
   const optimized = await optimizeImage(imageData);
+  const optimizedKB = (optimized.length / 1024).toFixed(0);
+  const rawKB = (imageData.length / 1024).toFixed(0);
+  console.log(`${tag} Optimized: ${rawKB}KB → ${optimizedKB}KB (WebP)`);
 
   // 2. Build R2 key and upload
   const r2Key = buildR2Key(siteDomain, slug, "webp");
   const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
 
   if (!uploaded) {
-    throw new Error(`R2 upload failed for ${slug} — image not persisted`);
+    throw new Error(`R2 upload failed for ${r2Key} — image not persisted`);
   }
+  console.log(`${tag} R2 upload OK → ${r2Key}`);
 
   // 3. Read the article markdown from Git
   const octokit = createGitHubClient(github);
@@ -231,5 +247,5 @@ export async function processN8nImageResult(
     branch,
   });
 
-  console.log(`[n8n-image] Updated frontmatter for ${siteDomain}/${slug}`);
+  console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
 }

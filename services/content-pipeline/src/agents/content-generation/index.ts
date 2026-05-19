@@ -311,6 +311,7 @@ async function handleRequest(
       return;
     }
 
+    const cbTag = `[server] [image-callback] [${payload.site_domain ?? "?"}/${payload.slug ?? "?"}]`;
     try {
       const result = await handleImageCallback(payload, config.github);
       if (result.ok) {
@@ -324,14 +325,15 @@ async function handleRequest(
             await queueInstances.connection.expire(key, 7 * 24 * 60 * 60);
           }
         }
+        console.log(`${cbTag} → 200 OK`);
         sendJson(res, 200, { status: "ok", message: result.message });
       } else {
-        console.error(`[server] Image callback failed: ${result.message}`);
+        console.error(`${cbTag} → 422 FAIL: ${result.message}`);
         sendJson(res, 422, { status: "error", message: result.message });
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      console.error(`[server] Image callback error: ${message}`);
+      console.error(`${cbTag} → 500 ERROR: ${message}`);
       sendJson(res, 500, { status: "error", message });
     }
     return;
