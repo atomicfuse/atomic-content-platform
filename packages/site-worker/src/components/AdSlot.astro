@@ -134,6 +134,13 @@ const staging = isStagingEnv(Astro);
     display: block;
     margin: 0.75rem auto;
   }
+  /* Hide desktop-only ads on mobile, mobile-only ads on desktop */
+  @media (max-width: 959px) {
+    .atl-ad-slot[data-ad-device="desktop"] { display: none !important; }
+  }
+  @media (min-width: 960px) {
+    .atl-ad-slot[data-ad-device="mobile"] { display: none !important; }
+  }
   .atl-ad-sticky-wrapper {
     position: fixed;
     bottom: 0;
