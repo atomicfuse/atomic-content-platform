@@ -405,6 +405,7 @@ Service contract (both services satisfy):
 34. **n8n image generation is fire-and-forget.** Articles are created with a default site image (`{site-slug}-general-article`). n8n webhooks fire in the background after article commit. If n8n is down or slow, articles are unaffected — they just keep the default image. Slack alerts fire on failure. If the worker process exits during background delivery, in-flight images are silently lost (no retry mechanism).
 35. **n8n image callback routes through the dashboard proxy.** The content-pipeline is an internal-only CloudGrid service (no public URL). n8n cannot reach it directly. The callback URL points to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`, which is a dashboard API route that proxies to `http://content-pipeline-app/image-callback` inside the cluster. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work. If you change the CloudGrid entity slug, update the default callback URL in `agent.ts`.
 36. **`WORKER_NAME_PROD` is `atl-sites-workers-manager`, not `atomic-site-worker`.** Changed 2026-05-19. `registerWorkerCustomDomain`/`deregisterWorkerCustomDomain` in `cloudflare.ts` target the manager. Dashboard `attachCustomDomain`/`detachCustomDomain` register Custom Domains on the manager — but the manager's `MIGRATED_SITES` set must be updated and redeployed separately for the site to actually receive traffic. The manager code is outside this repo.
+37. **`attachCustomDomain` gracefully handles WordPress domains.** When CF Custom Domain registration fails with "externally managed DNS records" (WordPress domains with existing A/CNAME), the error is caught and registration is skipped — KV seeding and promotion continue normally. This is intentional for WordPress migration where domains reach the manager via Routes, not Custom Domains. See `wizard.ts` Step 2. Only the specific "externally managed DNS" error is skipped; other CF errors still roll back.
 
 ## Cloudflare Account Migration & WordPress Migration
 
@@ -497,7 +498,8 @@ Dashboard and CI route CF API calls to the correct account per site. Implemented
 
 | Site ID | Status | Custom Domain | Routing |
 |---------|--------|---------------|---------|
-| `travelswire` | Live | `travelswire.com` | Manager → ATL_SITES_MAIN (in `MIGRATED_SITES`) |
+| `travelswire` | Live | `travelswire.com` | Manager Custom Domain → ATL_SITES_MAIN |
+| `wineoceans` | Live | `wineoceans.com` | Manager via Route (WP migration) → ATL_SITES_MAIN |
 | `financenewsbase` | Live | `financenewsbase.com` | Dev1 — Direct Custom Domain |
 | `muvizzcom` | Live | `coolnews.dev` | Dev1 — Direct Custom Domain |
 | `chaibeseret` | Staging | — | Staging worker only |
@@ -511,7 +513,7 @@ Dashboard and CI route CF API calls to the correct account per site. Implemented
 
 **All Custom Domains are registered on `atl-sites-workers-manager`** — the manager owns the domain, routes traffic via Service Bindings. `atomic-site-worker` has no Custom Domains; it only receives traffic from the manager's `ATL_SITES_MAIN` binding (production) and via `*.workers.dev` (staging).
 
-**WordPress sites use Routes** — zone-level patterns (`domain.com/*` -> `atl-streamed-lander`, `*domain.com/atl/*` -> `green-dream-b06f`). Routes enable path-based splitting across two Workers on the same domain. As domains are migrated, their Custom Domain is registered on the manager and the hostname is added to `MIGRATED_SITES`. The old WordPress Routes can be cleaned up after migration is confirmed.
+**WordPress migration sites use Routes** — their zones already have DNS records (A/CNAME) pointing to WordPress, so CF Custom Domain registration fails. Instead, a Workers Route (`domain.com/*` → `atl-sites-workers-manager`) on the zone directs traffic to the manager. The manager checks `MIGRATED_SITES` and forwards to `ATL_SITES_MAIN`. Dashboard's `attachCustomDomain` detects the "externally managed DNS" error and skips CF registration, proceeding directly to KV seeding. The old WordPress Routes (`*domain.com/atl/*` → `green-dream-b06f`) can be cleaned up after migration is confirmed.
 
 ### Dev1 Route Filtering (legacy — partially superseded)
 
@@ -519,17 +521,43 @@ Dashboard and CI route CF API calls to the correct account per site. Implemented
 
 ### WordPress Migration Architecture
 
-WordPress migration uses the `atl-sites-workers-manager` as the routing layer. A domain's Custom Domain is registered on the manager. If the hostname is in the manager's `MIGRATED_SITES` set, traffic goes to `ATL_SITES_MAIN` (`atomic-site-worker`). If not, it falls through to `fetch(request)` (WordPress origin). The `/atl/*` and `?agi=1011` routes are handled by the manager before the hostname check, so `green-dream-b06f` and `atl-streamed-lander` work regardless of migration status.
+WordPress migration uses `atl-sites-workers-manager` as the routing layer. There are two domain attachment paths depending on whether the domain has existing DNS records:
 
-Per-domain rollback: remove from `MIGRATED_SITES`, redeploy manager. Instant.
+**New platform sites** (no existing DNS): `attachCustomDomain` registers a Workers Custom Domain on the manager → CF auto-creates DNS → works immediately.
 
-**Migration pipeline:** Design complete (`docs/plans/2026-05-12-wp-migration-design.md`), implementation plan ready (`docs/plans/2026-05-12-wp-migration-plan.md`, 15 tasks). Not yet implemented.
+**WordPress migration sites** (existing A/CNAME records): `attachCustomDomain` attempts CF Custom Domain registration, which fails with "externally managed DNS records". The code detects this specific error, logs a warning, and **skips registration** — continuing with KV seeding, promotion, and config patching. Traffic reaches the manager via the zone's existing Workers Routes (not Custom Domains). The domain must also be in the manager's `MIGRATED_SITES` set.
+
+#### WordPress domain attach flow (step by step)
+
+1. **Pre-requisite:** Domain already has a Workers Route (`domain.com/*`) pointing to `atl-sites-workers-manager` on the zone. Add the hostname to `MIGRATED_SITES` in the manager and redeploy.
+2. **Dashboard:** Click "Attach Domain" on the site detail page → selects zone → calls `attachCustomDomain()`.
+3. **`attachCustomDomain` runs:**
+   - Step 1: Updates `dashboard-index.yaml` (status → Live, `custom_domain` set)
+   - Step 2: Attempts CF Custom Domain registration → fails with "externally managed DNS" → **skips** (logged as warning, not error)
+   - Step 3: Seeds KV `site:<domain>` → `{ siteId }` in production KV
+   - Step 4: Promotes site config + articles from staging KV to production KV
+   - Step 4b: Patches `config.domain` to the real custom domain in KV + `site.yaml`
+   - Step 5: Email routing setup (best-effort)
+4. **Result:** Manager routes `domain.com` → ATL_SITES_MAIN → `atomic-site-worker` reads config from KV → site is live.
+
+#### Routing comparison
+
+| Domain type | DNS | How traffic reaches manager | CF API in `attachCustomDomain` |
+|-------------|-----|-----------------------------|-------------------------------|
+| New platform site | Auto-managed by CF Custom Domain | Custom Domain on manager | Registers Custom Domain |
+| WordPress migration | Existing A/CNAME (kept) | Workers Route on zone | Skipped (externally managed DNS) |
+
+Both paths share the same KV seeding, promotion, and config patching logic.
+
+Per-domain rollback: remove from `MIGRATED_SITES`, redeploy manager. Instant — traffic falls through to WordPress origin.
+
+**Migration pipeline:** Design complete (`docs/plans/2026-05-12-wp-migration-design.md`), implementation plan ready (`docs/plans/2026-05-12-wp-migration-plan.md`, 15 tasks). First pilot: `wineoceans.com` (2026-05-19).
 
 ### What's Left (priority order)
 
 1. **WordPress migration pipeline** — implement the 15-task content import plan (CSV -> WP REST API -> turndown -> Claude cleanup -> Gemini images -> R2 -> git -> KV)
-2. **Pilot WordPress migration** — 1 site end-to-end through manager routing (register Custom Domain on manager, add to `MIGRATED_SITES`, seed KV)
-3. **Batch WordPress migration** — remaining ~44 sites (register Custom Domain + add to `MIGRATED_SITES` per site)
+2. ~~**Pilot WordPress migration**~~ — completed 2026-05-19: `wineoceans.com` attached via Route + manager routing
+3. **Batch WordPress migration** — remaining ~44 sites (add Route to manager, add to `MIGRATED_SITES`, attach domain via dashboard)
 4. **Dev1 zone transfers** — move `financenewsbase.com` + `coolnews.dev` to Assets account, register on manager
 5. **Dev1 decommission** — remove all dual-account code, delete Dev1 KV/R2
 6. **Legacy Routes cleanup** — remove WordPress-era Routes from zone configs after full migration
