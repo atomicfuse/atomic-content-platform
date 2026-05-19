@@ -62,6 +62,12 @@ export async function POST(
 
     const destination = await getDestinationForDomain(domain);
     const rule = await createEmailRoutingRule(site.zone_id, domain, destination);
+    if (!rule) {
+      return NextResponse.json(
+        { error: "Email routing unavailable — API token lacks Email Routing permissions" },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({
       address: buildContactEmail(domain),
       destination,
