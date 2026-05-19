@@ -132,7 +132,7 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
 
           // Close button (disabled during countdown)
           var btn = document.createElement('button');
-          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:none;border-radius:0;background:transparent;cursor:pointer;font-size:24px;font-weight:300;color:#666;display:flex;align-items:center;justify-content:center;line-height:1;';
+          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:none;border-radius:0;background:transparent;cursor:pointer;font-size:13px;font-weight:400;color:#666;display:flex;align-items:center;justify-content:center;line-height:1;';
           btn.disabled = true;
           btn.textContent = closeDelay.toString();
           btn.setAttribute('aria-label', 'Close advertisement');
@@ -146,6 +146,8 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
               clearInterval(timer);
               btn.disabled = false;
               btn.textContent = '×';
+              btn.style.fontSize = '24px';
+              btn.style.fontWeight = '300';
               btn.style.cursor = 'pointer';
             }
           }, 1000);
