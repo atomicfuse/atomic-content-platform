@@ -52,6 +52,10 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
       </div>
     )}
 
+    <div class="article-sidebar-mobile">
+      <AdSlot position="sidebar" pageType="article" server:defer />
+    </div>
+
     <div class="article-container">
       <article class="article-content">
         <header class="article-header">
@@ -144,6 +148,14 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   .article-body :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl); }
   .article-body :global(p)  { margin-bottom: 1.25rem; }
   .article-body :global(ul), .article-body :global(ol) { margin: 1rem 0 1.25rem 1.5rem; }
+  .article-sidebar-mobile {
+    display: block;
+  }
+  @media (min-width: 960px) {
+    .article-sidebar-mobile {
+      display: none;
+    }
+  }
   .article-sidebar {
     display: none;
     width: 300px;
