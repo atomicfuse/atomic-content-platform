@@ -52,11 +52,13 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
       </div>
     )}
 
-    <div class="article-sidebar-mobile">
-      <AdSlot position="sidebar" pageType="article" server:defer />
-    </div>
-
     <div class="article-container">
+      <aside class="article-sidebar">
+        <div class="article-sidebar-sticky">
+          <AdSlot position="sidebar" pageType="article" server:defer />
+        </div>
+      </aside>
+
       <article class="article-content">
         <header class="article-header">
           <h1>{title}</h1>
@@ -72,12 +74,6 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
 
         <AdSlot position="below-content" pageType="article" server:defer />
       </article>
-
-      <aside class="article-sidebar">
-        <div class="article-sidebar-sticky">
-          <AdSlot position="sidebar" pageType="article" server:defer />
-        </div>
-      </aside>
     </div>
   </main>
 
@@ -148,26 +144,25 @@ const formattedDate = new Date(publishDate).toLocaleDateString('en-US', {
   .article-body :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl); }
   .article-body :global(p)  { margin-bottom: 1.25rem; }
   .article-body :global(ul), .article-body :global(ol) { margin: 1rem 0 1.25rem 1.5rem; }
-  .article-sidebar-mobile {
-    display: block;
-  }
-  @media (min-width: 960px) {
-    .article-sidebar-mobile {
-      display: none;
-    }
-  }
   .article-sidebar {
-    display: none;
-    width: 300px;
+    width: 100%;
   }
   @media (min-width: 960px) {
     .article-sidebar {
-      display: block;
+      width: 300px;
+    }
+    .article-content {
+      order: -1;
     }
   }
   .article-sidebar-sticky {
-    position: sticky;
-    top: 80px;
+    position: static;
+  }
+  @media (min-width: 960px) {
+    .article-sidebar-sticky {
+      position: sticky;
+      top: 80px;
+    }
   }
   .ad-anchor { margin: 1.5rem 0; }
   .ad-sticky-bottom {
