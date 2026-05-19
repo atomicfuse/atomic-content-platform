@@ -351,11 +351,54 @@ export function StepTheme({
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Text Colors</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <ColorPickerField label="Headings & body" value={colors.text ?? "#1a1a2e"} onChange={(v): void => setColor("text", v)} helperText="Primary text color" />
-          <ColorPickerField label="Muted (dates, meta)" value={colors.muted ?? "#6b7280"} onChange={(v): void => setColor("muted", v)} helperText="Secondary text" />
-          <ColorPickerField label="Borders" value={colors.border ?? "#e5e7eb"} onChange={(v): void => setColor("border", v)} helperText="Dividers and outlines" />
-          <ColorPickerField label="Surface (card bg)" value={colors.surface ?? "#f8f9fa"} onChange={(v): void => setColor("surface", v)} helperText="Card backgrounds" />
-          <ColorPickerField label="Secondary (dark sections)" value={colors.secondary ?? "#1a1a2e"} onChange={(v): void => setColor("secondary", v)} helperText="Dark section fallback" />
+          <ColorPickerField
+            label="Body text"
+            value={colors.text ?? "#1a1a2e"}
+            onChange={(v): void => setColor("text", v)}
+            helperText="Default body color (paragraphs, etc.)"
+          />
+          <ColorPickerField
+            label="Headings"
+            value={colors.heading ?? colors.text ?? "#1a1a2e"}
+            onChange={(v): void => setColor("heading", v)}
+            helperText="Page headings (h1–h6). Defaults to body text."
+          />
+          <ColorPickerField
+            label="Muted (dates, meta)"
+            value={colors.muted ?? "#6b7280"}
+            onChange={(v): void => setColor("muted", v)}
+            helperText="Secondary text"
+          />
+          <ColorPickerField
+            label="Link"
+            value={colors.link ?? colors.primary ?? "#1a1a2e"}
+            onChange={(v): void => setColor("link", v)}
+            helperText="Inline links. Defaults to main color."
+          />
+          <ColorPickerField
+            label="Link hover"
+            value={colors.link_hover ?? colors.accent ?? "#f4c542"}
+            onChange={(v): void => setColor("link_hover", v)}
+            helperText="Link color on hover. Defaults to accent."
+          />
+          <ColorPickerField
+            label="Borders"
+            value={colors.border ?? "#e5e7eb"}
+            onChange={(v): void => setColor("border", v)}
+            helperText="Dividers and outlines"
+          />
+          <ColorPickerField
+            label="Surface (card bg)"
+            value={colors.surface ?? "#f8f9fa"}
+            onChange={(v): void => setColor("surface", v)}
+            helperText="Card backgrounds"
+          />
+          <ColorPickerField
+            label="Secondary (dark sections)"
+            value={colors.secondary ?? "#1a1a2e"}
+            onChange={(v): void => setColor("secondary", v)}
+            helperText="Dark section fallback"
+          />
         </div>
       </div>
 
@@ -376,6 +419,7 @@ export function StepTheme({
                 <ColorPickerField label="Hero card title" value={colors.hero_title ?? "#ffffff"} onChange={(v): void => setColor("hero_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Must Reads card title" value={colors.must_reads_title ?? "#ffffff"} onChange={(v): void => setColor("must_reads_title", v)} helperText="Default: white" />
                 <ColorPickerField label="Article hero title" value={colors.article_hero_title ?? "#ffffff"} onChange={(v): void => setColor("article_hero_title", v)} helperText="Default: white" />
+                <ColorPickerField label="Article hero byline (date/author)" value={colors.article_hero_meta ?? colors.muted ?? "#6b7280"} onChange={(v): void => setColor("article_hero_meta", v)} helperText="Default: muted" />
               </div>
             </div>
             <div>
@@ -392,6 +436,35 @@ export function StepTheme({
                 <ColorPickerField label="Prose headings (h2, h3)" value={colors.prose_heading ?? "#1a1a2e"} onChange={(v): void => setColor("prose_heading", v)} helperText="Default: text color" />
                 <ColorPickerField label="Prose body text" value={colors.prose_body ?? "#1a1a2e"} onChange={(v): void => setColor("prose_body", v)} helperText="Default: text color" />
                 <ColorPickerField label="Category header text" value={colors.category_header_text ?? "#ffffff"} onChange={(v): void => setColor("category_header_text", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Footer</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ColorPickerField
+                  label="Footer text"
+                  value={colors.footer_text ?? colors.muted ?? "#9ca3af"}
+                  onChange={(v): void => setColor("footer_text", v)}
+                  helperText="Tagline, description, copyright. Default: muted."
+                />
+                <ColorPickerField
+                  label="Footer column headings"
+                  value={colors.footer_heading ?? "#ffffff"}
+                  onChange={(v): void => setColor("footer_heading", v)}
+                  helperText="Default: white"
+                />
+                <ColorPickerField
+                  label="Footer link"
+                  value={colors.footer_link ?? colors.muted ?? "#9ca3af"}
+                  onChange={(v): void => setColor("footer_link", v)}
+                  helperText="Quick Links and similar. Default: muted."
+                />
+                <ColorPickerField
+                  label="Footer link hover"
+                  value={colors.footer_link_hover ?? "#ffffff"}
+                  onChange={(v): void => setColor("footer_link_hover", v)}
+                  helperText="Default: white"
+                />
               </div>
             </div>
             <p className="text-xs text-[var(--text-muted)] border-t border-[var(--border-secondary)] pt-2">
@@ -606,6 +679,60 @@ export function StepTheme({
               onChange={handleLogoUpload}
             />
             <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
+
+            <div className="pt-2 border-t border-[var(--border-secondary)] space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+                  Header logo height
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={32}
+                    max={96}
+                    step={2}
+                    value={data.logoHeight ?? 52}
+                    onChange={(e): void => onChange({ logoHeight: parseInt(e.target.value, 10) })}
+                    className="flex-1 accent-cyan"
+                  />
+                  <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                    {data.logoHeight ?? 52}px
+                  </span>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+                  Footer logo height
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={24}
+                    max={96}
+                    step={2}
+                    value={data.logoHeightFooter ?? Math.round((data.logoHeight ?? 52) * 0.92)}
+                    onChange={(e): void => onChange({ logoHeightFooter: parseInt(e.target.value, 10) })}
+                    className="flex-1 accent-cyan"
+                  />
+                  <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                    {data.logoHeightFooter ?? Math.round((data.logoHeight ?? 52) * 0.92)}px
+                  </span>
+                  {data.logoHeightFooter != null && (
+                    <button
+                      type="button"
+                      onClick={(): void => onChange({ logoHeightFooter: undefined })}
+                      className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                      title="Reset to auto (92% of header)"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-1">
+                  Defaults to 92% of header height. Click Reset to return to auto.
+                </p>
+              </div>
+            </div>
           </div>
 
           {/* Favicon upload */}

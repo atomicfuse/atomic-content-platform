@@ -139,4 +139,8 @@ export interface WizardFormData {
   logoBase64?: string;
   /** Base64-encoded favicon uploaded by user. */
   faviconBase64?: string;
+  /** Header logo height in pixels (default 52). */
+  logoHeight?: number;
+  /** Footer logo height in pixels. Undefined = auto-derive (92% of header). */
+  logoHeightFooter?: number;
 }

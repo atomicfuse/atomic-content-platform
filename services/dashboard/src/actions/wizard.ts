@@ -233,6 +233,10 @@ export async function createSiteAndBuildStaging(
     theme: {
       base: data.themePreset,
       colors: data.themeColors,
+      logo_height: data.logoHeight ?? 52,
+      // Omit logo_height_footer entirely when auto so saved YAML signals
+      // "let CSS auto-derive (92% of header)".
+      ...(data.logoHeightFooter != null ? { logo_height_footer: data.logoHeightFooter } : {}),
       fonts: {
         heading: data.fontHeading,
         body: data.fontBody,
