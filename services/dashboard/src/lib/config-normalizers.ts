@@ -73,6 +73,8 @@ function normalizeInterstitialConfig(raw: Record<string, unknown> | undefined): 
     },
     page_types: Array.isArray(raw.page_types) ? raw.page_types : ["all"],
     close_delay_seconds: (raw.close_delay_seconds as number) ?? 3,
+    device: (raw.device as InterstitialConfigFormValue["device"]) ?? "both",
+    exclude_pages: Array.isArray(raw.exclude_pages) ? raw.exclude_pages : [],
   };
 }
 

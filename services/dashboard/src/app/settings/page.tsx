@@ -68,6 +68,8 @@ function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedCo
       },
       page_types: Array.isArray(rawIc?.page_types) ? rawIc.page_types : ["all"],
       close_delay_seconds: (rawIc?.close_delay_seconds as number) ?? 3,
+      device: (rawIc?.device as "both" | "desktop" | "mobile") ?? "both",
+      exclude_pages: Array.isArray(rawIc?.exclude_pages) ? rawIc.exclude_pages : [],
     },
     layout: (raw?.layout as string) ?? "standard",
     ad_placements: placements.map((p: Record<string, unknown>) => {

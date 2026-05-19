@@ -29,6 +29,8 @@ function baseValue(overrides: Partial<AdsConfigFormValue> = {}): AdsConfigFormVa
       frequency: { type: "once_per_session", max_per_session: 1 },
       page_types: ["all"],
       close_delay_seconds: 3,
+      device: "both",
+      exclude_pages: [],
     },
     layout: "standard",
     ad_placements: [basePlacement()],
@@ -315,6 +317,8 @@ describe("interstitial config panel", () => {
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
           close_delay_seconds: 3,
+          device: "both",
+          exclude_pages: [],
         },
       }),
     );
@@ -332,6 +336,8 @@ describe("interstitial config panel", () => {
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
           close_delay_seconds: 3,
+          device: "both",
+          exclude_pages: [],
         },
       }),
     );
@@ -349,6 +355,8 @@ describe("interstitial config panel", () => {
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
           close_delay_seconds: 3,
+          device: "both",
+          exclude_pages: [],
         },
       }),
     );
@@ -368,6 +376,8 @@ describe("interstitial config panel", () => {
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
           close_delay_seconds: 3,
+          device: "both",
+          exclude_pages: [],
         },
       }),
     );
@@ -399,6 +409,8 @@ describe("interstitial config panel", () => {
           frequency: { type: "once_per_session", max_per_session: 1 },
           page_types: ["all"],
           close_delay_seconds: 3,
+          device: "both",
+          exclude_pages: [],
         },
       }),
     );
