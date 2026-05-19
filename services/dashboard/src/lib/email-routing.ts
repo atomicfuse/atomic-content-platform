@@ -4,9 +4,9 @@ import { getCredentials, headersFromCreds } from "@/lib/cloudflare";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
-const DEFAULT_DESTINATION = "michal@atomiclabs.io";
-const DEFAULT_LOCAL_PART = "contact";
-const FALLBACK_EMAIL = "hello@atomiclabs.io";
+const DEFAULT_DESTINATION = "accounts+travelgeek@ngcdigital.io";
+const DEFAULT_LOCAL_PART = "info";
+const FALLBACK_EMAIL = "accounts+travelgeek@ngcdigital.io";
 const EMAIL_CONFIG_PATH = "email-config.yaml";
 
 interface EmailRoutingRule {
@@ -225,12 +225,13 @@ export async function findEmailRule(
   );
 }
 
-/** Create an email routing rule to forward contact@domain to the destination. */
+/** Create an email routing rule to forward contact@domain to the destination.
+ *  Returns null when the API token lacks Email Routing permissions (auth error). */
 export async function createEmailRoutingRule(
   zoneId: string,
   domain: string,
   destination?: string,
-): Promise<EmailRoutingRule> {
+): Promise<EmailRoutingRule | null> {
   const email = buildContactEmail(domain);
   const dest = destination ?? (await getDestinationForDomain(domain));
 
@@ -255,6 +256,19 @@ export async function createEmailRoutingRule(
 
   const data = (await res.json()) as CloudflareResponse<EmailRoutingRule>;
   if (!data.success) {
+    // Auth error — token likely lacks Email Routing:Edit scope. This is a
+    // known condition (the main CF token doesn't include email permissions).
+    // Log a warning and return null so callers aren't disrupted.
+    const isAuthError = data.errors.some(
+      (e) => e.code === 10000 || /authentication/i.test(e.message),
+    );
+    if (isAuthError) {
+      console.warn(
+        `[createEmailRoutingRule] Auth error for zone ${zoneId} — token may lack Email Routing permissions. Skipping.`,
+      );
+      return null;
+    }
+
     throw new Error(
       `Failed to create email routing rule: ${data.errors.map((e) => e.message).join(", ")}`,
     );
@@ -262,7 +276,7 @@ export async function createEmailRoutingRule(
   return data.result;
 }
 
-/** Delete an email routing rule. */
+/** Delete an email routing rule. No-op when token lacks Email Routing permissions. */
 export async function deleteEmailRoutingRule(
   zoneId: string,
   ruleId: string,
@@ -275,6 +289,15 @@ export async function deleteEmailRoutingRule(
   );
   const data = (await res.json()) as CloudflareResponse<null>;
   if (!data.success) {
+    const isAuthError = data.errors.some(
+      (e) => e.code === 10000 || /authentication/i.test(e.message),
+    );
+    if (isAuthError) {
+      console.warn(
+        `[deleteEmailRoutingRule] Auth error for zone ${zoneId} — token may lack Email Routing permissions. Skipping.`,
+      );
+      return;
+    }
     throw new Error(
       `Failed to delete email routing rule: ${data.errors.map((e) => e.message).join(", ")}`,
     );

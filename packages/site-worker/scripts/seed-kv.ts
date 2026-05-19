@@ -257,7 +257,7 @@ function buildSharedPageVars(config: ResolvedConfig): Record<string, string> {
   // Resolve support_email from support_email_pattern if not already set.
   const pattern = (config as Record<string, unknown>).support_email_pattern as string | undefined;
   const supportEmail = config.support_email
-    ?? (pattern ? pattern.replaceAll('{{domain}}', domain) : `contact@${domain}`);
+    ?? (pattern ? pattern.replaceAll('{{domain}}', domain) : `info@${domain}`);
 
   return {
     site_name: config.site_name ?? '',
@@ -434,7 +434,7 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
   if (!config.support_email && typeof pattern === 'string') {
     (config as Record<string, unknown>).support_email = pattern.replaceAll('{{domain}}', domain);
   } else if (!config.support_email) {
-    (config as Record<string, unknown>).support_email = `contact@${domain}`;
+    (config as Record<string, unknown>).support_email = `info@${domain}`;
   }
 
   // Rewrite theme.logo / theme.favicon `/assets/...` paths the same way
