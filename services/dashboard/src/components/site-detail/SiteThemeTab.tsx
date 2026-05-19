@@ -220,11 +220,20 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     logoHeightFooter: null,
   });
   const [topicInput, setTopicInput] = useState("");
+  // Footer logo upload state — tracked separately from ThemeState because
+  // it's a transient file upload, not a value that round-trips with the YAML.
+  const [existingFooterLogo, setExistingFooterLogo] = useState<string | null>(null);
+  // null = no pending change, string = newly uploaded (base64), "" = pending removal
+  const [footerLogoPending, setFooterLogoPending] = useState<string | null>(null);
+  const footerLogoInputRef = useRef<HTMLInputElement>(null);
   const initialState = useRef<ThemeState | null>(null);
 
   // Compute on every render — avoids stale memoization issues.
   const dirty = initialState.current !== null
-    && JSON.stringify(state) !== JSON.stringify(initialState.current);
+    && (
+      JSON.stringify(state) !== JSON.stringify(initialState.current)
+      || footerLogoPending !== null
+    );
 
   useEffect(() => {
     async function load(): Promise<void> {
@@ -255,6 +264,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         };
         setState(loaded);
         initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
+        setExistingFooterLogo(typeof theme.footer_logo === "string" ? theme.footer_logo : null);
       } catch {
         // keep defaults — snapshot the defaults as initial state
         initialState.current = {
@@ -287,15 +297,49 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     });
   }
 
+  function handleFooterLogoUpload(e: React.ChangeEvent<HTMLInputElement>): void {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 2 * 1024 * 1024) return;
+    const reader = new FileReader();
+    reader.onload = (): void => {
+      const result = reader.result as string;
+      const base64Data = result.split(",")[1];
+      if (base64Data) setFooterLogoPending(base64Data);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  // Empty string in footerLogoPending means "user clicked Remove"
+  // null means "no pending change"
+  // any other string is a base64 of the new upload
+  const footerLogoPreviewSrc = footerLogoPending
+    ? footerLogoPending === ""
+      ? null
+      : `data:image/png;base64,${footerLogoPending}`
+    : existingFooterLogo;
+
   async function save(): Promise<void> {
     setSaving(true);
     try {
+      // Translate pending footer-logo state into the API contract:
+      //   undefined → no change      (omitted from payload)
+      //   null      → remove existing
+      //   string    → new upload
+      let footerLogoBase64: string | null | undefined = undefined;
+      if (footerLogoPending !== null) {
+        footerLogoBase64 = footerLogoPending === "" ? null : footerLogoPending;
+      }
+
       const res = await fetch("/api/sites/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
           logoBase64: null,
+          ...(footerLogoBase64 !== undefined ? { footerLogoBase64 } : {}),
           faviconBase64: null,
           configUpdates: {
             theme_colors: state.colors,
@@ -310,6 +354,13 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
       if (data.status === "ok") {
         toast("Theme saved — changes will appear on the staging site in a few minutes", "success");
         initialState.current = JSON.parse(JSON.stringify(state)) as ThemeState;
+        // Settle pending footer-logo state into the new "existing" baseline
+        if (footerLogoPending !== null) {
+          setExistingFooterLogo(
+            footerLogoPending === "" ? null : "/assets/logo-footer.png",
+          );
+          setFooterLogoPending(null);
+        }
       } else {
         toast(data.message ?? "Failed to save", "error");
       }
@@ -580,6 +631,47 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             <p className="text-xs text-[var(--text-muted)] mt-1">
               Defaults to 92% of header height. Click Reset to return to auto.
             </p>
+          </div>
+
+          {/* Footer logo variant */}
+          <div className="pt-3 border-t border-[var(--border-secondary)] space-y-2">
+            <div>
+              <h4 className="text-xs font-semibold text-[var(--text-primary)]">Footer logo (optional)</h4>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                Different logo for the footer (e.g. light variant on dark bg). Defaults to the main logo.
+              </p>
+            </div>
+            {footerLogoPreviewSrc && (
+              <div className="flex items-center gap-3">
+                <img
+                  src={footerLogoPreviewSrc}
+                  alt="Footer logo preview"
+                  className="w-16 h-16 rounded-lg object-contain bg-[#1a1a2e] border border-[var(--border-secondary)] p-1"
+                />
+                <button
+                  type="button"
+                  onClick={(): void => setFooterLogoPending("")}
+                  className="text-xs text-[var(--text-muted)] hover:text-red-400"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={(): void => footerLogoInputRef.current?.click()}
+              className="px-3 py-1.5 text-xs font-semibold border border-[var(--border-secondary)] rounded hover:border-[var(--border-primary)] text-[var(--text-primary)]"
+            >
+              {footerLogoPreviewSrc ? "Replace Footer Logo" : "Upload Footer Logo"}
+            </button>
+            <input
+              ref={footerLogoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml"
+              className="hidden"
+              onChange={handleFooterLogoUpload}
+            />
+            <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
           </div>
         </div>
       </div>

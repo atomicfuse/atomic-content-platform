@@ -15,6 +15,8 @@ interface SaveRequestBody {
   domain: string;
   configUpdates: Partial<StagingSiteConfig> | null;
   logoBase64: string | null;
+  /** Optional alternate footer logo. `null` removes the existing one, `undefined` leaves it untouched. */
+  footerLogoBase64?: string | null;
   faviconBase64: string | null;
 }
 
@@ -35,7 +37,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { domain, configUpdates, logoBase64, faviconBase64 } = body;
+  const { domain, configUpdates, logoBase64, footerLogoBase64, faviconBase64 } = body;
 
   if (!domain) {
     return NextResponse.json(
@@ -218,13 +220,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (processedLogoBase64 || effectiveFaviconBase64) {
+    // Process footer logo if uploaded (light/dark variant)
+    let processedFooterLogoBase64: string | null = footerLogoBase64 ?? null;
+    if (processedFooterLogoBase64) {
+      try {
+        const cleaned = await removeBackground(Buffer.from(processedFooterLogoBase64, "base64"));
+        processedFooterLogoBase64 = cleaned.toString("base64");
+      } catch {
+        // Keep the original if processing fails
+      }
+    }
+
+    if (processedLogoBase64 || effectiveFaviconBase64 || footerLogoBase64 !== undefined) {
       const theme = (existing.theme ?? {}) as Record<string, unknown>;
       if (processedLogoBase64) {
         theme.logo = "/assets/logo.png";
       }
       if (effectiveFaviconBase64) {
         theme.favicon = "/assets/favicon.png";
+      }
+      // footer_logo: null = clear, base64 = set, undefined = leave alone
+      if (footerLogoBase64 === null) {
+        delete theme.footer_logo;
+      } else if (processedFooterLogoBase64) {
+        theme.footer_logo = "/assets/logo-footer.png";
       }
       existing.theme = theme;
     }
@@ -241,6 +260,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       files.push({
         path: `sites/${domain}/assets/logo.png`,
         content: Buffer.from(processedLogoBase64, "base64"),
+      });
+    }
+    if (processedFooterLogoBase64) {
+      files.push({
+        path: `sites/${domain}/assets/logo-footer.png`,
+        content: Buffer.from(processedFooterLogoBase64, "base64"),
       });
     }
     if (effectiveFaviconBase64) {
