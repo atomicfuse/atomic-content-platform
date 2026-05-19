@@ -33,6 +33,17 @@
     --color-prose_heading: var(--color-text, #1a1a2e);
     --color-prose_body: var(--color-text, #1a1a2e);
     --color-category_header_text: #ffffff;
+    /* New globals — decouple heading/link from text/primary/accent */
+    --color-heading: var(--color-text, #1a1a2e);
+    --color-link: var(--color-primary, #1a1a2e);
+    --color-link_hover: var(--color-accent, #f4c542);
+    /* Article hero byline — was hardcoded to accent */
+    --color-article_hero_meta: var(--color-muted, #6b7280);
+    /* Footer text — was hardcoded #fff / #9ca3af / #6b7280 */
+    --color-footer_text: var(--color-muted, #9ca3af);
+    --color-footer_heading: #ffffff;
+    --color-footer_link: var(--color-muted, #9ca3af);
+    --color-footer_link_hover: #ffffff;
   }
 }
 
