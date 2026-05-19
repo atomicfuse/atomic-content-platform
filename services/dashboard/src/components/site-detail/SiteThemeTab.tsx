@@ -22,17 +22,28 @@ interface ColorState {
   muted: string;
   surface: string;
   border: string;
+  // New globals (Tier 4 — decouple from text/primary/accent)
+  heading: string;
+  link: string;
+  link_hover: string;
   footer_bg: string;
   must_reads_bg: string;
   hero_title: string;
   must_reads_title: string;
   article_hero_title: string;
+  // New article-hero byline override (Tier 1 fix)
+  article_hero_meta: string;
   feed_title: string;
   feed_desc: string;
   feed_date: string;
   prose_heading: string;
   prose_body: string;
   category_header_text: string;
+  // New footer text fields (Tier 2)
+  footer_text: string;
+  footer_heading: string;
+  footer_link: string;
+  footer_link_hover: string;
 }
 
 interface ThemeState {
@@ -56,10 +67,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
       text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
+      heading: "#1a1a2e", link: "#1a1a2e", link_hover: "#f4c542",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#6b7280",
       feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
       prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+      footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
   bold: {
@@ -67,10 +81,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#E50914", accent: "#B81D24", background: "#141414", secondary: "#1a1a2e",
       text: "#ffffff", muted: "#8C8C8C", surface: "#2a2a2a", border: "#333333",
+      heading: "#ffffff", link: "#E50914", link_hover: "#B81D24",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#8C8C8C",
       feed_title: "#ffffff", feed_desc: "#e0e0e0", feed_date: "#8C8C8C",
       prose_heading: "#ffffff", prose_body: "#e0e0e0", category_header_text: "#ffffff",
+      footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
   ocean: {
@@ -78,10 +95,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#0f4c81", accent: "#10b981", background: "#f8fafc", secondary: "#0f172a",
       text: "#0f172a", muted: "#64748b", surface: "#e2e8f0", border: "#cbd5e1",
+      heading: "#0f172a", link: "#0f4c81", link_hover: "#10b981",
       footer_bg: "#0f172a", must_reads_bg: "#0f172a",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#64748b",
       feed_title: "#0f172a", feed_desc: "#0f172a", feed_date: "#64748b",
       prose_heading: "#0f172a", prose_body: "#1e293b", category_header_text: "#ffffff",
+      footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
   warm: {
@@ -89,10 +109,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#7c2d12", accent: "#ea580c", background: "#fffbeb", secondary: "#1c1917",
       text: "#1c1917", muted: "#78716c", surface: "#fef3c7", border: "#d6d3d1",
+      heading: "#1c1917", link: "#7c2d12", link_hover: "#ea580c",
       footer_bg: "#1c1917", must_reads_bg: "#1c1917",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#78716c",
       feed_title: "#1c1917", feed_desc: "#1c1917", feed_date: "#78716c",
       prose_heading: "#1c1917", prose_body: "#292524", category_header_text: "#ffffff",
+      footer_text: "#a8a29e", footer_heading: "#ffffff", footer_link: "#a8a29e", footer_link_hover: "#ffffff",
     },
   },
   slate: {
@@ -100,10 +123,13 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#334155", accent: "#6366f1", background: "#ffffff", secondary: "#1e293b",
       text: "#1e293b", muted: "#94a3b8", surface: "#f1f5f9", border: "#e2e8f0",
+      heading: "#1e293b", link: "#334155", link_hover: "#6366f1",
       footer_bg: "#1e293b", must_reads_bg: "#1e293b",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+      article_hero_meta: "#94a3b8",
       feed_title: "#1e293b", feed_desc: "#334155", feed_date: "#94a3b8",
       prose_heading: "#1e293b", prose_body: "#334155", category_header_text: "#ffffff",
+      footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
   midnight: {
@@ -111,20 +137,25 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
     colors: {
       primary: "#581c87", accent: "#a855f7", background: "#0f0720", secondary: "#1e1038",
       text: "#f0e6ff", muted: "#a78bfa", surface: "#1e1038", border: "#2e1a50",
+      heading: "#f0e6ff", link: "#a855f7", link_hover: "#c084fc",
       footer_bg: "#1e1038", must_reads_bg: "#1e1038",
       hero_title: "#ffffff", must_reads_title: "#f0e6ff", article_hero_title: "#ffffff",
+      article_hero_meta: "#a78bfa",
       feed_title: "#f0e6ff", feed_desc: "#d8c8f0", feed_date: "#a78bfa",
       prose_heading: "#f0e6ff", prose_body: "#d8c8f0", category_header_text: "#ffffff",
+      footer_text: "#a78bfa", footer_heading: "#ffffff", footer_link: "#a78bfa", footer_link_hover: "#ffffff",
     },
   },
 };
 
 const ALL_COLOR_KEYS: (keyof ColorState)[] = [
   "primary", "accent", "background", "secondary", "text", "muted", "surface", "border",
+  "heading", "link", "link_hover",
   "footer_bg", "must_reads_bg",
-  "hero_title", "must_reads_title", "article_hero_title",
+  "hero_title", "must_reads_title", "article_hero_title", "article_hero_meta",
   "feed_title", "feed_desc", "feed_date",
   "prose_heading", "prose_body", "category_header_text",
+  "footer_text", "footer_heading", "footer_link", "footer_link_hover",
 ];
 
 function detectPreset(colors: ColorState): string {
