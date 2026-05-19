@@ -132,7 +132,7 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
 
           // Close button (disabled during countdown)
           var btn = document.createElement('button');
-          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:1px solid #333;border-radius:50%;background:rgba(255,255,255,0.95);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;';
+          btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:10000;width:32px;height:32px;border:none;border-radius:0;background:transparent;cursor:pointer;font-size:24px;font-weight:300;color:#666;display:flex;align-items:center;justify-content:center;line-height:1;';
           btn.disabled = true;
           btn.textContent = closeDelay.toString();
           btn.setAttribute('aria-label', 'Close advertisement');
