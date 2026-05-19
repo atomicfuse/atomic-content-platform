@@ -125,6 +125,12 @@ export interface ThemeConfig {
   /** URL or path to the site logo. */
   logo?: string;
 
+  /** Header logo height in pixels. Defaults to 52. */
+  logo_height?: number;
+
+  /** Footer logo height in pixels. Defaults to ~92% of `logo_height` (≈48 when logo_height is 52). */
+  logo_height_footer?: number;
+
   /** URL or path to the site favicon. */
   favicon?: string;
 
@@ -150,6 +156,12 @@ export interface ResolvedThemeConfig {
 
   /** URL or path to the site logo. */
   logo: string;
+
+  /** Header logo height in pixels. */
+  logo_height: number;
+
+  /** Footer logo height in pixels. `null` means auto-derive (CSS calc 92% of header). */
+  logo_height_footer: number | null;
 
   /** URL or path to the site favicon. */
   favicon: string;
