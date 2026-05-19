@@ -110,7 +110,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--fontHeading), system-ui, -apple-system, sans-serif;
   font-weight: 700;
   line-height: 1.25;
-  color: var(--color-text);
+  color: var(--color-heading, var(--color-text, #1a1a2e));
 }
 
 h1 { font-size: var(--text-4xl); }
@@ -126,13 +126,13 @@ p {
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--color-link, var(--color-primary, #1a1a2e));
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 
 a:hover {
-  color: var(--color-accent);
+  color: var(--color-link_hover, var(--color-accent, #f4c542));
 }
 
 img {
@@ -166,7 +166,7 @@ img {
   font-size: var(--text-2xl);
   font-weight: 700;
   margin-bottom: 1.5rem;
-  color: var(--color-text);
+  color: var(--color-heading, var(--color-text, #1a1a2e));
 }
 
 .visually-hidden {
