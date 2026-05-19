@@ -872,7 +872,7 @@ export async function runContentGeneration(
       if (imageRequests.length > 0) {
         n8nImagesTriggered = imageRequests.length;
         const webhookUrl = config.n8nImageWebhookUrl;
-        const callbackUrl = config.imageCallbackUrl ?? "https://content-pipeline-app.apps.cloudgrid.io/image-callback";
+        const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
 
         console.log(`[agent] Triggering ${imageRequests.length} n8n image request(s) → ${webhookUrl}`);
 
