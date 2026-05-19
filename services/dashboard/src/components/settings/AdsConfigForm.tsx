@@ -32,6 +32,7 @@ export interface AdPlacement {
 export { validatePlacementConfigs } from "./ad-size-config";
 
 export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+export type InterstitialExcludePage = "shared_pages" | "categories" | "articles" | "homepage";
 
 export interface InterstitialConfigFormValue {
   script_url: string;
@@ -47,6 +48,8 @@ export interface InterstitialConfigFormValue {
   };
   page_types: InterstitialPageType[];
   close_delay_seconds: number;
+  device: "both" | "desktop" | "mobile";
+  exclude_pages: InterstitialExcludePage[];
 }
 
 export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
@@ -56,6 +59,8 @@ export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
   frequency: { type: "once_per_session", max_per_session: 1 },
   page_types: ["all"],
   close_delay_seconds: 3,
+  device: "both",
+  exclude_pages: [],
 };
 
 export interface AdsConfigFormValue {
@@ -425,6 +430,19 @@ const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> =
   { value: "category", label: "Categories" },
 ];
 
+const INTERSTITIAL_DEVICE_OPTIONS: Array<{ value: InterstitialConfigFormValue["device"]; label: string }> = [
+  { value: "both", label: "Both" },
+  { value: "desktop", label: "Desktop Only" },
+  { value: "mobile", label: "Mobile Only" },
+];
+
+const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string }> = [
+  { value: "homepage", label: "Homepage" },
+  { value: "articles", label: "Articles" },
+  { value: "categories", label: "Categories" },
+  { value: "shared_pages", label: "Shared Pages (Privacy, Contact, About...)" },
+];
+
 function InterstitialConfigPanel({
   config,
   onChange,
@@ -664,24 +682,73 @@ function InterstitialConfigPanel({
         </div>
       </div>
 
-      {/* Close Button Delay */}
-      <div className="space-y-1.5">
-        <label className={labelClass}>Close Button Delay</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min={0}
-            max={30}
-            value={config.close_delay_seconds}
+      {/* Close Button Delay + Device row */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <label className={labelClass}>Close Button Delay</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={config.close_delay_seconds}
+              onChange={(e): void => {
+                update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+              }}
+              className={inputClass + " w-20"}
+            />
+            <span className="text-xs text-[var(--text-muted)]">seconds</span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+          </p>
+        </div>
+
+        {/* Device targeting */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Show On Device</label>
+          <select
+            value={config.device}
             onChange={(e): void => {
-              update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+              update("device", e.target.value as InterstitialConfigFormValue["device"]);
             }}
-            className={inputClass + " w-20"}
-          />
-          <span className="text-xs text-[var(--text-muted)]">seconds</span>
+            className={selectClass}
+          >
+            {INTERSTITIAL_DEVICE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Exclude Pages */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Exclude From Pages</label>
+        <div className="space-y-1.5">
+          {EXCLUDE_PAGE_OPTIONS.map((opt) => {
+            const checked = config.exclude_pages.includes(opt.value);
+            return (
+              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(): void => {
+                    const next = checked
+                      ? config.exclude_pages.filter((p) => p !== opt.value)
+                      : [...config.exclude_pages, opt.value];
+                    update("exclude_pages", next);
+                  }}
+                  className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan accent-cyan"
+                />
+                <span className="text-sm text-[var(--text-primary)]">{opt.label}</span>
+              </label>
+            );
+          })}
         </div>
         <p className="text-xs text-[var(--text-muted)]">
-          How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+          Interstitial will not appear on checked page types, even if they match &ldquo;Show On Page Types&rdquo; above.
         </p>
       </div>
     </div>

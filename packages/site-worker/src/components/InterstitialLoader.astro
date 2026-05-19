@@ -50,6 +50,9 @@ const clientConfig = enabled
       frequency: ic!.frequency ?? { type: 'once_per_session' },
       page_types: ic!.page_types ?? ['all'],
       close_delay_seconds: ic!.close_delay_seconds ?? 3,
+      device: ic!.device ?? 'both',
+      exclude_pages: ic!.exclude_pages ?? [],
+      current_page_type: pageType,
     })
   : null;
 const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
@@ -75,6 +78,28 @@ const inlineScript = (enabled && hasInlineScript) ? ic!.script_inline! : '';
       }
 
       if (!cfg.script_url && !cfg.script_inline) return;
+
+      // Device check — skip on wrong device
+      var device = cfg.device || 'both';
+      if (device !== 'both') {
+        var isMobile = window.innerWidth < 768;
+        if (device === 'desktop' && isMobile) return;
+        if (device === 'mobile' && !isMobile) return;
+      }
+
+      // Exclude pages check — map current_page_type to exclude_pages values
+      var excludes = cfg.exclude_pages || [];
+      if (excludes.length > 0) {
+        var pt = cfg.current_page_type || '';
+        // shared pages use pageType='article' in BaseLayout but are served via PageLayout
+        // detect shared pages by checking the URL path against known shared slugs
+        var path = location.pathname.replace(/^\//, '').replace(/\/$/, '');
+        var isSharedPage = ['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon'].indexOf(path) !== -1;
+        if (isSharedPage && excludes.indexOf('shared_pages') !== -1) return;
+        if (pt === 'article' && !isSharedPage && excludes.indexOf('articles') !== -1) return;
+        if (pt === 'homepage' && excludes.indexOf('homepage') !== -1) return;
+        if (pt === 'category' && excludes.indexOf('categories') !== -1) return;
+      }
 
       // Expose config for mock-ad-fill.js to read
       window.__ATL_INTERSTITIAL_CONFIG__ = cfg;
