@@ -18,6 +18,8 @@ import {
   commitFile,
 } from "../../lib/github.js";
 import type { GitHubConfig } from "../../lib/github.js";
+import { notifyImageDefaultFallback } from "../../lib/notifications.js";
+import type { NotificationConfig } from "../../lib/notifications.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -138,32 +140,56 @@ export async function triggerN8nImage(
 export async function handleImageCallback(
   payload: N8nCallbackPayload,
   github: GitHubConfig,
+  notifications?: NotificationConfig,
 ): Promise<{ ok: boolean; message: string }> {
   const { request_id, site_domain, slug, branch, status } = payload;
 
+  const meta = payload.meta;
+  const provider = meta?.provider ?? "unknown";
+  const durationMs = meta?.duration_ms;
+  const tag = `[n8n-image] [${site_domain}/${slug}]`;
+
   console.log(
-    `[n8n-image] Callback received: request_id=${request_id}, slug=${slug}, ` +
-    `status=${status}, has_data=${!!payload.data_base64}`,
+    `${tag} Callback received: request_id=${request_id}, status=${status}, ` +
+    `provider=${provider}, duration=${durationMs ?? "?"}ms, has_data=${!!payload.data_base64}`,
   );
+
+  // Helper to send Slack alert on failure
+  const alertFailure = (reason: string): void => {
+    if (notifications) {
+      void notifyImageDefaultFallback(notifications, {
+        site: site_domain ?? "unknown",
+        articleTitle: slug ?? "unknown",
+        slug: slug ?? "unknown",
+        reason,
+      });
+    }
+  };
 
   // Validate required routing fields first — these are needed for any processing
   if (!site_domain || !slug || !branch) {
+    const reason = `Missing required fields (site_domain=${site_domain}, slug=${slug}, branch=${branch})`;
+    console.error(`${tag} FAIL — ${reason}`);
+    alertFailure(reason);
     return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
   }
 
   // Check for error status from n8n
   if (status && status !== "ok") {
     const reason = payload.error ?? `n8n status: ${status}`;
-    console.error(`[n8n-image] n8n reported failure for ${slug}: ${reason}`);
+    console.error(`${tag} FAIL — n8n error: ${reason} (provider=${provider}, duration=${durationMs ?? "?"}ms)`);
+    alertFailure(`n8n image generation failed: ${reason}`);
     return { ok: false, message: reason };
   }
 
   if (!payload.data_base64) {
-    console.error(`[n8n-image] No image data in callback for ${slug}`);
+    console.error(`${tag} FAIL — no image data in payload`);
+    alertFailure("n8n returned no image data");
     return { ok: false, message: "No image data in callback" };
   }
 
   const imageData = Buffer.from(payload.data_base64, "base64");
+  const rawSizeKB = (imageData.length / 1024).toFixed(0);
 
   try {
     await processN8nImageResult({
@@ -174,10 +200,15 @@ export async function handleImageCallback(
       branch,
       github,
     });
+    console.log(
+      `${tag} SUCCESS — image delivered (provider=${provider}, ` +
+      `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
+    );
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[n8n-image] Processing failed for ${slug}: ${message}`);
+    console.error(`${tag} FAIL — processing error: ${message} (raw_size=${rawSizeKB}KB)`);
+    alertFailure(`Image processing failed: ${message}`);
     return { ok: false, message };
   }
 }
@@ -196,40 +227,63 @@ export async function processN8nImageResult(
   params: ProcessImageParams,
 ): Promise<void> {
   const { siteDomain, slug, imageData, altText, branch, github } = params;
+  const tag = `[n8n-image] [${siteDomain}/${slug}]`;
 
   // 1. Optimize the raw image to WebP
   const optimized = await optimizeImage(imageData);
+  const optimizedKB = (optimized.length / 1024).toFixed(0);
+  const rawKB = (imageData.length / 1024).toFixed(0);
+  console.log(`${tag} Optimized: ${rawKB}KB → ${optimizedKB}KB (WebP)`);
 
   // 2. Build R2 key and upload
   const r2Key = buildR2Key(siteDomain, slug, "webp");
   const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
 
   if (!uploaded) {
-    throw new Error(`R2 upload failed for ${slug} — image not persisted`);
+    throw new Error(`R2 upload failed for ${r2Key} — image not persisted`);
   }
+  console.log(`${tag} R2 upload OK → ${r2Key}`);
 
-  // 3. Read the article markdown from Git
+  // 3. Read article, update frontmatter, commit — with retry for SHA conflicts.
+  // When multiple image callbacks arrive concurrently for the same branch,
+  // the second commit can fail with 409/422 because the branch HEAD moved.
   const octokit = createGitHubClient(github);
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
-  const rawContent = await readFile(octokit, github.repo, articlePath, branch);
-
-  // 4. Parse frontmatter, inject image fields, stringify
-  const parsed = matter(rawContent);
-  // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
-  // adds the `/<siteId>/` prefix at sync time when writing to KV.
   const imageUrl = `/assets/images/${slug}.webp`;
-  parsed.data["featuredImage"] = imageUrl;
-  parsed.data["image_alt"] = altText;
 
-  const updatedContent = matter.stringify(parsed.content, parsed.data);
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const rawContent = await readFile(octokit, github.repo, articlePath, branch);
 
-  // 5. Commit the updated article
-  await commitFile(octokit, github.repo, {
-    path: articlePath,
-    content: updatedContent,
-    message: `feat(image): add hero image for ${slug}`,
-    branch,
-  });
+      const parsed = matter(rawContent);
+      // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
+      // adds the `/<siteId>/` prefix at sync time when writing to KV.
+      parsed.data["featuredImage"] = imageUrl;
+      parsed.data["image_alt"] = altText;
 
-  console.log(`[n8n-image] Updated frontmatter for ${siteDomain}/${slug}`);
+      const updatedContent = matter.stringify(parsed.content, parsed.data);
+
+      await commitFile(octokit, github.repo, {
+        path: articlePath,
+        content: updatedContent,
+        message: `feat(image): add hero image for ${slug}`,
+        branch,
+      });
+
+      console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
+      return; // success
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isShaConflict = msg.includes("but expected") || msg.includes("409") || msg.includes("422");
+
+      if (isShaConflict && attempt < MAX_RETRIES) {
+        const delayMs = attempt * 2000; // 2s, 4s
+        console.warn(`${tag} Git SHA conflict (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delayMs}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
