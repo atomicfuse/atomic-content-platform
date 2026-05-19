@@ -826,23 +826,36 @@ export async function attachCustomDomain(
   );
 
   // --- Step 2: Register custom domain on CF worker ---
+  // For WordPress migration domains that already have DNS records (A/CNAME),
+  // CF Custom Domain registration fails with "externally managed DNS records".
+  // This is expected — those domains use Routes (not Custom Domains) to reach
+  // the manager worker. Skip registration and continue with KV seeding.
   try {
     await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
   } catch (err) {
-    // Roll back index write
-    console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
-    site.custom_domain = previousCustomDomain;
-    site.status = previousStatus;
-    site.zone_id = previousZoneId;
-    site.worker_pending_dns = previousPendingDns;
-    site.last_updated = new Date().toISOString();
-    await writeDashboardIndex(
-      index,
-      `dashboard: rollback attach ${customDomain} from ${domain}`,
-    );
-    throw new Error(
-      `Failed to register ${customDomain} on Cloudflare: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    const isExternalDns = message.includes('externally managed DNS');
+    if (isExternalDns) {
+      console.warn(
+        `[attachCustomDomain] Skipping CF Custom Domain registration for ${customDomain} — ` +
+        `domain has existing DNS records (WordPress migration). Traffic must reach the manager via Routes.`,
+      );
+    } else {
+      // Unexpected error — roll back index write
+      console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
+      site.custom_domain = previousCustomDomain;
+      site.status = previousStatus;
+      site.zone_id = previousZoneId;
+      site.worker_pending_dns = previousPendingDns;
+      site.last_updated = new Date().toISOString();
+      await writeDashboardIndex(
+        index,
+        `dashboard: rollback attach ${customDomain} from ${domain}`,
+      );
+      throw new Error(
+        `Failed to register ${customDomain} on Cloudflare: ${message}`,
+      );
+    }
   }
 
   // --- Step 3: Seed KV hostname entry ---
