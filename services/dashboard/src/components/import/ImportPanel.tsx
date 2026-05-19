@@ -50,6 +50,7 @@ export function ImportPanel(): React.ReactElement {
   const [sites, setSites] = useState<SiteEntry[]>([]);
   const [sitesLoading, setSitesLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState("");
+  const [siteTopics, setSiteTopics] = useState<string[]>([]);
   const [wpUrl, setWpUrl] = useState("");
   const [target, setTarget] = useState<"staging" | "main">("staging");
   const [running, setRunning] = useState(false);
@@ -86,7 +87,19 @@ export function ImportPanel(): React.ReactElement {
 
   const handleSiteChange = useCallback((domain: string): void => {
     setSelectedDomain(domain);
+    setSiteTopics([]);
     setWpUrl(domain ? `https://${domain}/wp-json/wp/v2/posts` : "");
+    if (domain) {
+      fetch(`/api/sites/site-config?domain=${encodeURIComponent(domain)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data: { config?: { brief?: { topics?: string[] } } } | null) => {
+          const topics = data?.config?.brief?.topics;
+          if (Array.isArray(topics) && topics.length > 0) {
+            setSiteTopics(topics);
+          }
+        })
+        .catch(() => { /* non-fatal — import will still work, just without topic matching */ });
+    }
   }, []);
 
   const appendLog = useCallback((msg: string): void => {
@@ -115,6 +128,7 @@ export function ImportPanel(): React.ReactElement {
           siteDomain: selectedDomain,
           wpApiUrl: wpUrl,
           branch: target === "main" ? "main" : `staging/${selectedDomain}`,
+          ...(siteTopics.length > 0 ? { menuItems: siteTopics } : {}),
         }),
         signal: controller.signal,
       });
@@ -177,7 +191,7 @@ export function ImportPanel(): React.ReactElement {
       setRunning(false);
       abortRef.current = null;
     }
-  }, [selectedDomain, wpUrl, target, appendLog]);
+  }, [selectedDomain, wpUrl, target, siteTopics, appendLog]);
 
   const cancelImport = useCallback((): void => {
     abortRef.current?.abort();
