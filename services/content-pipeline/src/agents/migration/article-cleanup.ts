@@ -40,6 +40,35 @@ export function mapCategoriesToTags(
   });
 }
 
+/**
+ * Guarantee that at least one tag matches a site topic (case-insensitive).
+ * If no match is found, prepends the best-guess topic or the first topic.
+ * Same logic as content-generation agent's ensureTopicTag.
+ */
+export function ensureTopicTag(
+  generatedTags: string[],
+  topics: string[],
+  articleTitle: string,
+): string[] {
+  if (topics.length === 0) return generatedTags;
+
+  const tags = generatedTags.length > 0 ? [...generatedTags] : [];
+  const lowerTopics = topics.map((t) => t.toLowerCase());
+
+  const hasTopicTag = tags.some((tag) =>
+    lowerTopics.includes(tag.toLowerCase()),
+  );
+  if (hasTopicTag) return tags;
+
+  const combined = [articleTitle, ...tags].join(" ").toLowerCase();
+  const matchedTopic = topics.find((topic) =>
+    combined.includes(topic.toLowerCase()),
+  );
+  if (matchedTopic) return [matchedTopic, ...tags];
+
+  return [topics[0]!, ...tags];
+}
+
 // ---------------------------------------------------------------------------
 // Prompt building
 // ---------------------------------------------------------------------------

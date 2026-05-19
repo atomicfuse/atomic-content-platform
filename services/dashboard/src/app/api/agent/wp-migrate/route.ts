@@ -23,6 +23,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     siteDomain: string;
     wpApiUrl: string;
     branch?: string;
+    menuItems?: string[];
   };
 
   if (!body.siteDomain || !body.wpApiUrl) {
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest): Promise<Response> {
         siteDomain: body.siteDomain,
         wpApiUrl: body.wpApiUrl,
         ...(body.branch ? { branch: body.branch } : {}),
+        ...(body.menuItems && body.menuItems.length > 0
+          ? { menuItems: body.menuItems }
+          : {}),
       }),
     });
 
