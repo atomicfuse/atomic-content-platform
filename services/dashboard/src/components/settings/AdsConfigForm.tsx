@@ -32,7 +32,9 @@ export interface AdPlacement {
 export { validatePlacementConfigs } from "./ad-size-config";
 
 export type InterstitialPageType = "all" | "article" | "category" | "homepage";
-export type InterstitialExcludePage = "shared_pages" | "categories" | "articles" | "homepage";
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 
 export interface InterstitialConfigFormValue {
   script_url: string;
@@ -436,11 +438,16 @@ const INTERSTITIAL_DEVICE_OPTIONS: Array<{ value: InterstitialConfigFormValue["d
   { value: "mobile", label: "Mobile Only" },
 ];
 
-const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string }> = [
+const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string; group?: string }> = [
   { value: "homepage", label: "Homepage" },
   { value: "articles", label: "Articles" },
   { value: "categories", label: "Categories" },
-  { value: "shared_pages", label: "Shared Pages (Privacy, Contact, About...)" },
+  { value: "about", label: "About", group: "Shared Pages" },
+  { value: "contact", label: "Contact", group: "Shared Pages" },
+  { value: "privacy", label: "Privacy", group: "Shared Pages" },
+  { value: "terms", label: "Terms", group: "Shared Pages" },
+  { value: "dmca", label: "DMCA", group: "Shared Pages" },
+  { value: "amazon", label: "Amazon Disclosure", group: "Shared Pages" },
 ];
 
 function InterstitialConfigPanel({
@@ -724,31 +731,71 @@ function InterstitialConfigPanel({
       </div>
 
       {/* Exclude Pages */}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <label className={labelClass}>Exclude From Pages</label>
-        <div className="space-y-1.5">
-          {EXCLUDE_PAGE_OPTIONS.map((opt) => {
-            const checked = config.exclude_pages.includes(opt.value);
-            return (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(): void => {
-                    const next = checked
-                      ? config.exclude_pages.filter((p) => p !== opt.value)
-                      : [...config.exclude_pages, opt.value];
-                    update("exclude_pages", next);
-                  }}
-                  className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan accent-cyan"
-                />
-                <span className="text-sm text-[var(--text-primary)]">{opt.label}</span>
-              </label>
-            );
-          })}
-        </div>
+        <select
+          value=""
+          onChange={(e): void => {
+            const val = e.target.value as InterstitialExcludePage;
+            if (val && !config.exclude_pages.includes(val)) {
+              update("exclude_pages", [...config.exclude_pages, val]);
+            }
+            e.target.value = "";
+          }}
+          className={selectClass}
+        >
+          <option value="">+ Add page to exclude...</option>
+          {(() => {
+            let lastGroup = "";
+            const elements: React.ReactElement[] = [];
+            for (const opt of EXCLUDE_PAGE_OPTIONS) {
+              if (config.exclude_pages.includes(opt.value)) continue;
+              if (opt.group && opt.group !== lastGroup) {
+                lastGroup = opt.group;
+                elements.push(
+                  <option key={`group-${opt.group}`} disabled className="font-semibold">
+                    {"── " + opt.group + " ──"}
+                  </option>,
+                );
+              } else if (!opt.group && lastGroup) {
+                lastGroup = "";
+              }
+              elements.push(
+                <option key={opt.value} value={opt.value}>
+                  {opt.group ? "  " + opt.label : opt.label}
+                </option>,
+              );
+            }
+            return elements;
+          })()}
+        </select>
+        {config.exclude_pages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {config.exclude_pages.map((p) => {
+              const opt = EXCLUDE_PAGE_OPTIONS.find((o) => o.value === p);
+              return (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-500/10 border border-red-500/30 px-2.5 py-1 text-xs font-medium text-red-400"
+                >
+                  {opt?.label ?? p}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      update("exclude_pages", config.exclude_pages.filter((x) => x !== p));
+                    }}
+                    className="ml-0.5 text-red-400/70 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${opt?.label ?? p}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
         <p className="text-xs text-[var(--text-muted)]">
-          Interstitial will not appear on checked page types, even if they match &ldquo;Show On Page Types&rdquo; above.
+          Interstitial will not appear on selected pages, even if they match &ldquo;Show On Page Types&rdquo; above.
         </p>
       </div>
     </div>
