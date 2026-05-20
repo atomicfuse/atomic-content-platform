@@ -67,6 +67,8 @@ export interface SiteBrief {
   category_ids?: string[];
   /** Content Aggregator tag IDs — all tags the site targets. */
   tag_ids?: string[];
+  /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+  bundle_id?: string;
   audience_type?: string;
   /** Content Aggregator audience type IDs — preferred over name for API queries. */
   audience_type_ids?: string[];

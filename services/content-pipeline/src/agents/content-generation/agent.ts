@@ -409,6 +409,11 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     throw new Error(`Site ${siteDomain} has no content brief defined`);
   }
 
+  // Propagate top-level bundle_id into brief for backward compat
+  if (!siteConfig.brief.bundle_id && (siteConfig as Record<string, unknown>).bundle_id) {
+    siteConfig.brief.bundle_id = (siteConfig as Record<string, unknown>).bundle_id as string;
+  }
+
   return {
     domain: siteConfig.domain,
     siteName: siteConfig.site_name,
@@ -724,6 +729,7 @@ export async function runContentGeneration(
           limit: PAGE_SIZE,
           page,
           language: brief.language ?? "EN",
+          bundle_id: brief.bundle_id,
           category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
           tag_ids: useTagIds,
         });

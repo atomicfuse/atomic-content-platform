@@ -78,6 +78,8 @@ export interface GetContentParams {
   tag_ids?: string[];
   /** Content Aggregator audience type ID for filtering. */
   audience_type_id?: string;
+  /** Content Aggregator bundle ID — fetch articles from a specific bundle. */
+  bundle_id?: string;
 }
 
 /**
@@ -106,6 +108,9 @@ export async function getContent(params: GetContentParams): Promise<ContentApiRe
   }
   if (params.audience_type_id) {
     url.searchParams.set("audience_type_id", params.audience_type_id);
+  }
+  if (params.bundle_id) {
+    url.searchParams.set("bundle_id", params.bundle_id);
   }
 
   console.log(`[api-client] GET ${url.toString()}`);

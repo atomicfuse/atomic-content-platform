@@ -223,6 +223,7 @@ export async function createSiteAndBuildStaging(
         ? [data.verticalId, ...categoryIds.filter((id) => id !== data.verticalId)]
         : categoryIds.length > 0 ? categoryIds : undefined,
       tag_ids: tagIds.length > 0 ? tagIds : undefined,
+      bundle_id: bundleId || undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,
