@@ -356,6 +356,7 @@ Service contract (both services satisfy):
 - Config inheritance: `org.yaml → groups → overrides/config → site.yaml` (deep merge, multi-group, targeted overrides with per-field merge modes). Sites list groups in `groups: []` array; legacy `group` string field still supported.
 - Commit messages: conventional (`feat(scope):`, `fix(scope):`, `docs:`). Always include `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>`.
 - Local vs prod env parity: defaults must match across `.env`, `config.ts`, and CloudGrid; always add local SDK fallbacks.
+- **KV schema evolution**: adding a new field to `ResolvedConfig`, `ResolvedLayoutConfig`, or any KV-stored type requires THREE changes: (1) runtime default in `getConfig()`, (2) seed-time default in `resolveLayout()` / `resolve.ts`, (3) re-seed all live sites. See landmine #38.
 
 ## Git Workflow (follow without being asked)
 
@@ -406,6 +407,11 @@ Service contract (both services satisfy):
 35. **n8n image callback routes through the dashboard proxy.** The content-pipeline is an internal-only CloudGrid service (no public URL). n8n cannot reach it directly. The callback URL points to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`, which is a dashboard API route that proxies to `http://content-pipeline-app/image-callback` inside the cluster. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work. If you change the CloudGrid entity slug, update the default callback URL in `agent.ts`.
 36. **`WORKER_NAME_PROD` is `atl-sites-workers-manager`, not `atomic-site-worker`.** Changed 2026-05-19. `registerWorkerCustomDomain`/`deregisterWorkerCustomDomain` in `cloudflare.ts` target the manager. Dashboard `attachCustomDomain`/`detachCustomDomain` register Custom Domains on the manager — but the manager's `MIGRATED_SITES` set must be updated and redeployed separately for the site to actually receive traffic. The manager code is outside this repo.
 37. **`attachCustomDomain` gracefully handles WordPress domains.** When CF Custom Domain registration fails with "externally managed DNS records" (WordPress domains with existing A/CNAME), the error is caught and registration is skipped — KV seeding and promotion continue normally. This is intentional for WordPress migration where domains reach the manager via Routes, not Custom Domains. See `wizard.ts` Step 2. Only the specific "externally managed DNS" error is skipped; other CF errors still roll back.
+38. **site-worker — KV config is a live schema. Never access new config fields without runtime defaults.** KV configs are written by `seed-kv.ts` and cached indefinitely until the next sync. If you add a new field to `ResolvedConfig` (or any sub-object like `layout`), existing KV entries will NOT have it. Accessing `config.newField.enabled` on stale KV data throws `"Cannot read properties of undefined"`, which Astro swallows and returns a generic `"Not found"` 404 — **taking down every production site silently**. This happened 2026-05-20 with `layout.whats_new` and `layout.more_on`. **Mandatory rules:**
+    - **Runtime defaults in `getConfig()`**: every new config field MUST have a `??=` fallback in `packages/site-worker/src/lib/config.ts`. The `LAYOUT_DEFAULTS` pattern there is the template.
+    - **Seed-time defaults in `resolveLayout()` / `resolve.ts`**: the seed script must also populate the new field so future syncs write it.
+    - **Never deploy site-worker with new schema fields without re-seeding all live sites** via `sync-kv.yml` (trigger with `workflow_dispatch` → `force_all: true`) or manual `pnpm seed:kv` per site.
+    - **Test with stale config**: before deploying, mentally ask "what if the KV config was written 3 months ago and doesn't have this field?" If the answer is a crash, add a default.
 
 ## Cloudflare Account Migration & WordPress Migration
 
