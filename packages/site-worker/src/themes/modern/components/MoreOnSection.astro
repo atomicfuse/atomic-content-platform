@@ -1,0 +1,55 @@
+---
+/**
+ * Modern theme — "More on {site_name}" homepage section.
+ *
+ * 2-column grid of horizontal FeedCards (thumb left, title/date/excerpt right)
+ * with Show More button below. The cards container id (`more-on-list`) is
+ * the LoadMoreButton's append target.
+ */
+import FeedCard from './FeedCard.astro';
+import LoadMoreButton from './LoadMoreButton.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props {
+  siteName: string;
+  articles: ArticleIndexEntry[];
+  nextPage: number;
+  hasMore: boolean;
+}
+const { siteName, articles, nextPage, hasMore } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="more-on">
+    <div class="more-on-inner">
+      <h2 class="more-on-heading">More on {siteName}</h2>
+      <div class="more-on-grid" id="more-on-list">
+        {articles.map((article) => <FeedCard article={article} />)}
+      </div>
+      <LoadMoreButton nextPage={nextPage} hasMore={hasMore} />
+    </div>
+  </section>
+)}
+
+<style>
+  .more-on { padding: 2rem 0 1rem; }
+  .more-on-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .more-on-heading {
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin: 0 0 1.25rem;
+    color: var(--color-heading, var(--color-text, #1a1a2e));
+  }
+  .more-on-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0 2rem;
+  }
+  @media (min-width: 768px) {
+    .more-on-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>

@@ -437,13 +437,14 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     (config as Record<string, unknown>).support_email = `info@${domain}`;
   }
 
-  // Rewrite theme.logo / theme.favicon `/assets/...` paths the same way
-  // article URLs are rewritten — the Header/Footer components read these
-  // and emit raw <img src=…>. Bare `/assets/logo.png` 404s on the Worker.
+  // Rewrite theme.logo / theme.favicon / theme.footer_logo `/assets/...` paths
+  // the same way as article images so they resolve against the per-site R2
+  // bundle. Bare `/assets/logo.png` 404s on the Worker.
   const theme = config.theme as Record<string, unknown> | undefined;
   if (theme) {
     if (typeof theme.logo === 'string') theme.logo = rewriteFrontmatterUrl(theme.logo, siteId);
     if (typeof theme.favicon === 'string') theme.favicon = rewriteFrontmatterUrl(theme.favicon, siteId);
+    if (typeof theme.footer_logo === 'string') theme.footer_logo = rewriteFrontmatterUrl(theme.footer_logo, siteId);
   }
 
   return { config, site };

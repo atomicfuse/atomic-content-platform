@@ -3,8 +3,6 @@ title: "Contact Us"
 layout: ../layouts/PageLayout.astro
 ---
 
-# Contact {{site_name}}
-
 We would love to hear from you. Whether you have a question, feedback, a content suggestion, or a business inquiry, feel free to reach out.
 
 ---

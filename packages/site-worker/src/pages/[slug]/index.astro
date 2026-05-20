@@ -57,9 +57,8 @@ const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article
   ? injectArticleScripts(articleBodyWithInlineAds, article.frontmatter.scripts)
   : { headScripts: '', bodyHtml: articleBodyWithInlineAds };
 
-// Compute related articles, latest articles, and category-list articles
+// Compute related articles and category-list articles
 let related: ArticleIndexEntry[] = [];
-let latestArticles: ArticleIndexEntry[] = [];
 let categoryLists: { topic: string; articles: ArticleIndexEntry[] }[] = [];
 
 if (article) {
@@ -68,9 +67,6 @@ if (article) {
   const visibleOthers = allArticles
     .filter((a) => isVisibleArticle(a.status) && a.slug !== article.frontmatter.slug)
     .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
-
-  // Latest articles for "More" sidebar section
-  latestArticles = visibleOthers.slice(0, 5);
 
   // Related: same primary tag, fallback to latest
   const primaryTag = article.frontmatter.tags?.[0];
@@ -129,7 +125,7 @@ if (article) {
             <p class="article-tags">{article.frontmatter.tags.map((t: string) => `#${t}`).join(' ')}</p>
           )}
         </article>
-        <Sidebar variant="article" config={config} categories={categoryLists} latestArticles={latestArticles} />
+        <Sidebar variant="article" config={config} categories={categoryLists} />
       </div>
       <NewsletterBand domain={config.domain} />
       <RelatedPosts articles={related} />

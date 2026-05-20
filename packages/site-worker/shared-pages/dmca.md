@@ -31,4 +31,4 @@ The audio/video files on this site are for **listening/watching purposes only**.
 
 ## Removal Requests
 
-If it is the organization's belief that the usage of specific content used on our site containing copyrighted knowledge conflicts with authorized use, and/or does not comply with fair use as described in this context, contact us through our [contact page](/contact) and we will remove the offending content immediately.
+If it is the organization's belief that the usage of specific content used on our site containing copyrighted knowledge conflicts with authorized use, and/or does not comply with fair use as described in this context, please contact us using the [contact page](/contact) or via email at {{support_email}} and we will remove the offending content immediately.

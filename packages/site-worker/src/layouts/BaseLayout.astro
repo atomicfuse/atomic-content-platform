@@ -46,8 +46,11 @@ const googleFontsUrl =
     ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
     : null;
 
-const logoHeight = typeof theme.logo_height === 'number' ? theme.logo_height : 52;
+const rawLogoHeight = typeof theme.logo_height === 'number' ? theme.logo_height : 52;
+const logoHeight = Math.min(rawLogoHeight, 104); // clamp so logo never overflows nav cap
 const logoHeightFooter = typeof theme.logo_height_footer === 'number' ? theme.logo_height_footer : null;
+// Nav grows with the logo (8px padding top + 8px bottom), min 64px (mobile), max 120px.
+const navHeight = Math.min(Math.max(64, logoHeight + 16), 120);
 
 const colorVars = Object.entries(theme.colors)
   .map(([key, value]) => `--color-${key}: ${value};`)
@@ -56,6 +59,7 @@ const colorVars = Object.entries(theme.colors)
 const cssVars = [
   colorVars,
   `--logo-height: ${logoHeight}px;`,
+  `--nav-height: ${navHeight}px;`,
   logoHeightFooter != null ? `--logo-height-footer: ${logoHeightFooter}px;` : '',
 ]
   .filter(Boolean)

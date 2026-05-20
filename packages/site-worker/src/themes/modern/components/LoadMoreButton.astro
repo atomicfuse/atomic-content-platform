@@ -14,7 +14,7 @@ const { nextPage, hasMore } = Astro.props;
   (function () {
     var btn = document.querySelector('a[data-load-more]');
     if (!btn) return;
-    var feed = document.getElementById('article-feed-list');
+    var feed = document.getElementById('more-on-list');
     var status = document.querySelector('[data-load-more-status]');
     var page = parseInt(new URL(btn.href, window.location.href).searchParams.get('page'), 10) || 2;
     var loading = false;

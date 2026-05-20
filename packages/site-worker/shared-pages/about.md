@@ -12,4 +12,4 @@ Most of all, we stand behind our ideas and believe in creativity as the most pow
 
 We care. We collaborate. We do great work. And we do it with a smile, because we're pretty damn excited to do what we do.
 
-If you would like details on what else we can do visit our [Contact page](/contact)
+If you would like details on what else we can do visit our [Contact page](/contact) or send us an email at {{support_email}}

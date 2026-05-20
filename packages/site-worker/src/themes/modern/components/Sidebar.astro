@@ -9,9 +9,8 @@ interface Props {
   variant: 'home' | 'article';
   config: ResolvedConfig;
   categories?: { topic: string; articles: ArticleIndexEntry[] }[];
-  latestArticles?: ArticleIndexEntry[];
 }
-const { config, variant, categories = [], latestArticles = [] } = Astro.props;
+const { config, variant, categories = [] } = Astro.props;
 ---
 
 <aside class="sidebar">
@@ -19,46 +18,12 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
     {variant === 'home' && (
       <>
         <AdSlot position="sidebar" pageType="homepage" server:defer />
-        {latestArticles.length > 0 && (
-          <section class="sidebar-more">
-            <h3 class="sidebar-more-heading">More</h3>
-            <ul class="sidebar-more-list">
-              {latestArticles.map((article) => (
-                <li>
-                  <a href={`/${article.slug}`} class="sidebar-more-link">
-                    {article.featuredImage && (
-                      <img src={article.featuredImage} alt="" loading="lazy" />
-                    )}
-                    <span>{article.title}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
         <NewsletterBox domain={config.domain} />
       </>
     )}
     {variant === 'article' && (
       <>
         <AdSlot position="sidebar" pageType="article" server:defer />
-        {latestArticles.length > 0 && (
-          <section class="sidebar-more">
-            <h3 class="sidebar-more-heading">More</h3>
-            <ul class="sidebar-more-list">
-              {latestArticles.map((article) => (
-                <li>
-                  <a href={`/${article.slug}`} class="sidebar-more-link">
-                    {article.featuredImage && (
-                      <img src={article.featuredImage} alt="" loading="lazy" />
-                    )}
-                    <span>{article.title}</span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
         <NewsletterBox domain={config.domain} />
         {categories.map((c) => (
           <CategoryList topic={c.topic} articles={c.articles} />
@@ -84,36 +49,7 @@ const { config, variant, categories = [], latestArticles = [] } = Astro.props;
   @media (min-width: 960px) {
     .sidebar-sticky {
       position: sticky;
-      top: calc(64px + 1rem);
+      top: calc(var(--nav-height, 64px) + 1rem);
     }
-  }
-
-  /* "More" section */
-  .sidebar-more-heading {
-    background: var(--color-primary, #1a1a2e);
-    color: var(--color-category_header_text, #fff);
-    text-align: center;
-    padding: 0.75rem;
-    margin: 0 0 1rem;
-    font-size: var(--text-base, 1rem);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 700;
-    border-radius: var(--radius-sm, 4px);
-  }
-  .sidebar-more-list { list-style: none; padding: 0; margin: 0; }
-  .sidebar-more-list li { margin-bottom: 0.75rem; }
-  .sidebar-more-link {
-    display: grid;
-    grid-template-columns: 80px 1fr;
-    gap: 0.75rem;
-    color: inherit; text-decoration: none;
-    font-size: 0.875rem;
-    line-height: 1.4;
-  }
-  .sidebar-more-link:hover span { color: var(--color-accent); }
-  .sidebar-more-link img {
-    width: 100%; aspect-ratio: 1; object-fit: cover;
-    border-radius: var(--radius-sm, 4px);
   }
 </style>

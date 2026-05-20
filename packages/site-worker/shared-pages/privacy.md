@@ -58,4 +58,4 @@ By using our site, you consent to our web site privacy policy, disclaimer and te
 
 If we decide to change our privacy policy, we will post those changes on this page.
 
-If you have any questions, please contact us using the [contact page](/contact).
+If you have any questions, please contact us using the [contact page](/contact) or via email at {{support_email}}
