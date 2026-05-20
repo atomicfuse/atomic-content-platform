@@ -38,9 +38,13 @@ const quickLinks = [
           <span class="footer-logo-text">{config.site_name}</span>
         )}
       </div>
-      <p class="footer-tagline">
-        {config.site_tagline ?? config.site_name}
-      </p>
+      {/* Tagline rules:
+          - logo present: never render tagline (the brand image is enough)
+          - no logo + tagline set: render tagline below the site_name
+          - no logo + no tagline: render nothing below site_name */}
+      {!footerLogoSrc && config.site_tagline && (
+        <p class="footer-tagline">{config.site_tagline}</p>
+      )}
     </div>
 
     {/* Column 2: Quick Links */}
