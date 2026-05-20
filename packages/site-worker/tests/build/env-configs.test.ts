@@ -98,21 +98,12 @@ describe('env config emit', () => {
     expect(prodR2?.bucket_name).toBe('atl-assets-prod');
   });
 
-  it('production routes are derived from dashboard-index.yaml; staging emits no routes', async () => {
+  it('both envs emit empty routes (all Custom Domains on atl-sites-workers-manager)', async () => {
     const staging = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.staging.json'), 'utf-8')) as Record<string, unknown>;
     const prod = JSON.parse(await readFile(join(DIST_SERVER, 'wrangler.production.json'), 'utf-8')) as Record<string, unknown>;
 
     expect(staging.routes).toEqual([]);
-
-    const prodRoutes = prod.routes as Array<{ pattern: string; custom_domain?: boolean }>;
-    expect(prodRoutes).toBeDefined();
-
-    // Both fixtures with custom_domain set → routes; the null one → skipped.
-    const patterns = prodRoutes.map((r) => r.pattern).sort();
-    expect(patterns).toEqual(['coolnews.dev', 'example.test']);
-    for (const r of prodRoutes) {
-      expect(r.custom_domain).toBe(true);
-    }
+    expect(prod.routes).toEqual([]);
   });
 
   it('emitted configs are flat — no env metadata leftover', async () => {
