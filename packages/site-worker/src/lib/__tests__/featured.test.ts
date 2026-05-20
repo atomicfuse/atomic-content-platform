@@ -99,4 +99,16 @@ describe("selectFeatured — fallbackOrder", () => {
     );
     expect(orderings.size).toBeGreaterThan(1);
   });
+
+  it("with fallbackOrder='random' + empty seed, output is deterministic (not Math.random)", () => {
+    const a = selectFeatured(pool, 'must-read', 4, new Set(), 'random', '');
+    const b = selectFeatured(pool, 'must-read', 4, new Set(), 'random', '');
+    expect(a.map((x) => x.slug)).toEqual(b.map((x) => x.slug));
+  });
+
+  it("ignores seed when fallbackOrder='newest'", () => {
+    const a = selectFeatured(pool, 'must-read', 3, new Set(), 'newest', '2026-05-20');
+    const b = selectFeatured(pool, 'must-read', 3); // no seed, no fallbackOrder
+    expect(a.map((x) => x.slug)).toEqual(b.map((x) => x.slug));
+  });
 });

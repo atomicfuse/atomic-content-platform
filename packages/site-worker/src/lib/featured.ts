@@ -19,6 +19,9 @@ export type FallbackOrder = 'newest' | 'random';
  * When `fallbackOrder === 'random'` and `seed` is omitted, the shuffle uses
  * `Math.random()` — fine for tests and one-off renders, not safe for
  * multi-endpoint coordination.
+ *
+ * `seed` is ignored when `fallbackOrder !== 'random'` (e.g. `'newest'`);
+ * passing a seed with a non-random fallback order has no effect.
  */
 export function selectFeatured(
   articles: ArticleIndexEntry[],
@@ -48,7 +51,7 @@ export function selectFeatured(
   const remaining = articles.filter((a) => !used.has(a.slug));
   const ordered =
     fallbackOrder === 'random'
-      ? (seed ? shuffleSeeded(remaining, seed) : shuffleRandom(remaining))
+      ? (seed !== undefined ? shuffleSeeded(remaining, seed) : shuffleRandom(remaining))
       : remaining;
 
   for (const a of ordered) {
