@@ -9,6 +9,8 @@ import { FontPickerField } from "@/components/wizard/FontPickerField";
 interface LayoutState {
   hero: { enabled: boolean; count: 3 | 4 };
   must_reads: { enabled: boolean; count: number };
+  whats_new: { enabled: boolean; count: number };
+  more_on: { enabled: boolean; page_size: number };
   sidebar_topics: { auto: boolean; explicit: string[] };
   load_more: { page_size: number };
 }
@@ -62,8 +64,10 @@ interface ThemeState {
 const DEFAULT_LAYOUT: LayoutState = {
   hero: { enabled: true, count: 4 },
   must_reads: { enabled: true, count: 5 },
+  whats_new: { enabled: true, count: 4 },
+  more_on: { enabled: true, page_size: 8 },
   sidebar_topics: { auto: true, explicit: [] },
-  load_more: { page_size: 10 },
+  load_more: { page_size: 4 },
 };
 
 const PRESETS: Record<string, { name: string; colors: ColorState }> = {
@@ -191,6 +195,8 @@ function parseLayout(raw: Record<string, unknown> | undefined): LayoutState {
   if (!raw) return { ...DEFAULT_LAYOUT };
   const hero = raw.hero as Record<string, unknown> | undefined;
   const mr = raw.must_reads as Record<string, unknown> | undefined;
+  const wn = raw.whats_new as Record<string, unknown> | undefined;
+  const mo = raw.more_on as Record<string, unknown> | undefined;
   const st = raw.sidebar_topics as Record<string, unknown> | undefined;
   const lm = raw.load_more as Record<string, unknown> | undefined;
   return {
@@ -201,6 +207,14 @@ function parseLayout(raw: Record<string, unknown> | undefined): LayoutState {
     must_reads: {
       enabled: (mr?.enabled as boolean) ?? DEFAULT_LAYOUT.must_reads.enabled,
       count: (mr?.count as number) ?? DEFAULT_LAYOUT.must_reads.count,
+    },
+    whats_new: {
+      enabled: (wn?.enabled as boolean) ?? DEFAULT_LAYOUT.whats_new.enabled,
+      count: (wn?.count as number) ?? DEFAULT_LAYOUT.whats_new.count,
+    },
+    more_on: {
+      enabled: (mo?.enabled as boolean) ?? DEFAULT_LAYOUT.more_on.enabled,
+      page_size: (mo?.page_size as number) ?? DEFAULT_LAYOUT.more_on.page_size,
     },
     sidebar_topics: {
       auto: (st?.auto as boolean) ?? DEFAULT_LAYOUT.sidebar_topics.auto,
@@ -747,6 +761,86 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             Show Must Reads section
           </label>
 
+          {/* What's New */}
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={state.layout.whats_new.enabled}
+              onChange={(e): void =>
+                setState((s) => ({
+                  ...s,
+                  layout: {
+                    ...s.layout,
+                    whats_new: { ...s.layout.whats_new, enabled: e.target.checked },
+                  },
+                }))
+              }
+              className="accent-cyan"
+            />
+            Show &ldquo;What&apos;s New&rdquo; grid
+          </label>
+          {state.layout.whats_new.enabled && (
+            <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
+              <span>What&apos;s New count:</span>
+              <input
+                type="number"
+                min={1}
+                max={12}
+                value={state.layout.whats_new.count}
+                onChange={(e): void =>
+                  setState((s) => ({
+                    ...s,
+                    layout: {
+                      ...s.layout,
+                      whats_new: { ...s.layout.whats_new, count: parseInt(e.target.value, 10) || 4 },
+                    },
+                  }))
+                }
+                className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+              />
+            </div>
+          )}
+
+          {/* More on {site_name} */}
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={state.layout.more_on.enabled}
+              onChange={(e): void =>
+                setState((s) => ({
+                  ...s,
+                  layout: {
+                    ...s.layout,
+                    more_on: { ...s.layout.more_on, enabled: e.target.checked },
+                  },
+                }))
+              }
+              className="accent-cyan"
+            />
+            Show &ldquo;More on {`{site_name}`}&rdquo; section
+          </label>
+          {state.layout.more_on.enabled && (
+            <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
+              <span>Initial articles:</span>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={state.layout.more_on.page_size}
+                onChange={(e): void =>
+                  setState((s) => ({
+                    ...s,
+                    layout: {
+                      ...s.layout,
+                      more_on: { ...s.layout.more_on, page_size: parseInt(e.target.value, 10) || 8 },
+                    },
+                  }))
+                }
+                className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+              />
+            </div>
+          )}
+
           <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
             <span>Load more page size:</span>
             <input
@@ -759,7 +853,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                   ...s,
                   layout: {
                     ...s.layout,
-                    load_more: { page_size: parseInt(e.target.value, 10) || 10 },
+                    load_more: { page_size: parseInt(e.target.value, 10) || 4 },
                   },
                 }))
               }
