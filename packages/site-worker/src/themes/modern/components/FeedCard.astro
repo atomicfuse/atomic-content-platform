@@ -22,7 +22,9 @@ const dateLabel = new Date(article.publishDate).toLocaleDateString('en-US', {
   </div>
 </article>
 
-<style>
+<style is:global>
+  /* Global so Load More's string-appended HTML (from _render-feed-cards.ts)
+     gets the same styling as the SSR-rendered cards. */
   .feed-card {
     display: grid;
     grid-template-columns: 1fr;
