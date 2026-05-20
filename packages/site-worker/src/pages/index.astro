@@ -97,7 +97,9 @@ const hasMore = hasMoreOnAfter(
     <AdSlot position="homepage-top" pageType="homepage" server:defer />
     <section class="whats-new">
       <div class="whats-new-inner">
-        <WhatsNewGrid articles={whatsNewArticles} />
+        {config.layout.whats_new.enabled
+          ? <WhatsNewGrid articles={whatsNewArticles} />
+          : <div />}
         <Sidebar variant="home" config={config} />
       </div>
     </section>

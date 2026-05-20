@@ -47,7 +47,9 @@ export const GET: APIRoute = async (ctx) => {
     : [];
   for (const a of mustReadArticles) consumed.add(a.slug);
 
-  const moreOnPool = visible.filter((a) => !consumed.has(a.slug));
+  const moreOnPool = config.layout.more_on.enabled
+    ? visible.filter((a) => !consumed.has(a.slug))
+    : [];
   const slice = sliceMoreOn(
     moreOnPool,
     page,

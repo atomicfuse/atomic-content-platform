@@ -49,7 +49,7 @@ const { config, variant, categories = [] } = Astro.props;
   @media (min-width: 960px) {
     .sidebar-sticky {
       position: sticky;
-      top: calc(64px + 1rem);
+      top: calc(var(--nav-height, 64px) + 1rem);
     }
   }
 </style>
