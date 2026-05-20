@@ -1,0 +1,38 @@
+---
+/**
+ * Modern theme — "What's New" homepage grid.
+ *
+ * 2×2 grid of image-prominent cards on desktop; 1-column on mobile.
+ */
+import WhatsNewCard from './WhatsNewCard.astro';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { articles: ArticleIndexEntry[]; heading?: string; }
+const { articles, heading = "What's New?" } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="whats-new-grid">
+    <h2 class="whats-new-grid-heading">{heading}</h2>
+    <div class="whats-new-grid-cards">
+      {articles.map((article) => <WhatsNewCard article={article} />)}
+    </div>
+  </section>
+)}
+
+<style>
+  .whats-new-grid-heading {
+    font-size: var(--text-2xl, 1.5rem);
+    font-weight: 700;
+    margin: 0 0 1.25rem;
+    color: var(--color-heading, var(--color-text, #1a1a2e));
+  }
+  .whats-new-grid-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  @media (min-width: 640px) {
+    .whats-new-grid-cards { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
