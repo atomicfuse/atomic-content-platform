@@ -116,9 +116,12 @@ Each article appears in exactly one section. The "What's New" set is *the next f
 - `must_reads.enabled: false` → no Must Reads section rendered, no random pick; those articles stay in More on.
 - `more_on.enabled: false` → no More on section, no Show More button. (Edge case — probably no real use, but the flag exists for symmetry.)
 
-`selectFeatured` in [`src/lib/featured.ts`](../../packages/site-worker/src/lib/featured.ts) grows a fifth parameter `fallbackOrder: 'newest' | 'random'`. When `'random'`, after the tagged-articles pass, the function shuffles `articles \ used` with Fisher-Yates and takes the first `count - out.length`. Hero callers pass `'newest'` (unchanged behavior). Must-read callers pass `'random'`.
+`selectFeatured` in [`src/lib/featured.ts`](../../packages/site-worker/src/lib/featured.ts) grows two new parameters:
 
-Caveat — the SSR random reroll on each request means cached visitors within the same edge cache window (`s-maxage=60` for the homepage) see the same picks; once the cache expires, a new draw happens. Acceptable for the UX goal of "feel less repetitive."
+1. `fallbackOrder: 'newest' | 'random'` — when `'random'`, after the tagged-articles pass, the function shuffles `articles \ used` with Fisher-Yates and takes the first `count - out.length`. Hero callers pass `'newest'` (unchanged behavior). Must-read callers pass `'random'`.
+2. `seed?: string` — optional. When `fallbackOrder === 'random'` and a seed is provided, the shuffle is deterministic (Mulberry32 PRNG over FNV-1a hash of the seed). Same seed + same input → same output. When omitted, falls back to `Math.random()`.
+
+**Why seeded.** Both the homepage SSR (`pages/index.astro`) and the `/api/articles` Load More endpoint compute the disjoint allocation independently. If they used `Math.random()`, they'd pick different must-reads, which would let an article appear in must-reads on the rendered page *and* in a "Load More" response on the same day. Passing a seed of `<siteId>:<YYYY-MM-DD>` from both endpoints guarantees they agree on the must-reads pick for the whole UTC day. The pick rotates daily.
 
 ### Pagination for "More on …"
 
