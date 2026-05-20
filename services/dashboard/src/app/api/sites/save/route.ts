@@ -158,7 +158,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       if (configUpdates.scripts_vars !== undefined) {
         const prev = (existing.scripts_vars ?? {}) as Record<string, string>;
-        existing.scripts_vars = { ...prev, ...configUpdates.scripts_vars };
+        const merged = { ...prev, ...configUpdates.scripts_vars };
+        // Don't persist an empty scripts_vars object — it adds noise to
+        // site.yaml and shadows inherited vars from org/group layers.
+        if (Object.keys(merged).length > 0) {
+          existing.scripts_vars = merged;
+        } else {
+          delete (existing as Record<string, unknown>).scripts_vars;
+        }
       }
       if (configUpdates.ads_config !== undefined) {
         const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
@@ -170,7 +177,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         if (Array.isArray(placements) && placements.length === 0) {
           delete merged.ad_placements;
         }
-        existing.ads_config = merged;
+        // When interstitial is disabled (the normalizer default), strip it and
+        // its config so the group/org inherited value flows through. A site-
+        // level `interstitial: false` would shadow a group's `true`.
+        if (!merged.interstitial) {
+          delete merged.interstitial;
+          delete merged.interstitial_config;
+        }
+        // If the remaining ads_config is empty or default-only (just
+        // layout: "standard"), don't persist it at all.
+        const remainingKeys = Object.keys(merged).filter(
+          (k) => !(k === "layout" && merged[k] === "standard"),
+        );
+        if (remainingKeys.length > 0) {
+          existing.ads_config = merged;
+        } else {
+          delete (existing as Record<string, unknown>).ads_config;
+        }
       }
       // merge_modes is a feature-branch directive — the main-branch
       // seed-kv.ts ignores it. Don't persist until it ships on main.

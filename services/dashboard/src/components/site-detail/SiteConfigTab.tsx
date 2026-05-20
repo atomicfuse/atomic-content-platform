@@ -32,6 +32,9 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
   const [formConfig, setFormConfig] = useState<Partial<UnifiedConfigFields>>({});
   const [mergeModes, setMergeModes] = useState<OverrideMergeModes>({ ...DEFAULT_MERGE_MODES });
   const initialSnapshot = useRef<string>("");
+  // Per-section initial JSON — used to skip unchanged sections on save so they
+  // don't shadow inherited values from org/group/override layers.
+  const initialSections = useRef<Record<string, string>>({});
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -53,6 +56,14 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         legal: (raw.legal ?? {}) as Record<string, string>,
       };
       setFormConfig(initialConfig);
+
+      // Store per-section snapshots so handleSave can skip unchanged sections.
+      initialSections.current = {
+        tracking: JSON.stringify(initialConfig.tracking),
+        scripts: JSON.stringify(initialConfig.scripts),
+        scripts_vars: JSON.stringify(initialConfig.scripts_vars),
+        ads_config: JSON.stringify(initialConfig.ads_config),
+      };
 
       // Restore persisted merge modes from site.yaml (if any)
       const modes = raw.merge_modes as Partial<OverrideMergeModes> | undefined;
@@ -80,6 +91,24 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
   async function handleSave(): Promise<void> {
     setSaving(true);
     try {
+      // Only include sections whose form value changed from the initial load.
+      // Unchanged sections are omitted so they don't shadow inherited values
+      // from org/group/override layers (e.g. interstitial config from a group).
+      const configUpdates: Record<string, unknown> = {};
+      if (JSON.stringify(formConfig.tracking) !== initialSections.current.tracking) {
+        configUpdates.tracking = formConfig.tracking;
+      }
+      if (JSON.stringify(formConfig.scripts) !== initialSections.current.scripts) {
+        configUpdates.scripts = formConfig.scripts;
+      }
+      if (JSON.stringify(formConfig.scripts_vars) !== initialSections.current.scripts_vars) {
+        configUpdates.scripts_vars = formConfig.scripts_vars;
+      }
+      if (JSON.stringify(formConfig.ads_config) !== initialSections.current.ads_config) {
+        configUpdates.ads_config = formConfig.ads_config;
+      }
+      configUpdates.merge_modes = mergeModes;
+
       const res = await fetch("/api/sites/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -87,19 +116,19 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
           domain,
           logoBase64: null,
           faviconBase64: null,
-          configUpdates: {
-            tracking: formConfig.tracking,
-            scripts: formConfig.scripts,
-            scripts_vars: formConfig.scripts_vars,
-            ads_config: formConfig.ads_config,
-            merge_modes: mergeModes,
-          },
+          configUpdates,
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
       if (data.status === "ok") {
         toast("Config saved", "success");
         initialSnapshot.current = JSON.stringify({ config: formConfig, modes: mergeModes });
+        initialSections.current = {
+          tracking: JSON.stringify(formConfig.tracking),
+          scripts: JSON.stringify(formConfig.scripts),
+          scripts_vars: JSON.stringify(formConfig.scripts_vars),
+          ads_config: JSON.stringify(formConfig.ads_config),
+        };
       } else {
         toast(data.message ?? "Failed to save", "error");
       }
