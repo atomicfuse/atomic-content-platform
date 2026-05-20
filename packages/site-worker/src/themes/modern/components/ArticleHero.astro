@@ -63,8 +63,16 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
   .article-hero-separator {
     opacity: 0.6;
   }
-  .article-hero-image-wrap img {
-    width: 100%; height: auto;
+  .article-hero-image-wrap {
+    width: 100%;
+    aspect-ratio: 16 / 9;
     border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+  }
+  .article-hero-image-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 </style>
