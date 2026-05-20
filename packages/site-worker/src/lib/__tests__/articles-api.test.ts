@@ -63,4 +63,10 @@ describe('hasMoreOnAfter', () => {
     // 50 > 8 + (12-1)*4 = 52 → false.
     expect(hasMoreOnAfter(fixtures, 12, 8, 4)).toBe(false);
   });
+  it('page < 1 or non-finite returns false (mirrors sliceMoreOn)', () => {
+    expect(hasMoreOnAfter(fixtures, 0, 8, 4)).toBe(false);
+    expect(hasMoreOnAfter(fixtures, -1, 8, 4)).toBe(false);
+    expect(hasMoreOnAfter(fixtures, NaN, 8, 4)).toBe(false);
+    expect(hasMoreOnAfter(fixtures, Infinity, 8, 4)).toBe(false);
+  });
 });

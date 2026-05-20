@@ -32,7 +32,8 @@ export function sliceMoreOn<T>(
 
 /**
  * Whether a "Show More" click on the given page would yield more items.
- * Mirrors `sliceMoreOn`'s page semantics.
+ * Mirrors `sliceMoreOn`'s page semantics — invalid pages return false,
+ * and non-integer pages are floored, exactly like `sliceMoreOn`.
  */
 export function hasMoreOnAfter<T>(
   moreOn: T[],
@@ -40,7 +41,8 @@ export function hasMoreOnAfter<T>(
   initialSize: number,
   loadMoreSize: number,
 ): boolean {
-  if (page < 1) return moreOn.length > 0;
-  if (page === 1) return moreOn.length > initialSize;
-  return moreOn.length > initialSize + (page - 1) * loadMoreSize;
+  if (!Number.isFinite(page) || page < 1) return false;
+  const p = Math.floor(page);
+  if (p === 1) return moreOn.length > initialSize;
+  return moreOn.length > initialSize + (p - 1) * loadMoreSize;
 }
