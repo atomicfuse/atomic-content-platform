@@ -65,6 +65,8 @@ export interface SiteBrief {
     category_ids?: string[];
     /** Content Aggregator tag IDs — all tags the site targets. */
     tag_ids?: string[];
+    /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+    bundle_id?: string;
     /** Target audience type for aggregator API queries. */
     audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
     /** Content Aggregator audience type IDs — preferred over name for API queries. */

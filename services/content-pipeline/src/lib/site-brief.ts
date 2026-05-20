@@ -40,6 +40,11 @@ export async function readSiteBrief(
     brief.audience = brief.audiences.join(", ");
   }
 
+  // Propagate top-level bundle_id into brief for backward compat
+  if (!brief.bundle_id && (config as Record<string, unknown>).bundle_id) {
+    brief.bundle_id = (config as Record<string, unknown>).bundle_id as string;
+  }
+
   return {
     domain: config.domain,
     siteName: config.site_name,
