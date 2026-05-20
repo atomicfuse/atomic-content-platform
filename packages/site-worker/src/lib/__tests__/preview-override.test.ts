@@ -148,10 +148,12 @@ describe('generatePreviewScript', () => {
     expect(script).toContain('addEventListener');
   });
 
-  it('patches fetch for server island requests', () => {
+  it('patches fetch for all same-origin requests', () => {
     const script = generatePreviewScript('test-site');
     expect(script).toContain('window.fetch');
-    expect(script).toContain('_server-islands/');
+    // Patch keys on origin equality, not a specific path prefix, so server
+    // islands, /api/*, and any future internal endpoint are all covered.
+    expect(script).toContain('u.origin===location.origin');
     expect(script).toContain('_atl_site');
   });
 });

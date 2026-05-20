@@ -113,16 +113,16 @@ export function generatePreviewScript(siteId: string): string {
   const escaped = siteId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   // The script does two things:
   //   1. Rewrites <a> hrefs on click to carry `_atl_site` (link navigation).
-  //   2. Patches window.fetch so server island sub-requests (/_server-islands/*)
-  //      also carry `_atl_site` — otherwise the middleware resolves the wrong
-  //      site because the workers.dev hostname maps to the default site in KV.
+  //   2. Patches window.fetch so all same-origin internal sub-requests
+  //      (server islands, /api/*, etc) also carry `_atl_site` — otherwise
+  //      the middleware can't resolve a site on the workers.dev hostname.
   return [
     `<script data-atl-preview>(function(){`,
     `var s='${escaped}';`,
     // Link rewriting
     `document.addEventListener('click',function(e){var a=e.target.closest('a');if(!a)return;try{var u=new URL(a.href);if(u.origin!==location.origin)return;if(u.searchParams.has('_atl_site'))return;u.searchParams.set('_atl_site',s);a.href=u.pathname+u.search+u.hash}catch(x){}},true);`,
-    // Fetch patching for server islands
-    `var _f=window.fetch;window.fetch=function(r,o){try{var u=(typeof r==='string')?new URL(r,location.origin):r instanceof URL?r:null;if(u&&u.origin===location.origin&&u.pathname.indexOf('/_server-islands/')===0&&!u.searchParams.has('_atl_site')){u.searchParams.set('_atl_site',s);r=u.toString()}}catch(x){}return _f.call(this,r,o)};`,
+    // Fetch patching — all same-origin requests get _atl_site injected
+    `var _f=window.fetch;window.fetch=function(r,o){try{var u=(typeof r==='string')?new URL(r,location.origin):r instanceof URL?r:null;if(u&&u.origin===location.origin&&!u.searchParams.has('_atl_site')){u.searchParams.set('_atl_site',s);r=u.toString()}}catch(x){}return _f.call(this,r,o)};`,
     `})()</script>`,
   ].join('');
 }
