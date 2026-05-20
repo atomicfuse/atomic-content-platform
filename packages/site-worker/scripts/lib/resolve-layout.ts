@@ -12,7 +12,8 @@
  * Defensive coercions:
  *   - `hero.count` is constrained to {3, 4}; anything else falls back
  *     to the default so an editor cannot break the page from yaml.
- *   - `must_reads.count` and `load_more.page_size` are clamped to >= 1.
+ *   - `must_reads.count`, `whats_new.count`, `more_on.page_size`, and
+ *     `load_more.page_size` are clamped to >= 1.
  */
 import {
   LAYOUT_DEFAULTS,
@@ -39,6 +40,14 @@ export function resolveLayout(input: LayoutConfig | undefined): ResolvedLayoutCo
     must_reads: {
       enabled: input?.must_reads?.enabled ?? LAYOUT_DEFAULTS.must_reads.enabled,
       count: Math.max(1, input?.must_reads?.count ?? LAYOUT_DEFAULTS.must_reads.count),
+    },
+    whats_new: {
+      enabled: input?.whats_new?.enabled ?? LAYOUT_DEFAULTS.whats_new.enabled,
+      count: Math.max(1, input?.whats_new?.count ?? LAYOUT_DEFAULTS.whats_new.count),
+    },
+    more_on: {
+      enabled: input?.more_on?.enabled ?? LAYOUT_DEFAULTS.more_on.enabled,
+      page_size: Math.max(1, input?.more_on?.page_size ?? LAYOUT_DEFAULTS.more_on.page_size),
     },
     sidebar_topics: {
       auto: input?.sidebar_topics?.auto ?? LAYOUT_DEFAULTS.sidebar_topics.auto,
