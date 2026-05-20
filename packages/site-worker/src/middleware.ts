@@ -57,8 +57,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return env.ATL_STREAMED_LANDER.fetch(context.request);
   }
 
-
-
   if (!env.CONFIG_KV) {
     return new Response(
       'CONFIG_KV binding not configured. Run `wrangler dev` or bind a namespace.',
