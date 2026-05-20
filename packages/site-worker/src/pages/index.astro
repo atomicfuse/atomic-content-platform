@@ -43,9 +43,6 @@ const mustReadArticles = config.layout.must_reads.enabled
 
 const feedSlice = sliceForPage(visible, page, pageSize);
 const hasMore = visible.length > initialCount + (page - 1) * pageSize;
-
-// Pick latest 2 articles for the sidebar "More" section (exclude hero articles)
-const sidebarArticles = visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, 2);
 ---
 
 <BaseLayout
@@ -70,7 +67,7 @@ const sidebarArticles = visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, 2
     <section class="whats-new">
       <div class="whats-new-inner">
         <ArticleFeed articles={feedSlice} />
-        <Sidebar variant="home" config={config} latestArticles={sidebarArticles} />
+        <Sidebar variant="home" config={config} />
       </div>
     </section>
     {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
