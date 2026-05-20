@@ -27,4 +27,4 @@ We reserve the right, at our sole discretion, to modify or replace these Terms o
 Please review this Agreement periodically for changes. If you do not agree to any of this Agreement or any changes to this Agreement, do not use, access or continue to access the Site or discontinue any use of the Site immediately.
 
 ## Contact Us
-If you have any questions about this Agreement, please contact us using the [contact page](/contact).
+If you have any questions about this Agreement, please contact us using the [contact page](/contact) or via email at {{support_email}}
