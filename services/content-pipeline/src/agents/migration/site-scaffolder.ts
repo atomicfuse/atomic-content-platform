@@ -178,7 +178,7 @@ export function buildFullSiteConfig(
     site_name: row.name || siteId,
     site_tagline: null,
     author,
-    groups: ["mock-ads"],
+    groups: [],
     active: true,
     ...(resolved?.bundleId ? { bundle_id: resolved.bundleId } : {}),
     brief: {

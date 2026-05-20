@@ -191,7 +191,7 @@ export async function createSiteAndBuildStaging(
     site_name: data.siteName,
     site_tagline: data.siteTagline || null,
     author: generateAuthorName(),
-    groups: data.groups.length > 0 ? data.groups : ["mock-ads"],
+    groups: data.groups.length > 0 ? data.groups : [],
     active: true,
     bundle_id: bundleId || undefined,
     iab_vertical_code: data.iabVerticalCode || undefined,
