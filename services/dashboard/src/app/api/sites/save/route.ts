@@ -158,7 +158,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       if (configUpdates.scripts_vars !== undefined) {
         const prev = (existing.scripts_vars ?? {}) as Record<string, string>;
-        existing.scripts_vars = { ...prev, ...configUpdates.scripts_vars };
+        const merged = { ...prev, ...configUpdates.scripts_vars };
+        // Don't persist an empty scripts_vars object — it adds noise to
+        // site.yaml and shadows inherited vars from org/group layers.
+        if (Object.keys(merged).length > 0) {
+          existing.scripts_vars = merged;
+        } else {
+          delete (existing as Record<string, unknown>).scripts_vars;
+        }
       }
       if (configUpdates.ads_config !== undefined) {
         const prev = (existing.ads_config ?? {}) as Record<string, unknown>;
