@@ -134,6 +134,9 @@ const staging = isStagingEnv(Astro);
     display: block;
     margin: 0.75rem auto;
   }
+  .atl-ad-sidebar {
+    width: 100% !important;
+  }
   /* Hide desktop-only ads on mobile, mobile-only ads on desktop */
   @media (max-width: 959px) {
     .atl-ad-slot[data-ad-device="desktop"] { display: none !important; }

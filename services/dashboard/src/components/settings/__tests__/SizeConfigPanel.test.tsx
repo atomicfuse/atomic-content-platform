@@ -325,12 +325,12 @@ describe("T18 — Remove custom size", () => {
 // ---------------------------------------------------------------------------
 // T19 — Cannot save with zero custom sizes
 // ---------------------------------------------------------------------------
-describe("T19 — Error when no custom sizes", () => {
-  it("shows validation error when customSizes is empty", () => {
+describe("T19 — No error when custom sizes empty (fluid)", () => {
+  it("no validation error when customSizes is empty", () => {
     renderPanel({ config: createDefaultSizeConfig() });
     expect(
-      screen.getByText(/At least one custom size is required/),
-    ).toBeInTheDocument();
+      screen.queryByText(/Remove invalid sizes/),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -382,7 +382,7 @@ describe("T27 — Both dimensions empty is invalid", () => {
     config.customSizes = [{ width: 0, height: 0 }];
     renderPanel({ config });
     expect(
-      screen.getByText(/At least one custom size is required/),
+      screen.getByText(/Remove invalid sizes or set at least one dimension/),
     ).toBeInTheDocument();
   });
 });

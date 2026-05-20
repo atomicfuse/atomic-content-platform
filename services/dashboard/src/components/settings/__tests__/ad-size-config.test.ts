@@ -195,11 +195,11 @@ describe("validateSizeConfig", () => {
     expect(hasErrors(errors)).toBe(true);
   });
 
-  it("errors when no valid custom sizes exist", () => {
+  it("no error when custom sizes is empty (fluid mode)", () => {
     const config = createDefaultSizeConfig();
     const errors = validateSizeConfig(config);
-    expect(errors.customSizes).toBeDefined();
-    expect(hasErrors(errors)).toBe(true);
+    expect(errors.customSizes).toBeUndefined();
+    expect(hasErrors(errors)).toBe(false);
   });
 
   it("errors when only fully-zero sizes exist (both dimensions 0)", () => {
@@ -244,6 +244,7 @@ describe("validateSizeConfig", () => {
     config.range.maxWidth = 400;
     config.range.minHeight = 600;
     config.range.maxHeight = 200;
+    config.customSizes = [{ width: 0, height: 0 }];
     const errors = validateSizeConfig(config);
     expect(errors.rangeWidth).toBeDefined();
     expect(errors.rangeHeight).toBeDefined();
@@ -276,7 +277,7 @@ describe("validatePlacementConfigs", () => {
     expect(valid).toBe(true);
   });
 
-  it("returns false when active desktop panel has no custom sizes", () => {
+  it("returns true when active desktop panel has no custom sizes (fluid)", () => {
     const valid = validatePlacementConfigs([
       {
         device: "all",
@@ -284,7 +285,7 @@ describe("validatePlacementConfigs", () => {
         mobileSizeConfig: sizeTuplesToConfig([[320, 50]]),
       },
     ]);
-    expect(valid).toBe(false);
+    expect(valid).toBe(true);
   });
 
   it("ignores disabled desktop panel (device=mobile)", () => {

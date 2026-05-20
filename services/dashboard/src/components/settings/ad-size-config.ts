@@ -98,12 +98,13 @@ export function validateSizeConfig(config: AdSizeConfig): SizeConfigErrors {
     errors.rangeHeight = "Max Height must be ≥ Min Height";
   }
 
+  const hasAnySizes = config.customSizes.length > 0;
   const validSizes = config.customSizes.filter(
     (s) => s.width > 0 || s.height > 0,
   );
-  if (validSizes.length === 0) {
+  if (hasAnySizes && validSizes.length === 0) {
     errors.customSizes =
-      "At least one custom size is required (set a dimension to 0 for fluid)";
+      "Remove invalid sizes or set at least one dimension > 0 (use 0 for fluid)";
   }
 
   return errors;

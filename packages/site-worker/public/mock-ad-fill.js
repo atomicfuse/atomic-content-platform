@@ -146,7 +146,7 @@
     
     var isMobile = window.innerWidth < 768;
     var sizes = isMobile ? sizesMobile : sizesDesktop;
-    var size = (sizes && sizes[0]) || [300, 250];
+    var size = (sizes && sizes.length > 0) ? sizes[0] : [0, 0];
     var w = size[0];
     var h = size[1];
 

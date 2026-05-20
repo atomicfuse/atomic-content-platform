@@ -104,7 +104,13 @@ export interface InterstitialConfig {
     page_types: InterstitialPageType[];
     /** Seconds the close button is disabled (countdown). Default: 3. */
     close_delay_seconds?: number;
+    /** Which devices the interstitial appears on. Default: "both". */
+    device?: "both" | "desktop" | "mobile";
+    /** Page types to exclude the interstitial from (overrides page_types). */
+    exclude_pages?: InterstitialExcludePage[];
 }
+/** Page types/slugs that can be excluded from interstitial display. */
+export type InterstitialExcludePage = "homepage" | "articles" | "categories" | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 /**
  * Full advertising configuration for a site or group.
  *
