@@ -6,17 +6,17 @@ import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
 import HeroGrid from '../themes/modern/components/HeroGrid.astro';
-import ArticleFeed from '../themes/modern/components/ArticleFeed.astro';
+import WhatsNewGrid from '../themes/modern/components/WhatsNewGrid.astro';
 import Sidebar from '../themes/modern/components/Sidebar.astro';
 import MustReads from '../themes/modern/components/MustReads.astro';
-import LoadMoreButton from '../themes/modern/components/LoadMoreButton.astro';
+import MoreOnSection from '../themes/modern/components/MoreOnSection.astro';
 import AdSlot from '../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
 import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
 import { isVisibleArticle } from '../utils/article-status';
 import { selectFeatured } from '../lib/featured';
-import { sliceForPage } from '../lib/articles-pagination';
+import { sliceMoreOn, hasMoreOnAfter } from '../lib/articles-pagination';
 
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
@@ -31,21 +31,49 @@ const visible = allArticles
 
 const url = new URL(Astro.request.url);
 const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
-const pageSize = config.layout.load_more.page_size;
-const initialCount = pageSize * 2;
 
-const heroArticles = selectFeatured(visible, 'hero', config.layout.hero.count);
+// Daily-stable random seed — the homepage SSR and /api/articles must
+// pass the SAME seed so they agree on which articles got "consumed"
+// by the must-reads random fallback, keeping section allocation
+// strictly disjoint within the day.
+const randomSeed = `${siteId}:${new Date().toISOString().slice(0, 10)}`;
+
+// --- Section: Hero -----------------------------------------------------------
+const heroArticles = config.layout.hero.enabled
+  ? selectFeatured(visible, 'hero', config.layout.hero.count)
+  : [];
 const heroSlugs = new Set(heroArticles.map((a) => a.slug));
 
-const mustReadArticles = config.layout.must_reads.enabled
-  ? selectFeatured(visible, 'must-read', config.layout.must_reads.count, heroSlugs)
+// --- Section: What's New (next N newest after hero) --------------------------
+const whatsNewArticles = config.layout.whats_new.enabled
+  ? visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, config.layout.whats_new.count)
   : [];
+const whatsNewSlugs = new Set(whatsNewArticles.map((a) => a.slug));
 
-const feedSlice = sliceForPage(visible, page, pageSize);
-const hasMore = visible.length > initialCount + (page - 1) * pageSize;
+const consumed = new Set<string>([...heroSlugs, ...whatsNewSlugs]);
 
-// Pick latest 2 articles for the sidebar "More" section (exclude hero articles)
-const sidebarArticles = visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, 2);
+// --- Section: Must Reads (tagged first, random fallback) ---------------------
+const mustReadArticles = config.layout.must_reads.enabled
+  ? selectFeatured(visible, 'must-read', config.layout.must_reads.count, consumed, 'random', randomSeed)
+  : [];
+for (const a of mustReadArticles) consumed.add(a.slug);
+
+// --- Section: More on {site} -------------------------------------------------
+const moreOnPool = config.layout.more_on.enabled
+  ? visible.filter((a) => !consumed.has(a.slug))
+  : [];
+const moreOnArticles = sliceMoreOn(
+  moreOnPool,
+  page,
+  config.layout.more_on.page_size,
+  config.layout.load_more.page_size,
+);
+const hasMore = hasMoreOnAfter(
+  moreOnPool,
+  page,
+  config.layout.more_on.page_size,
+  config.layout.load_more.page_size,
+);
 ---
 
 <BaseLayout
@@ -69,12 +97,21 @@ const sidebarArticles = visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, 2
     <AdSlot position="homepage-top" pageType="homepage" server:defer />
     <section class="whats-new">
       <div class="whats-new-inner">
-        <ArticleFeed articles={feedSlice} />
-        <Sidebar variant="home" config={config} latestArticles={sidebarArticles} />
+        {config.layout.whats_new.enabled
+          ? <WhatsNewGrid articles={whatsNewArticles} />
+          : <div />}
+        <Sidebar variant="home" config={config} />
       </div>
     </section>
     {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
-    <LoadMoreButton nextPage={page + 1} hasMore={hasMore} />
+    {config.layout.more_on.enabled && (
+      <MoreOnSection
+        siteName={config.site_name}
+        articles={moreOnArticles}
+        nextPage={page + 1}
+        hasMore={hasMore}
+      />
+    )}
   </main>
 
   <Footer config={config} />
@@ -83,9 +120,7 @@ const sidebarArticles = visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, 2
 
 <style>
   .homepage { min-height: 60vh; }
-  .whats-new {
-    padding: 2.5rem 0;
-  }
+  .whats-new { padding: 2.5rem 0; }
   .whats-new-inner {
     max-width: var(--container-max, 1200px);
     margin: 0 auto;

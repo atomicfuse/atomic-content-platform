@@ -118,8 +118,8 @@ function topicHref(topic: string): string {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
-    height: 64px;
+    padding: 8px 1rem;
+    min-height: var(--nav-height, 64px);
   }
 
   /* Logo */
@@ -172,7 +172,7 @@ function topicHref(topic: string): string {
 
   .nav-link:hover {
     background: rgba(255,255,255,0.1);
-    color: var(--color-accent, #f4c542);
+    color: var(--color-nav_link_hover, var(--color-accent, #f4c542));
   }
 
   /* Right actions */
@@ -233,7 +233,7 @@ function topicHref(topic: string): string {
   /* Mobile drawer */
   .mobile-drawer {
     position: fixed;
-    top: 64px;
+    top: var(--nav-height, 64px);
     right: 0;
     bottom: 0;
     width: 280px;
@@ -268,11 +268,11 @@ function topicHref(topic: string): string {
 
   .drawer-link:hover {
     background: rgba(255,255,255,0.1);
-    color: var(--color-accent, #f4c542);
+    color: var(--color-nav_link_hover, var(--color-accent, #f4c542));
   }
 
   /* Spacer */
   .nav-spacer {
-    height: 64px;
+    height: var(--nav-height, 64px);
   }
 </style>

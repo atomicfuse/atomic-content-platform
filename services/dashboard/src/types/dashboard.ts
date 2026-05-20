@@ -104,6 +104,8 @@ export interface WizardFormData {
   themeLayout: {
     hero: { enabled: boolean; count: 3 | 4 };
     must_reads: { enabled: boolean; count: number };
+    whats_new: { enabled: boolean; count: number };
+    more_on: { enabled: boolean; page_size: number };
     sidebar_topics: { auto: boolean; explicit: string[] };
     load_more: { page_size: number };
   };

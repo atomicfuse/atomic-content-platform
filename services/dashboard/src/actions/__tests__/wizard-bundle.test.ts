@@ -106,6 +106,8 @@ function makeNewBundleFormData(
     themeLayout: {
       hero: { enabled: true, count: 3 },
       must_reads: { enabled: true, count: 4 },
+      whats_new: { enabled: true, count: 4 },
+      more_on: { enabled: true, page_size: 8 },
       sidebar_topics: { auto: true, explicit: [] },
       load_more: { page_size: 12 },
     },

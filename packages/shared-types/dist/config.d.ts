@@ -82,7 +82,15 @@ export interface SiteBrief {
 export interface ThemeConfig {
     /** Base theme template to extend. */
     base?: "modern" | "editorial" | "bold" | "classic";
-    /** Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }). */
+    /**
+     * Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }).
+     * Recognised keys include: primary, accent, background, secondary, text,
+     * muted, surface, border, heading, link, link_hover, nav_link_hover,
+     * footer_bg, must_reads_bg, hero_title, must_reads_title,
+     * article_hero_title, article_hero_meta, feed_title, feed_desc, feed_date,
+     * prose_heading, prose_body, category_header_text, footer_text,
+     * footer_heading, footer_link, footer_link_hover.
+     */
     colors?: Record<string, string>;
     /** URL or path to the site logo. */
     logo?: string;
@@ -158,7 +166,25 @@ export interface SidebarTopicsConfig {
  * Configuration for the homepage "load more" pagination in the v2 magazine layout.
  */
 export interface LoadMoreConfig {
-    /** Articles per page (>= 1; values < 1 are clamped at runtime). Default: 10. */
+    /** Articles per page (>= 1; values < 1 are clamped at runtime). Default: 4. */
+    page_size?: number;
+}
+/**
+ * Configuration for the homepage "What's New" grid in the v2 magazine layout.
+ */
+export interface WhatsNewLayoutConfig {
+    /** Whether the What's New grid is rendered. Default: true. */
+    enabled?: boolean;
+    /** Number of cards to display (>= 1; values < 1 are clamped at runtime). Default: 4. */
+    count?: number;
+}
+/**
+ * Configuration for the homepage "More on {site_name}" section in the v2 magazine layout.
+ */
+export interface MoreOnLayoutConfig {
+    /** Whether the More on section is rendered. Default: true. */
+    enabled?: boolean;
+    /** Initial articles rendered before any "Show More" click (>= 1; clamped). Default: 8. */
     page_size?: number;
 }
 /**
@@ -172,6 +198,10 @@ export interface LayoutConfig {
     hero?: HeroLayoutConfig;
     /** Must-reads strip configuration. */
     must_reads?: MustReadsLayoutConfig;
+    /** What's New grid configuration. */
+    whats_new?: WhatsNewLayoutConfig;
+    /** More on {site_name} section configuration. */
+    more_on?: MoreOnLayoutConfig;
     /** Sidebar topics list configuration. */
     sidebar_topics?: SidebarTopicsConfig;
     /** Homepage "load more" pagination configuration. */
@@ -192,6 +222,16 @@ export interface ResolvedLayoutConfig {
     must_reads: {
         enabled: boolean;
         count: number;
+    };
+    /** Resolved What's New grid (count clamped to >= 1). */
+    whats_new: {
+        enabled: boolean;
+        count: number;
+    };
+    /** Resolved More on section (page_size clamped to >= 1). */
+    more_on: {
+        enabled: boolean;
+        page_size: number;
     };
     /** Resolved sidebar topics configuration. */
     sidebar_topics: {
