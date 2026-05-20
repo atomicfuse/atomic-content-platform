@@ -176,7 +176,10 @@ export function ContentAgentTab({
     keyword_relevance: brief?.quality_weights?.keyword_relevance ?? 20,
   };
   const initVerticalId = (briefRaw?.vertical_id as string) ?? "";
-  const initCategoryIds = (briefRaw?.category_ids as string[]) ?? [];
+  // Filter out the vertical ID from category_ids — it's stored separately in vertical_id.
+  // Legacy wizard builds included it in both; the agent merges them at query time.
+  const initCategoryIds = ((briefRaw?.category_ids as string[]) ?? [])
+    .filter((id) => id !== initVerticalId);
   const initTagIds = (briefRaw?.tag_ids as string[]) ?? [];
   const initSeoKeywords = (briefRaw?.seo_keywords_focus as string[]) ?? [];
   const [topics, setTopics] = useState<string[]>(initTopics);

@@ -218,10 +218,7 @@ export async function createSiteAndBuildStaging(
         : undefined,
       vertical: data.vertical || undefined,
       vertical_id: data.verticalId || undefined,
-      // Include tier-1 (vertical) ID in category_ids for aggregator queries
-      category_ids: data.verticalId
-        ? [data.verticalId, ...categoryIds.filter((id) => id !== data.verticalId)]
-        : categoryIds.length > 0 ? categoryIds : undefined,
+      category_ids: categoryIds.length > 0 ? categoryIds : undefined,
       tag_ids: tagIds.length > 0 ? tagIds : undefined,
       bundle_id: bundleId || undefined,
       review_percentage: 5,
