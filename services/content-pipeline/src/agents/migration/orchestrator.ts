@@ -16,6 +16,8 @@ import { generateImageWithGemini } from "../../lib/gemini.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
+import { notifyImageDefaultFallback } from "../../lib/notifications.js";
+import type { NotificationConfig } from "../../lib/notifications.js";
 
 export interface MigrationConfig {
   anthropicApiKey: string;
@@ -25,6 +27,8 @@ export interface MigrationConfig {
   branch: string;
   /** If set, commit the same files to this branch too (e.g. staging + main). */
   alsoCommitTo?: string;
+  /** Notification config for Slack/Telegram alerts. */
+  notifications?: NotificationConfig;
 }
 
 /**
@@ -105,6 +109,16 @@ export async function runMigration(
         }
       } else {
         console.warn(`[migration] Image gen failed for ${slug}: ${imageResult.reason}`);
+        // Assign default image and notify
+        featuredImagePath = `/assets/images/${siteId}-general-article.webp`;
+        if (config.notifications) {
+          void notifyImageDefaultFallback(config.notifications, {
+            site: siteId,
+            articleTitle: title,
+            slug,
+            reason: `Gemini image generation failed: ${imageResult.reason}`,
+          });
+        }
       }
 
       // Build frontmatter + body

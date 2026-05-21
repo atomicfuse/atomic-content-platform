@@ -915,6 +915,19 @@ export async function runContentGeneration(
           });
         }
       }
+    } else if (branch) {
+      // n8n not configured — articles keep default site image, notify
+      const imageRequests = created
+        .filter((r) => r._imageRequest)
+        .map((r) => r._imageRequest!);
+      for (const req of imageRequests) {
+        void notifyImageDefaultFallback(config.notifications, {
+          site: req.siteDomain,
+          articleTitle: req.articleTitle,
+          slug: req.slug,
+          reason: "n8n image webhook not configured (N8N_IMAGE_WEBHOOK_URL unset)",
+        });
+      }
     }
 
     // Strip internal fields before returning API response
