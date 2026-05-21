@@ -3,6 +3,7 @@ import { readDashboardIndex, readFileContent } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
 import { ArticleScriptsPanel } from "@/components/site-detail/ArticleScriptsPanel";
 import { workerPreviewUrl } from "@/lib/constants";
+import { ArticleEditor } from "./ArticleEditor";
 
 interface PageProps {
   params: Promise<{ domain: string; slug: string }>;
@@ -111,6 +112,16 @@ export default async function ArticleDetailPage({
         slug={slug}
         stagingBranch={stagingBranch}
         initialScripts={scripts}
+      />
+
+      {/* Article editor */}
+      <ArticleEditor
+        domain={decodedDomain}
+        slug={slug}
+        branch={stagingBranch}
+        initialContent={content}
+        title={title}
+        featuredImage={(fm.featuredImage as string) ?? undefined}
       />
     </div>
   );

@@ -38,6 +38,7 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
+import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 
 // CONTENT_API_BASE_URL first: CloudGrid auto-injects CONTENT_AGGREGATOR_URL
 // as a platform read-only env pointing to a stale entity URL.
@@ -401,6 +402,18 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   // 7. Commit site files to the staging branch via the Git Data API.
   await commitSiteFiles(siteFolder, files, "create site", stagingBranch);
+
+  // 7b. Generate default site image and upload to R2 (non-blocking).
+  // Failure here is non-fatal — the site creates fine without it.
+  const verticalName = data.vertical || data.topics[0] || "general";
+  const imageResult = await generateAndUploadDefaultSiteImage(
+    projectName,
+    data.siteName,
+    verticalName,
+  );
+  if (!imageResult.success) {
+    console.warn(`[wizard] Default site image generation failed: ${imageResult.reason}`);
+  }
 
   // 8. Fire sync-kv.yml. The Git Data API push above does NOT trigger
   // GitHub Actions; only a Contents-API push does. triggerWorkflowViaPush

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileContent, readDashboardIndex } from "@/lib/github";
+import { readFileContent, readDashboardIndex, commitNetworkFiles } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
 
 interface RouteParams {
@@ -54,4 +54,36 @@ export async function GET(
     body: parsed.body,
     branch: resolvedBranch,
   });
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: RouteParams,
+): Promise<NextResponse> {
+  const { domain, slug } = await params;
+  const decodedDomain = decodeURIComponent(domain);
+  const body = await req.json();
+  const { content, branch: branchOverride } = body as { content: string; branch?: string };
+
+  if (!content || typeof content !== "string") {
+    return NextResponse.json({ error: "content is required" }, { status: 400 });
+  }
+
+  // Determine branch
+  let branch = branchOverride;
+  if (!branch) {
+    const index = await readDashboardIndex();
+    const site = index.sites?.find((s) => s.domain === decodedDomain);
+    branch = site?.staging_branch ?? `staging/${decodedDomain}`;
+  }
+
+  const articlePath = buildArticlePath(decodedDomain, slug);
+
+  await commitNetworkFiles(
+    [{ path: articlePath, content }],
+    `fix(content): edit article ${slug} for ${decodedDomain}`,
+    branch,
+  );
+
+  return NextResponse.json({ status: "updated", slug, branch });
 }

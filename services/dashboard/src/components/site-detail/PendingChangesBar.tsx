@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { publishStagingToProduction } from "@/actions/wizard";
+import { StagingDiffModal } from "./StagingDiffModal";
 
 interface PendingChangesBarProps {
   domain: string;
@@ -17,6 +18,7 @@ export function PendingChangesBar({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [loading, setLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const [isPublishing, startPublish] = useTransition();
   const { toast } = useToast();
 
@@ -58,7 +60,10 @@ export function PendingChangesBar({
 
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center justify-between gap-4">
-      <div className="flex items-center gap-2 min-w-0">
+      <button
+        onClick={(): void => setShowDiff(true)}
+        className="flex items-center gap-2 min-w-0 hover:opacity-80 cursor-pointer"
+      >
         <div className="shrink-0 rounded-full bg-amber-500/10 p-1">
           <svg
             className="h-4 w-4 text-amber-500"
@@ -77,7 +82,7 @@ export function PendingChangesBar({
         <p className="text-sm text-amber-700 dark:text-amber-300">
           You have unpublished changes on staging
         </p>
-      </div>
+      </button>
       <div className="shrink-0 flex items-center gap-2">
         {confirming ? (
           <>
@@ -110,6 +115,11 @@ export function PendingChangesBar({
           </Button>
         )}
       </div>
+      <StagingDiffModal
+        open={showDiff}
+        onClose={(): void => setShowDiff(false)}
+        domain={domain}
+      />
     </div>
   );
 }

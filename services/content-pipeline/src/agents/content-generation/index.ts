@@ -27,8 +27,12 @@ import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { handleMigrationRequest, handleCreateSites } from "../migration/handler.js";
-import { handleImageCallback } from "./n8n-image.js";
+import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
+import { randomUUID } from "node:crypto";
+import matter from "gray-matter";
+import { createGitHubClient, readFile } from "../../lib/github.js";
+import { readSiteBrief } from "../../lib/site-brief.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -335,6 +339,82 @@ async function handleRequest(
       const message = err instanceof Error ? err.message : String(err);
       console.error(`${cbTag} → 500 ERROR: ${message}`);
       sendJson(res, 500, { status: "error", message });
+    }
+    return;
+  }
+
+  // Trigger image generation for an existing article
+  if (req.method === "POST" && req.url === "/trigger-image") {
+    const webhookUrl = config.n8nImageWebhookUrl;
+    if (!webhookUrl) {
+      sendJson(res, 503, { status: "error", message: "N8N_IMAGE_WEBHOOK_URL not configured" });
+      return;
+    }
+
+    let rawBody: string;
+    try {
+      rawBody = await readBody(req);
+    } catch {
+      sendJson(res, 413, { status: "error", message: "Payload too large" });
+      return;
+    }
+
+    let payload: { siteDomain?: string; slug?: string; articleTitle?: string; branch?: string };
+    try {
+      payload = JSON.parse(rawBody) as typeof payload;
+    } catch {
+      sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+      return;
+    }
+
+    const { siteDomain, slug, articleTitle, branch } = payload;
+    if (!siteDomain || !slug || !articleTitle || !branch) {
+      sendJson(res, 400, { status: "error", message: "siteDomain, slug, articleTitle, branch required" });
+      return;
+    }
+
+    // Read article from Git to get description/summary for the image prompt
+    let description = articleTitle;
+    let summary = articleTitle;
+    let vertical = "";
+    try {
+      const octokit = createGitHubClient(config.github);
+      const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
+      const content = await readFile(octokit, config.github.repo, articlePath, branch);
+      const parsed = matter(content);
+      description = (parsed.data.description as string) ?? articleTitle;
+      summary = parsed.content.slice(0, 500);
+
+      // Try to get vertical from site brief
+      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, branch);
+      vertical = briefData?.brief?.vertical ?? "";
+    } catch {
+      // Use defaults if article or brief can't be read
+    }
+
+    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+
+    const accepted = await triggerN8nImage(webhookUrl, {
+      request_id: randomUUID(),
+      callback_url: callbackUrl,
+      job_id: "",
+      site_domain: siteDomain,
+      slug,
+      branch,
+      article: {
+        title: articleTitle,
+        description,
+        summary,
+        vertical,
+        source_thumbnail_url: null,
+        image_guidelines: null,
+      },
+    });
+
+    if (accepted) {
+      sendJson(res, 200, { status: "ok", message: `Image generation triggered for ${slug}` });
+    } else {
+      sendJson(res, 502, { status: "error", message: "n8n webhook trigger failed" });
     }
     return;
   }
