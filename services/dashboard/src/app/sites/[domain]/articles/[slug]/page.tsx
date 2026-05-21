@@ -120,6 +120,7 @@ export default async function ArticleDetailPage({
         slug={slug}
         branch={stagingBranch}
         initialContent={content}
+        title={title}
         featuredImage={(fm.featuredImage as string) ?? undefined}
       />
     </div>

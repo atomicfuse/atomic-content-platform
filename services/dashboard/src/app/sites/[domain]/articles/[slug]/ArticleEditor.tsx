@@ -7,7 +7,29 @@ interface ArticleEditorProps {
   slug: string;
   branch: string | null;
   initialContent: string;
+  title: string;
   featuredImage?: string;
+}
+
+/** Split raw article markdown into { frontmatter, body }. */
+function splitContent(raw: string): { frontmatter: string; body: string } {
+  const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  if (!match) return { frontmatter: "", body: raw };
+  return { frontmatter: match[1]!, body: match[2]! };
+}
+
+/** Rebuild raw markdown from frontmatter block + body. */
+function joinContent(frontmatter: string, body: string): string {
+  return `---\n${frontmatter}\n---\n${body}`;
+}
+
+/** Replace or add a frontmatter field value. */
+function setFrontmatterField(fm: string, field: string, value: string): string {
+  const regex = new RegExp(`^${field}:.*$`, "m");
+  if (regex.test(fm)) {
+    return fm.replace(regex, `${field}: "${value.replace(/"/g, '\\"')}"`);
+  }
+  return `${fm}\n${field}: "${value.replace(/"/g, '\\"')}"`;
 }
 
 export function ArticleEditor({
@@ -15,10 +37,13 @@ export function ArticleEditor({
   slug,
   branch,
   initialContent,
+  title: initialTitle,
   featuredImage,
 }: ArticleEditorProps): React.ReactElement {
   const [editing, setEditing] = useState(false);
-  const [content, setContent] = useState(initialContent);
+  const { body: initialBody } = splitContent(initialContent);
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -30,6 +55,10 @@ export function ArticleEditor({
     setSaving(true);
     setMessage(null);
     try {
+      // Rebuild full markdown: update title in frontmatter, keep body
+      const { frontmatter } = splitContent(initialContent);
+      const updatedFm = setFrontmatterField(frontmatter, "title", title);
+      const content = joinContent(updatedFm, body);
       const res = await fetch(`/api/articles/${encodeURIComponent(domain)}/${encodeURIComponent(slug)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -47,7 +76,7 @@ export function ArticleEditor({
     } finally {
       setSaving(false);
     }
-  }, [content, domain, slug, branch]);
+  }, [title, body, initialContent, domain, slug, branch]);
 
   const handleImageUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = e.target.files?.[0];
@@ -82,9 +111,6 @@ export function ArticleEditor({
     setGenerating(true);
     setMessage(null);
     try {
-      // Extract title from frontmatter for the generation request
-      const titleMatch = content.match(/^title:\s*["']?(.+?)["']?\s*$/m);
-      const title = titleMatch?.[1] ?? slug;
       const res = await fetch("/api/agent/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -93,14 +119,15 @@ export function ArticleEditor({
       if (res.ok) {
         setMessage({ type: "success", text: "Image generation triggered — may take ~1 minute" });
       } else {
-        setMessage({ type: "error", text: "Failed to trigger image generation" });
+        const err = await res.json().catch(() => ({}));
+        setMessage({ type: "error", text: `Failed to trigger image generation: ${(err as { error?: string }).error ?? "unknown error"}` });
       }
     } catch {
       setMessage({ type: "error", text: "Failed to trigger image generation" });
     } finally {
       setGenerating(false);
     }
-  }, [domain, slug, content, branch]);
+  }, [domain, slug, title, branch]);
 
   return (
     <div className="rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-primary)] p-6 space-y-4">
@@ -161,15 +188,27 @@ export function ArticleEditor({
         </div>
       )}
 
-      {/* Markdown editor / read-only preview */}
+      {/* Article editor / read-only preview */}
       {editing ? (
         <div className="space-y-3">
-          <textarea
-            value={content}
-            onChange={(e): void => setContent(e.target.value)}
-            className="w-full h-[500px] p-4 rounded-lg bg-[var(--card-bg)] border border-[var(--border-primary)] text-[var(--text-primary)] font-mono text-sm resize-y focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
-            spellCheck={false}
-          />
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Title</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e): void => setTitle(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--border-primary)] text-[var(--text-primary)] text-sm focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-muted)] mb-1">Content (Markdown)</label>
+            <textarea
+              value={body}
+              onChange={(e): void => setBody(e.target.value)}
+              className="w-full h-[500px] p-4 rounded-lg bg-[var(--card-bg)] border border-[var(--border-primary)] text-[var(--text-primary)] font-mono text-sm resize-y focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+              spellCheck={false}
+            />
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={(): void => { void handleSave(); }}
@@ -179,7 +218,7 @@ export function ArticleEditor({
               {saving ? "Saving..." : "Save Changes"}
             </button>
             <button
-              onClick={(): void => { setEditing(false); setContent(initialContent); setMessage(null); }}
+              onClick={(): void => { setEditing(false); setTitle(initialTitle); setBody(initialBody); setMessage(null); }}
               className="px-4 py-2 text-sm rounded-lg border border-[var(--border-primary)] text-[var(--text-secondary)] hover:bg-[var(--card-bg)]"
             >
               Cancel
@@ -188,7 +227,7 @@ export function ArticleEditor({
         </div>
       ) : (
         <pre className="w-full max-h-[400px] overflow-auto p-4 rounded-lg bg-[var(--card-bg)] border border-[var(--border-primary)] text-[var(--text-secondary)] text-sm font-mono whitespace-pre-wrap">
-          {content}
+          {body}
         </pre>
       )}
     </div>

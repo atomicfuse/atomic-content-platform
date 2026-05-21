@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { GeneralImageArticle } from "@/app/api/articles/general-images/route";
+import { workerPreviewUrl } from "@/lib/constants";
 
 const PAGE_SIZE = 25;
 
@@ -126,6 +127,7 @@ export function GeneralImagesClient(): React.ReactElement {
     async (
       domain: string,
       slug: string,
+      title: string,
       branch: string | null,
     ): Promise<void> => {
       const key = `${domain}::${slug}`;
@@ -134,7 +136,7 @@ export function GeneralImagesClient(): React.ReactElement {
         const res = await fetch("/api/agent/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ domain, slug, branch }),
+          body: JSON.stringify({ domain, slug, title, branch }),
         });
         if (res.ok) {
           alert("Image generation triggered. The image will be updated shortly.");
@@ -274,12 +276,25 @@ export function GeneralImagesClient(): React.ReactElement {
                       </Link>
                     </td>
                     <td className="px-5 py-3">
-                      <span className="text-[var(--text-primary)] font-medium truncate block max-w-md">
+                      <Link
+                        href={`/sites/${article.domain}/articles/${article.slug}`}
+                        className="text-[var(--text-primary)] font-medium truncate block max-w-md hover:text-cyan"
+                      >
                         {article.title}
-                      </span>
-                      <span className="text-[10px] font-mono text-[var(--text-muted)]">
-                        {article.slug}
-                      </span>
+                      </Link>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                          {article.slug}
+                        </span>
+                        <a
+                          href={workerPreviewUrl(article.domain, `/${article.slug}`)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-cyan hover:underline"
+                        >
+                          Preview &rarr;
+                        </a>
+                      </div>
                     </td>
                     <td className="px-5 py-3">
                       <StatusBadge status={article.status} />
@@ -342,6 +357,7 @@ export function GeneralImagesClient(): React.ReactElement {
                             void handleGenerateAI(
                               article.domain,
                               article.slug,
+                              article.title,
                               article.stagingBranch,
                             );
                           }}
