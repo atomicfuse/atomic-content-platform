@@ -11,7 +11,7 @@ type Decision = "approved" | "rejected";
 
 type SortOrder = "default" | "newest" | "oldest";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 function ScoreBadge({ score }: { score?: number }): React.ReactElement {
   if (score === undefined) return <span className="text-xs text-[var(--text-muted)]">--</span>;

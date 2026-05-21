@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { GeneralImageArticle, GeneralImageArticlesResponse } from "@/app/api/articles/general-images/route";
 import { workerPreviewUrl } from "@/lib/constants";
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 10;
 
 function StatusBadge({ status }: { status: string }): React.ReactElement {
   const normalized = status.toLowerCase();
