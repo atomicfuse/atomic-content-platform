@@ -164,6 +164,21 @@ export async function runMigration(
     }
   }
 
+  // Step 5: Generate default site image and upload to R2.
+  // Non-fatal — articles are committed regardless of image generation outcome.
+  const siteImagePrompt = `Professional hero image for "${site.name}" website in the ${site.websiteCategory} niche. No text. Clean, modern. 1200x630.`;
+  const siteImageResult = await generateImageWithGemini(config.geminiApiKey, siteImagePrompt);
+  if (siteImageResult.ok) {
+    const sharp = (await import("sharp")).default;
+    const optimized = await sharp(siteImageResult.data)
+      .resize({ width: 1200, withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+    await uploadToR2(`${siteId}/assets/images/${siteId}-general-article.webp`, optimized, "image/webp");
+  } else {
+    console.warn(`[migration] Default site image generation failed: ${siteImageResult.reason}`);
+  }
+
   const durationMs = Date.now() - startedAt;
   const successful = results.filter((r) => r.status === "success").length;
   const failed = results.filter((r) => r.status === "error").length;
