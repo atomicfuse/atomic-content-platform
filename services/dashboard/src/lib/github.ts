@@ -555,6 +555,7 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
             type: (frontmatter.type as string) ?? "standard",
             status: (frontmatter.status as string) ?? "draft",
             publishDate: (frontmatter.publishDate as string) ?? "",
+            featuredImage: (frontmatter.featuredImage as string) ?? undefined,
             score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
             scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
             qualityNote: frontmatter.quality_note as string | undefined,

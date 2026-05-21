@@ -73,6 +73,7 @@ export interface ArticleEntry {
   type: string;
   status: string;
   publishDate: string;
+  featuredImage?: string;
   score?: number;
   scoreBreakdown?: {
     seo_quality: number;
