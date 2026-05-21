@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo, useEffect } from "react";
 import Link from "next/link";
 import type { ArticleEntry } from "@/types/dashboard";
 import { Badge } from "@/components/ui/Badge";
@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { deleteArticleFromStaging, deleteArticlesFromStaging } from "@/actions/sites";
 import { workerPreviewUrl } from "@/lib/constants";
+import { ContentFilters } from "./ContentFilters";
+import type { ContentFilterState } from "./ContentFilters";
+import { isGeneralImage } from "@/lib/general-image-utils";
+
+const PAGE_SIZE = 25;
 
 interface ContentTabProps {
   articles: ArticleEntry[];
@@ -109,8 +114,47 @@ export function ContentTab({
   const [showBulkDelete, setShowBulkDelete] = useState(false);
   const [isBulkPending, startBulkTransition] = useTransition();
 
-  const allSelected = articles.length > 0 && selectedSlugs.size === articles.length;
-  const someSelected = selectedSlugs.size > 0 && selectedSlugs.size < articles.length;
+  const [filters, setFilters] = useState<ContentFilterState>({
+    search: "",
+    status: "",
+    type: "",
+    generalImage: "",
+    sortBy: "date-desc",
+  });
+  const [page, setPage] = useState(1);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [filters]);
+
+  const filtered = useMemo(() => {
+    let result = articles;
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      result = result.filter((a) => a.title.toLowerCase().includes(q) || a.slug.includes(q));
+    }
+    if (filters.status) result = result.filter((a) => a.status === filters.status);
+    if (filters.type) result = result.filter((a) => a.type === filters.type);
+    if (filters.generalImage === "yes") result = result.filter((a) => isGeneralImage(a.featuredImage, domain));
+    else if (filters.generalImage === "no") result = result.filter((a) => !isGeneralImage(a.featuredImage, domain));
+
+    result = [...result].sort((a, b) => {
+      switch (filters.sortBy) {
+        case "date-asc": return new Date(a.publishDate).getTime() - new Date(b.publishDate).getTime();
+        case "score-desc": return (b.score ?? -1) - (a.score ?? -1);
+        case "score-asc": return (a.score ?? -1) - (b.score ?? -1);
+        default: return new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime();
+      }
+    });
+    return result;
+  }, [articles, filters, domain]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const allSelected = filtered.length > 0 && selectedSlugs.size === filtered.length && filtered.every((a) => selectedSlugs.has(a.slug));
+  const someSelected = selectedSlugs.size > 0 && !allSelected;
 
   function toggleSelect(slug: string): void {
     setSelectedSlugs((prev) => {
@@ -125,7 +169,7 @@ export function ContentTab({
     if (allSelected) {
       setSelectedSlugs(new Set());
     } else {
-      setSelectedSlugs(new Set(articles.map((a) => a.slug)));
+      setSelectedSlugs(new Set(filtered.map((a) => a.slug)));
     }
   }
 
@@ -161,6 +205,9 @@ export function ContentTab({
     });
   }
 
+  // Suppress unused warning — previewUrl kept for future use
+  void previewUrl;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -169,10 +216,17 @@ export function ContentTab({
         </h3>
       </div>
 
+      <ContentFilters
+        filters={filters}
+        onChange={setFilters}
+        articleCount={articles.length}
+        filteredCount={filtered.length}
+      />
+
       {stagingBranch && selectedSlugs.size > 0 && (
         <div className="flex items-center justify-between rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)] px-4 py-2">
           <span className="text-sm text-[var(--text-primary)]">
-            {selectedSlugs.size} article{selectedSlugs.size > 1 ? "s" : ""} selected
+            {selectedSlugs.size} of {filtered.length} filtered article{filtered.length !== 1 ? "s" : ""} selected
           </span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={(): void => setSelectedSlugs(new Set())}>
@@ -204,6 +258,9 @@ export function ContentTab({
                 Title
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Image
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Type
               </th>
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -226,17 +283,17 @@ export function ContentTab({
             </tr>
           </thead>
           <tbody>
-            {articles.length === 0 && (
+            {paged.length === 0 && (
               <tr>
                 <td
-                  colSpan={stagingBranch ? 8 : 6}
+                  colSpan={stagingBranch ? 9 : 7}
                   className="px-4 py-8 text-center text-[var(--text-muted)]"
                 >
-                  No articles yet
+                  {articles.length === 0 ? "No articles yet" : "No articles match the current filters"}
                 </td>
               </tr>
             )}
-            {articles.map((article) => (
+            {paged.map((article) => (
               <tr
                 key={article.slug}
                 className="border-b border-[var(--border-secondary)] last:border-b-0 hover:bg-[var(--bg-elevated)]"
@@ -258,6 +315,13 @@ export function ContentTab({
                   >
                     {article.title}
                   </Link>
+                </td>
+                <td className="px-4 py-3">
+                  {isGeneralImage(article.featuredImage, domain) ? (
+                    <Badge label="General" variant="warning" />
+                  ) : (
+                    <Badge label="Custom" variant="success" />
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   <Badge label={article.type} variant="info" />
@@ -303,6 +367,30 @@ export function ContentTab({
             ))}
           </tbody>
         </table>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
+            <span className="text-sm text-[var(--text-muted)]">Page {page} of {totalPages}</span>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(): void => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(): void => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Single delete confirmation modal */}
