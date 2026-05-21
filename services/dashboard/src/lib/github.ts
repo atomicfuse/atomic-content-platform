@@ -55,7 +55,7 @@ function getOctokit(): Octokit {
   return _octokit;
 }
 
-const dashboardIndexCache = createTtlCache<DashboardIndex>(30_000);
+const dashboardIndexCache = createTtlCache<DashboardIndex>(5 * 60_000); // 5 min
 
 /** Read and parse dashboard-index.yaml from the network repo.
  *  Pass `fresh: true` to bypass the 30s TTL cache (e.g. before a
@@ -523,7 +523,29 @@ export async function readSiteConfig(
 }
 
 /** List articles for a site from the network repo. */
+// Per-site article cache — keyed by "domain@branch", 2-minute TTL.
+// readArticles makes 1 + N API calls (directory listing + 1 per article),
+// so caching here is the single biggest rate-limit saver.
+const articlesCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
+const ARTICLES_CACHE_TTL = 2 * 60_000; // 2 min
+
+function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | null {
+  const key = `${domain}@${branch ?? "main"}`;
+  const entry = articlesCache.get(key);
+  if (entry && Date.now() < entry.expiresAt) return entry.data;
+  articlesCache.delete(key);
+  return null;
+}
+
+function setCachedArticles(domain: string, branch: string | undefined, data: ArticleEntry[]): void {
+  const key = `${domain}@${branch ?? "main"}`;
+  articlesCache.set(key, { data, expiresAt: Date.now() + ARTICLES_CACHE_TTL });
+}
+
 export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {
+  const cached = getCachedArticles(domain, branch);
+  if (cached) return cached;
+
   const octokit = getOctokit();
   try {
     const { data } = await octokit.repos.getContent({
@@ -572,6 +594,7 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
         articles.push(r.value);
       }
     }
+    setCachedArticles(domain, branch, articles);
     return articles;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return [];
@@ -748,7 +771,7 @@ export async function deleteBranch(branchName: string): Promise<void> {
  * dashboard" — `sites/{site}/` on main only appears after publish-to-prod, so
  * we can't rely on the main tree for site enumeration.
  */
-const stagingSitesCache = createTtlCache<string[]>(60_000);
+const stagingSitesCache = createTtlCache<string[]>(5 * 60_000); // 5 min
 
 export async function listStagingSites(): Promise<string[]> {
   const cached = stagingSitesCache.get();
