@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { readDashboardIndex, readArticles } from "@/lib/github";
 import { isGeneralImage } from "@/lib/general-image-utils";
 
@@ -13,7 +13,21 @@ export interface GeneralImageArticle {
   stagingBranch: string | null;
 }
 
-export async function GET(): Promise<NextResponse> {
+export interface GeneralImageArticlesResponse {
+  items: GeneralImageArticle[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+const DEFAULT_PAGE_SIZE = 25;
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const params = req.nextUrl.searchParams;
+  const page = Math.max(0, parseInt(params.get("page") ?? "0", 10));
+  const pageSize = Math.min(100, Math.max(1, parseInt(params.get("pageSize") ?? String(DEFAULT_PAGE_SIZE), 10)));
+  const search = (params.get("search") ?? "").toLowerCase();
+
   const index = await readDashboardIndex();
   const activeSites = index.sites.filter(
     (s) =>
@@ -51,5 +65,18 @@ export async function GET(): Promise<NextResponse> {
       new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
   );
 
-  return NextResponse.json(results);
+  // Server-side search filter
+  const filtered = search
+    ? results.filter(
+        (a) =>
+          a.title.toLowerCase().includes(search) ||
+          a.domain.toLowerCase().includes(search),
+      )
+    : results;
+
+  // Paginate
+  const total = filtered.length;
+  const items = filtered.slice(page * pageSize, (page + 1) * pageSize);
+
+  return NextResponse.json({ items, total, page, pageSize } satisfies GeneralImageArticlesResponse);
 }
