@@ -100,6 +100,8 @@ export async function handleMigrationRequest(
     networkRepo,
     branch,
     alsoCommitTo,
+    n8nImageWebhookUrl: process.env.N8N_IMAGE_WEBHOOK_URL,
+    imageCallbackUrl: process.env.IMAGE_CALLBACK_URL,
   };
 
   const onProgress = (progress: MigrationProgress): void => {
