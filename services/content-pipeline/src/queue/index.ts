@@ -40,8 +40,14 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
   const generateQueueEvents = createGenerateQueueEvents(connection);
   const generateWorker = createGenerateWorker(connection, WORKER_CONCURRENCY, config);
 
-  // CRITICAL: Workers emit 'error' for Redis connection issues.
-  // Without this handler, an unhandled 'error' event crashes the process.
+  // CRITICAL: BullMQ instances re-emit Redis connection errors as their own
+  // 'error' events. Without handlers, an unhandled 'error' event crashes Node.
+  generateQueue.on("error", (err) => {
+    console.error(`[queue] Connection error: ${err.message}`);
+  });
+  generateQueueEvents.on("error", (err) => {
+    console.error(`[queue-events] Connection error: ${err.message}`);
+  });
   generateWorker.on("error", (err) => {
     console.error(`[worker] Connection error: ${err.message}`);
   });
@@ -69,6 +75,9 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
     SCHEDULER_RUN_QUEUE,
     { connection },
   );
+  schedulerRunQueue.on("error", (err) => {
+    console.error(`[scheduler-queue] Connection error: ${err.message}`);
+  });
 
   console.log("[worker] Scheduler-run worker started");
 

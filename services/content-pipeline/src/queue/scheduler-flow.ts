@@ -219,6 +219,9 @@ export function setupSchedulerFlow(
   config: AgentConfig,
 ): SchedulerFlowInstances {
   const flowProducer = new FlowProducer({ connection });
+  flowProducer.on("error", (err) => {
+    console.error(`[flow-producer] Connection error: ${err.message}`);
+  });
 
   const schedulerRunWorker = new Worker<SchedulerRunData>(
     SCHEDULER_RUN_QUEUE,
