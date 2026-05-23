@@ -16,8 +16,10 @@ import { generateImageWithGemini } from "../../lib/gemini.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
+import { triggerN8nImage } from "../content-generation/n8n-image.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
+import { randomUUID } from "node:crypto";
 
 export interface MigrationConfig {
   anthropicApiKey: string;
@@ -27,6 +29,10 @@ export interface MigrationConfig {
   branch: string;
   /** If set, commit the same files to this branch too (e.g. staging + main). */
   alsoCommitTo?: string;
+  /** n8n webhook URL for async image generation. If set, n8n is preferred over Gemini. */
+  n8nImageWebhookUrl?: string;
+  /** Override callback URL for n8n image results. */
+  imageCallbackUrl?: string;
   /** Notification config for Slack/Telegram alerts. */
   notifications?: NotificationConfig;
 }
@@ -69,8 +75,19 @@ export async function runMigration(
   progress.phase = "converting";
   emit();
 
+  const useN8n = !!config.n8nImageWebhookUrl;
+  const defaultImagePath = `/assets/images/${siteId}-general-article.webp`;
+
   const results: MigrationArticleResult[] = [];
   const files: BatchFileEntry[] = [];
+
+  // Collect n8n image request metadata for post-commit firing
+  interface PendingImageRequest {
+    slug: string;
+    title: string;
+    description: string;
+  }
+  const pendingImageRequests: PendingImageRequest[] = [];
 
   for (const article of articles) {
     const slug = article.slug;
@@ -86,38 +103,48 @@ export async function runMigration(
       const rawTags = mapCategoriesToTags(article.categories, wpCategories, site.menuItems);
       const tags = ensureTopicTag(rawTags, site.menuItems, title);
 
-      // Generate hero image
-      progress.phase = "generating-image";
-      emit();
-
       let imageGenerated = false;
-      let featuredImagePath: string | undefined;
+      let imageSource: "n8n" | "gemini" | "default" = "default";
+      let featuredImagePath: string;
 
-      const imagePrompt = buildImagePrompt(title, cleaned.description, site.websiteCategory);
-      const imageResult = await generateImageWithGemini(config.geminiApiKey, imagePrompt);
-
-      if (imageResult.ok) {
-        progress.phase = "uploading-image";
+      if (useN8n) {
+        // n8n mode: use default image now, trigger n8n async after commit
+        featuredImagePath = defaultImagePath;
+        pendingImageRequests.push({ slug, title, description: cleaned.description });
+        imageSource = "n8n";
+      } else {
+        // Gemini fallback: generate inline before commit
+        progress.phase = "generating-image";
         emit();
 
-        const optimized = await optimizeImage(imageResult.data);
-        const r2Key = buildR2Key(siteId, slug, "webp");
-        const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
-        if (uploaded) {
-          featuredImagePath = `/assets/images/${slug}.webp`;
-          imageGenerated = true;
-        }
-      } else {
-        console.warn(`[migration] Image gen failed for ${slug}: ${imageResult.reason}`);
-        // Assign default image and notify
-        featuredImagePath = `/assets/images/${siteId}-general-article.webp`;
-        if (config.notifications) {
-          void notifyImageDefaultFallback(config.notifications, {
-            site: siteId,
-            articleTitle: title,
-            slug,
-            reason: `Gemini image generation failed: ${imageResult.reason}`,
-          });
+        const imagePrompt = buildImagePrompt(title, cleaned.description, site.websiteCategory);
+        const imageResult = await generateImageWithGemini(config.geminiApiKey, imagePrompt);
+
+        if (imageResult.ok) {
+          progress.phase = "uploading-image";
+          emit();
+
+          const optimized = await optimizeImage(imageResult.data);
+          const r2Key = buildR2Key(siteId, slug, "webp");
+          const uploaded = await uploadToR2(r2Key, optimized, "image/webp");
+          if (uploaded) {
+            featuredImagePath = `/assets/images/${slug}.webp`;
+            imageGenerated = true;
+            imageSource = "gemini";
+          } else {
+            featuredImagePath = defaultImagePath;
+          }
+        } else {
+          console.warn(`[migration] Gemini image gen failed for ${slug}: ${imageResult.reason}`);
+          featuredImagePath = defaultImagePath;
+          if (config.notifications) {
+            void notifyImageDefaultFallback(config.notifications, {
+              site: siteId,
+              articleTitle: title,
+              slug,
+              reason: `Gemini image generation failed: ${imageResult.reason}`,
+            });
+          }
         }
       }
 
@@ -151,7 +178,7 @@ export async function runMigration(
         content: buildArticleMd(mdInput),
       });
 
-      results.push({ slug, title, status: "success", imageGenerated });
+      results.push({ slug, title, status: "success", imageGenerated, imageSource });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[migration] Error processing ${slug}:`, message);
@@ -178,7 +205,53 @@ export async function runMigration(
     }
   }
 
-  // Step 5: Generate default site image and upload to R2.
+  // Step 5: Fire n8n image triggers (post-commit, fire-and-forget)
+  let n8nImagesTriggered = 0;
+  if (useN8n && pendingImageRequests.length > 0) {
+    progress.phase = "triggering-images";
+    emit();
+
+    const webhookUrl = config.n8nImageWebhookUrl!;
+    const callbackUrl = config.imageCallbackUrl
+      ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+
+    console.log(`[migration] Triggering ${pendingImageRequests.length} n8n image request(s) → ${webhookUrl}`);
+
+    for (const req of pendingImageRequests) {
+      void triggerN8nImage(webhookUrl, {
+        request_id: `mig_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+        callback_url: callbackUrl,
+        job_id: "",
+        site_domain: siteId,
+        slug: req.slug,
+        branch: config.branch,
+        article: {
+          title: req.title,
+          description: req.description,
+          summary: req.description,
+          vertical: site.websiteCategory,
+          source_thumbnail_url: null,
+          image_guidelines: null,
+        },
+      }).then((accepted) => {
+        if (accepted) {
+          n8nImagesTriggered++;
+        } else if (config.notifications) {
+          void notifyImageDefaultFallback(config.notifications, {
+            site: siteId,
+            articleTitle: req.title,
+            slug: req.slug,
+            reason: "n8n webhook trigger failed (migration)",
+          });
+        }
+      });
+    }
+    // Short delay to let fire-and-forget triggers dispatch before we report
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    n8nImagesTriggered = pendingImageRequests.length;
+  }
+
+  // Step 6: Generate default site image and upload to R2.
   // Non-fatal — articles are committed regardless of image generation outcome.
   const siteImagePrompt = `Professional hero image for "${site.name}" website in the ${site.websiteCategory} niche. No text. Clean, modern. 1200x630.`;
   const siteImageResult = await generateImageWithGemini(config.geminiApiKey, siteImagePrompt);
@@ -201,9 +274,13 @@ export async function runMigration(
   progress.completedAt = Date.now();
   emit();
 
-  console.log(`[migration] Done: ${successful} ok, ${failed} failed in ${(durationMs / 1000).toFixed(1)}s`);
+  console.log(
+    `[migration] Done: ${successful} ok, ${failed} failed` +
+    `${n8nImagesTriggered > 0 ? `, ${n8nImagesTriggered} n8n images triggered` : ""}` +
+    ` in ${(durationMs / 1000).toFixed(1)}s`,
+  );
 
-  return { site: site.name, totalArticles: articles.length, successful, failed, results, durationMs };
+  return { site: site.name, totalArticles: articles.length, successful, failed, results, durationMs, n8nImagesTriggered };
 }
 
 function buildImagePrompt(title: string, description: string, category: string): string {

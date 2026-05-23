@@ -63,6 +63,7 @@ export type MigrationPhase =
   | "generating-image"
   | "uploading-image"
   | "committing"
+  | "triggering-images"
   | "complete"
   | "error";
 
@@ -83,6 +84,8 @@ export interface MigrationArticleResult {
   status: "success" | "error";
   error?: string;
   imageGenerated: boolean;
+  /** "n8n" = async trigger fired, "gemini" = inline generation, "default" = fallback image */
+  imageSource?: "n8n" | "gemini" | "default";
 }
 
 export interface MigrationReport {
@@ -92,4 +95,6 @@ export interface MigrationReport {
   failed: number;
   results: MigrationArticleResult[];
   durationMs: number;
+  /** Number of n8n image requests fired (0 if n8n not configured or fell back to Gemini) */
+  n8nImagesTriggered: number;
 }
