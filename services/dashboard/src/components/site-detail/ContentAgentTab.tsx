@@ -105,11 +105,15 @@ export function ContentAgentTab({
   const [pendingFooterLogo, setPendingFooterLogo] = useState<string | null>(null);
   const [pendingFavicon, setPendingFavicon] = useState<string | null>(null);
   const [faviconSameAsLogo, setFaviconSameAsLogo] = useState(true);
+  const [autoFooterVariant, setAutoFooterVariant] = useState(true);
+  const [clearLogo, setClearLogo] = useState(false);
+  const [clearFooterLogo, setClearFooterLogo] = useState(false);
   const [isGeneratingLogo, startGenLogo] = useTransition();
 
   // When logo changes and sync is on, auto-copy to favicon
   function setLogoAndSync(base64: string): void {
     setPendingLogo(base64);
+    setClearLogo(false);
     if (faviconSameAsLogo) setPendingFavicon(base64);
   }
 
@@ -147,10 +151,13 @@ export function ContentAgentTab({
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const { logo, footerLogo } = await generateLogoPreview(domain);
+        const { logo, footerLogo } = await generateLogoPreview(domain, {
+          generateFooterVariant: autoFooterVariant,
+        });
         if (logo) {
           setLogoAndSync(logo);
           setPendingFooterLogo(footerLogo);
+          setClearFooterLogo(false);
           if (footerLogo) {
             toast("Generated a footer variant — header and footer backgrounds invert", "info");
           }
@@ -161,6 +168,17 @@ export function ContentAgentTab({
         toast(`Generation failed: ${err instanceof Error ? err.message : "Unknown"}`, "error");
       }
     });
+  }
+
+  function handleRemoveLogo(): void {
+    setPendingLogo(null);
+    setPendingFavicon(null);
+    setClearLogo(true);
+  }
+
+  function handleRemoveFooterLogo(): void {
+    setPendingFooterLogo(null);
+    setClearFooterLogo(true);
   }
 
   // --- Content Brief state ---
@@ -388,6 +406,8 @@ export function ContentAgentTab({
           logoBase64: pendingLogo ?? null,
           footerLogoBase64: pendingFooterLogo ?? undefined,
           faviconBase64: effectiveFavicon ?? null,
+          clearLogo: clearLogo || undefined,
+          clearFooterLogo: clearFooterLogo || undefined,
           configUpdates: { siteName, siteTagline, author, audiences, audienceIds, tone },
         }),
       });
@@ -397,6 +417,8 @@ export function ContentAgentTab({
         setPendingLogo(null);
         setPendingFooterLogo(null);
         setPendingFavicon(null);
+        setClearLogo(false);
+        setClearFooterLogo(false);
         setAssetVersion((v) => v + 1);
         router.refresh();
       } else {
@@ -479,7 +501,9 @@ export function ContentAgentTab({
     JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
     !!pendingLogo ||
     !!pendingFooterLogo ||
-    !!pendingFavicon;
+    !!pendingFavicon ||
+    clearLogo ||
+    clearFooterLogo;
 
   const briefDirty =
     JSON.stringify(topics) !== JSON.stringify(initTopics) ||
@@ -596,15 +620,64 @@ export function ContentAgentTab({
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button variant="secondary" size="sm" onClick={(): void => logoFileRef.current?.click()}>
                 {pendingLogo || currentLogoPath ? "Replace Logo" : "Upload Logo"}
               </Button>
               <Button variant="secondary" size="sm" loading={isGeneratingLogo} onClick={handleGenerateLogo}>
                 {isGeneratingLogo ? "Generating..." : "Generate with AI"}
               </Button>
+              {(currentLogoPath || pendingLogo) && !clearLogo && (
+                <Button variant="ghost" size="sm" onClick={handleRemoveLogo}>
+                  Remove Logo
+                </Button>
+              )}
+              {clearLogo && (
+                <span className="text-xs text-red-400">
+                  Logo will be removed on save.{" "}
+                  <button type="button" onClick={(): void => setClearLogo(false)} className="underline hover:text-red-300">
+                    Undo
+                  </button>
+                </span>
+              )}
               <input ref={logoFileRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoFooterVariant}
+                onChange={(e): void => setAutoFooterVariant(e.target.checked)}
+                className="accent-cyan"
+              />
+              <span className="text-xs text-[var(--text-secondary)]">
+                Auto-generate footer variant when header/footer contrast inverts
+              </span>
+            </label>
+            {(!!pendingFooterLogo || !!(siteConfig?.theme as Record<string, unknown> | undefined)?.footer_logo) && !clearFooterLogo && (
+              <div className="flex items-center gap-2">
+                {pendingFooterLogo && (
+                  <img
+                    src={`data:image/png;base64,${pendingFooterLogo}`}
+                    alt="Footer logo preview"
+                    className="w-10 h-10 rounded object-contain bg-[var(--bg-elevated)] border border-[var(--border-secondary)]"
+                  />
+                )}
+                <span className="text-xs text-[var(--text-muted)]">
+                  {pendingFooterLogo ? "Footer variant ready" : "Footer variant set"}
+                </span>
+                <Button variant="ghost" size="sm" onClick={handleRemoveFooterLogo}>
+                  Remove Footer Logo
+                </Button>
+              </div>
+            )}
+            {clearFooterLogo && (
+              <span className="text-xs text-red-400">
+                Footer logo will be removed on save.{" "}
+                <button type="button" onClick={(): void => setClearFooterLogo(false)} className="underline hover:text-red-300">
+                  Undo
+                </button>
+              </span>
+            )}
             <p className="text-xs text-[var(--text-muted)]">PNG, JPG or SVG, max 2MB.</p>
           </div>
 
