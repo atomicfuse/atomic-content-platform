@@ -1225,7 +1225,9 @@ export async function updateStagingSite(
  */
 export async function generateLogoPreview(
   domain: string,
+  options: { generateFooterVariant?: boolean } = {},
 ): Promise<{ logo: string | null; footerLogo: string | null }> {
+  const { generateFooterVariant = true } = options;
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
 
@@ -1254,7 +1256,7 @@ export async function generateLogoPreview(
   // composition for the same site. The recolor preserves design and only
   // inverts colors for the opposite-contrast background.
   let footerLogo: string | null = null;
-  if (mainBuf && footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
+  if (generateFooterVariant && mainBuf && footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
     const footerBuf = await recolorLogoForBackground(geminiKey, mainBuf, footerBg);
     footerLogo = footerBuf?.toString("base64") ?? null;
   }

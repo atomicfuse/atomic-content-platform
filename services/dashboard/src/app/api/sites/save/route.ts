@@ -18,6 +18,10 @@ interface SaveRequestBody {
   /** Optional alternate footer logo. `null` removes the existing one, `undefined` leaves it untouched. */
   footerLogoBase64?: string | null;
   faviconBase64: string | null;
+  /** When true, delete `theme.logo` and `theme.favicon` from site.yaml. Ignored if `logoBase64` is also set. */
+  clearLogo?: boolean;
+  /** When true, delete `theme.footer_logo` from site.yaml. Ignored if `footerLogoBase64` is also set. */
+  clearFooterLogo?: boolean;
 }
 
 /**
@@ -37,7 +41,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { domain, configUpdates, logoBase64, footerLogoBase64, faviconBase64 } = body;
+  const { domain, configUpdates, logoBase64, footerLogoBase64, faviconBase64, clearLogo, clearFooterLogo } = body;
 
   if (!domain) {
     return NextResponse.json(
@@ -254,16 +258,27 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (processedLogoBase64 || effectiveFaviconBase64 || footerLogoBase64 !== undefined) {
+    const shouldClearLogo = clearLogo && !processedLogoBase64;
+    const shouldClearFooterLogo = (clearFooterLogo || footerLogoBase64 === null) && !processedFooterLogoBase64;
+
+    if (
+      processedLogoBase64
+      || effectiveFaviconBase64
+      || footerLogoBase64 !== undefined
+      || shouldClearLogo
+      || shouldClearFooterLogo
+    ) {
       const theme = (existing.theme ?? {}) as Record<string, unknown>;
       if (processedLogoBase64) {
         theme.logo = "/assets/logo.png";
+      } else if (shouldClearLogo) {
+        delete theme.logo;
+        delete theme.favicon;
       }
       if (effectiveFaviconBase64) {
         theme.favicon = "/assets/favicon.png";
       }
-      // footer_logo: null = clear, base64 = set, undefined = leave alone
-      if (footerLogoBase64 === null) {
+      if (shouldClearFooterLogo) {
         delete theme.footer_logo;
       } else if (processedFooterLogoBase64) {
         theme.footer_logo = "/assets/logo-footer.png";
