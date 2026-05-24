@@ -22,7 +22,13 @@ export async function updateBatchStatus(
   const key = `${BATCH_KEY_PREFIX}${batchId}`;
   const raw = await redis.hget(key, "meta");
   if (!raw) return;
-  const meta = JSON.parse(raw) as ImportBatchMeta;
+  let meta: ImportBatchMeta;
+  try {
+    meta = JSON.parse(raw) as ImportBatchMeta;
+  } catch {
+    console.error(`[import-status] Corrupted meta JSON for batch ${batchId}`);
+    return;
+  }
   meta.status = status;
   await redis.hset(key, "meta", JSON.stringify(meta));
 }
@@ -56,14 +62,25 @@ export async function readBatchStatus(
 
   if (!all || !all["meta"]) return null;
 
-  const meta = JSON.parse(all["meta"]) as ImportBatchMeta;
+  let meta: ImportBatchMeta;
+  try {
+    meta = JSON.parse(all["meta"]) as ImportBatchMeta;
+  } catch {
+    console.error(`[import-status] Corrupted meta JSON for batch ${batchId}`);
+    return null;
+  }
+
   const sites: Array<ImportBatchSiteStatus & { siteId: string }> = [];
 
   for (const [field, value] of Object.entries(all)) {
     if (field.startsWith("site:")) {
       const siteId = field.slice(5);
-      const siteStatus = JSON.parse(value) as ImportBatchSiteStatus;
-      sites.push({ ...siteStatus, siteId });
+      try {
+        const siteStatus = JSON.parse(value) as ImportBatchSiteStatus;
+        sites.push({ ...siteStatus, siteId });
+      } catch {
+        console.warn(`[import-status] Corrupted site JSON for ${siteId} in batch ${batchId}`);
+      }
     }
   }
 

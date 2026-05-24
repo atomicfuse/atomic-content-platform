@@ -190,11 +190,14 @@ export function CsvSiteCreator(): React.ReactElement {
   useEffect(() => {
     if (!batchId || phase !== "creating") return;
 
+    let cancelled = false;
+
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/agent/wp-migrate/import-status/${batchId}`);
-        if (!res.ok) return;
+        if (cancelled || !res.ok) return;
         const data = (await res.json()) as BatchStatus;
+        if (cancelled) return;
         setBatchStatus(data);
 
         if (data.status === "complete" || data.status === "failed") {
@@ -205,7 +208,10 @@ export function CsvSiteCreator(): React.ReactElement {
       }
     }, POLL_INTERVAL_MS);
 
-    return (): void => clearInterval(interval);
+    return (): void => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [batchId, phase]);
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
