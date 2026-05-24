@@ -6,19 +6,14 @@
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-/** Assets @ AtomicLabs — the only R2 account for all site assets. */
-const ASSETS_ACCOUNT_ID = "4a8cfd85d617b38ce1813a552132bc86";
-
 let _client: S3Client | null = null;
 
 function getClient(): S3Client | null {
   if (_client) return _client;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  // Always use Assets account for R2. CLOUDFLARE_ACCOUNT_ID may point to
-  // Dev1 for other purposes (KV, wrangler) — never use it for R2.
-  const accountId = ASSETS_ACCOUNT_ID;
-  if (!accessKeyId || !secretAccessKey) {
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accessKeyId || !secretAccessKey || !accountId) {
     return null;
   }
   _client = new S3Client({
@@ -56,7 +51,7 @@ export async function uploadToR2(
 ): Promise<boolean> {
   const client = getClient();
   if (!client) {
-    console.warn("[r2-upload] R2 not configured (missing R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY) — skipping upload");
+    console.warn("[r2-upload] R2 not configured (missing R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / CLOUDFLARE_ACCOUNT_ID) — skipping upload");
     return false;
   }
 
