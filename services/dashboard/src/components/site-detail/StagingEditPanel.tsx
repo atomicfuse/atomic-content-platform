@@ -58,16 +58,21 @@ export function StagingEditPanel({
   const faviconFileInputRef = useRef<HTMLInputElement>(null);
 
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [pendingFooterLogo, setPendingFooterLogo] = useState<string | null>(null);
   const [pendingFavicon, setPendingFavicon] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const base64 = await generateLogoPreview(domain);
-        if (base64) {
-          setPendingLogo(base64);
+        const { logo, footerLogo } = await generateLogoPreview(domain);
+        if (logo) {
+          setPendingLogo(logo);
+          setPendingFooterLogo(footerLogo);
           setShowSuccess(false);
+          if (footerLogo) {
+            toast("Generated a footer variant — header and footer backgrounds invert", "info");
+          }
         } else {
           toast("AI could not generate an image — try again", "error");
         }
@@ -142,7 +147,7 @@ export function StagingEditPanel({
   }
 
   async function handleSave(): Promise<void> {
-    if (!pendingLogo && !pendingFavicon) return;
+    if (!pendingLogo && !pendingFavicon && !pendingFooterLogo) return;
     setIsSaving(true);
     try {
       const res = await fetch("/api/sites/save", {
@@ -152,12 +157,14 @@ export function StagingEditPanel({
           domain,
           configUpdates: null,
           logoBase64: pendingLogo,
+          footerLogoBase64: pendingFooterLogo ?? undefined,
           faviconBase64: pendingFavicon,
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
       if (!res.ok) throw new Error(data.message ?? "Save failed");
       setPendingLogo(null);
+      setPendingFooterLogo(null);
       setPendingFavicon(null);
       setShowSuccess(true);
       router.refresh();
@@ -171,7 +178,7 @@ export function StagingEditPanel({
     }
   }
 
-  const hasPendingChanges = !!pendingLogo || !!pendingFavicon;
+  const hasPendingChanges = !!pendingLogo || !!pendingFooterLogo || !!pendingFavicon;
 
   // Resolve favicon preview source
   const faviconPreviewSrc = pendingFavicon

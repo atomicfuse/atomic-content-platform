@@ -106,17 +106,24 @@ function buildLogoPrompt(
   headerBg?: string,
   colors?: Record<string, string>,
 ): string {
-  const dark = isDarkColor(headerBg ?? "#1a1a2e");
-  const contrastInstruction = dark
-    ? "LIGHT VERSION: Use off-white, cream, or bright vibrant colors. Optimized for a dark/black background."
-    : "DARK VERSION: Use deep black, charcoal, or rich saturated colors. Optimized for a light/white background.";
+  const headerHex = headerBg ?? "#1a1a2e";
+  const dark = isDarkColor(headerHex);
 
   const paletteEntries = Object.entries(colors ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("#"));
-  const paletteLine = paletteEntries.length > 0
-    ? `\n• BRAND PALETTE (reference values for the designer — these codes must NEVER appear as text in the rendered image): inspired by ${paletteEntries.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary neutrals where helpful.`
+  const filteredPalette = paletteEntries.filter(([, hex]) => isDarkColor(hex) !== dark);
+  const paletteLine = filteredPalette.length > 0
+    ? `\n• BRAND PALETTE (reference values for the designer — these codes must NEVER appear as text in the rendered image): inspired by ${filteredPalette.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary ${dark ? "light" : "dark"} neutrals where helpful.`
     : "";
 
-  return `Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
+  const contrastDirective = dark
+    ? `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
+The logo CANVAS is a solid ${headerHex} background (DARK). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be LIGHT colors: pure WHITE, off-white, cream, pale pastels, or BRIGHT/VIBRANT saturated colors. Do NOT use black, dark grey, navy, dark brown, or any dark hex — those would be invisible.`
+    : `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
+The logo CANVAS is a solid ${headerHex} background (LIGHT). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be DARK colors: deep black, charcoal, navy, dark brown, or rich saturated colors. Do NOT use white, off-white, cream, or pale pastels — those would be invisible.`;
+
+  return `${contrastDirective}
+
+Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
 
 LAYOUT & STRUCTURE:
 • COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
@@ -127,11 +134,12 @@ VISUAL STYLE:
 • ICON: A single, bold, recognizable symbol or stylized mascot representing ${vertical}. Crafted illustration with personality — confident outlines, soft internal shading, and a subtle sense of depth (think a modern brand mascot, NOT a flat two-tone icon).
 • TYPOGRAPHY: Bold, modern, clean sans-serif. The text must read exactly "${siteName}".
 • ART STYLE: Premium vector-illustration with subtle gradients, soft highlights, and shading WITHIN shapes for depth and richness. NOT photorealistic, NOT 3D-rendered, NOT a generic flat icon.
-• COLORS: ${contrastInstruction} 2-4 brand colors with subtle shading variations.${paletteLine}
+• COLORS: 2-4 ${dark ? "light/bright" : "dark/saturated"} brand colors with subtle shading variations.${paletteLine}
 
 CRITICAL CONSTRAINTS:
-• BACKGROUND: Place the logo on a uniform pure white background, edge to edge. No textures, no patterns, no gradient fades, no drop shadows behind the logo.
+• BACKGROUND: Solid uniform ${headerHex} background, edge to edge. No textures, patterns, gradients, or drop shadows. (This solid background will be stripped to transparency in post-processing — only the logo elements should remain.)
 • TEXT IN IMAGE: The ONLY text rendered in the image is exactly "${siteName}". Do NOT render any hex codes, color codes, numbers, palette labels, version tags, or watermarks anywhere in the image.
-• CLARITY: High contrast against the background and perfect spelling of "${siteName}".
+• CONTRAST CHECK: ${dark ? "Re-verify before finalizing — every logo element must be clearly visible against a dark background." : "Re-verify before finalizing — every logo element must be clearly visible against a light background."}
+• CLARITY: Perfect spelling of "${siteName}".
 • PADDING: Leave a small amount of breathing room/padding around the edges.`;
 }
