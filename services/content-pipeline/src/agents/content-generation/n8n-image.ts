@@ -79,6 +79,77 @@ export interface ProcessImageParams {
 const TRIGGER_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
+// Pending image tracker — detects when n8n fails to deliver a callback
+// ---------------------------------------------------------------------------
+
+/** How long to wait for n8n callback before alerting (5 minutes). */
+const IMAGE_CALLBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
+interface PendingImage {
+  requestId: string;
+  siteDomain: string;
+  slug: string;
+  articleTitle: string;
+  triggeredAt: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/** In-memory map of pending image callbacks, keyed by request_id. */
+const pendingImages = new Map<string, PendingImage>();
+
+/**
+ * Track a triggered image request. If no callback arrives within the timeout,
+ * fires a Slack/Telegram alert so the failure is visible.
+ */
+export function trackPendingImage(
+  requestId: string,
+  siteDomain: string,
+  slug: string,
+  articleTitle: string,
+  notifications: NotificationConfig,
+): void {
+  const timer = setTimeout(() => {
+    pendingImages.delete(requestId);
+    const reason = `n8n image callback not received within ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s — ` +
+      `n8n may have failed to deliver the result (timeout, network error, or crash)`;
+    console.error(
+      `[n8n-image] TIMEOUT — no callback for ${siteDomain}/${slug} ` +
+      `(request_id=${requestId}) after ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s`,
+    );
+    void notifyImageDefaultFallback(notifications, {
+      site: siteDomain,
+      articleTitle,
+      slug,
+      reason,
+    });
+  }, IMAGE_CALLBACK_TIMEOUT_MS);
+
+  // Don't let the timer prevent process exit
+  if (timer.unref) timer.unref();
+
+  pendingImages.set(requestId, {
+    requestId,
+    siteDomain,
+    slug,
+    articleTitle,
+    triggeredAt: Date.now(),
+    timer,
+  });
+}
+
+/**
+ * Mark a pending image as received (callback arrived). Clears the timeout.
+ * Called from handleImageCallback() on any callback — success or error.
+ */
+export function clearPendingImage(requestId: string): void {
+  const pending = pendingImages.get(requestId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingImages.delete(requestId);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // triggerN8nImage — fire-and-forget POST to n8n
 // ---------------------------------------------------------------------------
 
@@ -143,6 +214,11 @@ export async function handleImageCallback(
   notifications?: NotificationConfig,
 ): Promise<{ ok: boolean; message: string }> {
   const { request_id, site_domain, slug, branch, status } = payload;
+
+  // Clear the pending-image timeout — callback arrived (regardless of success/error)
+  if (request_id) {
+    clearPendingImage(request_id);
+  }
 
   const meta = payload.meta;
   const provider = meta?.provider ?? "unknown";

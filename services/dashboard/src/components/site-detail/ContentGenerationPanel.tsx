@@ -579,7 +579,7 @@ export function ContentGenerationPanel({
           <div className="space-y-1">
             {PIPELINE_STEPS.map((step, index) => {
               const isActive = step.key === pipeline.step;
-              const isDone = currentStepIndex > index;
+              const isDone = currentStepIndex > index || (isActive && step.key === "complete");
               const isFuture = currentStepIndex < index;
               const isError = pipeline.step === "error" && index === currentStepIndex;
 
