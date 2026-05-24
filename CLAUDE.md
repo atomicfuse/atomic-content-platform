@@ -43,6 +43,8 @@ services/
     src/components/site-detail/
       SiteConfigTab.tsx      Unified config form for sites (fetches inheritance chain, shows source badges)
       ContentAgentTab.tsx    Site Identity tab container with sub-tabs (Identity, Content Brief, Groups, Config)
+      ArticleScriptsPanel.tsx  Per-article script injection CRUD panel
+      ArticleVideosPanel.tsx   Per-article YouTube video embed CRUD panel
     src/actions/             Server actions (wizard, agent, sites)
     public/guide/            Markdown guide content (must be in public/ so standalone bundle ships it)
 
@@ -62,7 +64,7 @@ services/
     src/index.ts             HTTP server: /health, /content-generate, /scheduled-publish
 
 packages/
-  shared-types/              TS interfaces: SiteConfig, SiteBrief, PublishSchedule, DashboardIndex, Article, Ads, Tracking
+  shared-types/              TS interfaces: SiteConfig, SiteBrief, PublishSchedule, DashboardIndex, Article (incl. ArticleVideo), Ads, Tracking
   site-worker/               Astro 6 + @astrojs/cloudflare SSR app. `atomic-site-worker` serves all platform sites — config in KV, per-site assets in R2. Multi-tenancy via hostname → KV lookup in middleware.ts. Receives production traffic via Service Binding from `atl-sites-workers-manager` (no Custom Domains of its own). See docs/migration-plan.md for the full Pages → Workers history.
   migration/                 WordPress migration tooling (placeholder)
 
@@ -254,6 +256,24 @@ The site detail page (`/sites/[domain]`) has 3 top-level tabs:
 
 Each sub-tab has its own independent Save button. The Config sub-tab fetches from `/api/sites/site-config` which returns the full inheritance chain (`{ config, inheritance: { org, groups[] } }`).
 
+### Article Detail Page (`/sites/[domain]/articles/[slug]`)
+
+Server component that reads article markdown from Git (staging branch → main fallback), parses frontmatter, and renders three panels:
+
+1. **Videos panel** (`ArticleVideosPanel`) — CRUD for YouTube video embeds. Stores `videos: ArticleVideo[]` in frontmatter via `PUT /api/articles/[domain]/[slug]/videos`. Each video has `id`, `url` (YouTube), and `position` (`before-content`, `after-content`, or `after-paragraph-N`).
+2. **Scripts panel** (`ArticleScriptsPanel`) — CRUD for per-article script injection. Same position model as videos plus `head`. Saved via `PUT /api/articles/[domain]/[slug]/scripts`.
+3. **Article editor** (`ArticleEditor`) — raw markdown editor with save, image upload, and AI image generation.
+
+### Video Embeds — End-to-End
+
+Videos are stored as `ArticleVideo[]` in article frontmatter and rendered at request time by the site-worker:
+
+- **Content pipeline:** When `ContentItem.content_type === "video"`, auto-adds a video entry (`position: after-paragraph-1`) with the source URL to frontmatter.
+- **Dashboard:** `ArticleVideosPanel` manages videos manually (add/edit/delete with position picker). API: `PUT /api/articles/[domain]/[slug]/videos`.
+- **seed-kv:** Extracts `videos` from frontmatter into `ArticleIndexEntry` in KV.
+- **Site worker:** `inject-videos.ts` renders responsive 16:9 YouTube iframes (via `youtube-nocookie.com`) with "Video via YouTube" credit link. Called in the `[slug]/index.astro` rendering pipeline: inline ads → **video embeds** → scripts.
+- **Shared types:** `ArticleVideo { id, url, position }` and `ArticleVideoPosition` in `packages/shared-types/src/article.ts`.
+
 ### Config inheritance model
 
 See **Config Inheritance — 5-Layer Resolution** above for the full chain (`org → groups → overrides/config → site`). The Config sub-tab shows `SourceBadge` indicating where each value comes from. Normalizer functions in `src/lib/config-normalizers.ts` are shared between org, group, override, and site config pages.
@@ -412,6 +432,9 @@ Service contract (both services satisfy):
     - **Seed-time defaults in `resolveLayout()` / `resolve.ts`**: the seed script must also populate the new field so future syncs write it.
     - **Never deploy site-worker with new schema fields without re-seeding all live sites** via `sync-kv.yml` (trigger with `workflow_dispatch` → `force_all: true`) or manual `pnpm seed:kv` per site.
     - **Test with stale config**: before deploying, mentally ask "what if the KV config was written 3 months ago and doesn't have this field?" If the answer is a crash, add a default.
+
+39. **Video embeds require both worker deploy and KV re-seed.** Videos are stored in article frontmatter (`videos: ArticleVideo[]`) and injected at render time by `inject-videos.ts` in the site-worker. Adding a video via the dashboard only writes to Git (staging branch). To see it on the site: (1) deploy the site-worker (`pnpm deploy:staging`), (2) re-seed KV for the site (`pnpm seed:kv <siteId>` with network repo on the staging branch). Without both steps, KV won't have the `videos` field and/or the worker won't have the injection code.
+40. **Video embed YAML round-trip strips quotes.** The `yaml` library's `stringify()` outputs unquoted strings by default. When saving videos (or scripts) via the dashboard API, existing quoted YAML values (`title: "Foo"`) become unquoted (`title: Foo`). Both forms parse identically — no data loss, purely cosmetic.
 
 ## Cloudflare Account Migration & WordPress Migration
 
