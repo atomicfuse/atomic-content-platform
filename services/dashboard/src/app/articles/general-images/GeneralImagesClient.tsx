@@ -64,16 +64,17 @@ export function GeneralImagesClient(): React.ReactElement {
   }, [search]);
 
   // Fetch current page from the API
-  const fetchPage = useCallback(async (p: number, q: string): Promise<void> => {
+  const fetchPage = useCallback(async (p: number, q: string, signal?: AbortSignal): Promise<void> => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
       if (q) params.set("search", q);
-      const res = await fetch(`/api/articles/general-images?${params}`);
+      const res = await fetch(`/api/articles/general-images?${params}`, { signal });
       const data = (await res.json()) as GeneralImageArticlesResponse;
       setArticles(data.items);
       setTotal(data.total);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       // keep whatever we had
     } finally {
       setLoading(false);
@@ -81,7 +82,9 @@ export function GeneralImagesClient(): React.ReactElement {
   }, []);
 
   useEffect(() => {
-    void fetchPage(page, debouncedSearch);
+    const controller = new AbortController();
+    void fetchPage(page, debouncedSearch, controller.signal);
+    return (): void => { controller.abort(); };
   }, [page, debouncedSearch, fetchPage]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));

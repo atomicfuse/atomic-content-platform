@@ -20,7 +20,57 @@ export interface GeneralImageArticlesResponse {
   pageSize: number;
 }
 
-const DEFAULT_PAGE_SIZE = 25;
+const DEFAULT_PAGE_SIZE = 10;
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
+let cachedResults: { data: GeneralImageArticle[]; ts: number } | null = null;
+
+async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
+  const now = Date.now();
+  if (cachedResults && now - cachedResults.ts < CACHE_TTL_MS) {
+    return cachedResults.data;
+  }
+
+  const index = await readDashboardIndex();
+  const activeSites = index.sites.filter(
+    (s) =>
+      s.status === "Staging" ||
+      s.status === "Ready" ||
+      s.status === "Live" ||
+      s.status === "WordPress",
+  );
+
+  const results: GeneralImageArticle[] = [];
+
+  await Promise.allSettled(
+    activeSites.map(async (site) => {
+      const branch = site.staging_branch ?? undefined;
+      const articles = await readArticles(site.domain, branch);
+      for (const a of articles) {
+        if (isGeneralImage(a.featuredImage, site.domain)) {
+          results.push({
+            domain: site.domain,
+            siteName: site.domain,
+            slug: a.slug,
+            title: a.title,
+            featuredImage: a.featuredImage,
+            publishDate: a.publishDate,
+            status: a.status,
+            stagingBranch: site.staging_branch ?? null,
+          });
+        }
+      }
+    }),
+  );
+
+  results.sort(
+    (a, b) =>
+      new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
+  );
+
+  cachedResults = { data: results, ts: now };
+  return results;
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -29,42 +79,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const pageSize = Math.min(100, Math.max(1, parseInt(params.get("pageSize") ?? String(DEFAULT_PAGE_SIZE), 10)));
     const search = (params.get("search") ?? "").toLowerCase();
 
-    const index = await readDashboardIndex();
-    const activeSites = index.sites.filter(
-      (s) =>
-        s.status === "Staging" ||
-        s.status === "Ready" ||
-        s.status === "Live" ||
-        s.status === "WordPress",
-    );
-
-    const results: GeneralImageArticle[] = [];
-
-    await Promise.allSettled(
-      activeSites.map(async (site) => {
-        const branch = site.staging_branch ?? undefined;
-        const articles = await readArticles(site.domain, branch);
-        for (const a of articles) {
-          if (isGeneralImage(a.featuredImage, site.domain)) {
-            results.push({
-              domain: site.domain,
-              siteName: site.domain,
-              slug: a.slug,
-              title: a.title,
-              featuredImage: a.featuredImage,
-              publishDate: a.publishDate,
-              status: a.status,
-              stagingBranch: site.staging_branch ?? null,
-            });
-          }
-        }
-      }),
-    );
-
-    results.sort(
-      (a, b) =>
-        new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
-    );
+    const results = await loadGeneralImageArticles();
 
     // Server-side search filter
     const filtered = search
