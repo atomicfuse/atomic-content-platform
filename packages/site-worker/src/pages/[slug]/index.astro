@@ -16,6 +16,7 @@ import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../l
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
+import { injectVideos } from '../../lib/inject-videos';
 import { injectArticleScripts } from '../../lib/inject-scripts';
 
 const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon']);
@@ -53,9 +54,13 @@ const articleBodyWithInlineAds = article
     )
   : '';
 
+const articleBodyWithVideos = article
+  ? injectVideos(articleBodyWithInlineAds, article.frontmatter.videos)
+  : articleBodyWithInlineAds;
+
 const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article
-  ? injectArticleScripts(articleBodyWithInlineAds, article.frontmatter.scripts)
-  : { headScripts: '', bodyHtml: articleBodyWithInlineAds };
+  ? injectArticleScripts(articleBodyWithVideos, article.frontmatter.scripts)
+  : { headScripts: '', bodyHtml: articleBodyWithVideos };
 
 // Compute related articles and category-list articles
 let related: ArticleIndexEntry[] = [];

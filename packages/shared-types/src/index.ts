@@ -20,6 +20,8 @@ export type {
   ArticleType,
   ArticleScript,
   ArticleScriptPosition,
+  ArticleVideo,
+  ArticleVideoPosition,
   ArticleFrontmatter,
   QualityScoreBreakdown,
 } from "./article.js";

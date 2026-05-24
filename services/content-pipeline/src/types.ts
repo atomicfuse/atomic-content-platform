@@ -13,6 +13,17 @@ export interface QualityScoreBreakdown {
   keyword_relevance: number;
 }
 
+export type ArticleVideoPosition =
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+export interface ArticleVideo {
+  id: string;
+  url: string;
+  position: ArticleVideoPosition;
+}
+
 export interface ArticleFrontmatter {
   title: string;
   description: string;
@@ -27,6 +38,7 @@ export interface ArticleFrontmatter {
   quality_score?: number;
   score_breakdown?: QualityScoreBreakdown;
   quality_note?: string;
+  videos?: ArticleVideo[];
 }
 
 export interface QualityWeights {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { readDashboardIndex, readFileContent } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
 import { ArticleScriptsPanel } from "@/components/site-detail/ArticleScriptsPanel";
+import { ArticleVideosPanel } from "@/components/site-detail/ArticleVideosPanel";
 import { workerPreviewUrl } from "@/lib/constants";
 import { ArticleEditor } from "./ArticleEditor";
 
@@ -20,6 +21,17 @@ interface ArticleScript {
   name: string;
   position: ArticleScriptPosition;
   content: string;
+}
+
+type ArticleVideoPosition =
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+interface ArticleVideo {
+  id: string;
+  url: string;
+  position: ArticleVideoPosition;
 }
 
 function statusColor(status: string): string {
@@ -72,6 +84,7 @@ export default async function ArticleDetailPage({
   const publishDate = (fm.publishDate as string) || "";
   const qualityScore = fm.quality_score as number | undefined;
   const scripts = Array.isArray(fm.scripts) ? (fm.scripts as ArticleScript[]) : [];
+  const videos = Array.isArray(fm.videos) ? (fm.videos as ArticleVideo[]) : [];
 
   const previewHref = workerPreviewUrl(decodedDomain, `/${slug}`);
 
@@ -105,6 +118,14 @@ export default async function ArticleDetailPage({
           </a>
         </div>
       </div>
+
+      {/* Videos panel */}
+      <ArticleVideosPanel
+        domain={decodedDomain}
+        slug={slug}
+        stagingBranch={stagingBranch}
+        initialVideos={videos}
+      />
 
       {/* Scripts panel */}
       <ArticleScriptsPanel

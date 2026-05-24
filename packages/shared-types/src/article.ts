@@ -64,6 +64,9 @@ export interface ArticleFrontmatter {
 
   /** Per-article script injections. */
   scripts?: ArticleScript[];
+
+  /** Per-article embedded videos. */
+  videos?: ArticleVideo[];
 }
 
 export type ArticleScriptPosition =
@@ -77,4 +80,15 @@ export interface ArticleScript {
   name: string;
   position: ArticleScriptPosition;
   content: string;
+}
+
+export type ArticleVideoPosition =
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+export interface ArticleVideo {
+  id: string;
+  url: string;
+  position: ArticleVideoPosition;
 }
