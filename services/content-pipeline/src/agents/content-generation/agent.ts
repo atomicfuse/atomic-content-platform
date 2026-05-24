@@ -29,7 +29,7 @@ import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
 import { randomUUID } from "node:crypto";
-import { triggerN8nImage } from "./n8n-image.js";
+import { triggerN8nImage, trackPendingImage } from "./n8n-image.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
@@ -904,7 +904,16 @@ export async function runContentGeneration(
                 : req.imageGuidelines,
             },
           }).then((accepted) => {
-            if (!accepted) {
+            if (accepted) {
+              // Track for timeout detection — alert if n8n never calls back
+              trackPendingImage(
+                req.requestId,
+                req.siteDomain,
+                req.slug,
+                req.articleTitle,
+                config.notifications,
+              );
+            } else {
               void notifyImageDefaultFallback(config.notifications, {
                 site: req.siteDomain,
                 articleTitle: req.articleTitle,
