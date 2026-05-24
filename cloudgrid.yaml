@@ -38,7 +38,8 @@ services:
       # CONTENT_API_BASE_URL instead — api-client.ts checks it first.
       CONTENT_API_BASE_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
     # Secrets (via `cloudgrid secrets set KEY=VALUE`):
-    #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY
+    #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY,
+    #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (Assets account — for article image uploads)
     # REDIS_URL is auto-injected by `requires: redis: private`.
     # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
     # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
