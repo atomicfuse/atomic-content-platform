@@ -102,6 +102,7 @@ export function ContentAgentTab({
   const logoFileRef = useRef<HTMLInputElement>(null);
   const faviconFileRef = useRef<HTMLInputElement>(null);
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [pendingFooterLogo, setPendingFooterLogo] = useState<string | null>(null);
   const [pendingFavicon, setPendingFavicon] = useState<string | null>(null);
   const [faviconSameAsLogo, setFaviconSameAsLogo] = useState(true);
   const [isGeneratingLogo, startGenLogo] = useTransition();
@@ -146,9 +147,16 @@ export function ContentAgentTab({
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const base64 = await generateLogoPreview(domain);
-        if (base64) setLogoAndSync(base64);
-        else toast("AI could not generate an image — try again", "error");
+        const { logo, footerLogo } = await generateLogoPreview(domain);
+        if (logo) {
+          setLogoAndSync(logo);
+          setPendingFooterLogo(footerLogo);
+          if (footerLogo) {
+            toast("Generated a footer variant — header and footer backgrounds invert", "info");
+          }
+        } else {
+          toast("AI could not generate an image — try again", "error");
+        }
       } catch (err) {
         toast(`Generation failed: ${err instanceof Error ? err.message : "Unknown"}`, "error");
       }
@@ -378,6 +386,7 @@ export function ContentAgentTab({
         body: JSON.stringify({
           domain,
           logoBase64: pendingLogo ?? null,
+          footerLogoBase64: pendingFooterLogo ?? undefined,
           faviconBase64: effectiveFavicon ?? null,
           configUpdates: { siteName, siteTagline, author, audiences, audienceIds, tone },
         }),
@@ -386,6 +395,7 @@ export function ContentAgentTab({
       if (data.status === "ok") {
         toast("Identity saved", "success");
         setPendingLogo(null);
+        setPendingFooterLogo(null);
         setPendingFavicon(null);
         setAssetVersion((v) => v + 1);
         router.refresh();
@@ -468,6 +478,7 @@ export function ContentAgentTab({
     tone !== initTone ||
     JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
     !!pendingLogo ||
+    !!pendingFooterLogo ||
     !!pendingFavicon;
 
   const briefDirty =

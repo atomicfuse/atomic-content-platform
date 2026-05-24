@@ -26,7 +26,7 @@ import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
-import { handleMigrationRequest, handleCreateSites } from "../migration/handler.js";
+import { handleMigrationRequest, handleCreateSites, handleImportStatus } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
 import { randomUUID } from "node:crypto";
@@ -425,9 +425,23 @@ async function handleRequest(
     return;
   }
 
-  // WordPress migration — create sites from CSV
+  // WordPress migration — create sites from CSV (batch enqueue)
   if (req.method === "POST" && req.url === "/wp-migrate/create-sites") {
-    await handleCreateSites(req, res);
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleCreateSites(req, res, queueInstances.flowProducer, queueInstances.connection);
+    return;
+  }
+
+  // WordPress migration — poll import status
+  if (req.method === "GET" && req.url?.startsWith("/wp-migrate/import-status/")) {
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleImportStatus(req, res, queueInstances.connection);
     return;
   }
 
@@ -547,6 +561,10 @@ async function shutdown(signal: string): Promise<void> {
     await queueInstances.generateQueue.close();
     await queueInstances.schedulerRunWorker.close();
     await queueInstances.schedulerRunQueue.close();
+    await queueInstances.importSiteWorker.close();
+    await queueInstances.importFinalizeWorker.close();
+    await queueInstances.importSiteQueue.close();
+    await queueInstances.importFinalizeQueue.close();
     await queueInstances.flowProducer.close();
     await queueInstances.connection.quit();
     console.log("[server] Queue workers closed");

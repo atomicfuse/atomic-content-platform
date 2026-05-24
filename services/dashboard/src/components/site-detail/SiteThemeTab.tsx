@@ -28,6 +28,7 @@ interface ColorState {
   heading: string;
   link: string;
   link_hover: string;
+  nav_link: string;
   nav_link_hover: string;
   footer_bg: string;
   must_reads_bg: string;
@@ -77,7 +78,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
       text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
       heading: "#1a1a2e", link: "#1a1a2e", link_hover: "#f4c542",
-      nav_link_hover: "#f4c542",
+      nav_link: "#ffffff", nav_link_hover: "#f4c542",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#6b7280",
@@ -92,7 +93,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#E50914", accent: "#B81D24", background: "#141414", secondary: "#1a1a2e",
       text: "#ffffff", muted: "#8C8C8C", surface: "#2a2a2a", border: "#333333",
       heading: "#ffffff", link: "#E50914", link_hover: "#B81D24",
-      nav_link_hover: "#B81D24",
+      nav_link: "#ffffff", nav_link_hover: "#B81D24",
       footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#8C8C8C",
@@ -107,7 +108,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#0f4c81", accent: "#10b981", background: "#f8fafc", secondary: "#0f172a",
       text: "#0f172a", muted: "#64748b", surface: "#e2e8f0", border: "#cbd5e1",
       heading: "#0f172a", link: "#0f4c81", link_hover: "#10b981",
-      nav_link_hover: "#10b981",
+      nav_link: "#ffffff", nav_link_hover: "#10b981",
       footer_bg: "#0f172a", must_reads_bg: "#0f172a",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#64748b",
@@ -122,7 +123,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#7c2d12", accent: "#ea580c", background: "#fffbeb", secondary: "#1c1917",
       text: "#1c1917", muted: "#78716c", surface: "#fef3c7", border: "#d6d3d1",
       heading: "#1c1917", link: "#7c2d12", link_hover: "#ea580c",
-      nav_link_hover: "#ea580c",
+      nav_link: "#ffffff", nav_link_hover: "#ea580c",
       footer_bg: "#1c1917", must_reads_bg: "#1c1917",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#78716c",
@@ -137,7 +138,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#334155", accent: "#6366f1", background: "#ffffff", secondary: "#1e293b",
       text: "#1e293b", muted: "#94a3b8", surface: "#f1f5f9", border: "#e2e8f0",
       heading: "#1e293b", link: "#334155", link_hover: "#6366f1",
-      nav_link_hover: "#6366f1",
+      nav_link: "#ffffff", nav_link_hover: "#6366f1",
       footer_bg: "#1e293b", must_reads_bg: "#1e293b",
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#94a3b8",
@@ -152,7 +153,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       primary: "#581c87", accent: "#a855f7", background: "#0f0720", secondary: "#1e1038",
       text: "#f0e6ff", muted: "#a78bfa", surface: "#1e1038", border: "#2e1a50",
       heading: "#f0e6ff", link: "#a855f7", link_hover: "#c084fc",
-      nav_link_hover: "#c084fc",
+      nav_link: "#f0e6ff", nav_link_hover: "#c084fc",
       footer_bg: "#1e1038", must_reads_bg: "#1e1038",
       hero_title: "#ffffff", must_reads_title: "#f0e6ff", article_hero_title: "#ffffff",
       article_hero_meta: "#a78bfa",
@@ -165,7 +166,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
 
 const ALL_COLOR_KEYS: (keyof ColorState)[] = [
   "primary", "accent", "background", "secondary", "text", "muted", "surface", "border",
-  "heading", "link", "link_hover", "nav_link_hover",
+  "heading", "link", "link_hover", "nav_link", "nav_link_hover",
   "footer_bg", "must_reads_bg",
   "hero_title", "must_reads_title", "article_hero_title", "article_hero_meta",
   "feed_title", "feed_desc", "feed_date",
@@ -519,6 +520,12 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           <ColorPickerField label="Muted (dates, meta)" value={state.colors.muted} onChange={(v): void => setColor("muted", v)} helperText="Secondary text" />
           <ColorPickerField label="Link" value={state.colors.link} onChange={(v): void => setColor("link", v)} helperText="Inline links. Defaults to main color." />
           <ColorPickerField label="Link hover" value={state.colors.link_hover} onChange={(v): void => setColor("link_hover", v)} helperText="Link color on hover. Defaults to accent." />
+          <ColorPickerField
+            label="Menu item"
+            value={state.colors.nav_link}
+            onChange={(v): void => setColor("nav_link", v)}
+            helperText="Color of nav-bar menu items. Defaults to white."
+          />
           <ColorPickerField
             label="Menu item hover"
             value={state.colors.nav_link_hover}

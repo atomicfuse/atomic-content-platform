@@ -6,6 +6,8 @@
  */
 
 import { Octokit } from "@octokit/rest";
+import { retry } from "@octokit/plugin-retry";
+import { throttling } from "@octokit/plugin-throttling";
 
 export interface GitHubConfig {
   token: string;
@@ -21,6 +23,31 @@ export interface FileCommit {
 
 export function createGitHubClient(config: GitHubConfig): Octokit {
   return new Octokit({ auth: config.token });
+}
+
+const ResilientOctokit = Octokit.plugin(retry, throttling);
+
+/**
+ * Octokit instance with automatic retry on 5xx/network errors
+ * and rate-limit throttling. Use for batch operations (CSV import).
+ */
+export function createResilientOctokit(token: string): Octokit {
+  return new ResilientOctokit({
+    auth: token,
+    throttle: {
+      onRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[github] Rate limit hit for ${String(options.method)} ${String(options.url)} — retry #${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 2;
+      },
+      onSecondaryRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[github] Secondary rate limit for ${String(options.method)} ${String(options.url)} — retry #${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 1;
+      },
+    },
+    retry: {
+      doNotRetry: ["429"],
+    },
+  });
 }
 
 export function parseRepo(repo: string): { owner: string; repo: string } {

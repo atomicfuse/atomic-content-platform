@@ -26,3 +26,62 @@ export const DEFAULT_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: { age: 7 * 24 * 3600, count: 1000 },
   removeOnFail: { age: 30 * 24 * 3600 },
 };
+
+// --- Import site queue ---
+
+export const IMPORT_SITE_QUEUE = "import-site";
+export const IMPORT_FINALIZE_QUEUE = "import-finalize";
+
+/** Max sites per CSV upload. */
+export const MAX_IMPORT_BATCH_SIZE = 200;
+
+/** Data for each per-site import child job. */
+export interface ImportSiteJobData {
+  batchId: string;
+  siteId: string;
+  row: Record<string, string>;
+}
+
+/** Result returned by each completed import-site job. */
+export interface ImportSiteResult {
+  siteId: string;
+  domain: string;
+  status: "created" | "error";
+  previewUrl?: string;
+  warnings?: string[];
+  postsApiUrl?: string;
+  error?: string;
+}
+
+/** Data for the parent finalize job. */
+export interface ImportFinalizeData {
+  batchId: string;
+  siteIds: string[];
+}
+
+/** Per-site status stored in the Redis batch hash. */
+export interface ImportBatchSiteStatus {
+  status: "pending" | "running" | "complete" | "error";
+  phase?: string;
+  error?: string;
+  warnings?: string[];
+  previewUrl?: string;
+  postsApiUrl?: string;
+}
+
+/** Batch metadata stored in the Redis batch hash (the "meta" field). */
+export interface ImportBatchMeta {
+  total: number;
+  status: "pending" | "running" | "complete" | "failed";
+  createdAt: string;
+}
+
+export const DEFAULT_IMPORT_JOB_OPTIONS: JobsOptions = {
+  attempts: 2,
+  backoff: {
+    type: "exponential",
+    delay: 15_000,
+  },
+  removeOnComplete: { age: 7 * 24 * 3600, count: 500 },
+  removeOnFail: { age: 30 * 24 * 3600 },
+};

@@ -284,7 +284,9 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
           geminiKey,
           data.siteName,
           data.vertical,
-          data.audiences.join(", ") || undefined
+          data.audiences.join(", ") || undefined,
+          data.themeColors?.primary,
+          data.themeColors,
         );
       } catch (err) {
         console.warn("[wizard] Logo generation failed, continuing without:", err);
@@ -1211,8 +1213,19 @@ export async function updateStagingSite(
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Generate a logo preview (returns base64 PNG, does NOT commit). */
-export async function generateLogoPreview(domain: string): Promise<string | null> {
+/**
+ * Generate a logo preview (returns base64 PNGs, does NOT commit).
+ *
+ * Returns `{ logo, footerLogo }`. `footerLogo` is non-null ONLY when the footer
+ * background contrast category differs from the header (one dark + one light) —
+ * in that case the same header logo would be invisible on the footer, so a
+ * second variant is generated. When both backgrounds share the same lightness
+ * category, `footerLogo` is null and the caller should leave `footer_logo`
+ * unset (falls back to the main logo).
+ */
+export async function generateLogoPreview(
+  domain: string,
+): Promise<{ logo: string | null; footerLogo: string | null }> {
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
 
@@ -1228,15 +1241,21 @@ export async function generateLogoPreview(domain: string): Promise<string | null
   const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
   const audience = audiences.join(", ") || undefined;
 
-  // Extract header background color to determine logo text color
   const theme = config?.theme as Record<string, unknown> | undefined;
   const colors = theme?.colors as Record<string, string> | undefined;
   const headerBg = colors?.primary ?? "#1a1a2e";
+  const footerBg = colors?.footer_bg;
 
-  const logoBuffer = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg);
-  if (!logoBuffer) return null;
+  const mainBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
+  const logo = mainBuf?.toString("base64") ?? null;
 
-  return logoBuffer.toString("base64");
+  let footerLogo: string | null = null;
+  if (footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
+    const footerBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, footerBg, colors);
+    footerLogo = footerBuf?.toString("base64") ?? null;
+  }
+
+  return { logo, footerLogo };
 }
 
 /**
@@ -1539,7 +1558,7 @@ function getFallbackTopics(siteName: string, vertical: string): string[] {
 // Gemini logo generation (internal helper)
 // ---------------------------------------------------------------------------
 
-const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 
 /** Simple luminance check — returns true if the hex color is dark. */
 function isDarkColor(hex: string): boolean {
@@ -1558,13 +1577,28 @@ async function generateLogoWithGemini(
   vertical: string,
   audience?: string,
   headerBg?: string,
+  colors?: Record<string, string>,
 ): Promise<Buffer | null> {
-  const dark = isDarkColor(headerBg ?? "#1a1a2e");
-  const contrastInstruction = dark
-    ? "LIGHT VERSION: Use off-white, cream, or bright vibrant colors. Optimized for a dark/black background."
-    : "DARK VERSION: Use deep black, charcoal, or rich saturated colors. Optimized for a light/white background.";
+  const headerHex = headerBg ?? "#1a1a2e";
+  const dark = isDarkColor(headerHex);
 
-  const prompt = `Create a professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
+  // Palette is filtered by lightness so dark hex values can't bleed into a light-version
+  // logo (and vice versa). The previous palette line was the main cause of contrast failures.
+  const paletteEntries = Object.entries(colors ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("#"));
+  const filteredPalette = paletteEntries.filter(([, hex]) => isDarkColor(hex) !== dark);
+  const paletteLine = filteredPalette.length > 0
+    ? `\n• BRAND PALETTE (reference values for the designer — these codes must NEVER appear as text in the rendered image): inspired by ${filteredPalette.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary ${dark ? "light" : "dark"} neutrals where helpful.`
+    : "";
+
+  const contrastDirective = dark
+    ? `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
+The logo CANVAS is a solid ${headerHex} background (DARK). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be LIGHT colors: pure WHITE, off-white, cream, pale pastels, or BRIGHT/VIBRANT saturated colors. Do NOT use black, dark grey, navy, dark brown, or any dark hex — those would be invisible.`
+    : `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
+The logo CANVAS is a solid ${headerHex} background (LIGHT). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be DARK colors: deep black, charcoal, navy, dark brown, or rich saturated colors. Do NOT use white, off-white, cream, or pale pastels — those would be invisible.`;
+
+  const prompt = `${contrastDirective}
+
+Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
 
 LAYOUT & STRUCTURE:
 • COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
@@ -1572,15 +1606,16 @@ LAYOUT & STRUCTURE:
 • ASPECT RATIO: Wide horizontal format (suitable for a website navigation bar).
 
 VISUAL STYLE:
-• ICON: A single, bold, recognizable symbol representing ${vertical}. Incorporate a creative element that subtly connects the icon to the text for a unified brand look.
-• TYPOGRAPHY: Use a bold, modern, clean sans-serif font. The text must read exactly "${siteName}".
-• ART STYLE: Minimalist, flat design, vector-like. No 3D, no gradients, no photorealism.
-• COLORS: ${contrastInstruction} Max 2-3 colors.
+• ICON: A single, bold, recognizable symbol or stylized mascot representing ${vertical}. Crafted illustration with personality — confident outlines, soft internal shading, and a subtle sense of depth (think a modern brand mascot, NOT a flat two-tone icon).
+• TYPOGRAPHY: Bold, modern, clean sans-serif. The text must read exactly "${siteName}".
+• ART STYLE: Premium vector-illustration with subtle gradients, soft highlights, and shading WITHIN shapes for depth and richness. NOT photorealistic, NOT 3D-rendered, NOT a generic flat icon.
+• COLORS: 2-4 ${dark ? "light/bright" : "dark/saturated"} brand colors with subtle shading variations.${paletteLine}
 
 CRITICAL CONSTRAINTS:
-• TRANSPARENCY: Solid colors on a pure transparent background.
-• NO MOCKUPS: No business cards, no walls, no paper textures, no shadows.
-• CLARITY: Ensure high contrast and perfect spelling of "${siteName}".
+• BACKGROUND: Solid uniform ${headerHex} background, edge to edge. No textures, patterns, gradients, or drop shadows. (This solid background will be stripped to transparency in post-processing — only the logo elements should remain.)
+• TEXT IN IMAGE: The ONLY text rendered in the image is exactly "${siteName}". Do NOT render any hex codes, color codes, numbers, palette labels, version tags, or watermarks anywhere in the image.
+• CONTRAST CHECK: ${dark ? "Re-verify before finalizing — every logo element must be clearly visible against a dark background." : "Re-verify before finalizing — every logo element must be clearly visible against a light background."}
+• CLARITY: Perfect spelling of "${siteName}".
 • PADDING: Leave a small amount of breathing room/padding around the edges.`;
 
   try {

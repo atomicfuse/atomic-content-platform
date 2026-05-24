@@ -12,10 +12,21 @@ import {
 import { setupSchedulerFlow } from "./scheduler-flow.js";
 import type { AgentConfig } from "../lib/config.js";
 import { notifyError } from "../lib/notifications.js";
+import {
+  createImportSiteQueue,
+  createImportSiteWorker,
+} from "./import-site.js";
+import {
+  createImportFinalizeQueue,
+  createImportFinalizeWorker,
+} from "./import-finalize.js";
+import type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData } from "./types.js";
 
 export type { GenerateJobData } from "./types.js";
 export { GENERATE_QUEUE, SCHEDULER_RUN_QUEUE, DEFAULT_JOB_OPTIONS } from "./types.js";
 export type { SchedulerRunData } from "./types.js";
+export { IMPORT_SITE_QUEUE, IMPORT_FINALIZE_QUEUE } from "./types.js";
+export type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData } from "./types.js";
 
 export interface QueueInstances {
   connection: Redis;
@@ -25,6 +36,10 @@ export interface QueueInstances {
   flowProducer: FlowProducer;
   schedulerRunWorker: Worker<SchedulerRunData>;
   schedulerRunQueue: Queue<SchedulerRunData>;
+  importSiteQueue: Queue<ImportSiteJobData, ImportSiteResult>;
+  importSiteWorker: Worker<ImportSiteJobData, ImportSiteResult>;
+  importFinalizeQueue: Queue<ImportFinalizeData>;
+  importFinalizeWorker: Worker<ImportFinalizeData>;
 }
 
 const WORKER_CONCURRENCY = 3;
@@ -81,6 +96,44 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
 
   console.log("[worker] Scheduler-run worker started");
 
+  // Import site queue
+  const githubToken = process.env.GITHUB_TOKEN ?? "";
+  const networkRepo = process.env.NETWORK_REPO ?? "atomicfuse/atomic-labs-network";
+
+  const importSiteQueue = createImportSiteQueue(connection);
+  const importSiteWorker = createImportSiteWorker(connection, WORKER_CONCURRENCY, githubToken, networkRepo);
+
+  importSiteQueue.on("error", (err) => {
+    console.error(`[import-site-queue] Connection error: ${err.message}`);
+  });
+  importSiteWorker.on("error", (err) => {
+    console.error(`[import-site-worker] Connection error: ${err.message}`);
+  });
+  importSiteWorker.on("failed", (job, err) => {
+    console.error(`[import-site] Job ${job?.id} failed (attempt ${job?.attemptsMade}): ${err.message}`);
+  });
+  importSiteWorker.on("completed", (job) => {
+    console.log(`[import-site] Job ${job.id} completed for ${job.data.siteId}`);
+  });
+
+  console.log(`[worker] Import-site worker started (concurrency: ${WORKER_CONCURRENCY})`);
+
+  // Import finalize queue
+  const importFinalizeQueue = createImportFinalizeQueue(connection);
+  const importFinalizeWorker = createImportFinalizeWorker(connection, githubToken, networkRepo);
+
+  importFinalizeQueue.on("error", (err) => {
+    console.error(`[import-finalize-queue] Connection error: ${err.message}`);
+  });
+  importFinalizeWorker.on("error", (err) => {
+    console.error(`[import-finalize-worker] Connection error: ${err.message}`);
+  });
+  importFinalizeWorker.on("completed", (job) => {
+    console.log(`[import-finalize] Batch ${job.data.batchId.slice(0, 8)} finalized`);
+  });
+
+  console.log("[worker] Import-finalize worker started");
+
   return {
     connection,
     generateQueue,
@@ -89,5 +142,9 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
     flowProducer,
     schedulerRunWorker,
     schedulerRunQueue,
+    importSiteQueue,
+    importSiteWorker,
+    importFinalizeQueue,
+    importFinalizeWorker,
   };
 }
