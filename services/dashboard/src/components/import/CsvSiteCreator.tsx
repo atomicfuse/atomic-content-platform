@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface ParsedSiteRow {
   raw: Record<string, string>;
@@ -11,24 +11,24 @@ interface ParsedSiteRow {
   postsApi: string;
 }
 
-interface SiteProgress {
-  phase: string;
-  status: "pending" | "in-progress" | "complete" | "error";
-  previewUrl?: string;
-  warnings?: string[];
-  postsApiUrl?: string;
-  siteId?: string;
+interface SiteStatus {
+  siteId: string;
+  status: "pending" | "running" | "complete" | "error";
+  phase?: string;
   error?: string;
+  warnings?: string[];
+  previewUrl?: string;
+  postsApiUrl?: string;
 }
 
-interface CreateSiteResult {
-  domain: string;
-  siteId: string;
-  status: "created" | "error";
-  previewUrl?: string;
-  warnings?: string[];
-  postsApiUrl?: string;
-  error?: string;
+interface BatchStatus {
+  batchId: string;
+  total: number;
+  completed: number;
+  failed: number;
+  status: "pending" | "running" | "complete" | "failed";
+  createdAt: string;
+  sites: SiteStatus[];
 }
 
 interface ArticleImportState {
@@ -43,6 +43,8 @@ interface ArticleImportState {
 }
 
 type ComponentPhase = "idle" | "creating" | "results";
+
+// --- CSV parsing (unchanged) ---
 
 function parseCsvText(text: string): Record<string, string>[] {
   const lines = text.split("\n").filter((l) => l.trim());
@@ -91,33 +93,17 @@ function splitCsvLine(line: string): string[] {
 }
 
 const CSV_HEADERS = [
-  "Site Name",
-  "domain",
-  "Company",
-  "Website Category",
-  "Menu Items",
-  "IAB Top Categories (Vertical)",
-  "Sub Categories",
-  "Color Palette",
-  "Logo",
-  "Favicon",
-  "Posts REST API (articles)",
-  "GA Info",
+  "Site Name", "domain", "Company", "Website Category", "Menu Items",
+  "IAB Top Categories (Vertical)", "Sub Categories", "Color Palette",
+  "Logo", "Favicon", "Posts REST API (articles)", "GA Info",
 ];
 
 const CSV_EXAMPLE_ROW = [
-  "Cool News",
-  "coolnews.dev",
-  "ATL",
-  "Technology",
-  "Tech, Science, Reviews",
-  "Technology & Computing",
-  "Software, Hardware",
+  "Cool News", "coolnews.dev", "ATL", "Technology", "Tech, Science, Reviews",
+  "Technology & Computing", "Software, Hardware",
   "primary: #3B82F6, secondary: #1E40AF",
-  "https://coolnews.dev/logo.png",
-  "https://coolnews.dev/favicon.ico",
-  "https://coolnews.dev/wp-json/wp/v2/posts",
-  "328395426, G-HL2D8CQ0Z9, GT-5R65N74B",
+  "https://coolnews.dev/logo.png", "https://coolnews.dev/favicon.ico",
+  "https://coolnews.dev/wp-json/wp/v2/posts", "328395426, G-HL2D8CQ0Z9, GT-5R65N74B",
 ];
 
 const PHASE_LABELS: Record<string, string> = {
@@ -126,8 +112,6 @@ const PHASE_LABELS: Record<string, string> = {
   "building-config": "Building site config",
   "creating-branch": "Creating staging branch",
   "committing": "Committing files",
-  "updating-index": "Updating dashboard index",
-  "triggering-sync": "Triggering KV sync",
 };
 
 function downloadTemplate(): void {
@@ -147,6 +131,13 @@ function downloadTemplate(): void {
   URL.revokeObjectURL(url);
 }
 
+// --- SSE helper for article import (unchanged) ---
+
+type ArticleImportEvent =
+  | { type: "progress"; phase: string; totalArticles?: number; processedArticles?: number; currentArticleSlug?: string }
+  | { type: "complete"; successful: number; failed: number }
+  | { type: "error"; error: string };
+
 async function consumeSSE<T>(
   response: Response,
   onEvent: (event: T) => void,
@@ -160,10 +151,7 @@ async function consumeSSE<T>(
 
   try {
     while (true) {
-      if (signal?.aborted) {
-        reader.cancel();
-        return;
-      }
+      if (signal?.aborted) { reader.cancel(); return; }
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -174,12 +162,7 @@ async function consumeSSE<T>(
       for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith("data: ")) {
-          try {
-            const parsed = JSON.parse(trimmed.slice(6)) as T;
-            onEvent(parsed);
-          } catch {
-            // skip malformed JSON
-          }
+          try { onEvent(JSON.parse(trimmed.slice(6)) as T); } catch { /* skip */ }
         }
       }
     }
@@ -188,52 +171,51 @@ async function consumeSSE<T>(
   }
 }
 
-type SiteCreationEvent =
-  | { type: "site-progress"; domain: string; siteId: string; phase: string }
-  | {
-      type: "site-complete";
-      domain: string;
-      siteId: string;
-      status: "created" | "error";
-      previewUrl?: string;
-      warnings?: string[];
-      postsApiUrl?: string;
-      error?: string;
-    }
-  | { type: "all-complete"; results: CreateSiteResult[] };
-
-type ArticleImportEvent =
-  | {
-      type: "progress";
-      phase: string;
-      totalArticles?: number;
-      processedArticles?: number;
-      currentArticleSlug?: string;
-    }
-  | { type: "complete"; successful: number; failed: number }
-  | { type: "error"; error: string };
+// --- Polling interval ---
+const POLL_INTERVAL_MS = 2000;
 
 export function CsvSiteCreator(): React.ReactElement {
   const [sites, setSites] = useState<ParsedSiteRow[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
   const [phase, setPhase] = useState<ComponentPhase>("idle");
-  const [siteProgress, setSiteProgress] = useState<Map<string, SiteProgress>>(new Map());
-  const [results, setResults] = useState<CreateSiteResult[]>([]);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null);
   const [articleImports, setArticleImports] = useState<Map<string, ArticleImportState>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const createAbortRef = useRef<AbortController | null>(null);
   const importAbortRefs = useRef<Map<string, AbortController>>(new Map());
+
+  // --- Poll for batch status ---
+  useEffect(() => {
+    if (!batchId || phase !== "creating") return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/agent/wp-migrate/import-status/${batchId}`);
+        if (!res.ok) return;
+        const data = (await res.json()) as BatchStatus;
+        setBatchStatus(data);
+
+        if (data.status === "complete" || data.status === "failed") {
+          setPhase("results");
+        }
+      } catch {
+        // Silently retry on next interval
+      }
+    }, POLL_INTERVAL_MS);
+
+    return (): void => clearInterval(interval);
+  }, [batchId, phase]);
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setResults([]);
+    setBatchId(null);
+    setBatchStatus(null);
     setError(null);
     setPhase("idle");
-    setSiteProgress(new Map());
     setArticleImports(new Map());
 
     const reader = new FileReader();
@@ -264,89 +246,33 @@ export function CsvSiteCreator(): React.ReactElement {
   const handleCreate = useCallback(async (): Promise<void> => {
     if (rawRows.length === 0) return;
 
-    createAbortRef.current?.abort();
-    const controller = new AbortController();
-    createAbortRef.current = controller;
-
     setPhase("creating");
     setError(null);
-    setResults([]);
+    setBatchStatus(null);
     setArticleImports(new Map());
-
-    const initialProgress = new Map<string, SiteProgress>();
-    for (const site of sites) {
-      const key = site.domain || site.name;
-      initialProgress.set(key, { phase: "", status: "pending" });
-    }
-    setSiteProgress(initialProgress);
 
     try {
       const res = await fetch("/api/agent/wp-migrate/create-sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: rawRows, branch: "staging" }),
-        signal: controller.signal,
+        body: JSON.stringify({ rows: rawRows }),
       });
 
-      if (!res.ok) {
-        const text = await res.text();
-        let msg = `HTTP ${res.status}`;
-        try {
-          const parsed = JSON.parse(text) as { error?: string };
-          if (parsed.error) msg = parsed.error;
-        } catch {
-          // use default message
-        }
-        setError(msg);
+      const data = (await res.json()) as { batchId?: string; error?: string };
+
+      if (!res.ok || !data.batchId) {
+        setError(data.error ?? `HTTP ${res.status}`);
         setPhase("idle");
         return;
       }
 
-      await consumeSSE<SiteCreationEvent>(
-        res,
-        (event) => {
-          if (event.type === "site-progress") {
-            setSiteProgress((prev) => {
-              const next = new Map(prev);
-              next.set(event.domain, {
-                ...(prev.get(event.domain) ?? { phase: "", status: "pending" }),
-                phase: event.phase,
-                status: "in-progress",
-                siteId: event.siteId,
-              });
-              return next;
-            });
-          } else if (event.type === "site-complete") {
-            setSiteProgress((prev) => {
-              const next = new Map(prev);
-              next.set(event.domain, {
-                phase: "",
-                status: event.status === "created" ? "complete" : "error",
-                previewUrl: event.previewUrl,
-                warnings: event.warnings,
-                postsApiUrl: event.postsApiUrl,
-                siteId: event.siteId,
-                error: event.error,
-              });
-              return next;
-            });
-          } else if (event.type === "all-complete") {
-            setResults(event.results);
-            setPhase("results");
-          }
-        },
-        controller.signal,
-      );
-
-      if (phase !== "results") {
-        setPhase("results");
-      }
+      setBatchId(data.batchId);
+      // Polling starts via useEffect
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase("idle");
     }
-  }, [rawRows, sites, phase]);
+  }, [rawRows]);
 
   const handleImportArticles = useCallback(
     async (siteId: string, postsApiUrl: string): Promise<void> => {
@@ -377,17 +303,8 @@ export function CsvSiteCreator(): React.ReactElement {
         if (!res.ok) {
           const text = await res.text();
           let msg = `HTTP ${res.status}`;
-          try {
-            const parsed = JSON.parse(text) as { error?: string };
-            if (parsed.error) msg = parsed.error;
-          } catch {
-            // use default message
-          }
-          setArticleImports((prev) => {
-            const next = new Map(prev);
-            next.set(siteId, { status: "error", error: msg });
-            return next;
-          });
+          try { const parsed = JSON.parse(text) as { error?: string }; if (parsed.error) msg = parsed.error; } catch { /* */ }
+          setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "error", error: msg }); return next; });
           return;
         }
 
@@ -397,31 +314,13 @@ export function CsvSiteCreator(): React.ReactElement {
             if (event.type === "progress") {
               setArticleImports((prev) => {
                 const next = new Map(prev);
-                next.set(siteId, {
-                  status: "importing",
-                  phase: event.phase,
-                  totalArticles: event.totalArticles,
-                  processedArticles: event.processedArticles,
-                  currentArticleSlug: event.currentArticleSlug,
-                });
+                next.set(siteId, { status: "importing", phase: event.phase, totalArticles: event.totalArticles, processedArticles: event.processedArticles, currentArticleSlug: event.currentArticleSlug });
                 return next;
               });
             } else if (event.type === "complete") {
-              setArticleImports((prev) => {
-                const next = new Map(prev);
-                next.set(siteId, {
-                  status: "complete",
-                  successful: event.successful,
-                  failed: event.failed,
-                });
-                return next;
-              });
+              setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "complete", successful: event.successful, failed: event.failed }); return next; });
             } else if (event.type === "error") {
-              setArticleImports((prev) => {
-                const next = new Map(prev);
-                next.set(siteId, { status: "error", error: event.error });
-                return next;
-              });
+              setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "error", error: event.error }); return next; });
             }
           },
           controller.signal,
@@ -430,10 +329,7 @@ export function CsvSiteCreator(): React.ReactElement {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setArticleImports((prev) => {
           const next = new Map(prev);
-          next.set(siteId, {
-            status: "error",
-            error: err instanceof Error ? err.message : "Unknown error",
-          });
+          next.set(siteId, { status: "error", error: err instanceof Error ? err.message : "Unknown error" });
           return next;
         });
       } finally {
@@ -444,22 +340,26 @@ export function CsvSiteCreator(): React.ReactElement {
   );
 
   const handleReset = useCallback((): void => {
-    createAbortRef.current?.abort();
     for (const controller of importAbortRefs.current.values()) {
       controller.abort();
     }
     importAbortRefs.current.clear();
     setSites([]);
     setRawRows([]);
-    setResults([]);
+    setBatchId(null);
+    setBatchStatus(null);
     setPhase("idle");
-    setSiteProgress(new Map());
     setArticleImports(new Map());
     setError(null);
     if (fileRef.current) fileRef.current.value = "";
   }, []);
 
   const isCreating = phase === "creating";
+  const completedSites = batchStatus?.sites.filter((s) => s.status === "complete") ?? [];
+  const failedSites = batchStatus?.sites.filter((s) => s.status === "error") ?? [];
+  const progressPercent = batchStatus
+    ? Math.round(((batchStatus.completed + batchStatus.failed) / batchStatus.total) * 100)
+    : 0;
 
   return (
     <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5">
@@ -490,6 +390,7 @@ export function CsvSiteCreator(): React.ReactElement {
         </button>
       </div>
 
+      {/* Preview table */}
       {sites.length > 0 && phase === "idle" && (
         <>
           <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)]">
@@ -527,43 +428,46 @@ export function CsvSiteCreator(): React.ReactElement {
         </>
       )}
 
-      {phase === "creating" && (
+      {/* Progress (polling-based) */}
+      {phase === "creating" && batchStatus && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-[var(--text-primary)]">
-            Creating {sites.length} sites...
-          </p>
-          <div className="grid gap-3">
-            {Array.from(siteProgress.entries()).map(([domain, progress]) => (
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-[var(--text-primary)]">
+              Creating {batchStatus.total} sites... ({batchStatus.completed + batchStatus.failed}/{batchStatus.total})
+            </p>
+            <span className="text-xs text-[var(--text-tertiary)]">{progressPercent}%</span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="w-full h-2 rounded-full bg-[var(--bg-primary)] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-cyan transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+
+          <div className="grid gap-2 max-h-96 overflow-y-auto">
+            {batchStatus.sites.map((site) => (
               <div
-                key={domain}
-                className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-4 py-3"
+                key={site.siteId}
+                className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2"
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <div className="flex-shrink-0">
-                    {progress.status === "pending" && (
-                      <span className="inline-block w-2 h-2 rounded-full bg-[var(--text-tertiary)]" />
-                    )}
-                    {progress.status === "in-progress" && (
-                      <span className="inline-block w-2 h-2 rounded-full bg-cyan animate-pulse" />
-                    )}
-                    {progress.status === "complete" && (
-                      <span className="text-green-400">&#10003;</span>
-                    )}
-                    {progress.status === "error" && (
-                      <span className="text-red-400">&#10005;</span>
-                    )}
+                    {site.status === "pending" && <span className="inline-block w-2 h-2 rounded-full bg-[var(--text-tertiary)]" />}
+                    {site.status === "running" && <span className="inline-block w-2 h-2 rounded-full bg-cyan animate-pulse" />}
+                    {site.status === "complete" && <span className="text-green-400">&#10003;</span>}
+                    {site.status === "error" && <span className="text-red-400">&#10005;</span>}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{domain}</p>
-                    {progress.status === "in-progress" && progress.phase && (
-                      <p className="text-xs text-[var(--text-secondary)]">
-                        {PHASE_LABELS[progress.phase] ?? progress.phase}
-                      </p>
-                    )}
-                    {progress.status === "error" && progress.error && (
-                      <p className="text-xs text-red-400">{progress.error}</p>
-                    )}
-                  </div>
+                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">{site.siteId}</p>
+                  {site.status === "running" && site.phase && (
+                    <span className="text-xs text-[var(--text-secondary)]">
+                      {PHASE_LABELS[site.phase] ?? site.phase}
+                    </span>
+                  )}
+                  {site.status === "error" && site.error && (
+                    <span className="text-xs text-red-400 truncate">{site.error}</span>
+                  )}
                 </div>
               </div>
             ))}
@@ -571,11 +475,23 @@ export function CsvSiteCreator(): React.ReactElement {
         </div>
       )}
 
-      {phase === "results" && results.length > 0 && (
+      {/* Waiting for first poll */}
+      {phase === "creating" && !batchStatus && (
+        <div className="flex items-center gap-2">
+          <span className="inline-block w-2 h-2 rounded-full bg-cyan animate-pulse" />
+          <p className="text-sm text-[var(--text-secondary)]">Submitting import batch...</p>
+        </div>
+      )}
+
+      {/* Results */}
+      {phase === "results" && batchStatus && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-[var(--text-primary)]">
-              {results.filter((r) => r.status === "created").length} of {results.length} sites created
+              {completedSites.length} of {batchStatus.total} sites created
+              {failedSites.length > 0 && (
+                <span className="text-red-400 ml-1">({failedSites.length} failed)</span>
+              )}
             </p>
             <button
               onClick={handleReset}
@@ -586,35 +502,32 @@ export function CsvSiteCreator(): React.ReactElement {
           </div>
 
           <div className="grid gap-3">
-            {results.map((result) => {
-              const importState = articleImports.get(result.siteId);
+            {batchStatus.sites.map((site) => {
+              const importState = articleImports.get(site.siteId);
 
               return (
                 <div
-                  key={result.siteId}
+                  key={site.siteId}
                   className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-4 py-3 space-y-2"
                 >
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 mt-0.5">
-                      {result.status === "created" ? (
+                      {site.status === "complete" ? (
                         <span className="text-green-400 text-lg">&#10003;</span>
                       ) : (
                         <span className="text-red-400 text-lg">&#10005;</span>
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-sm font-medium text-[var(--text-primary)]">{result.domain}</p>
-                        <span className="text-xs text-[var(--text-tertiary)] font-mono">{result.siteId}</span>
-                      </div>
+                      <p className="text-sm font-medium text-[var(--text-primary)]">{site.siteId}</p>
 
-                      {result.status === "error" && result.error && (
-                        <p className="text-sm text-red-400 mt-1">{result.error}</p>
+                      {site.status === "error" && site.error && (
+                        <p className="text-sm text-red-400 mt-1">{site.error}</p>
                       )}
 
-                      {result.previewUrl && (
+                      {site.previewUrl && (
                         <a
-                          href={result.previewUrl}
+                          href={site.previewUrl}
                           target="_blank"
                           rel="noopener"
                           className="inline-block text-xs text-cyan underline underline-offset-2 hover:text-cyan/80 mt-1"
@@ -623,9 +536,9 @@ export function CsvSiteCreator(): React.ReactElement {
                         </a>
                       )}
 
-                      {result.warnings && result.warnings.length > 0 && (
+                      {site.warnings && site.warnings.length > 0 && (
                         <div className="mt-1.5 space-y-0.5">
-                          {result.warnings.map((w, i) => (
+                          {site.warnings.map((w, i) => (
                             <p key={i} className="text-xs text-amber-400">{w}</p>
                           ))}
                         </div>
@@ -636,9 +549,7 @@ export function CsvSiteCreator(): React.ReactElement {
                           <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan animate-pulse mr-1.5 align-middle" />
                           {importState.phase ?? "Starting import..."}
                           {importState.processedArticles != null && importState.totalArticles != null && (
-                            <span className="ml-1">
-                              ({importState.processedArticles}/{importState.totalArticles})
-                            </span>
+                            <span className="ml-1">({importState.processedArticles}/{importState.totalArticles})</span>
                           )}
                         </div>
                       )}
@@ -657,12 +568,12 @@ export function CsvSiteCreator(): React.ReactElement {
                       )}
                     </div>
 
-                    {result.status === "created" && result.postsApiUrl && (
+                    {site.status === "complete" && site.postsApiUrl && (
                       <div className="flex-shrink-0">
                         {(!importState || importState.status === "idle" || importState.status === "error") && (
                           <button
                             onClick={(): void => {
-                              void handleImportArticles(result.siteId, result.postsApiUrl!);
+                              void handleImportArticles(site.siteId, site.postsApiUrl!);
                             }}
                             className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-cyan hover:bg-cyan/90 transition-colors"
                           >
