@@ -1,4 +1,6 @@
 import { Octokit } from "@octokit/rest";
+import { retry } from "@octokit/plugin-retry";
+import { throttling } from "@octokit/plugin-throttling";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   DashboardIndex,
@@ -12,6 +14,8 @@ import {
   NETWORK_REPO_NAME,
   DASHBOARD_INDEX_PATH,
 } from "@/lib/constants";
+
+const RetryOctokit = Octokit.plugin(retry, throttling);
 
 // ---------------------------------------------------------------------------
 // TTL cache utility (no external dependencies)
@@ -51,7 +55,20 @@ function getOctokit(): Octokit {
   if (_octokit) return _octokit;
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN is not set");
-  _octokit = new Octokit({ auth: token });
+  _octokit = new RetryOctokit({
+    auth: token,
+    request: { timeout: 30_000 },
+    retry: { retries: 3 },
+    throttle: {
+      onRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[octokit] Rate limit hit for ${String(options.url)} — retry ${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 2;
+      },
+      onSecondaryRateLimit: (retryAfter: number, options: Record<string, unknown>): void => {
+        console.warn(`[octokit] Secondary rate limit for ${String(options.url)} — waiting ${retryAfter}s`);
+      },
+    },
+  });
   return _octokit;
 }
 
