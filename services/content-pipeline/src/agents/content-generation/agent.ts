@@ -624,6 +624,18 @@ async function processItem(
       ...(seo.readingTime ? { reading_time: seo.readingTime } : {}),
     };
 
+    // If the source item is a video, embed it after paragraph 1
+    if (item.content_type === "video" && item.url) {
+      frontmatter.videos = [
+        {
+          id: randomUUID(),
+          url: item.url,
+          position: "after-paragraph-1",
+        },
+      ];
+      console.log(`[agent] Video content detected — embedding ${item.url} after paragraph 1`);
+    }
+
     // Strip leading H1 from body — the title is in frontmatter and rendered
     // by the layout. Models sometimes include it despite prompt instructions.
     const cleanBody = generated.body.replace(/^\s*#\s+[^\n]+\n*/, "");

@@ -1,5 +1,5 @@
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
-import type { ArticleScript } from '@atomic-platform/shared-types';
+import type { ArticleScript, ArticleVideo } from '@atomic-platform/shared-types';
 
 /**
  * KV key schema v1 for the site-worker.
@@ -36,6 +36,7 @@ export interface ArticleIndexEntry {
   /** Editorial featured flags. Empty/missing = not featured (auto-fallback fills the slot). */
   featured?: ('hero' | 'must-read')[];
   scripts?: ArticleScript[];
+  videos?: ArticleVideo[];
 }
 
 /** Article stored body (markdown, already parsed-out frontmatter).
