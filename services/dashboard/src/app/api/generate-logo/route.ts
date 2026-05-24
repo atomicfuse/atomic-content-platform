@@ -17,7 +17,7 @@ function isDarkColor(hex: string): boolean {
 
 /**
  * POST /api/generate-logo
- * Body: { siteName, vertical, audience?, headerBg? }
+ * Body: { siteName, vertical, audience?, headerBg?, colors? }
  * Returns: { image: string (base64 PNG), favicon?: string (base64 PNG) } or { error: string }
  */
 export async function POST(request: Request): Promise<NextResponse> {
@@ -34,9 +34,10 @@ export async function POST(request: Request): Promise<NextResponse> {
     vertical: string;
     audience?: string;
     headerBg?: string;
+    colors?: Record<string, string>;
   };
 
-  const prompt = buildLogoPrompt(body.siteName, body.vertical, body.audience, body.headerBg);
+  const prompt = buildLogoPrompt(body.siteName, body.vertical, body.audience, body.headerBg, body.colors);
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
@@ -103,11 +104,17 @@ function buildLogoPrompt(
   vertical: string,
   audience?: string,
   headerBg?: string,
+  colors?: Record<string, string>,
 ): string {
   const dark = isDarkColor(headerBg ?? "#1a1a2e");
   const contrastInstruction = dark
     ? "LIGHT VERSION: Use off-white, cream, or bright vibrant colors. Optimized for a dark/black background."
     : "DARK VERSION: Use deep black, charcoal, or rich saturated colors. Optimized for a light/white background.";
+
+  const paletteEntries = Object.entries(colors ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("#"));
+  const paletteLine = paletteEntries.length > 0
+    ? `\n• BRAND PALETTE: Draw from these brand colors where they fit the contrast guidance above — ${paletteEntries.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary neutrals if needed.`
+    : "";
 
   return `Create a professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
 
@@ -120,7 +127,7 @@ VISUAL STYLE:
 • ICON: A single, bold, recognizable symbol representing ${vertical}. Incorporate a creative element that subtly connects the icon to the text for a unified brand look.
 • TYPOGRAPHY: Use a bold, modern, clean sans-serif font. The text must read exactly "${siteName}".
 • ART STYLE: Minimalist, flat design, vector-like. No 3D, no gradients, no photorealism.
-• COLORS: ${contrastInstruction} Max 2-3 colors.
+• COLORS: ${contrastInstruction} Max 2-3 colors.${paletteLine}
 
 CRITICAL CONSTRAINTS:
 • TRANSPARENCY: Solid colors on a pure transparent background.
