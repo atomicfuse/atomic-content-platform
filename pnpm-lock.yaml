@@ -83,6 +83,12 @@ importers:
       '@cloudgrid-io/ai':
         specifier: ^0.1.1
         version: 0.1.1
+      '@octokit/plugin-retry':
+        specifier: ^7.2.1
+        version: 7.2.1(@octokit/core@6.1.6)
+      '@octokit/plugin-throttling':
+        specifier: ^9.6.1
+        version: 9.6.1(@octokit/core@6.1.6)
       '@octokit/rest':
         specifier: ^21.1.0
         version: 21.1.1
