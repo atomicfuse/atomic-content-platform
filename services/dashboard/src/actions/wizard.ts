@@ -1249,9 +1249,13 @@ export async function generateLogoPreview(
   const mainBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
   const logo = mainBuf?.toString("base64") ?? null;
 
+  // Footer variant is a RECOLOR of the main logo (image-to-image), not a fresh
+  // generation — independent generations would produce a different mascot /
+  // composition for the same site. The recolor preserves design and only
+  // inverts colors for the opposite-contrast background.
   let footerLogo: string | null = null;
-  if (footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
-    const footerBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, footerBg, colors);
+  if (mainBuf && footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
+    const footerBuf = await recolorLogoForBackground(geminiKey, mainBuf, footerBg);
     footerLogo = footerBuf?.toString("base64") ?? null;
   }
 
@@ -1667,6 +1671,92 @@ CRITICAL CONSTRAINTS:
     }
   } catch (err) {
     console.warn("[wizard] Logo generation error:", err);
+    return null;
+  }
+}
+
+/**
+ * Image-to-image recolor: pass an existing logo as input and ask Gemini to
+ * produce an identical design with inverted colors for the opposite-contrast
+ * background. Used to generate the footer-variant logo when header and footer
+ * backgrounds invert (e.g. light header + dark footer). The source image is
+ * already a transparent-background PNG produced by `generateLogoWithGemini`.
+ */
+async function recolorLogoForBackground(
+  apiKey: string,
+  sourceLogo: Buffer,
+  targetBg: string,
+): Promise<Buffer | null> {
+  const dark = isDarkColor(targetBg);
+
+  const prompt = `Recolor this exact logo so it is clearly visible on a solid ${targetBg} background (${dark ? "DARK" : "LIGHT"}).
+
+CRITICAL — keep the design 100% IDENTICAL to the source image:
+• Same icon, mascot, or character — same pose, same details.
+• Same composition, layout, and proportions.
+• Same typography and exact same brand-name spelling.
+• Same level of detail and line weight.
+The ONLY thing changing is the COLOR of the elements.
+
+COLOR INVERSION:
+${dark
+  ? "• Every currently-dark element (black outlines, dark fills, dark text) → swap to LIGHT equivalents: white, off-white, cream, or bright tints of the source color.\n• Keep colorful brand elements but lighten their tone if needed for visibility on the dark background."
+  : "• Every currently-light element (white outlines, light fills, light text) → swap to DARK equivalents: black, charcoal, or rich saturated shades of the source color.\n• Keep colorful brand elements but darken their tone if needed for visibility on the light background."}
+
+CANVAS:
+• Render on a solid uniform ${targetBg} background, edge to edge. No textures, gradients, patterns, or drop shadows. (This solid background will be stripped to transparency in post-processing.)
+
+TEXT IN IMAGE:
+• The ONLY text rendered is exactly the same brand name as the source image. Do NOT add or change any text. No hex codes, color codes, numbers, palette labels, or watermarks.`;
+
+  try {
+    const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: "image/png", data: sourceLogo.toString("base64") } },
+            { text: prompt },
+          ],
+        }],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!response.ok) {
+      console.warn(`[wizard] Logo recolor failed: ${response.status}`);
+      return null;
+    }
+
+    const data = (await response.json()) as {
+      candidates?: Array<{
+        content: {
+          parts: Array<{
+            inlineData?: { mimeType: string; data: string };
+            text?: string;
+          }>;
+        };
+      }>;
+    };
+
+    const imagePart = data.candidates?.[0]?.content.parts.find((p) => p.inlineData);
+    if (!imagePart?.inlineData) {
+      console.warn("[wizard] No image in Gemini recolor response");
+      return null;
+    }
+
+    const raw = Buffer.from(imagePart.inlineData.data, "base64");
+    try {
+      return await removeBackground(raw);
+    } catch (bgErr) {
+      console.warn("[wizard] removeBackground failed on recolor, using original:", bgErr);
+      return raw;
+    }
+  } catch (err) {
+    console.warn("[wizard] Logo recolor error:", err);
     return null;
   }
 }
