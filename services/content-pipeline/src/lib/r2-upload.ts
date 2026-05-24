@@ -15,7 +15,9 @@ function getClient(): S3Client | null {
   if (_client) return _client;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID || ASSETS_ACCOUNT_ID;
+  // Always use Assets account for R2. CLOUDFLARE_ACCOUNT_ID may point to
+  // Dev1 for other purposes (KV, wrangler) — never use it for R2.
+  const accountId = ASSETS_ACCOUNT_ID;
   if (!accessKeyId || !secretAccessKey) {
     return null;
   }
