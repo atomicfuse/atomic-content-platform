@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { removeBackground } from "@/lib/remove-background";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 
-const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /** Simple luminance check — returns true if the hex color is dark. */
@@ -113,10 +113,10 @@ function buildLogoPrompt(
 
   const paletteEntries = Object.entries(colors ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("#"));
   const paletteLine = paletteEntries.length > 0
-    ? `\n• BRAND PALETTE: Draw from these brand colors where they fit the contrast guidance above — ${paletteEntries.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary neutrals if needed.`
+    ? `\n• BRAND PALETTE (reference values for the designer — these codes must NEVER appear as text in the rendered image): inspired by ${paletteEntries.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary neutrals where helpful.`
     : "";
 
-  return `Create a professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
+  return `Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
 
 LAYOUT & STRUCTURE:
 • COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
@@ -124,14 +124,14 @@ LAYOUT & STRUCTURE:
 • ASPECT RATIO: Wide horizontal format (suitable for a website navigation bar).
 
 VISUAL STYLE:
-• ICON: A single, bold, recognizable symbol representing ${vertical}. Incorporate a creative element that subtly connects the icon to the text for a unified brand look.
-• TYPOGRAPHY: Use a bold, modern, clean sans-serif font. The text must read exactly "${siteName}".
-• ART STYLE: Minimalist, flat design, vector-like. No 3D, no gradients, no photorealism.
-• COLORS: ${contrastInstruction} Max 2-3 colors.${paletteLine}
+• ICON: A single, bold, recognizable symbol or stylized mascot representing ${vertical}. Crafted illustration with personality — confident outlines, soft internal shading, and a subtle sense of depth (think a modern brand mascot, NOT a flat two-tone icon).
+• TYPOGRAPHY: Bold, modern, clean sans-serif. The text must read exactly "${siteName}".
+• ART STYLE: Premium vector-illustration with subtle gradients, soft highlights, and shading WITHIN shapes for depth and richness. NOT photorealistic, NOT 3D-rendered, NOT a generic flat icon.
+• COLORS: ${contrastInstruction} 2-4 brand colors with subtle shading variations.${paletteLine}
 
 CRITICAL CONSTRAINTS:
-• TRANSPARENCY: Solid colors on a pure transparent background.
-• NO MOCKUPS: No business cards, no walls, no paper textures, no shadows.
-• CLARITY: Ensure high contrast and perfect spelling of "${siteName}".
+• BACKGROUND: Place the logo on a uniform pure white background, edge to edge. No textures, no patterns, no gradient fades, no drop shadows behind the logo.
+• TEXT IN IMAGE: The ONLY text rendered in the image is exactly "${siteName}". Do NOT render any hex codes, color codes, numbers, palette labels, version tags, or watermarks anywhere in the image.
+• CLARITY: High contrast against the background and perfect spelling of "${siteName}".
 • PADDING: Leave a small amount of breathing room/padding around the edges.`;
 }
