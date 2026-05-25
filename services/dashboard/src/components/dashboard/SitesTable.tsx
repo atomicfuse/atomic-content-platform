@@ -64,11 +64,12 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
 
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE_OPTIONS = [10, 20, 30, 40 , 50] as const;
 
   // Get the site entry for the delete target so we can show what will be cleaned up
   const deleteTargetSite = deleteTarget ? sites.find((s) => s.domain === deleteTarget) : null;
@@ -116,10 +117,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
     });
   }, [sites, search, companyFilter, verticalFilter, statusFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredSites.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
   );
 
   const goToPage = useCallback((page: number): void => {
@@ -288,43 +289,64 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         </div>
 
         {/* Pagination */}
-        {filteredSites.length > PAGE_SIZE && (
+        {filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
-            <span className="text-xs text-[var(--text-muted)]">
-              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredSites.length)} of {filteredSites.length} sites
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(): void => goToPage(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Prev
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  type="button"
-                  onClick={(): void => goToPage(page)}
-                  className={`min-w-[28px] px-1.5 py-1 text-xs rounded-md transition-colors ${
-                    page === currentPage
-                      ? "bg-[var(--accent-primary)] text-white font-medium"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
-                  }`}
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                Show
+                <select
+                  value={pageSize}
+                  onChange={(e): void => {
+                    const newSize = Number(e.target.value);
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-[var(--bg-elevated)] border border-[var(--border-secondary)] rounded-md px-1.5 py-0.5 text-xs text-[var(--text-secondary)] cursor-pointer"
                 >
-                  {page}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={(): void => goToPage(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              >
-                Next
-              </button>
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+                rows
+              </label>
+              <span className="text-xs text-[var(--text-muted)]">
+                {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredSites.length)} of {filteredSites.length}
+              </span>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(): void => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={(): void => goToPage(page)}
+                    className={`min-w-[28px] px-1.5 py-1 text-xs rounded-md transition-colors ${
+                      page === currentPage
+                        ? "bg-[var(--accent-primary)] text-white font-medium"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(): void => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
