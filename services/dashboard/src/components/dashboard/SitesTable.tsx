@@ -185,22 +185,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="OB EPID" tooltip="Outbrain EPID value configured for the site as part of ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="GA Info" tooltip="Google Analytics configuration data associated with the site (e.g., property or measurement identifiers)." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="CF APO" tooltip="Cloudflare APO (Automatic Platform Optimization) enablement status for the site." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Fixed Ad" tooltip="Fixed ad placement configuration and status for the site as defined in ad config setup." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Actions
@@ -211,7 +196,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={7}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -255,31 +240,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}
                   </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.exclusivity ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.ob_epid ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)] font-mono text-xs">
-                    {site.ga_info ?? "—"}
-                  </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.cf_apo ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.fixed_ad ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button
