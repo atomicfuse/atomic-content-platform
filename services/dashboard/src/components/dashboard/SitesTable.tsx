@@ -482,25 +482,31 @@ function InlineCompanySelect({
 }): React.ReactElement {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Optimistic display — updated immediately on selection, before server round-trip.
+  const [optimistic, setOptimistic] = useState<Company | null | undefined>(undefined);
 
-  const display = value || null;
+  const display = optimistic !== undefined ? optimistic : (value || null);
 
   async function handleChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
     e.stopPropagation();
     const newValue = (e.target.value || null) as Company | null;
-    if (newValue === display) {
+    if (newValue === (value || null)) {
       setEditing(false);
       return;
     }
+    // Show new value immediately.
+    setOptimistic(newValue);
+    setEditing(false);
     setSaving(true);
     try {
       await updateSiteEntry(domain, { company: newValue });
       onSaved(newValue);
     } catch (err) {
+      // Revert optimistic update on failure.
+      setOptimistic(undefined);
       onError(err instanceof Error ? err.message : "Failed to update company");
     } finally {
       setSaving(false);
-      setEditing(false);
     }
   }
 
@@ -508,7 +514,7 @@ function InlineCompanySelect({
     return (
       <select
         autoFocus
-        value={value ?? ""}
+        value={(display ?? "")}
         onChange={(e): void => { void handleChange(e); }}
         onBlur={(): void => setEditing(false)}
         onClick={(e): void => e.stopPropagation()}
@@ -527,8 +533,9 @@ function InlineCompanySelect({
     <button
       type="button"
       onClick={(e): void => { e.stopPropagation(); setEditing(true); }}
-      className="hover:text-cyan transition-colors cursor-pointer"
+      className={`hover:text-cyan transition-colors cursor-pointer ${saving ? "opacity-50" : ""}`}
       title="Click to change company"
+      disabled={saving}
     >
       {display || <span className="text-[var(--text-muted)]">&mdash;</span>}
     </button>
