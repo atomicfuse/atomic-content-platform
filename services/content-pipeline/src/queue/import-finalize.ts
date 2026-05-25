@@ -65,8 +65,8 @@ export async function processImportFinalize(
 
         index.sites.push({
           domain: site.siteId,
-          company: null,
-          vertical: null,
+          company: site.company || null,
+          vertical: site.vertical || null,
           status: "Staging",
           site_id: `${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
           exclusivity: null,
