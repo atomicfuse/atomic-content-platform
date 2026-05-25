@@ -381,10 +381,11 @@ describe("interstitial config panel", () => {
         },
       }),
     );
-    expect(screen.getByText("All Pages")).toBeInTheDocument();
-    expect(screen.getByText("Homepage")).toBeInTheDocument();
-    expect(screen.getByText("Articles")).toBeInTheDocument();
-    expect(screen.getByText("Categories")).toBeInTheDocument();
+    // Page type buttons appear in both interstitial config and per-placement
+    expect(screen.getAllByText("All Pages").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Homepage").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Articles").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Categories").length).toBeGreaterThanOrEqual(1);
   });
 
   it("I-UI06 — toggling interstitial on triggers onChange with interstitial=true", async () => {

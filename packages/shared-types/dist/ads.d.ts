@@ -62,6 +62,10 @@ export interface AdPlacement {
      * so the widget appears in the correct layout location.
      */
     code?: string;
+    /** Which page types this placement appears on. Default: ["all"]. */
+    page_types?: InterstitialPageType[];
+    /** Page types to exclude this placement from (overrides page_types). */
+    exclude_pages?: InterstitialExcludePage[];
 }
 /**
  * Trigger configuration for interstitial ads.

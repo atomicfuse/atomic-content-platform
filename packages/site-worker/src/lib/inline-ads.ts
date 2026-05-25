@@ -15,6 +15,8 @@ interface InlinePlacement {
     desktop?: number[][];
     mobile?: number[][];
   };
+  page_types?: string[];
+  exclude_pages?: string[];
 }
 
 /**
@@ -33,6 +35,12 @@ interface InlinePlacement {
 export function injectInlineAds(html: string, placements: readonly InlinePlacement[]): string {
   const inline: Array<{ id: string; position: string; afterIndex: number; sizesDesktop: number[][]; sizesMobile: number[][] }> = [];
   for (const p of placements) {
+    // Inline ads are only injected on article pages — skip placements that
+    // don't target articles via page_types or explicitly exclude them.
+    const pt = p.page_types ?? ['all'];
+    if (!pt.includes('all') && !pt.includes('article')) continue;
+    if (p.exclude_pages?.includes('articles')) continue;
+
     const match = /^after-paragraph-(\d+)$/.exec(p.position ?? '');
     if (!match) continue;
     const n = Number.parseInt(match[1] ?? '', 10);

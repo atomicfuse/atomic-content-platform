@@ -27,6 +27,10 @@ export interface AdPlacement {
   mobileSizeConfig?: AdSizeConfig;
   /** Raw HTML/JS widget code to inject inside the ad slot container. */
   code?: string;
+  /** Which page types this placement appears on. Default: ["all"]. */
+  page_types?: InterstitialPageType[];
+  /** Page types to exclude this placement from (overrides page_types). */
+  exclude_pages?: InterstitialExcludePage[];
 }
 
 export { validatePlacementConfigs } from "./ad-size-config";
@@ -88,6 +92,25 @@ const DEVICE_OPTIONS: Array<{ value: AdPlacement["device"]; label: string }> = [
   { value: "mobile", label: "Mobile" },
 ];
 
+const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> = [
+  { value: "all", label: "All Pages" },
+  { value: "homepage", label: "Homepage" },
+  { value: "article", label: "Articles" },
+  { value: "category", label: "Categories" },
+];
+
+const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string; group?: string }> = [
+  { value: "homepage", label: "Homepage" },
+  { value: "articles", label: "Articles" },
+  { value: "categories", label: "Categories" },
+  { value: "about", label: "About", group: "Shared Pages" },
+  { value: "contact", label: "Contact", group: "Shared Pages" },
+  { value: "privacy", label: "Privacy", group: "Shared Pages" },
+  { value: "terms", label: "Terms", group: "Shared Pages" },
+  { value: "dmca", label: "DMCA", group: "Shared Pages" },
+  { value: "amazon", label: "Amazon Disclosure", group: "Shared Pages" },
+];
+
 const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "above-content", label: "Above Content" },
   { value: "after-paragraph-1", label: "After Paragraph 1" },
@@ -132,6 +155,8 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
       sizes: {},
       desktopSizeConfig: createDefaultSizeConfig(),
       mobileSizeConfig: createDefaultSizeConfig(),
+      page_types: ["all"],
+      exclude_pages: [],
     };
     onChange({ ...value, ad_placements: [...value.ad_placements, newPlacement] });
   }, [value, onChange]);
@@ -399,12 +424,153 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
                 Raw HTML + script tags from your ad network. Rendered server-side inside this ad position.
               </p>
             </div>
+
+            {/* Page Types */}
+            <PlacementPageTypes
+              pageTypes={placement.page_types ?? ["all"]}
+              excludePages={placement.exclude_pages ?? []}
+              onChange={(patch): void => {
+                updatePlacement(index, patch);
+              }}
+            />
           </div>
         ))}
       </div>
 
       {/* Placement Preview */}
       <PlacementPreview placements={value.ad_placements} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Placement Page Types / Exclude Pages                                */
+/* ------------------------------------------------------------------ */
+
+function PlacementPageTypes({
+  pageTypes,
+  excludePages,
+  onChange,
+}: {
+  pageTypes: InterstitialPageType[];
+  excludePages: InterstitialExcludePage[];
+  onChange: (patch: Pick<AdPlacement, "page_types" | "exclude_pages">) => void;
+}): React.ReactElement {
+  const togglePageType = (pt: InterstitialPageType): void => {
+    if (pt === "all") {
+      onChange({ page_types: pageTypes.includes("all") ? [] : ["all"], exclude_pages: excludePages });
+      return;
+    }
+    let next: InterstitialPageType[] = pageTypes.filter((t) => t !== "all");
+    if (next.includes(pt)) {
+      next = next.filter((t) => t !== pt);
+    } else {
+      next = [...next, pt];
+    }
+    if (next.length === 3 && next.includes("homepage") && next.includes("article") && next.includes("category")) {
+      next = ["all"];
+    }
+    onChange({ page_types: next.length > 0 ? next : ["all"], exclude_pages: excludePages });
+  };
+
+  const selectClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none";
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Show On Page Types
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {PAGE_TYPE_OPTIONS.map((opt) => {
+            const active = pageTypes.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(): void => {
+                  togglePageType(opt.value);
+                }}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold border transition-colors ${
+                  active
+                    ? "bg-cyan/20 border-cyan/50 text-cyan"
+                    : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Exclude From Pages
+        </label>
+        <select
+          value=""
+          onChange={(e): void => {
+            const val = e.target.value as InterstitialExcludePage;
+            if (val && !excludePages.includes(val)) {
+              onChange({ page_types: pageTypes, exclude_pages: [...excludePages, val] });
+            }
+            e.target.value = "";
+          }}
+          className={selectClass}
+        >
+          <option value="">+ Add page to exclude...</option>
+          {(() => {
+            let lastGroup = "";
+            const elements: React.ReactElement[] = [];
+            for (const opt of EXCLUDE_PAGE_OPTIONS) {
+              if (excludePages.includes(opt.value)) continue;
+              if (opt.group && opt.group !== lastGroup) {
+                lastGroup = opt.group;
+                elements.push(
+                  <option key={`group-${opt.group}`} disabled className="font-semibold">
+                    {"── " + opt.group + " ──"}
+                  </option>,
+                );
+              } else if (!opt.group && lastGroup) {
+                lastGroup = "";
+              }
+              elements.push(
+                <option key={opt.value} value={opt.value}>
+                  {opt.group ? "  " + opt.label : opt.label}
+                </option>,
+              );
+            }
+            return elements;
+          })()}
+        </select>
+        {excludePages.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {excludePages.map((p) => {
+              const opt = EXCLUDE_PAGE_OPTIONS.find((o) => o.value === p);
+              return (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-500/10 border border-red-500/30 px-2 py-0.5 text-xs font-medium text-red-400"
+                >
+                  {opt?.label ?? p}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      onChange({ page_types: pageTypes, exclude_pages: excludePages.filter((x) => x !== p) });
+                    }}
+                    className="ml-0.5 text-red-400/70 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${opt?.label ?? p}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -425,29 +591,10 @@ const FREQUENCY_OPTIONS: Array<{ value: InterstitialConfigFormValue["frequency"]
   { value: "custom", label: "Custom (N per Session)" },
 ];
 
-const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> = [
-  { value: "all", label: "All Pages" },
-  { value: "homepage", label: "Homepage" },
-  { value: "article", label: "Articles" },
-  { value: "category", label: "Categories" },
-];
-
 const INTERSTITIAL_DEVICE_OPTIONS: Array<{ value: InterstitialConfigFormValue["device"]; label: string }> = [
   { value: "both", label: "Both" },
   { value: "desktop", label: "Desktop Only" },
   { value: "mobile", label: "Mobile Only" },
-];
-
-const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string; group?: string }> = [
-  { value: "homepage", label: "Homepage" },
-  { value: "articles", label: "Articles" },
-  { value: "categories", label: "Categories" },
-  { value: "about", label: "About", group: "Shared Pages" },
-  { value: "contact", label: "Contact", group: "Shared Pages" },
-  { value: "privacy", label: "Privacy", group: "Shared Pages" },
-  { value: "terms", label: "Terms", group: "Shared Pages" },
-  { value: "dmca", label: "DMCA", group: "Shared Pages" },
-  { value: "amazon", label: "Amazon Disclosure", group: "Shared Pages" },
 ];
 
 function InterstitialConfigPanel({
