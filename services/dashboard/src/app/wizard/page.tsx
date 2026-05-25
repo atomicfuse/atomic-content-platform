@@ -17,7 +17,7 @@ const DEFAULT_FORM: WizardFormData = {
   pagesProjectName: "",
   siteName: "",
   siteTagline: "",
-  company: "ATL",
+  company: "",
   vertical: "",
   verticalId: "",
   groups: [],

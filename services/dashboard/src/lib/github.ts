@@ -167,23 +167,41 @@ export async function writeDashboardIndex(
   });
 }
 
-/** Update a single site entry in the dashboard index. */
+/** Update a single site entry in the dashboard index.
+ *  Retries automatically on SHA conflicts (409/422) caused by concurrent
+ *  writes to dashboard-index.yaml — e.g. rapid inline company edits. */
 export async function updateSiteInIndex(
   domain: string,
   updates: Partial<DashboardSiteEntry>
 ): Promise<DashboardIndex> {
-  const index = await readDashboardIndex();
-  const siteIndex = index.sites.findIndex((s) => s.domain === domain);
-  if (siteIndex === -1) {
-    throw new Error(`Site ${domain} not found in dashboard index`);
+  const MAX_RETRIES = 4;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const index = await readDashboardIndex({ fresh: true });
+    const siteIndex = index.sites.findIndex((s) => s.domain === domain);
+    if (siteIndex === -1) {
+      throw new Error(`Site ${domain} not found in dashboard index`);
+    }
+    index.sites[siteIndex] = {
+      ...index.sites[siteIndex]!,
+      ...updates,
+      last_updated: new Date().toISOString(),
+    };
+    try {
+      await writeDashboardIndex(index, `dashboard: update ${domain}`);
+      return index;
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status;
+      if ((status === 409 || status === 422) && attempt < MAX_RETRIES) {
+        // SHA conflict — another write landed first. Retry with fresh data.
+        const delay = 200 * (attempt + 1);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
   }
-  index.sites[siteIndex] = {
-    ...index.sites[siteIndex]!,
-    ...updates,
-    last_updated: new Date().toISOString(),
-  };
-  await writeDashboardIndex(index, `dashboard: update ${domain}`);
-  return index;
+  // Unreachable, but satisfies TS return type.
+  throw new Error(`Failed to update ${domain} after ${MAX_RETRIES} retries`);
 }
 
 /** Move a site from the active list to the deleted (trash) list. */
