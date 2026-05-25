@@ -43,6 +43,9 @@ interface ColorState {
   prose_heading: string;
   prose_body: string;
   category_header_text: string;
+  // Newsletter subscribe-form heading (sidebar NewsletterBox + article NewsletterBand).
+  // Defaults to primary.
+  subscribe_heading: string;
   // New footer text fields (Tier 2)
   footer_text: string;
   footer_heading: string;
@@ -83,7 +86,8 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
       article_hero_meta: "#6b7280",
       feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
-      prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+      prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#1a1a2e",
+      subscribe_heading: "#1a1a2e",
       footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
@@ -99,6 +103,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       article_hero_meta: "#8C8C8C",
       feed_title: "#ffffff", feed_desc: "#e0e0e0", feed_date: "#8C8C8C",
       prose_heading: "#ffffff", prose_body: "#e0e0e0", category_header_text: "#ffffff",
+      subscribe_heading: "#E50914",
       footer_text: "#9ca3af", footer_heading: "#ffffff", footer_link: "#9ca3af", footer_link_hover: "#ffffff",
     },
   },
@@ -114,6 +119,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       article_hero_meta: "#64748b",
       feed_title: "#0f172a", feed_desc: "#0f172a", feed_date: "#64748b",
       prose_heading: "#0f172a", prose_body: "#1e293b", category_header_text: "#ffffff",
+      subscribe_heading: "#0f4c81",
       footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
@@ -129,6 +135,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       article_hero_meta: "#78716c",
       feed_title: "#1c1917", feed_desc: "#1c1917", feed_date: "#78716c",
       prose_heading: "#1c1917", prose_body: "#292524", category_header_text: "#ffffff",
+      subscribe_heading: "#7c2d12",
       footer_text: "#a8a29e", footer_heading: "#ffffff", footer_link: "#a8a29e", footer_link_hover: "#ffffff",
     },
   },
@@ -144,6 +151,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       article_hero_meta: "#94a3b8",
       feed_title: "#1e293b", feed_desc: "#334155", feed_date: "#94a3b8",
       prose_heading: "#1e293b", prose_body: "#334155", category_header_text: "#ffffff",
+      subscribe_heading: "#334155",
       footer_text: "#94a3b8", footer_heading: "#ffffff", footer_link: "#94a3b8", footer_link_hover: "#ffffff",
     },
   },
@@ -159,6 +167,7 @@ const PRESETS: Record<string, { name: string; colors: ColorState }> = {
       article_hero_meta: "#a78bfa",
       feed_title: "#f0e6ff", feed_desc: "#d8c8f0", feed_date: "#a78bfa",
       prose_heading: "#f0e6ff", prose_body: "#d8c8f0", category_header_text: "#ffffff",
+      subscribe_heading: "#581c87",
       footer_text: "#a78bfa", footer_heading: "#ffffff", footer_link: "#a78bfa", footer_link_hover: "#ffffff",
     },
   },
@@ -171,6 +180,7 @@ const ALL_COLOR_KEYS: (keyof ColorState)[] = [
   "hero_title", "must_reads_title", "article_hero_title", "article_hero_meta",
   "feed_title", "feed_desc", "feed_date",
   "prose_heading", "prose_body", "category_header_text",
+  "subscribe_heading",
   "footer_text", "footer_heading", "footer_link", "footer_link_hover",
 ];
 
@@ -572,6 +582,12 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
                 <ColorPickerField label="Prose headings (h2, h3)" value={state.colors.prose_heading} onChange={(v): void => setColor("prose_heading", v)} helperText="Default: text color" />
                 <ColorPickerField label="Prose body text" value={state.colors.prose_body} onChange={(v): void => setColor("prose_body", v)} helperText="Default: text color" />
                 <ColorPickerField label="Category header text" value={state.colors.category_header_text} onChange={(v): void => setColor("category_header_text", v)} helperText="Default: white" />
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Newsletter forms</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ColorPickerField label="Subscribe form heading" value={state.colors.subscribe_heading} onChange={(v): void => setColor("subscribe_heading", v)} helperText='"Subscribe to our newsletter" text in sidebar and article forms. Defaults to primary.' />
               </div>
             </div>
             <div>

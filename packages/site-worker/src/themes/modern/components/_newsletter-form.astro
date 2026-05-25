@@ -20,3 +20,16 @@ const { source, domain, buttonLabel = 'Subscribe', inputClass = '', buttonClass 
   <button type="submit" class={`atl-newsletter-submit ${buttonClass}`}>{buttonLabel}</button>
   <input name="_hp" tabindex="-1" autocomplete="off" style="position:absolute;left:-9999px" aria-hidden="true" />
 </form>
+
+<style is:global>
+  .atl-newsletter-submit {
+    transition: filter 150ms ease, transform 150ms ease;
+  }
+  .atl-newsletter-submit:hover {
+    filter: brightness(0.92);
+    transform: translateY(-1px);
+  }
+  .atl-newsletter-submit:active {
+    transform: translateY(0);
+  }
+</style>
