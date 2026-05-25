@@ -562,7 +562,7 @@ export async function readSiteConfig(
 // readArticles makes 1 + N API calls (directory listing + 1 per article),
 // so caching here is the single biggest rate-limit saver.
 const articlesCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
-const ARTICLES_CACHE_TTL = 2 * 60_000; // 2 min
+const ARTICLES_CACHE_TTL = 15 * 60_000; // 15 min
 
 function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | null {
   const key = `${domain}@${branch ?? "main"}`;
@@ -575,6 +575,11 @@ function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | nu
 function setCachedArticles(domain: string, branch: string | undefined, data: ArticleEntry[]): void {
   const key = `${domain}@${branch ?? "main"}`;
   articlesCache.set(key, { data, expiresAt: Date.now() + ARTICLES_CACHE_TTL });
+}
+
+/** Clear all cached articles — used by review queue refresh. */
+export function clearArticlesCache(): void {
+  articlesCache.clear();
 }
 
 export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {

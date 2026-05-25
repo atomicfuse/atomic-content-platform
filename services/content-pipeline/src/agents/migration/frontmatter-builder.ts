@@ -1,4 +1,5 @@
 import { stringify as yamlStringify } from "yaml";
+import type { QualityScoreBreakdown } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,11 @@ export interface ArticleMdInput {
     og_image?: string;
     twitter_card?: string;
   };
+  videos?: Array<{ id: string; url: string; position: string }>;
+  quality_score?: number;
+  score_breakdown?: QualityScoreBreakdown;
+  quality_note?: string;
+  articleStatus?: "published" | "review";
 }
 
 // ---------------------------------------------------------------------------
@@ -31,12 +37,26 @@ export interface ArticleMdInput {
 const WORDS_PER_MINUTE = 200;
 
 /**
- * Strip all HTML tags from a string, leaving only text content.
- * Collapses whitespace and trims.
+ * Strip all HTML tags from a string, decode HTML entities, and collapse whitespace.
  */
 export function stripHtmlTags(html: string): string {
   return html
     .replace(/<[^>]*>/g, "")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex as string, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&rsquo;/g, "\u2019")
+    .replace(/&lsquo;/g, "\u2018")
+    .replace(/&rdquo;/g, "\u201D")
+    .replace(/&ldquo;/g, "\u201C")
+    .replace(/&mdash;/g, "\u2014")
+    .replace(/&ndash;/g, "\u2013")
+    .replace(/&hellip;/g, "\u2026")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -64,7 +84,7 @@ export function buildArticleMd(input: ArticleMdInput): string {
     title: input.title,
     description: input.description,
     type: "standard",
-    status: "published",
+    status: input.articleStatus ?? "published",
     publishDate: input.publishDate,
     author: input.author,
     tags: input.tags,
@@ -89,6 +109,20 @@ export function buildArticleMd(input: ArticleMdInput): string {
 
   if (Object.keys(seo).length > 0) {
     frontmatter.seo = seo;
+  }
+
+  if (input.videos && input.videos.length > 0) {
+    frontmatter.videos = input.videos;
+  }
+
+  if (input.quality_score !== undefined) {
+    frontmatter.quality_score = input.quality_score;
+  }
+  if (input.score_breakdown) {
+    frontmatter.score_breakdown = input.score_breakdown;
+  }
+  if (input.quality_note) {
+    frontmatter.quality_note = input.quality_note;
   }
 
   const yamlBlock = yamlStringify(frontmatter, {

@@ -4,12 +4,23 @@ import { JWT } from "google-auth-library";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
+function parseServiceAccountKey(raw: string): { client_email: string; private_key: string } {
+  // Try raw JSON first (.env.local), then base64 (CloudGrid secrets).
+  try {
+    return JSON.parse(raw) as { client_email: string; private_key: string };
+  } catch {
+    // Not valid JSON — assume base64-encoded JSON.
+    const decoded = Buffer.from(raw, "base64").toString("utf8");
+    return JSON.parse(decoded) as { client_email: string; private_key: string };
+  }
+}
+
 function getAuth(): JWT {
   const keyJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!keyJson) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY env var is not set");
   }
-  const key = JSON.parse(keyJson) as { client_email: string; private_key: string };
+  const key = parseServiceAccountKey(keyJson);
   return new JWT({
     email: key.client_email,
     key: key.private_key,

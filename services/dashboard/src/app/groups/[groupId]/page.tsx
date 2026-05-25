@@ -9,6 +9,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
+import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
 import {
@@ -17,6 +18,7 @@ import {
   normalizeScripts,
   normalizeAdsConfig,
 } from "@/lib/config-normalizers";
+import { COMPANIES } from "@/lib/constants";
 
 interface GroupConfig {
   name?: string;
@@ -54,9 +56,10 @@ export default function GroupDetailPage(): React.ReactElement {
     Array<{ domain: string; site_name?: string }>
   >([]);
   const [allSites, setAllSites] = useState<
-    Array<{ domain: string; status?: string }>
+    Array<{ domain: string; status?: string; company?: string | null }>
   >([]);
-  const [siteSearch, setSiteSearch] = useState("");
+  const [pendingAdd, setPendingAdd] = useState<string[]>([]);
+  const [addingSites, setAddingSites] = useState(false);
   const [updatingSite, setUpdatingSite] = useState<string | null>(null);
 
   const fetchData = useCallback(async (): Promise<void> => {
@@ -86,6 +89,7 @@ export default function GroupDetailPage(): React.ReactElement {
         const allData = (await allSitesRes.json()) as Array<{
           domain: string;
           status?: string;
+          company?: string | null;
         }>;
         setAllSites(allData);
       }
@@ -141,35 +145,70 @@ export default function GroupDetailPage(): React.ReactElement {
     }
   }
 
-  async function toggleSiteInGroup(
-    domain: string,
-    action: "add" | "remove",
-  ): Promise<void> {
+  async function removeSiteFromGroup(domain: string): Promise<void> {
     setUpdatingSite(domain);
     try {
       const res = await fetch(`/api/groups/${groupId}/sites`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, action }),
+        body: JSON.stringify({ domain, action: "remove" }),
       });
       if (!res.ok) {
         const data = (await res.json()) as { error?: string };
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
-      if (action === "add") {
-        setGroupSites((prev) => [...prev, { domain }]);
-        toast(`Added ${domain} to group`, "success");
-      } else {
-        setGroupSites((prev) => prev.filter((s) => s.domain !== domain));
-        toast(`Removed ${domain} from group`, "success");
-      }
+      setGroupSites((prev) => prev.filter((s) => s.domain !== domain));
+      toast(`Removed ${domain} from group`, "success");
     } catch (err) {
       toast(
-        err instanceof Error ? err.message : "Failed to update site",
+        err instanceof Error ? err.message : "Failed to remove site",
         "error",
       );
     } finally {
       setUpdatingSite(null);
+    }
+  }
+
+  function togglePendingAdd(domain: string): void {
+    setPendingAdd((prev) =>
+      prev.includes(domain)
+        ? prev.filter((d) => d !== domain)
+        : [...prev, domain],
+    );
+  }
+
+  async function addSelectedSites(): Promise<void> {
+    if (pendingAdd.length === 0) return;
+    setAddingSites(true);
+    try {
+      const res = await fetch(`/api/groups/${groupId}/sites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domains: pendingAdd, action: "add" }),
+      });
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as {
+        results?: Array<{ domain: string; status: string; error?: string }>;
+      };
+      const added = data.results?.filter((r) => r.status === "ok").map((r) => r.domain) ?? pendingAdd;
+      const failed = data.results?.filter((r) => r.status === "error") ?? [];
+      setGroupSites((prev) => [...prev, ...added.map((d) => ({ domain: d }))]);
+      setPendingAdd([]);
+      if (failed.length > 0) {
+        toast(`Added ${added.length} sites, ${failed.length} failed`, "info");
+      } else {
+        toast(`Added ${added.length} site${added.length === 1 ? "" : "s"} to group`, "success");
+      }
+    } catch (err) {
+      toast(
+        err instanceof Error ? err.message : "Failed to add sites",
+        "error",
+      );
+    } finally {
+      setAddingSites(false);
     }
   }
 
@@ -247,11 +286,6 @@ export default function GroupDetailPage(): React.ReactElement {
         const unassigned = allSites.filter(
           (s) => !assignedDomains.has(s.domain),
         );
-        const filtered = siteSearch
-          ? unassigned.filter((s) =>
-              s.domain.toLowerCase().includes(siteSearch.toLowerCase()),
-            )
-          : unassigned;
 
         return (
           <div className="space-y-4">
@@ -290,7 +324,7 @@ export default function GroupDetailPage(): React.ReactElement {
                         className="text-xs px-2 py-1 rounded border border-error/30 text-error hover:bg-error/10 transition-colors disabled:opacity-50"
                         disabled={updatingSite === site.domain}
                         onClick={(): void => {
-                          void toggleSiteInGroup(site.domain, "remove");
+                          void removeSiteFromGroup(site.domain);
                         }}
                       >
                         {updatingSite === site.domain ? "..." : "Remove"}
@@ -303,49 +337,40 @@ export default function GroupDetailPage(): React.ReactElement {
 
             {/* Add sites */}
             <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-3">
-                Add Sites
-              </h3>
-              <Input
-                placeholder="Search sites..."
-                value={siteSearch}
-                onChange={(e): void => setSiteSearch(e.target.value)}
-              />
-              {filtered.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)] mt-3">
-                  {unassigned.length === 0
-                    ? "All sites are already in this group."
-                    : "No sites match your search."}
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Add Sites
+                </h3>
+                {pendingAdd.length > 0 && (
+                  <Button
+                    onClick={(): void => { void addSelectedSites(); }}
+                    loading={addingSites}
+                    disabled={addingSites}
+                    className="!text-xs !px-3 !py-1.5"
+                  >
+                    Add {pendingAdd.length} site{pendingAdd.length === 1 ? "" : "s"}
+                  </Button>
+                )}
+              </div>
+              {unassigned.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  All sites are already in this group.
                 </p>
               ) : (
-                <ul className="divide-y divide-[var(--border-secondary)] mt-2 max-h-64 overflow-y-auto">
-                  {filtered.map((site) => (
-                    <li
-                      key={site.domain}
-                      className="flex items-center justify-between py-2.5"
-                    >
-                      <span className="flex items-center gap-2 text-sm">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]" />
-                        <span>{site.domain}</span>
-                        {site.status && (
-                          <span className="text-[var(--text-muted)] text-xs">
-                            {site.status}
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        className="text-xs px-2 py-1 rounded border border-cyan/30 text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-50"
-                        disabled={updatingSite === site.domain}
-                        onClick={(): void => {
-                          void toggleSiteInGroup(site.domain, "add");
-                        }}
-                      >
-                        {updatingSite === site.domain ? "..." : "Add"}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <SearchableToggleList
+                  items={unassigned.map((s) => ({
+                    id: s.domain,
+                    label: s.domain,
+                    sublabel: s.company ?? undefined,
+                    group: s.company ?? undefined,
+                  }))}
+                  selected={pendingAdd}
+                  onToggle={togglePendingAdd}
+                  searchPlaceholder="Search sites..."
+                  maxVisible={8}
+                  groupFilterLabel="Company"
+                  groupOptions={[...COMPANIES]}
+                />
               )}
             </div>
           </div>

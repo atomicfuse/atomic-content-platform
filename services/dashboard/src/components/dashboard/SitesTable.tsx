@@ -66,6 +66,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -107,7 +108,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
 
   const filteredSites = useMemo(() => {
     setCurrentPage(1);
-    return sites.filter((site) => {
+    const filtered = sites.filter((site) => {
       if (search && !site.domain.toLowerCase().includes(search.toLowerCase())) {
         return false;
       }
@@ -116,7 +117,17 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       if (statusFilter && site.status !== statusFilter) return false;
       return true;
     });
-  }, [sites, search, companyFilter, verticalFilter, statusFilter]);
+    if (websiteSort) {
+      filtered.sort((a, b) => {
+        const aName = (a.custom_domain ?? a.domain).toLowerCase();
+        const bName = (b.custom_domain ?? b.domain).toLowerCase();
+        return websiteSort === "asc"
+          ? aName.localeCompare(bName)
+          : bName.localeCompare(aName);
+      });
+    }
+    return filtered;
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -170,7 +181,20 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             <thead>
               <tr className="border-b border-[var(--border-secondary)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Website
+                  <button
+                    type="button"
+                    onClick={(): void => setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc")}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Website
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${websiteSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {websiteSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Company
@@ -185,22 +209,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="OB EPID" tooltip="Outbrain EPID value configured for the site as part of ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="GA Info" tooltip="Google Analytics configuration data associated with the site (e.g., property or measurement identifiers)." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="CF APO" tooltip="Cloudflare APO (Automatic Platform Optimization) enablement status for the site." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Fixed Ad" tooltip="Fixed ad placement configuration and status for the site as defined in ad config setup." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Actions
@@ -211,7 +220,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={7}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -255,31 +264,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}
                   </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.exclusivity ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.ob_epid ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)] font-mono text-xs">
-                    {site.ga_info ?? "—"}
-                  </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.cf_apo ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.fixed_ad ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button

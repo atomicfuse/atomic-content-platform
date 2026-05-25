@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex, readArticles } from "@/lib/github";
+import { readDashboardIndex, readArticles, clearArticlesCache } from "@/lib/github";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import type { ArticleEntry } from "@/types/dashboard";
 
@@ -30,8 +30,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
     const domainFilter = params.get("domain") ?? "";
     const sort = params.get("sort") ?? "default"; // "default" | "newest" | "oldest"
+    const fresh = params.get("fresh") === "true";
 
-    const index = await readDashboardIndex();
+    if (fresh) clearArticlesCache();
+    const index = await readDashboardIndex({ fresh });
     const allReview: ReviewArticleDTO[] = [];
 
     await Promise.allSettled(
