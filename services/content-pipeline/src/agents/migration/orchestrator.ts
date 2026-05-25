@@ -18,6 +18,9 @@ import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
 import { triggerN8nImage } from "../content-generation/n8n-image.js";
+import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
+import { readSiteBrief } from "../../lib/site-brief.js";
+import type { SiteBrief, QualityScoreBreakdown } from "../../types.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
 import { randomUUID } from "node:crypto";
@@ -76,6 +79,18 @@ export async function runMigration(
   const allCategoryIds = [...new Set(articles.flatMap((a) => a.categories))];
   const baseUrl = extractBaseUrl(site.postsApiUrl);
   const wpCategories = [...(await fetchWpCategories(baseUrl, allCategoryIds)).values()];
+
+  // Step 2b: Read site brief for quality scoring (non-fatal if missing)
+  let siteBrief: SiteBrief | null = null;
+  let siteName = site.name;
+  try {
+    const briefData = await readSiteBrief(config.octokit, config.networkRepo, siteId, config.branch);
+    siteBrief = briefData.brief;
+    siteName = briefData.siteName || site.name;
+    console.log(`[migration] Loaded site brief for quality scoring`);
+  } catch {
+    console.warn(`[migration] Could not read site brief — skipping quality scoring`);
+  }
 
   // Step 3: Process each article
   progress.phase = "converting";
@@ -171,6 +186,34 @@ export async function runMigration(
         }
       }
 
+      // Quality scoring (if site brief is available)
+      let qualityScore: number | undefined;
+      let scoreBreakdown: QualityScoreBreakdown | undefined;
+      let qualityNote: string | undefined;
+      let articleStatus: "published" | "review" = "published";
+
+      if (siteBrief) {
+        try {
+          // Delay before scoring API call
+          await new Promise((resolve) => setTimeout(resolve, INTER_REQUEST_DELAY_MS));
+
+          const qualityResult = await scoreArticle(
+            { title, description: cleaned.description, body: cleaned.markdown, tags, type: "standard" },
+            siteName,
+            siteBrief,
+            siteBrief.quality_weights,
+          );
+          qualityScore = qualityResult.overallScore;
+          scoreBreakdown = qualityResult.breakdown;
+          qualityNote = qualityResult.note;
+          articleStatus = resolveQualityStatus(qualityResult.overallScore, siteBrief.quality_threshold);
+          console.log(`[migration] Quality: ${qualityScore}/100 → ${articleStatus} (${slug})`);
+        } catch (scoreErr) {
+          const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
+          console.warn(`[migration] Quality scoring failed for ${slug}, defaulting to published: ${errMsg}`);
+        }
+      }
+
       // Build frontmatter + body
       const yoast = article.yoast_head_json;
       const author = yoast?.author ?? yoast?.twitter_misc?.["Written by"] ?? "Editorial Team";
@@ -195,6 +238,10 @@ export async function runMigration(
           twitter_card: yoast?.twitter_card,
         },
         videos: videos.length > 0 ? videos : undefined,
+        quality_score: qualityScore,
+        score_breakdown: scoreBreakdown,
+        quality_note: qualityNote,
+        articleStatus,
       };
 
       files.push({
