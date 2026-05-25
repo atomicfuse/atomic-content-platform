@@ -1,4 +1,5 @@
 import { stringify as yamlStringify } from "yaml";
+import type { QualityScoreBreakdown } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +23,11 @@ export interface ArticleMdInput {
     og_image?: string;
     twitter_card?: string;
   };
+  videos?: Array<{ id: string; url: string; position: string }>;
+  quality_score?: number;
+  score_breakdown?: QualityScoreBreakdown;
+  quality_note?: string;
+  articleStatus?: "published" | "review";
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +84,7 @@ export function buildArticleMd(input: ArticleMdInput): string {
     title: input.title,
     description: input.description,
     type: "standard",
-    status: "published",
+    status: input.articleStatus ?? "published",
     publishDate: input.publishDate,
     author: input.author,
     tags: input.tags,
@@ -103,6 +109,20 @@ export function buildArticleMd(input: ArticleMdInput): string {
 
   if (Object.keys(seo).length > 0) {
     frontmatter.seo = seo;
+  }
+
+  if (input.videos && input.videos.length > 0) {
+    frontmatter.videos = input.videos;
+  }
+
+  if (input.quality_score !== undefined) {
+    frontmatter.quality_score = input.quality_score;
+  }
+  if (input.score_breakdown) {
+    frontmatter.score_breakdown = input.score_breakdown;
+  }
+  if (input.quality_note) {
+    frontmatter.quality_note = input.quality_note;
   }
 
   const yamlBlock = yamlStringify(frontmatter, {
