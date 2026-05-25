@@ -12,6 +12,7 @@ import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
 import { DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
 import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig } from "@/lib/config-normalizers";
+import { COMPANIES } from "@/lib/constants";
 
 interface OverrideConfig {
   override_id?: string;
@@ -36,6 +37,7 @@ interface GroupSummary {
 
 interface SiteSummary {
   domain: string;
+  company?: string | null;
 }
 
 export default function OverrideDetailPage(): React.ReactElement {
@@ -313,10 +315,13 @@ export default function OverrideDetailPage(): React.ReactElement {
               items={allSites.map((s) => ({
                 id: s.domain,
                 label: s.domain,
+                group: s.company ?? undefined,
               }))}
               selected={targetSites}
               onToggle={toggleTargetSite}
               searchPlaceholder="Search sites..."
+              groupFilterLabel="Company"
+              groupOptions={[...COMPANIES]}
             />
           </div>
         </div>

@@ -67,81 +67,103 @@ export async function GET(
 
 /**
  * POST /api/groups/:groupId/sites
- * Add or remove a site from this group.
+ * Add or remove site(s) from this group.
  * Body: { domain: string, action: "add" | "remove" }
+ *    OR { domains: string[], action: "add" | "remove" }  (batch)
  */
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ groupId: string }> },
 ): Promise<NextResponse> {
   const { groupId } = await params;
-  let body: { domain: string; action: "add" | "remove" };
+  let body: { domain?: string; domains?: string[]; action: "add" | "remove" };
   try {
-    body = (await req.json()) as { domain: string; action: "add" | "remove" };
+    body = (await req.json()) as { domain?: string; domains?: string[]; action: "add" | "remove" };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { domain, action } = body;
-  if (!domain || !["add", "remove"].includes(action)) {
+  const { action } = body;
+  const domainList = body.domains ?? (body.domain ? [body.domain] : []);
+  if (domainList.length === 0 || !["add", "remove"].includes(action)) {
     return NextResponse.json(
-      { error: "domain and action (add|remove) are required" },
+      { error: "domain(s) and action (add|remove) are required" },
       { status: 400 },
     );
   }
 
   try {
     const index = await readDashboardIndex();
-    const site = index.sites.find((s) => s.domain === domain);
-    if (!site) {
-      return NextResponse.json({ error: "Site not found" }, { status: 404 });
-    }
 
-    const branch = site.staging_branch ?? undefined;
-    let config = await readSiteConfig(domain, branch);
-    if (!config && branch) {
-      config = await readSiteConfig(domain, undefined);
-    }
-    if (!config) {
-      return NextResponse.json(
-        { error: "Could not read site config" },
-        { status: 400 },
-      );
-    }
+    const results: Array<{ domain: string; status: "ok" | "error"; error?: string; groups?: string[] }> = [];
 
-    // Normalize current groups
-    const currentGroups: string[] =
-      (config.groups as string[] | undefined) ??
-      (config.group ? [config.group as string] : []);
+    await Promise.all(
+      domainList.map(async (domain) => {
+        try {
+          const site = index.sites.find((s) => s.domain === domain);
+          if (!site) {
+            results.push({ domain, status: "error", error: "Site not found" });
+            return;
+          }
 
-    let updated: string[];
-    if (action === "add") {
-      updated = currentGroups.includes(groupId)
-        ? currentGroups
-        : [...currentGroups, groupId];
-    } else {
-      updated = currentGroups.filter((g) => g !== groupId);
-    }
+          const branch = site.staging_branch ?? undefined;
+          let config = await readSiteConfig(domain, branch);
+          if (!config && branch) {
+            config = await readSiteConfig(domain, undefined);
+          }
+          if (!config) {
+            results.push({ domain, status: "error", error: "Could not read site config" });
+            return;
+          }
 
-    config.groups = updated;
-    // Clean up legacy field
-    delete config.group;
+          const currentGroups: string[] =
+            (config.groups as string[] | undefined) ??
+            (config.group ? [config.group as string] : []);
 
-    const targetBranch = site.staging_branch ?? "main";
-    await commitSiteFiles(
-      domain,
-      [
-        {
-          path: `sites/${domain}/site.yaml`,
-          content: stringifyYaml(config, { lineWidth: 0 }),
-        },
-      ],
-      `config(site): ${action} group '${groupId}' ${action === "add" ? "to" : "from"} ${domain}`,
-      targetBranch,
+          let updated: string[];
+          if (action === "add") {
+            updated = currentGroups.includes(groupId)
+              ? currentGroups
+              : [...currentGroups, groupId];
+          } else {
+            updated = currentGroups.filter((g) => g !== groupId);
+          }
+
+          config.groups = updated;
+          delete config.group;
+
+          const targetBranch = site.staging_branch ?? "main";
+          await commitSiteFiles(
+            domain,
+            [
+              {
+                path: `sites/${domain}/site.yaml`,
+                content: stringifyYaml(config, { lineWidth: 0 }),
+              },
+            ],
+            `config(site): ${action} group '${groupId}' ${action === "add" ? "to" : "from"} ${domain}`,
+            targetBranch,
+          );
+          await triggerWorkflowViaPush(targetBranch, domain);
+
+          results.push({ domain, status: "ok", groups: updated });
+        } catch (err) {
+          console.error(`[api/groups/${groupId}/sites] batch error for ${domain}:`, err);
+          results.push({ domain, status: "error", error: err instanceof Error ? err.message : "Unknown error" });
+        }
+      }),
     );
-    await triggerWorkflowViaPush(targetBranch, domain);
 
-    return NextResponse.json({ status: "ok", groups: updated });
+    // Single-domain backward compat: return flat response
+    if (!body.domains && body.domain) {
+      const r = results[0];
+      if (r.status === "error") {
+        return NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      return NextResponse.json({ status: "ok", groups: r.groups });
+    }
+
+    return NextResponse.json({ status: "ok", results });
   } catch (error) {
     console.error(`[api/groups/${groupId}/sites] POST error:`, error);
     return NextResponse.json(
