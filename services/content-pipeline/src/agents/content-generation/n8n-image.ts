@@ -150,6 +150,76 @@ export function clearPendingImage(requestId: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Per-branch commit queue — serializes Git read-modify-commit to avoid SHA
+// conflicts when multiple image callbacks target the same branch concurrently.
+// Only the Git step is serialized; image optimization and R2 upload still
+// run in parallel across callbacks.
+// ---------------------------------------------------------------------------
+
+const branchCommitQueues = new Map<string, Promise<unknown>>();
+
+function enqueueForBranch<T>(branch: string, fn: () => Promise<T>): Promise<T> {
+  const prev = branchCommitQueues.get(branch) ?? Promise.resolve();
+  const result = prev.then(fn, fn);
+  // Store settled promise so chain continues regardless of success/failure
+  branchCommitQueues.set(branch, result.then(() => {}, () => {}));
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Delayed alert system — avoids false Slack alarms when a retry or duplicate
+// n8n callback succeeds shortly after an initial SHA-conflict failure.
+// ---------------------------------------------------------------------------
+
+/** Wait before sending failure alert, giving retries/duplicates time to succeed. */
+const IMAGE_ALERT_DELAY_MS = 30_000;
+/** Cleanup delay for the success tracker to prevent unbounded memory growth. */
+const SUCCESS_TRACKER_TTL_MS = 10 * 60 * 1000;
+
+/** Articles whose images were successfully delivered. */
+const successfulImages = new Set<string>();
+/** Pending delayed alerts, keyed by "siteDomain/slug". */
+const delayedAlerts = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Record a successful image delivery and cancel any pending failure alert. */
+function markImageSuccess(key: string): void {
+  successfulImages.add(key);
+  const timer = delayedAlerts.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    delayedAlerts.delete(key);
+  }
+  // Auto-cleanup to prevent memory leak
+  const cleanup = setTimeout(() => successfulImages.delete(key), SUCCESS_TRACKER_TTL_MS);
+  if (cleanup.unref) cleanup.unref();
+}
+
+/**
+ * Schedule a delayed failure alert. If the image succeeds before the delay
+ * expires (via retry or duplicate callback), the alert is cancelled.
+ */
+function scheduleImageAlert(
+  key: string,
+  notifications: NotificationConfig,
+  params: { site: string; articleTitle: string; slug: string; reason: string },
+): void {
+  // Already succeeded — no alert needed
+  if (successfulImages.has(key)) return;
+  // Already have a pending alert — don't duplicate
+  if (delayedAlerts.has(key)) return;
+
+  const timer = setTimeout(() => {
+    delayedAlerts.delete(key);
+    // Re-check: a retry may have succeeded during the delay
+    if (successfulImages.has(key)) return;
+    void notifyImageDefaultFallback(notifications, params);
+  }, IMAGE_ALERT_DELAY_MS);
+
+  if (timer.unref) timer.unref();
+  delayedAlerts.set(key, timer);
+}
+
+// ---------------------------------------------------------------------------
 // triggerN8nImage — fire-and-forget POST to n8n
 // ---------------------------------------------------------------------------
 
@@ -276,6 +346,8 @@ export async function handleImageCallback(
       branch,
       github,
     });
+    const imageKey = `${site_domain}/${slug}`;
+    markImageSuccess(imageKey);
     console.log(
       `${tag} SUCCESS — image delivered (provider=${provider}, ` +
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
@@ -284,7 +356,16 @@ export async function handleImageCallback(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`${tag} FAIL — processing error: ${message} (raw_size=${rawSizeKB}KB)`);
-    alertFailure(`Image processing failed: ${message}`);
+    // Delay the alert — a retry or duplicate n8n callback may still succeed.
+    // Immediate alertFailure is reserved for non-transient errors above.
+    if (notifications) {
+      scheduleImageAlert(`${site_domain}/${slug}`, notifications, {
+        site: site_domain,
+        articleTitle: slug,
+        slug,
+        reason: `Image processing failed: ${message}`,
+      });
+    }
     return { ok: false, message };
   }
 }
@@ -320,46 +401,50 @@ export async function processN8nImageResult(
   }
   console.log(`${tag} R2 upload OK → ${r2Key}`);
 
-  // 3. Read article, update frontmatter, commit — with retry for SHA conflicts.
-  // When multiple image callbacks arrive concurrently for the same branch,
-  // the second commit can fail with 409/422 because the branch HEAD moved.
+  // 3. Read article, update frontmatter, commit — serialized per branch.
+  // The branch queue ensures only one callback commits at a time, avoiding
+  // the SHA conflicts that occur when the GitHub Contents API's internal
+  // ref fast-forward races with concurrent commits to the same branch.
+  // Retry logic is kept as a safety net for external concurrent commits.
   const octokit = createGitHubClient(github);
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
   const imageUrl = `/assets/images/${slug}.webp`;
 
-  const MAX_RETRIES = 3;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+  await enqueueForBranch(branch, async () => {
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const rawContent = await readFile(octokit, github.repo, articlePath, branch);
 
-      const parsed = matter(rawContent);
-      // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
-      // adds the `/<siteId>/` prefix at sync time when writing to KV.
-      parsed.data["featuredImage"] = imageUrl;
-      parsed.data["image_alt"] = altText;
+        const parsed = matter(rawContent);
+        // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
+        // adds the `/<siteId>/` prefix at sync time when writing to KV.
+        parsed.data["featuredImage"] = imageUrl;
+        parsed.data["image_alt"] = altText;
 
-      const updatedContent = matter.stringify(parsed.content, parsed.data);
+        const updatedContent = matter.stringify(parsed.content, parsed.data);
 
-      await commitFile(octokit, github.repo, {
-        path: articlePath,
-        content: updatedContent,
-        message: `feat(image): add hero image for ${slug}`,
-        branch,
-      });
+        await commitFile(octokit, github.repo, {
+          path: articlePath,
+          content: updatedContent,
+          message: `feat(image): add hero image for ${slug}`,
+          branch,
+        });
 
-      console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
-      return; // success
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isShaConflict = msg.includes("but expected") || msg.includes("409") || msg.includes("422");
+        console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
+        return; // success
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isShaConflict = msg.includes("but expected") || msg.includes("409") || msg.includes("422");
 
-      if (isShaConflict && attempt < MAX_RETRIES) {
-        const delayMs = attempt * 2000; // 2s, 4s
-        console.warn(`${tag} Git SHA conflict (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delayMs}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
+        if (isShaConflict && attempt < MAX_RETRIES) {
+          const delayMs = attempt * 2000; // 2s, 4s
+          console.warn(`${tag} Git SHA conflict (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delayMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
-  }
+  });
 }
