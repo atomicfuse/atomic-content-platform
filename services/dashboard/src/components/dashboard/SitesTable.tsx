@@ -66,6 +66,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -107,7 +108,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
 
   const filteredSites = useMemo(() => {
     setCurrentPage(1);
-    return sites.filter((site) => {
+    const filtered = sites.filter((site) => {
       if (search && !site.domain.toLowerCase().includes(search.toLowerCase())) {
         return false;
       }
@@ -116,7 +117,17 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       if (statusFilter && site.status !== statusFilter) return false;
       return true;
     });
-  }, [sites, search, companyFilter, verticalFilter, statusFilter]);
+    if (websiteSort) {
+      filtered.sort((a, b) => {
+        const aName = (a.custom_domain ?? a.domain).toLowerCase();
+        const bName = (b.custom_domain ?? b.domain).toLowerCase();
+        return websiteSort === "asc"
+          ? aName.localeCompare(bName)
+          : bName.localeCompare(aName);
+      });
+    }
+    return filtered;
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -170,7 +181,20 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             <thead>
               <tr className="border-b border-[var(--border-secondary)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Website
+                  <button
+                    type="button"
+                    onClick={(): void => setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc")}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Website
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${websiteSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {websiteSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Company
