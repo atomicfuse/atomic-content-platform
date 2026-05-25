@@ -103,12 +103,13 @@ export function ReviewQueueClient(): React.ReactElement {
   }, []);
 
   const fetchPage = useCallback(
-    async (p: number, domain: string | null, sort: SortOrder): Promise<void> => {
+    async (p: number, domain: string | null, sort: SortOrder, fresh = false): Promise<void> => {
       setLoading(true);
       try {
         const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
         if (domain) params.set("domain", domain);
         if (sort !== "default") params.set("sort", sort);
+        if (fresh) params.set("fresh", "true");
         const res = await fetch(`/api/review?${params}`);
         const data = (await res.json()) as ReviewQueueResponse;
         setArticles(data.items);
@@ -185,8 +186,8 @@ export function ReviewQueueClient(): React.ReactElement {
         });
         toast(result.summary, "success");
         setDecisions(new Map());
-        // Refresh current page
-        void fetchPage(page, selectedDomain, sortOrder);
+        // Refresh current page with fresh data (cache is stale after apply)
+        void fetchPage(page, selectedDomain, sortOrder, true);
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to apply review decisions", "error");
       }
@@ -309,6 +310,19 @@ export function ReviewQueueClient(): React.ReactElement {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
             </svg>
           )}
+        </button>
+
+        {/* Refresh */}
+        <button
+          onClick={(): void => { void fetchPage(page, selectedDomain, sortOrder, true); }}
+          disabled={loading}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)] cursor-pointer transition-colors hover:border-cyan/40 hover:text-cyan disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Refresh — bypass cache and fetch latest data"
+        >
+          <svg className={`w-4 h-4 shrink-0 ${loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182M2.985 19.644l3.181-3.183" />
+          </svg>
+          <span className="text-sm">Refresh</span>
         </button>
       </div>
 
