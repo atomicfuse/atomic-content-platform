@@ -446,7 +446,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   const now = new Date().toISOString();
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
-    company: data.company,
+    company: data.company || null,
     vertical: data.vertical,
     status: "Staging",
     site_id: `${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
@@ -476,7 +476,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       if (existing) {
         await updateSiteInIndex(siteFolder, {
           status: "Staging",
-          company: data.company,
+          company: data.company || null,
           vertical: data.vertical,
           staging_branch: stagingBranch,
           preview_url: previewUrl,

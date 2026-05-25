@@ -164,8 +164,10 @@ export function StepIdentity({
 
       <Select
         label="Company"
-        options={COMPANIES.map((c) => ({ value: c, label: c }))}
-        placeholder="Select..."
+        options={[
+          { value: "", label: "No Company" },
+          ...COMPANIES.map((c) => ({ value: c, label: c })),
+        ]}
         value={data.company}
         onChange={(e): void =>
           onChange({ company: e.target.value as WizardFormData["company"] })

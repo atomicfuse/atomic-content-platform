@@ -7,7 +7,8 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { deleteSiteEntry } from "@/actions/sites";
+import { deleteSiteEntry, updateSiteEntry } from "@/actions/sites";
+import { COMPANIES } from "@/lib/constants";
 import { Filters } from "./Filters";
 
 interface SitesTableProps {
@@ -229,7 +230,16 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     {site.custom_domain ?? site.domain}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.company}
+                    <InlineCompanySelect
+                      domain={site.domain}
+                      value={site.company}
+                      onSaved={(newCompany): void => {
+                        site.company = newCompany;
+                        toast(`Company updated for ${site.domain}`, "success");
+                        router.refresh();
+                      }}
+                      onError={(msg): void => { toast(msg, "error"); }}
+                    />
                   </td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">
                     {site.vertical}
@@ -452,5 +462,75 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         </div>
       </Modal>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Inline Company Selector                                             */
+/* ------------------------------------------------------------------ */
+
+function InlineCompanySelect({
+  domain,
+  value,
+  onSaved,
+  onError,
+}: {
+  domain: string;
+  value: Company | null;
+  onSaved: (newCompany: Company | null) => void;
+  onError: (msg: string) => void;
+}): React.ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const display = value || null;
+
+  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
+    e.stopPropagation();
+    const newValue = (e.target.value || null) as Company | null;
+    if (newValue === display) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateSiteEntry(domain, { company: newValue });
+      onSaved(newValue);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to update company");
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        value={value ?? ""}
+        onChange={(e): void => { void handleChange(e); }}
+        onBlur={(): void => setEditing(false)}
+        onClick={(e): void => e.stopPropagation()}
+        disabled={saving}
+        className="px-1.5 py-0.5 rounded border border-cyan/50 bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none cursor-pointer"
+      >
+        <option value="">No Company</option>
+        {COMPANIES.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e): void => { e.stopPropagation(); setEditing(true); }}
+      className="hover:text-cyan transition-colors cursor-pointer"
+      title="Click to change company"
+    >
+      {display || <span className="text-[var(--text-muted)]">&mdash;</span>}
+    </button>
   );
 }
