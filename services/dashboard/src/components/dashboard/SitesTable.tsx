@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardSiteEntry, SiteStatus, Company, Vertical } from "@/types/dashboard";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -63,9 +63,12 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [companyFilter, setCompanyFilter] = useState<Company | "">("");
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
+
+  const PAGE_SIZE = 10;
 
   // Get the site entry for the delete target so we can show what will be cleaned up
   const deleteTargetSite = deleteTarget ? sites.find((s) => s.domain === deleteTarget) : null;
@@ -101,6 +104,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   }
 
   const filteredSites = useMemo(() => {
+    setCurrentPage(1);
     return sites.filter((site) => {
       if (search && !site.domain.toLowerCase().includes(search.toLowerCase())) {
         return false;
@@ -111,6 +115,16 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       return true;
     });
   }, [sites, search, companyFilter, verticalFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSites.length / PAGE_SIZE));
+  const paginatedSites = filteredSites.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  const goToPage = useCallback((page: number): void => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
 
   function handleRowClick(site: DashboardSiteEntry): void {
     switch (site.status) {
@@ -204,7 +218,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                 </tr>
               )}
-              {filteredSites.map((site) => (
+              {paginatedSites.map((site) => (
                 <tr
                   key={site.domain}
                   onClick={(): void => handleRowClick(site)}
@@ -272,6 +286,47 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {filteredSites.length > PAGE_SIZE && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
+            <span className="text-xs text-[var(--text-muted)]">
+              {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredSites.length)} of {filteredSites.length} sites
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(): void => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Prev
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  type="button"
+                  onClick={(): void => goToPage(page)}
+                  className={`min-w-[28px] px-1.5 py-1 text-xs rounded-md transition-colors ${
+                    page === currentPage
+                      ? "bg-[var(--accent-primary)] text-white font-medium"
+                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                  }`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={(): void => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Delete confirmation modal */}

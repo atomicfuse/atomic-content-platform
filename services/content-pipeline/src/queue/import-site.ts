@@ -120,6 +120,8 @@ export async function processImportSiteJob(
       previewUrl,
       warnings: warnings.length > 0 ? warnings : undefined,
       postsApiUrl: site.postsApiUrl || undefined,
+      company: site.company || undefined,
+      vertical: site.websiteCategory || undefined,
     };
 
     await writeSiteStatus(redisConnection, batchId, siteId, {

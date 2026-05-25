@@ -51,6 +51,8 @@ export interface ImportSiteResult {
   warnings?: string[];
   postsApiUrl?: string;
   error?: string;
+  company?: string;
+  vertical?: string;
 }
 
 /** Data for the parent finalize job. */
