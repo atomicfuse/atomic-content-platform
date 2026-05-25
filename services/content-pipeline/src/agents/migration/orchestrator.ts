@@ -7,7 +7,7 @@ import type {
   MigrationReport,
 } from "./types.js";
 import { fetchWpArticles, fetchWpCategories, extractBaseUrl } from "./wp-fetcher.js";
-import { wpHtmlToMarkdown } from "./html-to-md.js";
+import { wpHtmlToMarkdown, extractVideosFromHtml, stripVideoEmbeds } from "./html-to-md.js";
 import { cleanupArticle, mapCategoriesToTags, ensureTopicTag } from "./article-cleanup.js";
 import { buildArticleMd, stripHtmlTags } from "./frontmatter-builder.js";
 import type { ArticleMdInput } from "./frontmatter-builder.js";
@@ -107,7 +107,14 @@ export async function runMigration(
     emit();
 
     try {
-      const rawMarkdown = wpHtmlToMarkdown(article.content.rendered);
+      // Extract YouTube videos before markdown conversion strips iframes
+      const videos = extractVideosFromHtml(article.content.rendered);
+      const contentWithoutVideos = stripVideoEmbeds(article.content.rendered);
+      if (videos.length > 0) {
+        console.log(`[migration] Found ${videos.length} video(s) in ${slug}`);
+      }
+
+      const rawMarkdown = wpHtmlToMarkdown(contentWithoutVideos);
       const excerpt = stripHtmlTags(article.excerpt.rendered);
 
       // Delay between API calls to stay under Anthropic rate limits
@@ -187,6 +194,7 @@ export async function runMigration(
           og_image: yoast?.og_image?.[0]?.url,
           twitter_card: yoast?.twitter_card,
         },
+        videos: videos.length > 0 ? videos : undefined,
       };
 
       files.push({

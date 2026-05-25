@@ -1,4 +1,98 @@
 import TurndownService from "turndown";
+import { randomUUID } from "node:crypto";
+
+// ---------------------------------------------------------------------------
+// YouTube video extraction — must run BEFORE wpHtmlToMarkdown strips iframes
+// ---------------------------------------------------------------------------
+
+export interface ExtractedVideo {
+  id: string;
+  url: string;
+  position: "before-content" | "after-content" | `after-paragraph-${number}`;
+}
+
+/** YouTube iframe src pattern — matches embed URLs across youtube.com / youtube-nocookie.com */
+const YT_IFRAME_RE = /<iframe[^>]+src=["']([^"']*(?:youtube\.com|youtube-nocookie\.com|youtu\.be)[^"']*)["'][^>]*>/gi;
+
+/** WP embed container divs wrapping YouTube iframes + optional description div */
+const WP_EMBED_CONTAINER_RE =
+  /<div\s+class="[^"]*(?:wp-autonomous-youtube|wp-block-embed|wp-embed)[^"]*"[^>]*>[\s\S]*?<\/div>\s*(?:<div\s+class="[^"]*(?:youtube-description|wp-autonomous-youtube-description)[^"]*"[^>]*>[\s\S]*?<\/div>)?/gi;
+
+/**
+ * Extract YouTube video embeds from raw WP HTML and determine their
+ * paragraph-relative position.
+ *
+ * Call this BEFORE wpHtmlToMarkdown() since Turndown strips iframes.
+ */
+export function extractVideosFromHtml(html: string): ExtractedVideo[] {
+  if (!html) return [];
+
+  const videos: ExtractedVideo[] = [];
+  // Reset regex state
+  YT_IFRAME_RE.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = YT_IFRAME_RE.exec(html)) !== null) {
+    const iframeSrc = match[1]!;
+
+    // Normalize to a clean youtube.com/watch URL
+    const videoId = extractYouTubeVideoId(iframeSrc);
+    if (!videoId) continue;
+
+    const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+    // Count </p> tags before this iframe to determine position
+    const textBefore = html.slice(0, match.index);
+    const pCount = (textBefore.match(/<\/p>/gi) || []).length;
+
+    const position: ExtractedVideo["position"] =
+      pCount === 0 ? "before-content" : `after-paragraph-${pCount}`;
+
+    videos.push({
+      id: randomUUID().slice(0, 8),
+      url,
+      position,
+    });
+  }
+
+  return videos;
+}
+
+/** Extract the YouTube video ID from any YouTube URL variant. */
+function extractYouTubeVideoId(src: string): string | null {
+  try {
+    const u = new URL(src);
+    const host = u.hostname.replace(/^www\./, "");
+
+    if (host === "youtube.com" || host === "youtube-nocookie.com") {
+      const v = u.searchParams.get("v");
+      if (v) return v;
+      const embedMatch = /^\/embed\/([a-zA-Z0-9_-]+)/.exec(u.pathname);
+      if (embedMatch) return embedMatch[1]!;
+    }
+    if (host === "youtu.be") {
+      const id = u.pathname.slice(1).split("/")[0];
+      if (id) return id;
+    }
+  } catch { /* invalid URL */ }
+  return null;
+}
+
+/**
+ * Strip YouTube embed container divs from HTML so they don't leak
+ * into the markdown body. Call before wpHtmlToMarkdown().
+ */
+export function stripVideoEmbeds(html: string): string {
+  // Strip WP-specific embed containers
+  let result = html.replace(WP_EMBED_CONTAINER_RE, "");
+  // Strip any remaining bare YouTube iframes not inside a container
+  result = result.replace(/<iframe[^>]+(?:youtube\.com|youtube-nocookie\.com|youtu\.be)[^>]*>[\s\S]*?<\/iframe>/gi, "");
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// HTML → Markdown conversion
+// ---------------------------------------------------------------------------
 
 /**
  * Convert WordPress HTML content to clean Markdown.

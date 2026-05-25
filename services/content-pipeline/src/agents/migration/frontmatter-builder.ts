@@ -22,6 +22,7 @@ export interface ArticleMdInput {
     og_image?: string;
     twitter_card?: string;
   };
+  videos?: Array<{ id: string; url: string; position: string }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +104,10 @@ export function buildArticleMd(input: ArticleMdInput): string {
 
   if (Object.keys(seo).length > 0) {
     frontmatter.seo = seo;
+  }
+
+  if (input.videos && input.videos.length > 0) {
+    frontmatter.videos = input.videos;
   }
 
   const yamlBlock = yamlStringify(frontmatter, {
