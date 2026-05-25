@@ -117,4 +117,46 @@ describe('injectInlineAds', () => {
     expect(out).toContain('data-sizes-desktop="[[300,250]]"');
     expect(out).not.toContain('data-sizes-desktop=""[[300,250]]""');
   });
+
+  it('skips placements whose page_types does not include article', () => {
+    const out = injectInlineAds(html, [
+      { id: 'hp-only', position: 'after-paragraph-1', page_types: ['homepage'] },
+    ]);
+    expect(out).toBe(html);
+  });
+
+  it('includes placements with page_types=["all"]', () => {
+    const out = injectInlineAds(html, [
+      { id: 'all-pages', position: 'after-paragraph-1', page_types: ['all'] },
+    ]);
+    expect(out).toContain('data-ad-id="all-pages"');
+  });
+
+  it('includes placements with page_types=["article"]', () => {
+    const out = injectInlineAds(html, [
+      { id: 'art', position: 'after-paragraph-1', page_types: ['article'] },
+    ]);
+    expect(out).toContain('data-ad-id="art"');
+  });
+
+  it('skips placements with exclude_pages including articles', () => {
+    const out = injectInlineAds(html, [
+      { id: 'excluded', position: 'after-paragraph-1', exclude_pages: ['articles'] },
+    ]);
+    expect(out).toBe(html);
+  });
+
+  it('includes placements with exclude_pages not including articles', () => {
+    const out = injectInlineAds(html, [
+      { id: 'fine', position: 'after-paragraph-1', exclude_pages: ['homepage'] },
+    ]);
+    expect(out).toContain('data-ad-id="fine"');
+  });
+
+  it('defaults to all pages when page_types is not set', () => {
+    const out = injectInlineAds(html, [
+      { id: 'default', position: 'after-paragraph-1' },
+    ]);
+    expect(out).toContain('data-ad-id="default"');
+  });
 });

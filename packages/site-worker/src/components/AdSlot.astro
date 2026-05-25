@@ -28,13 +28,33 @@ interface Placement {
   sizes?: { desktop?: number[][]; mobile?: number[][] };
   pages?: string[];
   code?: string;
+  page_types?: string[];
+  exclude_pages?: string[];
 }
+
+/** Map pageType prop value to the exclude_pages slug used for that category. */
+const EXCLUDE_MAP: Record<string, string> = {
+  homepage: 'homepage',
+  article: 'articles',
+  category: 'categories',
+};
 
 const { position, pageType } = Astro.props;
 const config = getConfig(Astro);
 const heights = config.ad_placeholder_heights as unknown as Record<string, number> | undefined;
 const placements = ((config.ads_config?.ad_placements as Placement[] | undefined) ?? []).filter(
-  (p) => p.position === position && (!p.pages || p.pages.includes(pageType)),
+  (p) => {
+    if (p.position !== position) return false;
+    // Legacy pages filter
+    if (p.pages && !p.pages.includes(pageType)) return false;
+    // page_types filter: default to ["all"] if not set
+    const pt = p.page_types ?? ['all'];
+    if (!pt.includes('all') && !pt.includes(pageType)) return false;
+    // exclude_pages filter
+    const excludeKey = EXCLUDE_MAP[pageType];
+    if (excludeKey && p.exclude_pages?.includes(excludeKey)) return false;
+    return true;
+  },
 );
 
 const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')] ?? 0;
