@@ -1,5 +1,5 @@
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
-import type { AdsConfigFormValue, InterstitialConfigFormValue } from "@/components/settings/AdsConfigForm";
+import type { AdsConfigFormValue, InterstitialConfigFormValue, InterstitialPageType, InterstitialExcludePage } from "@/components/settings/AdsConfigForm";
 import { DEFAULT_INTERSTITIAL_CONFIG } from "@/components/settings/AdsConfigForm";
 import type { AdSizeConfig } from "@/components/settings/ad-size-config";
 import { sizeTuplesToConfig } from "@/components/settings/ad-size-config";
@@ -120,8 +120,8 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
         desktopSizeConfig: rawDesktopCfg ?? sizeTuplesToConfig(sizes.desktop),
         mobileSizeConfig: rawMobileCfg ?? sizeTuplesToConfig(sizes.mobile),
         ...(typeof p.code === "string" && p.code.trim() && { code: p.code as string }),
-        page_types: Array.isArray(p.page_types) ? p.page_types as string[] : ["all"],
-        exclude_pages: Array.isArray(p.exclude_pages) ? p.exclude_pages as string[] : [],
+        page_types: Array.isArray(p.page_types) ? p.page_types as InterstitialPageType[] : ["all"],
+        exclude_pages: Array.isArray(p.exclude_pages) ? p.exclude_pages as InterstitialExcludePage[] : [],
       };
     }),
   };

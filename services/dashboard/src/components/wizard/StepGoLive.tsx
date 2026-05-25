@@ -36,7 +36,7 @@ export function StepGoLive({
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Company</p>
-            <p className="font-medium">{data.company}</p>
+            <p className="font-medium">{data.company || "None"}</p>
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Category</p>

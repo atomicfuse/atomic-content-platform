@@ -1,10 +1,10 @@
 export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live" | "WordPress";
-export type Company = "ATL" | "NGC";
+export type Company = "ATL" | "NGC" | "";
 export type Vertical = string;
 
 export interface DashboardSiteEntry {
   domain: string;
-  company: Company;
+  company: Company | null;
   vertical: Vertical;
   status: SiteStatus;
   site_id: string;
