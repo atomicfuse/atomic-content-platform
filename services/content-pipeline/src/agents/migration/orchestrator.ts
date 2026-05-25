@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import Anthropic from "@anthropic-ai/sdk";
 import type {
   CsvSiteRow,
   MigrationProgress,
@@ -20,6 +21,9 @@ import { triggerN8nImage } from "../content-generation/n8n-image.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
 import { randomUUID } from "node:crypto";
+
+/** Delay between consecutive Claude API calls to avoid rate limiting. */
+const INTER_REQUEST_DELAY_MS = 1200;
 
 export interface MigrationConfig {
   anthropicApiKey: string;
@@ -54,6 +58,8 @@ export async function runMigration(
     phase: "fetching",
     totalArticles: 0,
     processedArticles: 0,
+    successfulArticles: 0,
+    failedArticles: 0,
     startedAt,
   };
 
@@ -81,6 +87,9 @@ export async function runMigration(
   const results: MigrationArticleResult[] = [];
   const files: BatchFileEntry[] = [];
 
+  // Reuse a single Anthropic client to avoid per-request overhead
+  const anthropicClient = new Anthropic({ apiKey: config.anthropicApiKey });
+
   // Collect n8n image request metadata for post-commit firing
   interface PendingImageRequest {
     slug: string;
@@ -89,7 +98,8 @@ export async function runMigration(
   }
   const pendingImageRequests: PendingImageRequest[] = [];
 
-  for (const article of articles) {
+  for (let i = 0; i < articles.length; i++) {
+    const article = articles[i]!;
     const slug = article.slug;
     const title = stripHtmlTags(article.title.rendered);
     progress.currentArticleSlug = slug;
@@ -99,7 +109,13 @@ export async function runMigration(
     try {
       const rawMarkdown = wpHtmlToMarkdown(article.content.rendered);
       const excerpt = stripHtmlTags(article.excerpt.rendered);
-      const cleaned = await cleanupArticle(config.anthropicApiKey, title, rawMarkdown, excerpt);
+
+      // Delay between API calls to stay under Anthropic rate limits
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, INTER_REQUEST_DELAY_MS));
+      }
+
+      const cleaned = await cleanupArticle(config.anthropicApiKey, title, rawMarkdown, excerpt, anthropicClient);
       const rawTags = mapCategoriesToTags(article.categories, wpCategories, site.menuItems);
       const tags = ensureTopicTag(rawTags, site.menuItems, title);
 
@@ -179,10 +195,12 @@ export async function runMigration(
       });
 
       results.push({ slug, title, status: "success", imageGenerated, imageSource });
+      progress.successfulArticles++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`[migration] Error processing ${slug}:`, message);
       results.push({ slug, title, status: "error", error: message, imageGenerated: false });
+      progress.failedArticles++;
     }
 
     progress.processedArticles++;

@@ -140,28 +140,61 @@ export function parseCleanupResponse(
 // Full cleanup (calls Anthropic)
 // ---------------------------------------------------------------------------
 
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 2000;
+
+/** Check if an error is retryable (rate limit or server error). */
+function isRetryableError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  // Anthropic SDK wraps status codes in the error message
+  return /429|rate.limit|overloaded|529|500|502|503|504/i.test(msg);
+}
+
 /**
  * Send the article to Claude for cleanup and return parsed result.
+ * Retries up to 3 times with exponential backoff on rate-limit / server errors.
  */
 export async function cleanupArticle(
   anthropicApiKey: string,
   title: string,
   markdownBody: string,
   excerpt: string,
+  client?: Anthropic,
 ): Promise<{ description: string; markdown: string }> {
-  const client = new Anthropic({ apiKey: anthropicApiKey });
+  const anthropic = client ?? new Anthropic({ apiKey: anthropicApiKey });
   const prompt = buildCleanupPrompt(title, markdownBody, excerpt);
 
-  const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4096,
-    messages: [{ role: "user", content: prompt }],
-  });
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const msg = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      });
 
-  const textBlock = msg.content.find((b) => b.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("No text in Anthropic response");
+      const textBlock = msg.content.find((b) => b.type === "text");
+      if (!textBlock || textBlock.type !== "text") {
+        throw new Error("No text in Anthropic response");
+      }
+
+      return parseCleanupResponse(textBlock.text, markdownBody);
+    } catch (err) {
+      lastError = err;
+      if (attempt < MAX_RETRIES && isRetryableError(err)) {
+        const delayMs = BASE_BACKOFF_MS * Math.pow(2, attempt); // 2s, 4s, 8s
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[article-cleanup] Retryable error for "${title.slice(0, 50)}" ` +
+          `(attempt ${attempt + 1}/${MAX_RETRIES}), retrying in ${delayMs}ms: ${errMsg}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
   }
 
-  return parseCleanupResponse(textBlock.text, markdownBody);
+  throw lastError;
 }

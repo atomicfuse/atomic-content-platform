@@ -21,6 +21,8 @@ interface SSEProgressEvent {
   phase?: Phase;
   totalArticles?: number;
   processedArticles?: number;
+  successfulArticles?: number;
+  failedArticles?: number;
   currentArticleSlug?: string;
   error?: string;
   successful?: number;
@@ -57,6 +59,8 @@ export function ImportPanel(): React.ReactElement {
   const [currentPhase, setCurrentPhase] = useState<Phase | null>(null);
   const [totalArticles, setTotalArticles] = useState(0);
   const [processedArticles, setProcessedArticles] = useState(0);
+  const [successfulArticles, setSuccessfulArticles] = useState(0);
+  const [failedArticles, setFailedArticles] = useState(0);
   const [log, setLog] = useState<string[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [result, setResult] = useState<{ successful: number; failed: number } | null>(null);
@@ -113,6 +117,8 @@ export function ImportPanel(): React.ReactElement {
     setCurrentPhase(null);
     setTotalArticles(0);
     setProcessedArticles(0);
+    setSuccessfulArticles(0);
+    setFailedArticles(0);
     setLog([]);
     setErrorMsg(null);
     setResult(null);
@@ -159,6 +165,8 @@ export function ImportPanel(): React.ReactElement {
               setCurrentPhase(evt.phase);
               if (evt.totalArticles) setTotalArticles(evt.totalArticles);
               if (evt.processedArticles !== undefined) setProcessedArticles(evt.processedArticles);
+              if (evt.successfulArticles !== undefined) setSuccessfulArticles(evt.successfulArticles);
+              if (evt.failedArticles !== undefined) setFailedArticles(evt.failedArticles);
               if (evt.currentArticleSlug) {
                 appendLog(`[${evt.phase}] ${evt.currentArticleSlug}`);
               }
@@ -312,7 +320,17 @@ export function ImportPanel(): React.ReactElement {
             Progress
             {totalArticles > 0 && (
               <span className="ml-2 font-normal text-[var(--text-secondary)]">
-                ({processedArticles}/{totalArticles} articles)
+                ({processedArticles}/{totalArticles} articles
+                {(successfulArticles > 0 || failedArticles > 0) && (
+                  <>
+                    {" — "}
+                    <span className="text-green-500">{successfulArticles} succeeded</span>
+                    {failedArticles > 0 && (
+                      <>, <span className="text-red-400">{failedArticles} failed</span></>
+                    )}
+                  </>
+                )}
+                )
               </span>
             )}
           </h2>

@@ -72,6 +72,8 @@ export interface MigrationProgress {
   phase: MigrationPhase;
   totalArticles: number;
   processedArticles: number;
+  successfulArticles: number;
+  failedArticles: number;
   currentArticleSlug?: string;
   error?: string;
   startedAt: number;
