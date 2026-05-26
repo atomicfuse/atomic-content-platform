@@ -302,6 +302,78 @@ The same applies to `dashboard/src/lib/github.ts` `triggerWorkflowViaPush` (line
 - `createGitHubClient` — entire function
 - Raw `new Octokit()` calls in dashboard `actions/agent.ts` and `commit-article/route.ts` — replaced with `getOctokit()` singleton
 
+### 4. General-Images Page — Read from KV Instead of Git
+
+**Problem:** The `/articles/general-images` dashboard page is the single worst rate limit offender. On load, `loadGeneralImageArticles()` calls `readArticles()` for every active site. `readArticles` does 1 directory listing + 1 file read per article. With 45 active sites averaging ~20 articles each: **~946 GitHub API calls per page load.**
+
+There is a 60-second route cache and a 15-minute per-site article cache, but any cold load (server restart, deploy, first visit after TTL) fires the full burst. This alone can consume ~19% of the hourly rate limit.
+
+**Root cause:** The page only needs `featuredImage`, `title`, `slug`, `status`, `publishDate` per article — metadata that already exists in the `article-index:<domain>` KV key (written by `seed-kv.ts`, schema: `ArticleIndexEntry[]`).
+
+**Change:** Replace the Git-based `readArticles` loop with direct KV reads via the Cloudflare KV REST API.
+
+```ts
+// dashboard/src/app/api/articles/general-images/route.ts
+
+async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
+  const index = await readDashboardIndex();
+  const activeSites = index.sites.filter(s =>
+    ['Staging', 'Ready', 'Live', 'WordPress'].includes(s.status));
+
+  const results: GeneralImageArticle[] = [];
+
+  // Read article indexes from KV directly — 1 KV read per site, zero GitHub calls
+  await Promise.allSettled(
+    activeSites.map(async (site) => {
+      const articles = await readArticleIndexFromKV(site.domain);
+      if (!articles) return;
+      for (const a of articles) {
+        if (isGeneralImage(a.featuredImage, site.domain)) {
+          results.push({
+            domain: site.domain,
+            siteName: site.domain,
+            slug: a.slug,
+            title: a.title,
+            featuredImage: a.featuredImage,
+            publishDate: a.publishDate,
+            status: a.status,
+            stagingBranch: site.staging_branch ?? null,
+          });
+        }
+      }
+    }),
+  );
+
+  return results.sort((a, b) =>
+    new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
+}
+```
+
+**KV access from the dashboard:** The dashboard runs on CloudGrid (Node.js), not on a Cloudflare Worker, so it cannot use Worker bindings. Two options:
+
+**Option A (recommended): Cloudflare KV REST API.**
+```ts
+// GET https://api.cloudflare.com/client/v4/accounts/{account_id}/storage/kv/namespaces/{namespace_id}/values/{key}
+async function readArticleIndexFromKV(domain: string): Promise<ArticleIndexEntry[] | null> {
+  const key = `article-index:${domain}`;
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/storage/kv/namespaces/${KV_NAMESPACE_ID}/values/${encodeURIComponent(key)}`,
+    { headers: { 'Authorization': `Bearer ${CF_API_TOKEN}` } },
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
+```
+Uses existing `CLOUDFLARE_API_TOKEN` and `KV_NAMESPACE_ID` env vars (already available in the dashboard). The KV REST API has its own rate limit (1,200 reads/min) — plenty for 45 sites.
+
+**Option B: Worker proxy endpoint.** Add a `/api/v1/article-indexes` endpoint to the site-worker that returns article indexes for multiple sites. More complex, but avoids direct KV REST API dependency.
+
+**Staging vs production KV:** The general-images page shows articles from staging branches. `seed-kv.ts` writes article indexes to both staging and production KV. The dashboard should read from the staging KV namespace (`CONFIG_KV_STAGING`: `f6c35e1fa8c841b8b193509a3a237f7f`) for sites in Staging status, and production KV for Live sites.
+
+**Impact:** Reduces the general-images page from ~946 GitHub API calls to **1 GitHub call** (dashboard-index, already cached) + **45 KV REST API calls** (separate rate limit, not GitHub).
+
+**Other dashboard pages that call `readArticles`:** The site detail Content tab and review queue also use `readArticles`. These are single-site reads (not cross-site scans) so the 15-min cache is adequate, but they would benefit from the same KV-based approach in a follow-up.
+
 ## API Call Reduction
 
 **WordPress import of 30 sites (estimated):**
@@ -357,6 +429,8 @@ Savings are modest for single operations but compound significantly under concur
 | `src/app/api/sites/rebuild/route.ts` | Uses `triggerWorkflowViaPush` — no change (kept on Contents API) |
 | `src/app/api/sites/asset/route.ts` | Migrate to `readFileBase64` blob variant |
 | `src/actions/wizard.ts` | Migrate `readFileBase64` calls (lines 540, 1146) |
+| `src/app/api/articles/general-images/route.ts` | Replace Git-based `readArticles` loop with KV REST API reads |
+| `src/lib/kv-api.ts` (new) | Cloudflare KV REST API helper: `readArticleIndexFromKV(domain)` |
 
 ## Testing
 
