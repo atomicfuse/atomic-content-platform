@@ -13,7 +13,7 @@ import matter from "gray-matter";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { uploadToR2, buildR2Key } from "../../lib/r2-upload.js";
 import {
-  createGitHubClient,
+  createOctokit,
   readFile,
   commitFile,
 } from "../../lib/github.js";
@@ -406,7 +406,7 @@ export async function processN8nImageResult(
   // the SHA conflicts that occur when the GitHub Contents API's internal
   // ref fast-forward races with concurrent commits to the same branch.
   // Retry logic is kept as a safety net for external concurrent commits.
-  const octokit = createGitHubClient(github);
+  const octokit = createOctokit(github);
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
   const imageUrl = `/assets/images/${slug}.webp`;
 

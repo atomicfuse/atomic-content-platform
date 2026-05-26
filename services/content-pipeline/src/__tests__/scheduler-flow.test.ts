@@ -8,7 +8,7 @@ const mockFlowProducerAdd = vi.fn();
 const mockGetChildrenValues = vi.fn();
 const mockReadHistory = vi.fn();
 const mockCommitFile = vi.fn();
-const mockCreateGitHubClient = vi.fn().mockReturnValue({});
+const mockCreateOctokit = vi.fn().mockReturnValue({});
 
 vi.mock("bullmq", () => ({
   FlowProducer: vi.fn().mockImplementation(() => ({
@@ -29,8 +29,10 @@ vi.mock("bullmq", () => ({
 }));
 
 vi.mock("../lib/github.js", () => ({
+  createOctokit: (...args: unknown[]): unknown =>
+    mockCreateOctokit(...args),
   createGitHubClient: (...args: unknown[]): unknown =>
-    mockCreateGitHubClient(...args),
+    mockCreateOctokit(...args),
   readFile: (...args: unknown[]): unknown => mockReadHistory(...args),
   commitFile: (...args: unknown[]): unknown => mockCommitFile(...args),
 }));

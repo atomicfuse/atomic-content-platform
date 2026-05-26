@@ -4,7 +4,7 @@ import type { Redis } from "ioredis";
 import { parse, stringify } from "yaml";
 import { IMPORT_FINALIZE_QUEUE } from "./types.js";
 import type { ImportFinalizeData, ImportSiteResult } from "./types.js";
-import { commitBatch, readFile, createResilientOctokit, parseRepo } from "../lib/github.js";
+import { commitBatch, readFile, createOctokit, parseRepo } from "../lib/github.js";
 import type { BatchFileEntry } from "../lib/github.js";
 import { updateBatchStatus } from "../agents/migration/import-status.js";
 
@@ -27,7 +27,7 @@ export async function processImportFinalize(
 
   await updateBatchStatus(redisConnection, batchId, "running");
 
-  const octokit = createResilientOctokit(githubToken);
+  const octokit = createOctokit(githubToken);
   const { owner, repo: repoName } = parseRepo(networkRepo);
 
   // Collect child results

@@ -16,13 +16,14 @@ import type { PublishSchedule } from "../types.js";
 
 const mockReadFile = vi.fn();
 const mockCommitFile = vi.fn().mockResolvedValue("sha-mock");
-const mockCreateGitHubClient = vi.fn(() => ({}));
+const mockCreateOctokit = vi.fn(() => ({}));
 const mockListActiveSites = vi.fn();
 const mockReadSiteBriefWithFallback = vi.fn();
 const mockRunContentGeneration = vi.fn();
 
 vi.mock("../lib/github.js", () => ({
-  createGitHubClient: (): unknown => mockCreateGitHubClient(),
+  createOctokit: (): unknown => mockCreateOctokit(),
+  createGitHubClient: (): unknown => mockCreateOctokit(),
   readFile: (_o: unknown, _r: unknown, _p: unknown): unknown => mockReadFile(_o, _r, _p),
   commitFile: (_o: unknown, _r: unknown, _c: unknown): unknown => mockCommitFile(_o, _r, _c),
 }));

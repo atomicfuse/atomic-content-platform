@@ -29,9 +29,17 @@ import type { QueueInstances } from "../../queue/index.js";
 import { handleMigrationRequest, handleCreateSites, handleImportStatus } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
+import {
+  type BulkImageRequest,
+  scanArticlesForGeneralImages,
+  startBulkImageGeneration,
+  buildResponse,
+  getBulkJobStatus,
+  SiteNotFoundError,
+} from "./bulk-image.js";
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
-import { createGitHubClient, readFile } from "../../lib/github.js";
+import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 
 function sendJson(
@@ -378,7 +386,7 @@ async function handleRequest(
     let summary = articleTitle;
     let vertical = "";
     try {
-      const octokit = createGitHubClient(config.github);
+      const octokit = createOctokit(config.github);
       const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
       const content = await readFile(octokit, config.github.repo, articlePath, branch);
       const parsed = matter(content);
@@ -442,6 +450,92 @@ async function handleRequest(
       return;
     }
     await handleImportStatus(req, res, queueInstances.connection);
+    return;
+  }
+
+  // ─── Bulk image generation ───────────────────────────────────────
+  if (req.method === "POST" && req.url === "/bulk-generate-images") {
+    // Auth check
+    const apiKey = req.headers["x-api-key"] as string | undefined;
+    if (!config.bulkImageApiKey || apiKey !== config.bulkImageApiKey) {
+      sendJson(res, 401, { error: "Invalid or missing API key" });
+      return;
+    }
+
+    // Parse body
+    let rawBody: string;
+    try {
+      rawBody = await readBody(req);
+    } catch {
+      sendJson(res, 413, { error: "Payload too large" });
+      return;
+    }
+
+    let payload: BulkImageRequest;
+    try {
+      payload = JSON.parse(rawBody) as BulkImageRequest;
+    } catch {
+      sendJson(res, 400, { error: "Invalid JSON body" });
+      return;
+    }
+
+    // Validate scope
+    if (!payload.scope || !["site", "all"].includes(payload.scope)) {
+      sendJson(res, 400, { error: "scope is required (site | all)" });
+      return;
+    }
+
+    if (payload.scope === "site" && !payload.domain) {
+      sendJson(res, 400, { error: "domain is required when scope is site" });
+      return;
+    }
+
+    const isDryRun = payload.dry_run ?? false;
+
+    // n8n check (skip for dry runs)
+    if (!isDryRun && !config.n8nImageWebhookUrl) {
+      sendJson(res, 503, { error: "N8N_IMAGE_WEBHOOK_URL not configured" });
+      return;
+    }
+
+    // Concurrency guard
+    const jobStatus = getBulkJobStatus();
+    if (!isDryRun && jobStatus.inProgress) {
+      sendJson(res, 409, {
+        error: "Bulk image generation already in progress",
+        queued_remaining: jobStatus.remaining,
+        current_batch: jobStatus.currentBatch,
+        total_batches: jobStatus.totalBatches,
+      });
+      return;
+    }
+
+    // Scan
+    try {
+      const scan = await scanArticlesForGeneralImages(
+        config,
+        payload.scope,
+        payload.domain,
+      );
+
+      const response = buildResponse(payload, scan);
+
+      // Start background processing if not dry run and there are articles
+      if (!isDryRun && scan.articles.length > 0) {
+        startBulkImageGeneration(config, scan.articles);
+      }
+
+      sendJson(res, 200, response as unknown as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof SiteNotFoundError) {
+        sendJson(res, 404, { error: err.message });
+      } else {
+        console.error("[bulk-generate-images] Error:", err);
+        sendJson(res, 500, {
+          error: err instanceof Error ? err.message : "Internal error",
+        });
+      }
+    }
     return;
   }
 

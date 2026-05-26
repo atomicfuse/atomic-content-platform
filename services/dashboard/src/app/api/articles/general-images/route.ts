@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex, readArticles } from "@/lib/github";
+import { readDashboardIndex } from "@/lib/github";
+import { readArticleIndexFromKV } from "@/lib/kv-api";
 import { isGeneralImage } from "@/lib/general-image-utils";
 
 export interface GeneralImageArticle {
@@ -13,11 +14,17 @@ export interface GeneralImageArticle {
   stagingBranch: string | null;
 }
 
+export interface SiteBreakdownEntry {
+  domain: string;
+  count: number;
+}
+
 export interface GeneralImageArticlesResponse {
   items: GeneralImageArticle[];
   total: number;
   page: number;
   pageSize: number;
+  siteBreakdown: SiteBreakdownEntry[];
 }
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -44,8 +51,9 @@ async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
 
   await Promise.allSettled(
     activeSites.map(async (site) => {
-      const branch = site.staging_branch ?? undefined;
-      const articles = await readArticles(site.domain, branch);
+      const kvNamespace = site.status === "Live" ? "production" : "staging";
+      const articles = await readArticleIndexFromKV(site.domain, kvNamespace);
+      if (!articles) return;
       for (const a of articles) {
         if (isGeneralImage(a.featuredImage, site.domain)) {
           results.push({
@@ -94,7 +102,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const total = filtered.length;
     const items = filtered.slice(page * pageSize, (page + 1) * pageSize);
 
-    return NextResponse.json({ items, total, page, pageSize } satisfies GeneralImageArticlesResponse);
+    // Site breakdown (from full unfiltered results)
+    const countsByDomain = new Map<string, number>();
+    for (const a of results) {
+      countsByDomain.set(a.domain, (countsByDomain.get(a.domain) ?? 0) + 1);
+    }
+    const siteBreakdown: SiteBreakdownEntry[] = Array.from(countsByDomain.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => a.domain.localeCompare(b.domain));
+
+    return NextResponse.json({ items, total, page, pageSize, siteBreakdown } satisfies GeneralImageArticlesResponse);
   } catch (err) {
     console.error("[general-images] Error:", err);
     return NextResponse.json(

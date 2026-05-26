@@ -11,7 +11,7 @@ import {
   buildSkillMd,
   generateAuthorName,
 } from "../agents/migration/site-scaffolder.js";
-import { commitBatch, parseRepo, createResilientOctokit } from "../lib/github.js";
+import { commitBatch, parseRepo, createOctokit } from "../lib/github.js";
 import type { BatchFileEntry, BatchBinaryEntry } from "../lib/github.js";
 import { writeSiteStatus } from "../agents/migration/import-status.js";
 
@@ -76,7 +76,7 @@ export async function processImportSiteJob(
 
     // 4. Create staging branch
     await updateStatus("creating-branch");
-    const octokit = createResilientOctokit(githubToken);
+    const octokit = createOctokit(githubToken);
     const { owner, repo: repoName } = parseRepo(networkRepo);
     try {
       const { data: mainRef } = await octokit.git.getRef({ owner, repo: repoName, ref: "heads/main" });

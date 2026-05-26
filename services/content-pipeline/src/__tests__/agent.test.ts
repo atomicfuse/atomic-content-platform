@@ -199,31 +199,25 @@ describe("runContentGeneration", () => {
   });
 
   it("sets status based on quality score vs threshold", async () => {
-    const { writeArticleBatch } = await import("../lib/writer.js");
-
-    await runContentGeneration(
+    const result = await runContentGeneration(
       { siteDomain: "coolnews.dev" },
       config,
     );
 
-    const batchCall = vi.mocked(writeArticleBatch).mock.calls[0];
-    const articles = batchCall?.[1] ?? [];
-    const writtenContent = articles[0]?.content ?? "";
+    const created = result.results.find((r) => r.status === "created");
+    const writtenContent = created?._pendingArticle?.content ?? "";
     // Mock scorer returns 82, default threshold is 75 → published
     expect(writtenContent).toContain("status: published");
   });
 
   it("includes quality score in frontmatter", async () => {
-    const { writeArticleBatch } = await import("../lib/writer.js");
-
-    await runContentGeneration(
+    const result = await runContentGeneration(
       { siteDomain: "coolnews.dev" },
       config,
     );
 
-    const batchCall = vi.mocked(writeArticleBatch).mock.calls[0];
-    const articles = batchCall?.[1] ?? [];
-    const writtenContent = articles[0]?.content ?? "";
+    const created = result.results.find((r) => r.status === "created");
+    const writtenContent = created?._pendingArticle?.content ?? "";
     expect(writtenContent).toContain("quality_score: 82");
     expect(writtenContent).toContain("quality_note:");
   });

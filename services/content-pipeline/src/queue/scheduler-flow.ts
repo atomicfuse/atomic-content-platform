@@ -1,7 +1,7 @@
 import { FlowProducer, Worker } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
-import { createGitHubClient, readFile, commitFile } from "../lib/github.js";
+import { createOctokit, readFile, commitFile } from "../lib/github.js";
 import type { AgentConfig } from "../lib/config.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
@@ -166,7 +166,7 @@ export async function processSchedulerRun(
   };
 
   // Write to GitHub
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   let history: unknown[] = [];
   try {
     const raw = await readFile(octokit, config.networkRepo, HISTORY_PATH);

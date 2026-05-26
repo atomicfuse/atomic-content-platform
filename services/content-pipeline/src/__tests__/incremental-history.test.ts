@@ -10,6 +10,7 @@ const mockReadFile = vi.fn();
 const mockCommitFile = vi.fn();
 
 vi.mock("../lib/github.js", () => ({
+  createOctokit: () => ({}),
   createGitHubClient: () => ({}),
   readFile: (...args: unknown[]): unknown => mockReadFile(...args),
   commitFile: (...args: unknown[]): unknown => mockCommitFile(...args),
