@@ -12,7 +12,19 @@ Trigger AI image generation for all articles that still use the default site ima
 
 ## Authentication
 
-All requests require an `X-API-Key` header matching the `BULK_IMAGE_API_KEY` environment variable configured on the content-pipeline service.
+All requests require an `X-API-Key` header. The key must match the `BULK_IMAGE_API_KEY` environment variable on the content-pipeline service.
+
+**To set or view the key:**
+
+```bash
+# Set the key (production)
+cloudgrid secrets set atomic-content-platform BULK_IMAGE_API_KEY=your-secret-key-here
+
+# For local dev, add to services/content-pipeline/.env
+BULK_IMAGE_API_KEY=your-secret-key-here
+```
+
+Ask your admin for the current key value, or generate a new one with `openssl rand -hex 32`.
 
 ## Endpoints
 
