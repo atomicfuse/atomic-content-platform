@@ -13,28 +13,30 @@ type Phase =
   | "generating-image"
   | "uploading-image"
   | "committing"
+  | "triggering-images"
   | "complete"
   | "error";
 
-interface SSEProgressEvent {
-  type: "progress" | "complete" | "error";
-  phase?: Phase;
-  totalArticles?: number;
-  processedArticles?: number;
-  successfulArticles?: number;
-  failedArticles?: number;
+interface ArticleImportProgress {
+  jobId: string;
+  site: string;
+  status: "pending" | "running" | "complete" | "failed";
+  phase?: string;
+  totalArticles: number;
+  processedArticles: number;
+  successfulArticles: number;
+  failedArticles: number;
   currentArticleSlug?: string;
   error?: string;
-  successful?: number;
-  failed?: number;
 }
 
-const PHASE_LABELS: Record<Phase, string> = {
+const PHASE_LABELS: Record<string, string> = {
   fetching: "Fetching articles from WordPress",
   converting: "Converting & cleaning up articles",
   "generating-image": "Generating hero images",
   "uploading-image": "Uploading images to R2",
   committing: "Committing to repository",
+  "triggering-images": "Triggering image generation",
   complete: "Import complete",
   error: "Error",
 };
@@ -45,8 +47,14 @@ const PIPELINE_PHASES: Phase[] = [
   "generating-image",
   "uploading-image",
   "committing",
+  "triggering-images",
   "complete",
 ];
+
+const POLL_INTERVAL_MS = 2000;
+
+/** Key used to persist active job in localStorage so it survives page refreshes. */
+const STORAGE_KEY = "wp-article-import-job";
 
 export function ImportPanel(): React.ReactElement {
   const [sites, setSites] = useState<SiteEntry[]>([]);
@@ -55,19 +63,30 @@ export function ImportPanel(): React.ReactElement {
   const [siteTopics, setSiteTopics] = useState<string[]>([]);
   const [wpUrl, setWpUrl] = useState("");
   const [target, setTarget] = useState<"staging" | "main">("staging");
-  const [running, setRunning] = useState(false);
-  const [currentPhase, setCurrentPhase] = useState<Phase | null>(null);
-  const [totalArticles, setTotalArticles] = useState(0);
-  const [processedArticles, setProcessedArticles] = useState(0);
-  const [successfulArticles, setSuccessfulArticles] = useState(0);
-  const [failedArticles, setFailedArticles] = useState(0);
-  const [log, setLog] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ArticleImportProgress | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [result, setResult] = useState<{ successful: number; failed: number } | null>(null);
+  const [log, setLog] = useState<string[]>([]);
 
-  const abortRef = useRef<AbortController | null>(null);
   const logEndRef = useRef<HTMLDivElement | null>(null);
+  const prevSlugRef = useRef<string | undefined>(undefined);
 
+  // Restore active job from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { jobId: string; domain: string };
+        if (parsed.jobId) {
+          setJobId(parsed.jobId);
+          setSelectedDomain(parsed.domain ?? "");
+        }
+      }
+    } catch { /* ignore corrupt storage */ }
+  }, []);
+
+  // Load sites list
   useEffect(() => {
     let cancelled = false;
     (async (): Promise<void> => {
@@ -85,6 +104,7 @@ export function ImportPanel(): React.ReactElement {
     return (): void => { cancelled = true; };
   }, []);
 
+  // Auto-scroll log
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
@@ -102,7 +122,7 @@ export function ImportPanel(): React.ReactElement {
             setSiteTopics(topics);
           }
         })
-        .catch(() => { /* non-fatal — import will still work, just without topic matching */ });
+        .catch(() => { /* non-fatal */ });
     }
   }, []);
 
@@ -110,24 +130,61 @@ export function ImportPanel(): React.ReactElement {
     setLog((prev) => [...prev, msg]);
   }, []);
 
+  // Poll for job status
+  useEffect(() => {
+    if (!jobId) return;
+
+    let cancelled = false;
+
+    const poll = async (): Promise<void> => {
+      try {
+        const res = await fetch(`/api/agent/wp-migrate/article-import-status/${jobId}`);
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as ArticleImportProgress;
+        if (cancelled) return;
+
+        setProgress(data);
+
+        // Append log for new article slugs
+        if (data.currentArticleSlug && data.currentArticleSlug !== prevSlugRef.current) {
+          prevSlugRef.current = data.currentArticleSlug;
+          appendLog(`[${data.phase ?? "processing"}] ${data.currentArticleSlug}`);
+        }
+
+        if (data.status === "complete") {
+          appendLog(`Import complete: ${data.successfulArticles} succeeded, ${data.failedArticles} failed`);
+          localStorage.removeItem(STORAGE_KEY);
+        } else if (data.status === "failed") {
+          appendLog(`Error: ${data.error ?? "Unknown error"}`);
+          setErrorMsg(data.error ?? "Unknown error");
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      } catch {
+        // Silently retry
+      }
+    };
+
+    // Poll immediately, then on interval
+    void poll();
+    const interval = setInterval(() => { void poll(); }, POLL_INTERVAL_MS);
+
+    return (): void => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [jobId, appendLog]);
+
   const startImport = useCallback(async (): Promise<void> => {
     if (!selectedDomain || !wpUrl) return;
 
-    setRunning(true);
-    setCurrentPhase(null);
-    setTotalArticles(0);
-    setProcessedArticles(0);
-    setSuccessfulArticles(0);
-    setFailedArticles(0);
+    setSubmitting(true);
+    setProgress(null);
     setLog([]);
     setErrorMsg(null);
-    setResult(null);
-
-    const controller = new AbortController();
-    abortRef.current = controller;
+    prevSlugRef.current = undefined;
 
     try {
-      const res = await fetch("/api/agent/wp-migrate", {
+      const res = await fetch("/api/agent/wp-migrate/import-articles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -136,77 +193,38 @@ export function ImportPanel(): React.ReactElement {
           branch: target === "main" ? "main" : `staging/${selectedDomain}`,
           ...(siteTopics.length > 0 ? { menuItems: siteTopics } : {}),
         }),
-        signal: controller.signal,
       });
 
-      if (!res.ok || !res.body) {
-        const text = await res.text();
-        throw new Error(text || `HTTP ${res.status}`);
+      const data = (await res.json()) as { jobId?: string; error?: string };
+
+      if (!res.ok || !data.jobId) {
+        setErrorMsg(data.error ?? `HTTP ${res.status}`);
+        return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const evt = JSON.parse(line.slice(6)) as SSEProgressEvent;
-
-            if (evt.type === "progress" && evt.phase) {
-              setCurrentPhase(evt.phase);
-              if (evt.totalArticles) setTotalArticles(evt.totalArticles);
-              if (evt.processedArticles !== undefined) setProcessedArticles(evt.processedArticles);
-              if (evt.successfulArticles !== undefined) setSuccessfulArticles(evt.successfulArticles);
-              if (evt.failedArticles !== undefined) setFailedArticles(evt.failedArticles);
-              if (evt.currentArticleSlug) {
-                appendLog(`[${evt.phase}] ${evt.currentArticleSlug}`);
-              }
-            } else if (evt.type === "complete") {
-              setCurrentPhase("complete");
-              setResult({
-                successful: evt.successful ?? 0,
-                failed: evt.failed ?? 0,
-              });
-              appendLog(`Import complete: ${evt.successful} succeeded, ${evt.failed} failed`);
-            } else if (evt.type === "error") {
-              setCurrentPhase("error");
-              setErrorMsg(evt.error ?? "Unknown error");
-              appendLog(`Error: ${evt.error}`);
-            }
-          } catch {
-            /* skip malformed SSE lines */
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        appendLog("Import cancelled.");
-      } else {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        setErrorMsg(msg);
-        appendLog(`Error: ${msg}`);
-      }
+      setJobId(data.jobId);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ jobId: data.jobId, domain: selectedDomain }));
+      appendLog(`Import enqueued — job ${data.jobId.slice(0, 8)}`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "Unknown error");
     } finally {
-      setRunning(false);
-      abortRef.current = null;
+      setSubmitting(false);
     }
   }, [selectedDomain, wpUrl, target, siteTopics, appendLog]);
 
-  const cancelImport = useCallback((): void => {
-    abortRef.current?.abort();
+  const handleReset = useCallback((): void => {
+    setJobId(null);
+    setProgress(null);
+    setLog([]);
+    setErrorMsg(null);
+    prevSlugRef.current = undefined;
+    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const isDone = currentPhase === "complete";
-  const isError = currentPhase === "error";
+  const currentPhase = progress?.phase as Phase | undefined;
+  const isDone = progress?.status === "complete";
+  const isFailed = progress?.status === "failed";
+  const isRunning = !!jobId && !isDone && !isFailed;
   const currentPhaseIndex = currentPhase ? PIPELINE_PHASES.indexOf(currentPhase) : -1;
 
   return (
@@ -218,6 +236,7 @@ export function ImportPanel(): React.ReactElement {
           </h2>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
             Select a site and its WordPress API URL to migrate articles.
+            Import runs in the background — you can close this tab safely.
           </p>
         </div>
         <div>
@@ -227,7 +246,7 @@ export function ImportPanel(): React.ReactElement {
           <select
             value={selectedDomain}
             onChange={(e): void => handleSiteChange(e.target.value)}
-            disabled={running || sitesLoading}
+            disabled={isRunning || submitting || sitesLoading}
             className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] disabled:opacity-50"
           >
             <option value="">
@@ -249,7 +268,7 @@ export function ImportPanel(): React.ReactElement {
             type="text"
             value={wpUrl}
             onChange={(e): void => setWpUrl(e.target.value)}
-            disabled={running}
+            disabled={isRunning || submitting}
             placeholder="https://example.com/wp-json/wp/v2/posts"
             className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] disabled:opacity-50"
           />
@@ -264,7 +283,7 @@ export function ImportPanel(): React.ReactElement {
             <button
               type="button"
               onClick={(): void => setTarget("staging")}
-              disabled={running}
+              disabled={isRunning || submitting}
               className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
                 target === "staging"
                   ? "border-cyan bg-cyan/10 text-cyan"
@@ -276,7 +295,7 @@ export function ImportPanel(): React.ReactElement {
             <button
               type="button"
               onClick={(): void => setTarget("main")}
-              disabled={running}
+              disabled={isRunning || submitting}
               className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors disabled:opacity-50 ${
                 target === "main"
                   ? "border-cyan bg-cyan/10 text-cyan"
@@ -294,39 +313,44 @@ export function ImportPanel(): React.ReactElement {
         </div>
 
         <div className="flex items-center gap-3 pt-1">
-          {!running ? (
+          {!isRunning ? (
             <button
               onClick={startImport}
-              disabled={!selectedDomain || !wpUrl}
+              disabled={!selectedDomain || !wpUrl || submitting}
               className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-cyan hover:bg-cyan/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              Start Import
+              {submitting ? "Submitting..." : "Start Import"}
             </button>
           ) : (
+            <span className="px-4 py-2 rounded-lg text-sm font-medium text-cyan bg-cyan/10">
+              Import running in background...
+            </span>
+          )}
+          {(isDone || isFailed) && (
             <button
-              onClick={cancelImport}
-              className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+              onClick={handleReset}
+              className="px-3 py-1.5 rounded-lg text-sm font-medium border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
             >
-              Cancel
+              New Import
             </button>
           )}
         </div>
       </div>
 
       {/* Progress steps */}
-      {currentPhase && (
+      {progress && (
         <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6">
           <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-4">
             Progress
-            {totalArticles > 0 && (
+            {progress.totalArticles > 0 && (
               <span className="ml-2 font-normal text-[var(--text-secondary)]">
-                ({processedArticles}/{totalArticles} articles
-                {(successfulArticles > 0 || failedArticles > 0) && (
+                ({progress.processedArticles}/{progress.totalArticles} articles
+                {(progress.successfulArticles > 0 || progress.failedArticles > 0) && (
                   <>
                     {" — "}
-                    <span className="text-green-500">{successfulArticles} succeeded</span>
-                    {failedArticles > 0 && (
-                      <>, <span className="text-red-400">{failedArticles} failed</span></>
+                    <span className="text-green-500">{progress.successfulArticles} succeeded</span>
+                    {progress.failedArticles > 0 && (
+                      <>, <span className="text-red-400">{progress.failedArticles} failed</span></>
                     )}
                   </>
                 )}
@@ -371,23 +395,23 @@ export function ImportPanel(): React.ReactElement {
                           : "text-[var(--text-tertiary)]"
                     }`}
                   >
-                    {PHASE_LABELS[phase]}
+                    {PHASE_LABELS[phase] ?? phase}
                   </span>
                 </div>
               );
             })}
           </div>
 
-          {isError && errorMsg && (
+          {isFailed && errorMsg && (
             <div className="mt-4 rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
               {errorMsg}
             </div>
           )}
 
-          {isDone && result && (
+          {isDone && (
             <div className="mt-4 rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-400">
-              Import finished: {result.successful} article{result.successful !== 1 ? "s" : ""} imported
-              {result.failed > 0 && `, ${result.failed} failed`}.
+              Import finished: {progress.successfulArticles} article{progress.successfulArticles !== 1 ? "s" : ""} imported
+              {progress.failedArticles > 0 && `, ${progress.failedArticles} failed`}.
             </div>
           )}
         </div>
