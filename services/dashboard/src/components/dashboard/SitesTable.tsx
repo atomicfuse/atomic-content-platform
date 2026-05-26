@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition, useCallback } from "react";
+import { useState, useMemo, useTransition, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardSiteEntry, SiteStatus, Company, Vertical } from "@/types/dashboard";
 import { StatusBadge } from "@/components/ui/Badge";
@@ -70,6 +70,18 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
+  const [articleCounts, setArticleCounts] = useState<Record<string, number>>({});
+  const [countsLoaded, setCountsLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/sites/article-counts")
+      .then((r) => r.json())
+      .then((data: Record<string, number>) => {
+        setArticleCounts(data);
+        setCountsLoaded(true);
+      })
+      .catch(() => setCountsLoaded(true));
+  }, []);
 
   const PAGE_SIZE_OPTIONS = [10, 20, 30, 40 , 50] as const;
 
@@ -205,6 +217,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Status
                 </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Articles
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
@@ -220,7 +235,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -260,6 +275,12 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                         Migration coming soon
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums">
+                    {countsLoaded
+                      ? (articleCounts[site.domain] ?? "—")
+                      : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    }
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}

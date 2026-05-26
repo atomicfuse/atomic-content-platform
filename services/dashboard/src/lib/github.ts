@@ -557,6 +557,54 @@ export async function readSiteConfig(
   }
 }
 
+/** Count articles for a site — lightweight: 1 API call (directory listing only). */
+const articleCountCache = new Map<string, { count: number; expiresAt: number }>();
+const ARTICLE_COUNT_CACHE_TTL = 15 * 60_000; // 15 min (matches readArticles cache)
+
+export async function countArticles(domain: string, branch?: string): Promise<number> {
+  const key = `${domain}@${branch ?? "main"}`;
+  const cached = articleCountCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.count;
+
+  const octokit = getOctokit();
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      path: `sites/${domain}/articles`,
+      ...(branch ? { ref: branch } : {}),
+    });
+    if (!Array.isArray(data)) return 0;
+    const count = data.filter(
+      (f) => f.name.endsWith(".md") && f.name !== ".gitkeep",
+    ).length;
+    articleCountCache.set(key, { count, expiresAt: Date.now() + ARTICLE_COUNT_CACHE_TTL });
+    return count;
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) return 0;
+    throw error;
+  }
+}
+
+/** Count articles for multiple sites in parallel. */
+export async function countArticlesForSites(
+  sites: Array<{ domain: string; staging_branch: string | null }>,
+): Promise<Record<string, number>> {
+  const results = await Promise.allSettled(
+    sites.map(async (s) => {
+      const count = await countArticles(s.domain, s.staging_branch ?? undefined);
+      return { domain: s.domain, count };
+    }),
+  );
+  const counts: Record<string, number> = {};
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      counts[r.value.domain] = r.value.count;
+    }
+  }
+  return counts;
+}
+
 /** List articles for a site from the network repo. */
 // Per-site article cache — keyed by "domain@branch", 2-minute TTL.
 // readArticles makes 1 + N API calls (directory listing + 1 per article),
