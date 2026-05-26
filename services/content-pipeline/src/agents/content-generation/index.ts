@@ -26,7 +26,13 @@ import { runContentGeneration } from "./agent.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
-import { handleMigrationRequest, handleCreateSites, handleImportStatus } from "../migration/handler.js";
+import {
+  handleMigrationRequest,
+  handleCreateSites,
+  handleImportStatus,
+  handleEnqueueArticleImport,
+  handleArticleImportStatus,
+} from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
 import {
@@ -453,6 +459,26 @@ async function handleRequest(
     return;
   }
 
+  // WordPress migration — enqueue article import (background)
+  if (req.method === "POST" && req.url === "/wp-migrate/import-articles") {
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleEnqueueArticleImport(req, res, queueInstances.importArticlesQueue, queueInstances.connection);
+    return;
+  }
+
+  // WordPress migration — poll article import status
+  if (req.method === "GET" && req.url?.startsWith("/wp-migrate/article-import-status/")) {
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleArticleImportStatus(req, res, queueInstances.connection);
+    return;
+  }
+
   // ─── Bulk image generation ───────────────────────────────────────
   if (req.method === "POST" && req.url === "/bulk-generate-images") {
     // Auth check
@@ -659,6 +685,8 @@ async function shutdown(signal: string): Promise<void> {
     await queueInstances.importFinalizeWorker.close();
     await queueInstances.importSiteQueue.close();
     await queueInstances.importFinalizeQueue.close();
+    await queueInstances.importArticlesWorker.close();
+    await queueInstances.importArticlesQueue.close();
     await queueInstances.flowProducer.close();
     await queueInstances.connection.quit();
     console.log("[server] Queue workers closed");

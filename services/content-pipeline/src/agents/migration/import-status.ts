@@ -1,5 +1,6 @@
 import type { Redis } from "ioredis";
 import type { ImportBatchMeta, ImportBatchSiteStatus } from "../../queue/types.js";
+import type { ArticleImportProgress } from "../../queue/types.js";
 
 export const BATCH_KEY_PREFIX = "import-batch:";
 export const BATCH_TTL_SECONDS = 24 * 60 * 60; // 24 hours
@@ -96,4 +97,33 @@ export async function readBatchStatus(
     createdAt: meta.createdAt,
     sites,
   };
+}
+
+// --- Article import status (single-site article imports) ---
+
+export const ARTICLE_IMPORT_KEY_PREFIX = "article-import:";
+export const ARTICLE_IMPORT_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+
+export async function writeArticleImportProgress(
+  redis: Redis,
+  jobId: string,
+  progress: ArticleImportProgress,
+): Promise<void> {
+  const key = `${ARTICLE_IMPORT_KEY_PREFIX}${jobId}`;
+  await redis.set(key, JSON.stringify(progress), "EX", ARTICLE_IMPORT_TTL_SECONDS);
+}
+
+export async function readArticleImportProgress(
+  redis: Redis,
+  jobId: string,
+): Promise<ArticleImportProgress | null> {
+  const key = `${ARTICLE_IMPORT_KEY_PREFIX}${jobId}`;
+  const raw = await redis.get(key);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ArticleImportProgress;
+  } catch {
+    console.error(`[import-status] Corrupted article import JSON for job ${jobId}`);
+    return null;
+  }
 }

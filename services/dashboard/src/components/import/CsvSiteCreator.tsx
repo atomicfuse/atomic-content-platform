@@ -33,9 +33,12 @@ interface BatchStatus {
 
 interface ArticleImportState {
   status: "idle" | "importing" | "complete" | "error";
+  jobId?: string;
   phase?: string;
   totalArticles?: number;
   processedArticles?: number;
+  successfulArticles?: number;
+  failedArticles?: number;
   currentArticleSlug?: string;
   successful?: number;
   failed?: number;
@@ -131,46 +134,6 @@ function downloadTemplate(): void {
   URL.revokeObjectURL(url);
 }
 
-// --- SSE helper for article import (unchanged) ---
-
-type ArticleImportEvent =
-  | { type: "progress"; phase: string; totalArticles?: number; processedArticles?: number; currentArticleSlug?: string }
-  | { type: "complete"; successful: number; failed: number }
-  | { type: "error"; error: string };
-
-async function consumeSSE<T>(
-  response: Response,
-  onEvent: (event: T) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      if (signal?.aborted) { reader.cancel(); return; }
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("data: ")) {
-          try { onEvent(JSON.parse(trimmed.slice(6)) as T); } catch { /* skip */ }
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-}
-
 // --- Polling interval ---
 const POLL_INTERVAL_MS = 2000;
 
@@ -184,7 +147,6 @@ export function CsvSiteCreator(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const importAbortRefs = useRef<Map<string, AbortController>>(new Map());
 
   // --- Poll for batch status ---
   useEffect(() => {
@@ -213,6 +175,86 @@ export function CsvSiteCreator(): React.ReactElement {
       clearInterval(interval);
     };
   }, [batchId, phase]);
+
+  // Derive a stable dependency string from active importing jobs
+  const activeArticleJobIds = [...articleImports.entries()]
+    .filter(([, s]) => s.status === "importing" && s.jobId)
+    .map(([, s]) => s.jobId!)
+    .sort()
+    .join(",");
+
+  // Poll for article import progress
+  useEffect(() => {
+    if (!activeArticleJobIds) return;
+
+    let cancelled = false;
+
+    const interval = setInterval(async () => {
+      const jobPairs = activeArticleJobIds.split(",").filter(Boolean);
+      if (jobPairs.length === 0) return;
+
+      for (const activeJobId of jobPairs) {
+        if (cancelled) break;
+        try {
+          const res = await fetch(`/api/agent/wp-migrate/article-import-status/${activeJobId}`);
+          if (cancelled || !res.ok) continue;
+          const data = (await res.json()) as {
+            jobId: string;
+            site: string;
+            status: string;
+            phase?: string;
+            totalArticles: number;
+            processedArticles: number;
+            successfulArticles: number;
+            failedArticles: number;
+            currentArticleSlug?: string;
+            error?: string;
+          };
+          if (cancelled) continue;
+
+          setArticleImports((prev) => {
+            const next = new Map(prev);
+            for (const [siteId, state] of prev) {
+              if (state.jobId !== activeJobId) continue;
+
+              if (data.status === "complete") {
+                next.set(siteId, {
+                  status: "complete",
+                  jobId: activeJobId,
+                  successful: data.successfulArticles,
+                  failed: data.failedArticles,
+                });
+              } else if (data.status === "failed") {
+                next.set(siteId, {
+                  status: "error",
+                  jobId: activeJobId,
+                  error: data.error ?? "Import failed",
+                });
+              } else {
+                next.set(siteId, {
+                  status: "importing",
+                  jobId: activeJobId,
+                  phase: data.phase,
+                  totalArticles: data.totalArticles,
+                  processedArticles: data.processedArticles,
+                  currentArticleSlug: data.currentArticleSlug,
+                });
+              }
+              break;
+            }
+            return next;
+          });
+        } catch {
+          // Silently retry
+        }
+      }
+    }, POLL_INTERVAL_MS);
+
+    return (): void => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [activeArticleJobIds]);
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
@@ -282,12 +324,6 @@ export function CsvSiteCreator(): React.ReactElement {
 
   const handleImportArticles = useCallback(
     async (siteId: string, postsApiUrl: string): Promise<void> => {
-      const existingController = importAbortRefs.current.get(siteId);
-      existingController?.abort();
-
-      const controller = new AbortController();
-      importAbortRefs.current.set(siteId, controller);
-
       setArticleImports((prev) => {
         const next = new Map(prev);
         next.set(siteId, { status: "importing" });
@@ -295,7 +331,7 @@ export function CsvSiteCreator(): React.ReactElement {
       });
 
       try {
-        const res = await fetch("/api/agent/wp-migrate", {
+        const res = await fetch("/api/agent/wp-migrate/import-articles", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -303,53 +339,36 @@ export function CsvSiteCreator(): React.ReactElement {
             wpApiUrl: postsApiUrl,
             branch: `staging/${siteId}`,
           }),
-          signal: controller.signal,
         });
 
-        if (!res.ok) {
-          const text = await res.text();
-          let msg = `HTTP ${res.status}`;
-          try { const parsed = JSON.parse(text) as { error?: string }; if (parsed.error) msg = parsed.error; } catch { /* */ }
-          setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "error", error: msg }); return next; });
+        const data = (await res.json()) as { jobId?: string; error?: string };
+
+        if (!res.ok || !data.jobId) {
+          setArticleImports((prev) => {
+            const next = new Map(prev);
+            next.set(siteId, { status: "error", error: data.error ?? `HTTP ${res.status}` });
+            return next;
+          });
           return;
         }
 
-        await consumeSSE<ArticleImportEvent>(
-          res,
-          (event) => {
-            if (event.type === "progress") {
-              setArticleImports((prev) => {
-                const next = new Map(prev);
-                next.set(siteId, { status: "importing", phase: event.phase, totalArticles: event.totalArticles, processedArticles: event.processedArticles, currentArticleSlug: event.currentArticleSlug });
-                return next;
-              });
-            } else if (event.type === "complete") {
-              setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "complete", successful: event.successful, failed: event.failed }); return next; });
-            } else if (event.type === "error") {
-              setArticleImports((prev) => { const next = new Map(prev); next.set(siteId, { status: "error", error: event.error }); return next; });
-            }
-          },
-          controller.signal,
-        );
+        setArticleImports((prev) => {
+          const next = new Map(prev);
+          next.set(siteId, { status: "importing", jobId: data.jobId });
+          return next;
+        });
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
         setArticleImports((prev) => {
           const next = new Map(prev);
           next.set(siteId, { status: "error", error: err instanceof Error ? err.message : "Unknown error" });
           return next;
         });
-      } finally {
-        importAbortRefs.current.delete(siteId);
       }
     },
     [],
   );
 
   const handleReset = useCallback((): void => {
-    for (const controller of importAbortRefs.current.values()) {
-      controller.abort();
-    }
-    importAbortRefs.current.clear();
     setSites([]);
     setRawRows([]);
     setBatchId(null);

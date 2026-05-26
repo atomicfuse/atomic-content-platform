@@ -1,12 +1,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { Octokit } from "@octokit/rest";
-import type { FlowProducer } from "bullmq";
+import type { FlowProducer, Queue } from "bullmq";
 import type { Redis } from "ioredis";
+import type { ImportArticlesJobData, ImportArticlesResult } from "../../queue/types.js";
+import { DEFAULT_ARTICLE_IMPORT_JOB_OPTIONS } from "../../queue/types.js";
 import { runMigration } from "./orchestrator.js";
 import type { MigrationConfig } from "./orchestrator.js";
 import type { CsvSiteRow, MigrationProgress } from "./types.js";
 import { validateBatch, submitBatch } from "./batch-import.js";
-import { readBatchStatus } from "./import-status.js";
+import { readBatchStatus, readArticleImportProgress, writeArticleImportProgress } from "./import-status.js";
 
 function sendSSE(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -213,4 +216,140 @@ export async function handleImportStatus(
 
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify(status));
+}
+
+// ---------------------------------------------------------------------------
+// POST /wp-migrate/import-articles  (enqueue article import)
+// ---------------------------------------------------------------------------
+
+interface ImportArticlesRequestBody {
+  siteDomain: string;
+  wpApiUrl: string;
+  branch?: string;
+  menuItems?: string[];
+  websiteCategory?: string;
+}
+
+/**
+ * POST /wp-migrate/import-articles
+ *
+ * Enqueues an article import job and returns a jobId for polling.
+ * The actual import runs in the background via BullMQ.
+ */
+export async function handleEnqueueArticleImport(
+  req: IncomingMessage,
+  res: ServerResponse,
+  importArticlesQueue: Queue<ImportArticlesJobData, ImportArticlesResult>,
+  redis: Redis,
+): Promise<void> {
+  let rawBody = "";
+  req.on("data", (chunk: Buffer) => { rawBody += chunk; });
+  await new Promise<void>((resolve) => req.on("end", resolve));
+
+  let body: ImportArticlesRequestBody;
+  try {
+    body = JSON.parse(rawBody) as ImportArticlesRequestBody;
+  } catch {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid JSON body" }));
+    return;
+  }
+
+  if (!body.siteDomain || !body.wpApiUrl) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "siteDomain and wpApiUrl are required" }));
+    return;
+  }
+
+  const jobId = randomUUID();
+  const branch = body.branch ?? `staging/${body.siteDomain}`;
+  const alsoCommitTo = branch === "main" ? `staging/${body.siteDomain}` : undefined;
+
+  try {
+    // Prevent concurrent imports for the same site (lock expires after 2 hours)
+    const lockKey = `article-import-active:${body.siteDomain}`;
+    const acquired = await redis.set(lockKey, jobId, "EX", 7200, "NX");
+    if (!acquired) {
+      res.writeHead(409, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "An article import is already running for this site" }));
+      return;
+    }
+
+    // Write initial "pending" status so polling returns data immediately
+    await writeArticleImportProgress(redis, jobId, {
+      jobId,
+      site: body.siteDomain,
+      status: "pending",
+      phase: "fetching",
+      totalArticles: 0,
+      processedArticles: 0,
+      successfulArticles: 0,
+      failedArticles: 0,
+      startedAt: new Date().toISOString(),
+    });
+
+    await importArticlesQueue.add(
+      `import-articles-${body.siteDomain}`,
+      {
+        jobId,
+        siteDomain: body.siteDomain,
+        wpApiUrl: body.wpApiUrl,
+        branch,
+        alsoCommitTo,
+        menuItems: body.menuItems,
+        websiteCategory: body.websiteCategory,
+      },
+      {
+        ...DEFAULT_ARTICLE_IMPORT_JOB_OPTIONS,
+        jobId: `import-articles-${jobId.slice(0, 8)}`,
+      },
+    );
+
+    console.log(`[wp-migrate] Enqueued article import for ${body.siteDomain} (job ${jobId.slice(0, 8)})`);
+
+    res.writeHead(202, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ jobId, siteDomain: body.siteDomain }));
+  } catch (err) {
+    // Release the dedup lock so the user can retry
+    const lockKey = `article-import-active:${body.siteDomain}`;
+    await redis.del(lockKey).catch(() => {});
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[wp-migrate] Failed to enqueue article import:`, message);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Failed to enqueue: ${message}` }));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /wp-migrate/article-import-status/:jobId
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns current article import progress from Redis.
+ */
+export async function handleArticleImportStatus(
+  req: IncomingMessage,
+  res: ServerResponse,
+  redis: Redis,
+): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const segments = url.pathname.split("/").filter(Boolean);
+  // Expected: ["wp-migrate", "article-import-status", "<jobId>"]
+  const jobId = segments[2];
+
+  if (!jobId) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "jobId is required" }));
+    return;
+  }
+
+  const progress = await readArticleImportProgress(redis, jobId);
+  if (!progress) {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Job not found" }));
+    return;
+  }
+
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(progress));
 }

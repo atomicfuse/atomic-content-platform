@@ -20,13 +20,17 @@ import {
   createImportFinalizeQueue,
   createImportFinalizeWorker,
 } from "./import-finalize.js";
-import type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData } from "./types.js";
+import {
+  createImportArticlesQueue,
+  createImportArticlesWorker,
+} from "./import-articles.js";
+import type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData, ImportArticlesJobData, ImportArticlesResult } from "./types.js";
 
 export type { GenerateJobData } from "./types.js";
 export { GENERATE_QUEUE, SCHEDULER_RUN_QUEUE, DEFAULT_JOB_OPTIONS } from "./types.js";
 export type { SchedulerRunData } from "./types.js";
-export { IMPORT_SITE_QUEUE, IMPORT_FINALIZE_QUEUE } from "./types.js";
-export type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData } from "./types.js";
+export { IMPORT_SITE_QUEUE, IMPORT_FINALIZE_QUEUE, IMPORT_ARTICLES_QUEUE } from "./types.js";
+export type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData, ImportArticlesJobData, ImportArticlesResult } from "./types.js";
 
 export interface QueueInstances {
   connection: Redis;
@@ -40,6 +44,8 @@ export interface QueueInstances {
   importSiteWorker: Worker<ImportSiteJobData, ImportSiteResult>;
   importFinalizeQueue: Queue<ImportFinalizeData>;
   importFinalizeWorker: Worker<ImportFinalizeData>;
+  importArticlesQueue: Queue<ImportArticlesJobData, ImportArticlesResult>;
+  importArticlesWorker: Worker<ImportArticlesJobData, ImportArticlesResult>;
 }
 
 const WORKER_CONCURRENCY = 3;
@@ -134,6 +140,25 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
 
   console.log("[worker] Import-finalize worker started");
 
+  // Import articles queue (background article migration)
+  const importArticlesQueue = createImportArticlesQueue(connection);
+  const importArticlesWorker = createImportArticlesWorker(connection, 1);
+
+  importArticlesQueue.on("error", (err) => {
+    console.error(`[import-articles-queue] Connection error: ${err.message}`);
+  });
+  importArticlesWorker.on("error", (err) => {
+    console.error(`[import-articles-worker] Connection error: ${err.message}`);
+  });
+  importArticlesWorker.on("failed", (job, err) => {
+    console.error(`[import-articles] Job ${job?.id} failed (attempt ${job?.attemptsMade}): ${err.message}`);
+  });
+  importArticlesWorker.on("completed", (job) => {
+    console.log(`[import-articles] Job ${job.id} completed for ${job.data.siteDomain}`);
+  });
+
+  console.log("[worker] Import-articles worker started (concurrency: 1)");
+
   return {
     connection,
     generateQueue,
@@ -146,5 +171,7 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
     importSiteWorker,
     importFinalizeQueue,
     importFinalizeWorker,
+    importArticlesQueue,
+    importArticlesWorker,
   };
 }
