@@ -11,7 +11,7 @@ Currently, regenerating images requires clicking through the dashboard one artic
 
 ## Solution
 
-A new `POST /bulk-generate-images` endpoint on the content-pipeline service. It scans articles for general images, then fires `triggerN8nImage()` webhooks with a 2-second throttle between each. The existing callback pipeline (n8n -> dashboard proxy -> content-pipeline -> R2 + Git) handles the rest unchanged.
+A new `POST /bulk-generate-images` endpoint on the content-pipeline service. It scans articles for general images, then fires `triggerN8nImage()` webhooks in batches of 3 with a 3-minute pause between batches. This prevents overloading n8n (each image takes ~46s to generate). The existing callback pipeline (n8n -> dashboard proxy -> content-pipeline -> R2 + Git) handles the rest unchanged.
 
 A thin dashboard proxy forwards requests from `POST /api/agent/bulk-generate-images` to the content-pipeline.
 
@@ -58,8 +58,10 @@ POST /bulk-generate-images
   "skipped_reasons": [
     { "domain": "travelswire", "slug": "broken-article", "reason": "missing title" }
   ],
-  "throttle_interval_ms": 2000,
-  "estimated_queue_duration_seconds": 94,
+  "batch_size": 3,
+  "batch_pause_seconds": 180,
+  "total_batches": 16,
+  "estimated_total_seconds": 2700,
   "articles": [
     { "domain": "travelswire", "slug": "best-travel-gear-2026", "title": "Best Travel Gear 2026" }
   ]
@@ -71,8 +73,10 @@ POST /bulk-generate-images
 | `queued` | Number of articles that will have image generation triggered. |
 | `skipped` | Number of articles skipped (missing title, unreadable frontmatter, etc.). |
 | `skipped_reasons` | Array of `{ domain, slug, reason }` for each skipped article. |
-| `throttle_interval_ms` | Delay between consecutive n8n webhook fires (2000ms). |
-| `estimated_queue_duration_seconds` | `queued * throttle_interval_ms / 1000`. Time to finish queuing webhooks, not time for images to complete. |
+| `batch_size` | Number of webhooks fired per batch (3). |
+| `batch_pause_seconds` | Pause between batches in seconds (180 = 3 minutes). |
+| `total_batches` | `ceil(queued / batch_size)`. |
+| `estimated_total_seconds` | `(total_batches - 1) * batch_pause_seconds`. Time for all batches to be dispatched (excludes n8n processing time). |
 | `articles` | Full list of articles queued (or that would be queued in dry_run mode). |
 
 ### Error Responses
@@ -82,7 +86,7 @@ POST /bulk-generate-images
 | 400 | `{ "error": "scope is required" }` | Missing or invalid `scope`. |
 | 400 | `{ "error": "domain is required when scope is site" }` | `scope="site"` without `domain`. |
 | 401 | `{ "error": "Invalid or missing API key" }` | Bad or missing `X-API-Key` header. |
-| 409 | `{ "error": "Bulk image generation already in progress", "queued_remaining": 23 }` | A previous bulk job is still firing webhooks. |
+| 409 | `{ "error": "Bulk image generation already in progress", "queued_remaining": 23, "current_batch": 3, "total_batches": 10 }` | A previous bulk job is still processing batches. |
 | 404 | `{ "error": "Site not found: badsite" }` | `domain` not in `dashboard-index.yaml`. |
 | 503 | `{ "error": "N8N_IMAGE_WEBHOOK_URL not configured" }` | n8n webhook URL not set (non-dry-run only). Dry runs are allowed without n8n. |
 
@@ -110,22 +114,26 @@ POST /bulk-generate-images
 If `dry_run` is `false` and `queued > 0`:
 
 1. Set concurrency guard flag with remaining count = `queued`.
-2. Start a background loop that processes the article queue:
-   - Pop next article from the queue.
-   - Read site brief from Git (for `vertical` and `image_guidelines`). Article content is already cached from the scan phase.
-   - Extract `description` and `summary` (first 500 chars of body) from cached content.
-   - Call `triggerN8nImage()` with:
-     - `request_id`: generated UUID
-     - `callback_url`: `IMAGE_CALLBACK_URL` env var (same as existing `/trigger-image`)
-     - `job_id`: empty string (no BullMQ job for bulk operations)
-     - `site_domain`: the site's domain
-     - `slug`: the article slug
-     - `branch`: the branch where the article was found (`staging/{domain}` or `main`)
-     - `article`: `{ title, description, summary, vertical, image_guidelines }`
-   - Decrement the concurrency guard remaining counter.
-   - Wait 2000ms before processing the next article.
+2. Start a background loop that processes the article queue **in batches of 3**:
+   - Take the next batch (up to 3 articles) from the queue.
+   - For each article in the batch:
+     - Read site brief from Git (for `vertical` and `image_guidelines`). Article content is already cached from the scan phase.
+     - Extract `description` and `summary` (first 500 chars of body) from cached content.
+     - Call `triggerN8nImage()` with:
+       - `request_id`: generated UUID
+       - `callback_url`: `IMAGE_CALLBACK_URL` env var (same as existing `/trigger-image`)
+       - `job_id`: empty string (no BullMQ job for bulk operations)
+       - `site_domain`: the site's domain
+       - `slug`: the article slug
+       - `branch`: the branch where the article was found (`staging/{domain}` or `main`)
+       - `article`: `{ title, description, summary, vertical, image_guidelines }`
+     - Decrement the concurrency guard remaining counter.
+   - Log: `"Batch {n}/{total}: fired {count} webhooks, {remaining} remaining"`.
+   - If more articles remain, **wait 3 minutes** before the next batch.
 3. On completion (queue empty) or unrecoverable error, clear the concurrency guard.
 4. Log summary: `"Bulk image generation complete: {triggered} triggered, {failed} failed"`.
+
+**Batching rationale:** Each n8n image generation takes ~46 seconds. Firing 3 at once keeps n8n busy without overloading it. The 3-minute pause ensures the previous batch has finished processing before the next one starts.
 
 ### 3. Callback Phase (existing, no changes)
 
@@ -155,12 +163,14 @@ An in-memory object tracking bulk job state:
 let bulkJob: {
   inProgress: boolean;
   remaining: number;
-} = { inProgress: false, remaining: 0 };
+  currentBatch: number;
+  totalBatches: number;
+} = { inProgress: false, remaining: 0, currentBatch: 0, totalBatches: 0 };
 ```
 
-- **Set** when a non-dry-run bulk job starts queuing (`inProgress = true`, `remaining = queued`).
-- **Decremented** after each webhook trigger (success or failure).
-- **Cleared** when remaining reaches 0 or on unrecoverable error.
+- **Set** when a non-dry-run bulk job starts queuing.
+- **Decremented** after each webhook trigger (success or failure) within a batch.
+- **Cleared** when all batches complete or on unrecoverable error.
 - **Not persisted** — a process restart clears it (acceptable; webhooks already fired are idempotent via the callback pipeline).
 - **Known limitation:** Only one bulk job can run at a time, even across different sites. This is intentional for the initial implementation to keep n8n load predictable.
 
