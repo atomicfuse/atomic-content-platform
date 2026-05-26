@@ -29,8 +29,6 @@ import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
 import { randomUUID } from "node:crypto";
-import { triggerN8nImage, trackPendingImage } from "./n8n-image.js";
-import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
@@ -39,8 +37,7 @@ import type { Generator, GeneratorConfig } from "./generators/base-generator.js"
 // Existing infrastructure
 import { createOctokit } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
-import { writeArticleBatch } from "../../lib/writer.js";
-import type { PendingArticle, BatchFileEntry } from "../../lib/writer.js";
+import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -841,127 +838,14 @@ export async function runContentGeneration(
       );
     }
 
-    // Step 6: Batch-write all created articles + updated dedup index in a SINGLE commit
-    const created = results.filter((r) => r.status === "created").slice(0, targetCount);
-    if (created.length > 0) {
-      const pendingArticles = created
-        .map((r) => r._pendingArticle)
-        .filter((a): a is PendingArticle => !!a);
-
-      // Build updated dedup index — add newly created articles to the existing sets
-      const updatedExisting: ExistingArticles = {
-        urls: new Set(existing.urls),
-        titles: new Set(existing.titles),
-      };
-      for (const r of created) {
-        if (r._pendingArticle) {
-          const { data } = matter(r._pendingArticle.content);
-          if (data.source_url) updatedExisting.urls.add(normalizeUrl(data.source_url as string));
-          if (data.title) updatedExisting.titles.add(normalizeTitleKey(data.title as string));
-        }
-      }
-      const dedupIndexFile: BatchFileEntry = {
-        path: dedupIndexPath(siteDomain),
-        content: serializeDedupIndex(updatedExisting),
-      };
-
-      const slugList = pendingArticles.map((a) => a.slug).join(", ");
-      const commitMsg = `feat(content): add ${pendingArticles.length} article(s) for ${siteDomain}\n\n${slugList}`;
-
-      await writeArticleBatch(
-        { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-        pendingArticles,
-        [], // images handled async by n8n — no pending assets
-        commitMsg,
-        [dedupIndexFile],
-      );
-    }
-
-    // Step 7: Trigger n8n image generation (fire-and-forget).
-    // POSTs to n8n webhook with a callback_url. n8n generates the image
-    // async and POSTs the result back to our /image-callback endpoint.
-    // Only in GitHub mode (branch set) — local dev writes to disk.
-    let n8nImagesTriggered = 0;
-    if (config.n8nImageWebhookUrl && branch) {
-      const imageRequests = created
-        .filter((r) => r._imageRequest)
-        .map((r) => r._imageRequest!);
-
-      if (imageRequests.length > 0) {
-        n8nImagesTriggered = imageRequests.length;
-        const webhookUrl = config.n8nImageWebhookUrl;
-        const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
-
-        console.log(`[agent] Triggering ${imageRequests.length} n8n image request(s) → ${webhookUrl}`);
-
-        // Fire-and-forget — trigger all requests, don't wait for images.
-        // n8n will POST results to our /image-callback endpoint.
-        for (const req of imageRequests) {
-          void triggerN8nImage(webhookUrl, {
-            request_id: req.requestId,
-            callback_url: callbackUrl,
-            // Empty string when not via BullMQ — callback handler skips Redis tracking for falsy job_id
-            job_id: jobId ?? "",
-            site_domain: req.siteDomain,
-            slug: req.slug,
-            branch,
-            article: {
-              title: req.articleTitle,
-              description: req.articleDescription,
-              summary: req.articleSummary,
-              vertical: req.vertical,
-              source_thumbnail_url: req.sourceThumbnailUrl ?? null,
-              image_guidelines: Array.isArray(req.imageGuidelines)
-                ? req.imageGuidelines.join("\n")
-                : req.imageGuidelines,
-            },
-          }).then((accepted) => {
-            if (accepted) {
-              // Track for timeout detection — alert if n8n never calls back
-              trackPendingImage(
-                req.requestId,
-                req.siteDomain,
-                req.slug,
-                req.articleTitle,
-                config.notifications,
-              );
-            } else {
-              void notifyImageDefaultFallback(config.notifications, {
-                site: req.siteDomain,
-                articleTitle: req.articleTitle,
-                slug: req.slug,
-                reason: "n8n webhook trigger failed",
-              });
-            }
-          });
-        }
-      }
-    } else if (branch) {
-      // n8n not configured — articles keep default site image, notify
-      const imageRequests = created
-        .filter((r) => r._imageRequest)
-        .map((r) => r._imageRequest!);
-      for (const req of imageRequests) {
-        void notifyImageDefaultFallback(config.notifications, {
-          site: req.siteDomain,
-          articleTitle: req.articleTitle,
-          slug: req.slug,
-          reason: "n8n image webhook not configured (N8N_IMAGE_WEBHOOK_URL unset)",
-        });
-      }
-    }
-
-    // Strip internal fields before returning API response
-    const cleanResults = results.map(({ _pendingArticle, _imageRequest, ...rest }) => rest);
-
     return {
       siteDomain,
       requested: targetCount,
       totalSourced: totalFetched,
       duplicateCount,
       availableNew: newItems.length,
-      n8nImagesTriggered,
-      results: cleanResults,
+      n8nImagesTriggered: 0,
+      results,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
