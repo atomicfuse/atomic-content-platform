@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex, readArticles } from "@/lib/github";
+import { readDashboardIndex } from "@/lib/github";
+import { readArticleIndexFromKV } from "@/lib/kv-api";
 import { isGeneralImage } from "@/lib/general-image-utils";
 
 export interface GeneralImageArticle {
@@ -50,8 +51,9 @@ async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
 
   await Promise.allSettled(
     activeSites.map(async (site) => {
-      const branch = site.staging_branch ?? undefined;
-      const articles = await readArticles(site.domain, branch);
+      const kvNamespace = site.status === "Live" ? "production" : "staging";
+      const articles = await readArticleIndexFromKV(site.domain, kvNamespace);
+      if (!articles) return;
       for (const a of articles) {
         if (isGeneralImage(a.featuredImage, site.domain)) {
           results.push({
