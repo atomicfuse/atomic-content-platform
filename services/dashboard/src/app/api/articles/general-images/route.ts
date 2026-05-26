@@ -13,11 +13,17 @@ export interface GeneralImageArticle {
   stagingBranch: string | null;
 }
 
+export interface SiteBreakdownEntry {
+  domain: string;
+  count: number;
+}
+
 export interface GeneralImageArticlesResponse {
   items: GeneralImageArticle[];
   total: number;
   page: number;
   pageSize: number;
+  siteBreakdown: SiteBreakdownEntry[];
 }
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -94,7 +100,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const total = filtered.length;
     const items = filtered.slice(page * pageSize, (page + 1) * pageSize);
 
-    return NextResponse.json({ items, total, page, pageSize } satisfies GeneralImageArticlesResponse);
+    // Site breakdown (from full unfiltered results)
+    const countsByDomain = new Map<string, number>();
+    for (const a of results) {
+      countsByDomain.set(a.domain, (countsByDomain.get(a.domain) ?? 0) + 1);
+    }
+    const siteBreakdown: SiteBreakdownEntry[] = Array.from(countsByDomain.entries())
+      .map(([domain, count]) => ({ domain, count }))
+      .sort((a, b) => a.domain.localeCompare(b.domain));
+
+    return NextResponse.json({ items, total, page, pageSize, siteBreakdown } satisfies GeneralImageArticlesResponse);
   } catch (err) {
     console.error("[general-images] Error:", err);
     return NextResponse.json(

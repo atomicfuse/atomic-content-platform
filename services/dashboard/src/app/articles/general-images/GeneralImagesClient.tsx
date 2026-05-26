@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import type { GeneralImageArticle, GeneralImageArticlesResponse } from "@/app/api/articles/general-images/route";
+import type { GeneralImageArticle, GeneralImageArticlesResponse, SiteBreakdownEntry } from "@/app/api/articles/general-images/route";
 import { workerPreviewUrl } from "@/lib/constants";
+import { BulkGeneratePanel } from "./BulkGeneratePanel";
 
 const PAGE_SIZE = 10;
 
@@ -41,6 +42,7 @@ function formatDate(dateStr: string): string {
 export function GeneralImagesClient(): React.ReactElement {
   const [articles, setArticles] = useState<GeneralImageArticle[]>([]);
   const [total, setTotal] = useState(0);
+  const [siteBreakdown, setSiteBreakdown] = useState<SiteBreakdownEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -73,6 +75,7 @@ export function GeneralImagesClient(): React.ReactElement {
       const data = (await res.json()) as GeneralImageArticlesResponse;
       setArticles(data.items);
       setTotal(data.total);
+      if (data.siteBreakdown) setSiteBreakdown(data.siteBreakdown);
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       // keep whatever we had
@@ -173,6 +176,11 @@ export function GeneralImagesClient(): React.ReactElement {
         className="hidden"
         onChange={handleFileChange}
       />
+
+      {/* Bulk generate panel */}
+      {siteBreakdown.length > 0 && (
+        <BulkGeneratePanel siteBreakdown={siteBreakdown} />
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">

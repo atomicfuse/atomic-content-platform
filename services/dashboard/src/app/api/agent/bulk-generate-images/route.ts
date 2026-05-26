@@ -19,9 +19,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(req.headers.get("x-api-key")
-          ? { "X-API-Key": req.headers.get("x-api-key")! }
-          : {}),
+        "X-API-Key": req.headers.get("x-api-key") || process.env.BULK_IMAGE_API_KEY || "",
       },
       body,
     });
