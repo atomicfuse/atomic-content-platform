@@ -67,6 +67,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
+  const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -138,8 +139,15 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
           : bName.localeCompare(aName);
       });
     }
+    if (articlesSort && countsLoaded) {
+      filtered.sort((a, b) => {
+        const aCount = articleCounts[a.domain] ?? 0;
+        const bCount = articleCounts[b.domain] ?? 0;
+        return articlesSort === "asc" ? aCount - bCount : bCount - aCount;
+      });
+    }
     return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort]);
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -195,7 +203,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc")}
+                    onClick={(): void => { setArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Website
@@ -218,7 +226,20 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   Status
                 </th>
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Articles
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
+                  >
+                    Articles
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {articlesSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
