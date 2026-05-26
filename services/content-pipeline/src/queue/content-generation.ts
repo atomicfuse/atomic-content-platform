@@ -4,7 +4,7 @@ import type { Redis } from "ioredis";
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
 import { GENERATE_QUEUE } from "./types.js";
 import type { GenerateJobData } from "./types.js";
-import { createGitHubClient } from "../lib/github.js";
+import { createOctokit } from "../lib/github.js";
 import { readSiteBriefWithFallback } from "../lib/site-brief.js";
 import { runContentGeneration } from "../agents/content-generation/agent.js";
 import type { AgentConfig } from "../lib/config.js";
@@ -36,7 +36,7 @@ export async function processGenerateJob(
   const { siteDomain, branch, count } = job.data;
 
   // Pre-flight: verify site exists and has a schedule
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   let briefData;
   try {
     briefData = await readSiteBriefWithFallback(

@@ -13,7 +13,7 @@
  * produce at most one GitHub API call per settling period.
  */
 
-import { createGitHubClient, readFile, commitFile } from "../../lib/github.js";
+import { createOctokit, readFile, commitFile } from "../../lib/github.js";
 import type { AgentConfig } from "../../lib/config.js";
 
 const HISTORY_PATH = "scheduler/history.json";
@@ -37,7 +37,7 @@ export interface SchedulerRunEntry {
 
 /** Read existing history from network repo main. Returns [] on 404. */
 async function readHistory(config: AgentConfig): Promise<SchedulerRunEntry[]> {
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   try {
     const raw = await readFile(octokit, config.networkRepo, HISTORY_PATH);
     return JSON.parse(raw) as SchedulerRunEntry[];
@@ -64,7 +64,7 @@ export async function writeRunHistory(
     const history = await readHistory(config);
     history.unshift(entry);
     const trimmed = history.slice(0, MAX_ENTRIES);
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     await commitFile(octokit, config.networkRepo, {
       path: HISTORY_PATH,
       content: JSON.stringify(trimmed, null, 2),
@@ -145,7 +145,7 @@ export class RunHistoryAccumulator {
         skipped: [...this.entry.skipped],
       });
       const trimmed = filtered.slice(0, MAX_ENTRIES);
-      const octokit = createGitHubClient(this.config.github);
+      const octokit = createOctokit(this.config.github);
       await commitFile(octokit, this.config.networkRepo, {
         path: HISTORY_PATH,
         content: JSON.stringify(trimmed, null, 2),

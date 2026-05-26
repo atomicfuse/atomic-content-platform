@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { createGitHubClient, commitFile, commitBatch } from "./github.js";
+import { createOctokit, commitFile, commitBatch } from "./github.js";
 import { uploadToR2 } from "./r2-upload.js";
 import type { GitHubConfig, BatchFileEntry } from "./github.js";
 
@@ -40,7 +40,7 @@ export async function writeArticle(
     return;
   }
 
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   await commitFile(octokit, config.github.repo, {
     path: filePath,
     content,
@@ -141,7 +141,7 @@ export async function writeArticleBatch(
   ];
 
   // No binary files in Git commit — images are in R2
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   await commitBatch(
     octokit,
     config.github.repo,

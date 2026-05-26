@@ -15,7 +15,7 @@
  */
 
 import { parse as parseYaml } from "yaml";
-import { createGitHubClient, readFile } from "../../lib/github.js";
+import { createOctokit, readFile } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
@@ -77,7 +77,7 @@ export interface ScheduledPublishResult {
 async function readSchedulerConfig(
   config: AgentConfig,
 ): Promise<{ config: SchedulerConfig; status: "ok" | "defaults" | "fetch_error" }> {
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   try {
     const raw = await readFile(octokit, config.networkRepo, SCHEDULER_CONFIG_PATH);
     const parsed = parseYaml(raw) as Partial<SchedulerConfig> | null;
@@ -164,7 +164,7 @@ async function checkSiteEligibility(
   config: AgentConfig,
   schedCfg: SchedulerConfig,
 ): Promise<EligibilityResult> {
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   try {
     const { data, branch: foundBranch } = await readSiteBriefWithFallback(
       octokit,
@@ -206,7 +206,7 @@ async function processSingleSite(
   schedCfg: SchedulerConfig,
 ): Promise<SiteOutcome> {
   const { domain, branch: preferredBranch } = siteEntry;
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   let articlesPerDay = 0;
 
   try {
@@ -337,7 +337,7 @@ export async function runScheduledPublish(
   }
 
   // 2. List all active sites (from dashboard-index.yaml, non-deleted)
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   let activeSites: Array<{ domain: string; branch: string }>;
   try {
     activeSites = await listActiveSites(octokit, config.networkRepo);

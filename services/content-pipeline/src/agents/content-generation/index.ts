@@ -39,7 +39,7 @@ import {
 } from "./bulk-image.js";
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
-import { createGitHubClient, readFile } from "../../lib/github.js";
+import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 
 function sendJson(
@@ -386,7 +386,7 @@ async function handleRequest(
     let summary = articleTitle;
     let vertical = "";
     try {
-      const octokit = createGitHubClient(config.github);
+      const octokit = createOctokit(config.github);
       const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
       const content = await readFile(octokit, config.github.repo, articlePath, branch);
       const parsed = matter(content);

@@ -14,7 +14,7 @@
 
 import matter from "gray-matter";
 import { generateContent } from "../../lib/ai.js";
-import { createGitHubClient, readFile, commitFile } from "../../lib/github.js";
+import { createOctokit, readFile, commitFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { SiteBrief } from "../../types.js";
@@ -46,7 +46,7 @@ export async function regenerateArticle(
 
   try {
     // Read original article
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     const raw = await readFile(octokit, config.networkRepo, articlePath, branch);
     const { data: frontmatter, content: body } = matter(raw);
 

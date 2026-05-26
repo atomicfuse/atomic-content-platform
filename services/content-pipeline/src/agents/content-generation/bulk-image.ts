@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
 import type { AgentConfig } from "../../lib/config.js";
-import { createGitHubClient, readFile, listFiles } from "../../lib/github.js";
+import { createOctokit, readFile, listFiles } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import { triggerN8nImage } from "./n8n-image.js";
 
@@ -127,7 +127,7 @@ export async function scanArticlesForGeneralImages(
   scope: "site" | "all",
   domain?: string,
 ): Promise<ScanResult> {
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   const articles: ScannedArticle[] = [];
   const skipped: SkippedArticle[] = [];
   let apiCalls = 0;
@@ -275,7 +275,7 @@ async function processBatches(
 ): Promise<void> {
   let triggered = 0;
   let failed = 0;
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
 
   // Cache site briefs per-domain to avoid redundant GitHub API calls
   const briefCache = new Map<string, { vertical: string; imageGuidelines: string | null }>();

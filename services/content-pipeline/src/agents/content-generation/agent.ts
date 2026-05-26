@@ -37,7 +37,7 @@ import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedAr
 import type { Generator, GeneratorConfig } from "./generators/base-generator.js";
 
 // Existing infrastructure
-import { createGitHubClient } from "../../lib/github.js";
+import { createOctokit } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { writeArticleBatch } from "../../lib/writer.js";
 import type { PendingArticle, BatchFileEntry } from "../../lib/writer.js";
@@ -287,7 +287,7 @@ async function getAllExistingArticles(
 
   // GitHub mode — try dedup index first
   const { listFiles, readFile } = await import("../../lib/github.js");
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
 
   try {
     const raw = await readFile(octokit, config.networkRepo, dedupIndexPath(siteDomain), branch);
@@ -373,7 +373,7 @@ async function slugExists(
   }
 
   const { readFile } = await import("../../lib/github.js");
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   try {
     await readFile(
       octokit,
@@ -431,7 +431,7 @@ async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: st
   }
 
   if (!result) {
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     result = await readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
   }
 
@@ -471,7 +471,7 @@ async function resolveVerticalFromIndex(
     }
   } else {
     const { readFile } = await import("../../lib/github.js");
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     raw = await readFile(octokit, config.networkRepo, "dashboard-index.yaml");
   }
 
