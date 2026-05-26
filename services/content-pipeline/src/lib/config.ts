@@ -14,6 +14,7 @@ export interface AgentConfig {
   redisUrl?: string;
   n8nImageWebhookUrl?: string;
   imageCallbackUrl?: string;
+  bulkImageApiKey?: string;
   notifications: {
     telegramBotToken?: string;
     telegramChatId?: string;
@@ -46,6 +47,7 @@ export function loadConfig(): AgentConfig {
     redisUrl: process.env.REDIS_URL,
     n8nImageWebhookUrl: process.env.N8N_IMAGE_WEBHOOK_URL,
     imageCallbackUrl: process.env.IMAGE_CALLBACK_URL,
+    bulkImageApiKey: process.env.BULK_IMAGE_API_KEY,
     notifications: {
       telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
       telegramChatId: process.env.TELEGRAM_CHAT_ID,
