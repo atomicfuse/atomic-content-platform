@@ -9,7 +9,7 @@ import type { AgentConfig } from "../lib/config.js";
 // ---------------------------------------------------------------------------
 const mockReadSiteBriefWithFallback = vi.fn();
 const mockRunContentGeneration = vi.fn();
-const mockCreateGitHubClient = vi.fn().mockReturnValue({});
+const mockCreateOctokit = vi.fn().mockReturnValue({});
 
 vi.mock("../lib/site-brief.js", () => ({
   readSiteBriefWithFallback: (...args: unknown[]): unknown =>
@@ -22,8 +22,10 @@ vi.mock("../agents/content-generation/agent.js", () => ({
 }));
 
 vi.mock("../lib/github.js", () => ({
+  createOctokit: (...args: unknown[]): unknown =>
+    mockCreateOctokit(...args),
   createGitHubClient: (...args: unknown[]): unknown =>
-    mockCreateGitHubClient(...args),
+    mockCreateOctokit(...args),
 }));
 
 import { processGenerateJob } from "../queue/content-generation.js";

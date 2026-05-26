@@ -21,17 +21,14 @@ export interface FileCommit {
   branch?: string;
 }
 
-export function createGitHubClient(config: GitHubConfig): Octokit {
-  return new Octokit({ auth: config.token });
-}
-
 const ResilientOctokit = Octokit.plugin(retry, throttling);
 
 /**
- * Octokit instance with automatic retry on 5xx/network errors
- * and rate-limit throttling. Use for batch operations (CSV import).
+ * Unified Octokit factory with automatic retry on 5xx/network errors
+ * and rate-limit throttling. All GitHub API calls should go through this.
  */
-export function createResilientOctokit(token: string): Octokit {
+export function createOctokit(configOrToken: GitHubConfig | string): Octokit {
+  const token = typeof configOrToken === "string" ? configOrToken : configOrToken.token;
   return new ResilientOctokit({
     auth: token,
     throttle: {
@@ -44,11 +41,14 @@ export function createResilientOctokit(token: string): Octokit {
         return retryCount < 1;
       },
     },
-    retry: {
-      doNotRetry: ["429"],
-    },
   });
 }
+
+/** @deprecated Use {@link createOctokit} instead. Will be removed once all callers are migrated. */
+export const createGitHubClient = (config: GitHubConfig): Octokit => createOctokit(config);
+
+/** @deprecated Use {@link createOctokit} instead. Will be removed once all callers are migrated. */
+export const createResilientOctokit = (token: string): Octokit => createOctokit(token);
 
 export function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, name] = repo.split("/");

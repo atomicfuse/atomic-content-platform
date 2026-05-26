@@ -11,11 +11,15 @@ import {
 import type { AgentConfig } from "../lib/config.js";
 
 // ── Mocks ──────────────────────────────────────────────────────────
-vi.mock("../lib/github.js", () => ({
-  createGitHubClient: vi.fn(() => ({ _mock: "octokit" })),
-  readFile: vi.fn(),
-  listFiles: vi.fn(),
-}));
+vi.mock("../lib/github.js", () => {
+  const mock = vi.fn(() => ({ _mock: "octokit" }));
+  return {
+    createOctokit: mock,
+    createGitHubClient: mock,
+    readFile: vi.fn(),
+    listFiles: vi.fn(),
+  };
+});
 
 vi.mock("../lib/site-brief.js", () => ({
   listActiveSites: vi.fn(),
@@ -26,7 +30,7 @@ vi.mock("../agents/content-generation/n8n-image.js", () => ({
   triggerN8nImage: vi.fn(),
 }));
 
-import { createGitHubClient, readFile, listFiles } from "../lib/github.js";
+import { createOctokit, readFile, listFiles } from "../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../lib/site-brief.js";
 import { triggerN8nImage } from "../agents/content-generation/n8n-image.js";
 
@@ -119,7 +123,7 @@ describe("isGeneralImage", () => {
 // ── scanArticlesForGeneralImages ───────────────────────────────────
 describe("scanArticlesForGeneralImages", () => {
   beforeEach(() => {
-    vi.mocked(createGitHubClient).mockReturnValue({ _mock: "octokit" } as never);
+    vi.mocked(createOctokit).mockReturnValue({ _mock: "octokit" } as never);
     vi.mocked(listActiveSites).mockResolvedValue([
       { domain: "travelswire", branch: "staging/travelswire" },
     ]);

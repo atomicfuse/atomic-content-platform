@@ -28,18 +28,22 @@ vi.mock("../lib/r2-upload.js", () => ({
   ),
 }));
 
-vi.mock("../lib/github.js", () => ({
-  createGitHubClient: vi.fn(() => ({ _mock: "octokit" })),
-  readFile: vi.fn(async () => [
-    "---",
-    "title: Test Article",
-    "slug: test-slug",
-    "---",
-    "",
-    "Body content here.",
-  ].join("\n")),
-  commitFile: vi.fn(async () => "abc1234"),
-}));
+vi.mock("../lib/github.js", () => {
+  const mock = vi.fn(() => ({ _mock: "octokit" }));
+  return {
+    createOctokit: mock,
+    createGitHubClient: mock,
+    readFile: vi.fn(async () => [
+      "---",
+      "title: Test Article",
+      "slug: test-slug",
+      "---",
+      "",
+      "Body content here.",
+    ].join("\n")),
+    commitFile: vi.fn(async () => "abc1234"),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Imports after mocking (must come after vi.mock calls)
@@ -47,7 +51,7 @@ vi.mock("../lib/github.js", () => ({
 
 import { optimizeImage } from "../lib/image-optimizer.js";
 import { uploadToR2, buildR2Key } from "../lib/r2-upload.js";
-import { createGitHubClient, readFile, commitFile } from "../lib/github.js";
+import { createOctokit, readFile, commitFile } from "../lib/github.js";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -97,7 +101,7 @@ beforeEach(() => {
   vi.mocked(optimizeImage).mockReset();
   vi.mocked(uploadToR2).mockReset();
   vi.mocked(buildR2Key).mockReset();
-  vi.mocked(createGitHubClient).mockReset();
+  vi.mocked(createOctokit).mockReset();
   vi.mocked(readFile).mockReset();
   vi.mocked(commitFile).mockReset();
 
@@ -110,7 +114,7 @@ beforeEach(() => {
     (siteId: string, slug: string, ext: string) =>
       `${siteId}/assets/images/${slug}.${ext}`,
   );
-  vi.mocked(createGitHubClient).mockReturnValue({ _mock: "octokit" } as never);
+  vi.mocked(createOctokit).mockReturnValue({ _mock: "octokit" } as never);
   vi.mocked(readFile).mockResolvedValue(
     ["---", "title: Test Article", "slug: test-slug", "---", "", "Body content here."].join("\n"),
   );

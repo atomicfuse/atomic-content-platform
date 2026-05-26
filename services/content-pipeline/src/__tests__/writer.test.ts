@@ -10,14 +10,18 @@ const mockOctokit = {
 const mockUploadToR2 = vi.fn().mockResolvedValue(true);
 
 vi.mock("node:fs/promises");
-vi.mock("../lib/github.js", () => ({
-  createGitHubClient: vi.fn(() => mockOctokit),
-  commitFile: vi.fn().mockResolvedValue("abc123"),
-  parseRepo: vi.fn((repo: string) => {
-    const [owner, repoName] = repo.split("/");
-    return { owner, repo: repoName };
-  }),
-}));
+vi.mock("../lib/github.js", () => {
+  const mock = vi.fn(() => mockOctokit);
+  return {
+    createOctokit: mock,
+    createGitHubClient: mock,
+    commitFile: vi.fn().mockResolvedValue("abc123"),
+    parseRepo: vi.fn((repo: string) => {
+      const [owner, repoName] = repo.split("/");
+      return { owner, repo: repoName };
+    }),
+  };
+});
 vi.mock("../lib/r2-upload.js", () => ({
   uploadToR2: (...args: unknown[]): unknown => mockUploadToR2(...args),
 }));
