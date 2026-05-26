@@ -87,3 +87,56 @@ export const DEFAULT_IMPORT_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: { age: 7 * 24 * 3600, count: 500 },
   removeOnFail: { age: 30 * 24 * 3600 },
 };
+
+// --- Import articles queue ---
+
+export const IMPORT_ARTICLES_QUEUE = "import-articles";
+
+/** Data for each article import job. */
+export interface ImportArticlesJobData {
+  /** Unique job ID for status polling. */
+  jobId: string;
+  siteDomain: string;
+  wpApiUrl: string;
+  branch: string;
+  /** If set, also commit to this branch (e.g. staging + main). */
+  alsoCommitTo?: string;
+  /** WP menu items / topics for tag mapping. */
+  menuItems?: string[];
+  /** Site category for image prompt context. */
+  websiteCategory?: string;
+}
+
+/** Result returned by a completed article import job. */
+export interface ImportArticlesResult {
+  jobId: string;
+  site: string;
+  totalArticles: number;
+  successful: number;
+  failed: number;
+  durationMs: number;
+  n8nImagesTriggered: number;
+}
+
+/** Per-article-import progress stored in Redis. */
+export interface ArticleImportProgress {
+  jobId: string;
+  site: string;
+  status: "pending" | "running" | "complete" | "failed";
+  phase?: string;
+  totalArticles: number;
+  processedArticles: number;
+  successfulArticles: number;
+  failedArticles: number;
+  currentArticleSlug?: string;
+  error?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+/** No retries — article imports are long-running, and re-running could create duplicate articles. */
+export const DEFAULT_ARTICLE_IMPORT_JOB_OPTIONS: JobsOptions = {
+  attempts: 1,
+  removeOnComplete: { age: 7 * 24 * 3600, count: 200 },
+  removeOnFail: { age: 30 * 24 * 3600 },
+};
