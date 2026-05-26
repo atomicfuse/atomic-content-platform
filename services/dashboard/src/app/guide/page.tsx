@@ -29,6 +29,7 @@ const GUIDE_PAGES = [
   { slug: "16-error-handling", title: "Error Handling & Alerts" },
   { slug: "17-site-deletion", title: "Deleting a Site" },
   { slug: "18-wordpress-import", title: "WordPress Import" },
+  { slug: "19-bulk-image-api", title: "Bulk Image Generation API" },
 ];
 
 export default function GuidePage(): React.ReactElement {
