@@ -74,6 +74,55 @@ function getOctokit(): Octokit {
 
 const dashboardIndexCache = createTtlCache<DashboardIndex>(5 * 60_000); // 5 min
 
+// ---------------------------------------------------------------------------
+// Tree cache — single recursive tree fetch, shared across read helpers
+// ---------------------------------------------------------------------------
+interface TreeEntry {
+  path?: string;
+  mode?: string;
+  type?: string;
+  sha?: string;
+  size?: number;
+}
+
+const TREE_CACHE_TTL = 60_000;
+const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
+
+async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
+  const ref = branch ?? "main";
+  const cached = treeCacheStore.get(ref);
+  if (cached && Date.now() < cached.expiresAt) return cached.tree;
+
+  const octokit = getOctokit();
+  const { data: refData } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${ref}`,
+  });
+  const { data: tree } = await octokit.git.getTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    tree_sha: refData.object.sha,
+    recursive: "true",
+  });
+
+  if (tree.truncated) {
+    console.warn(`[github] Tree for ${ref} is truncated`);
+    throw new Error(`Tree truncated for ${ref}`);
+  }
+
+  treeCacheStore.set(ref, { tree: tree.tree, expiresAt: Date.now() + TREE_CACHE_TTL });
+  return tree.tree;
+}
+
+function invalidateTreeCache(branch?: string): void {
+  if (branch) {
+    treeCacheStore.delete(branch);
+  } else {
+    treeCacheStore.clear();
+  }
+}
+
 /** Read and parse dashboard-index.yaml from the network repo.
  *  Pass `fresh: true` to bypass the 30s TTL cache (e.g. before a
  *  uniqueness check that needs real-time data). */
@@ -87,43 +136,45 @@ export async function readDashboardIndex(
 
   const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached();
+    const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
+    if (!entry?.sha) {
+      const empty: DashboardIndex = { sites: [], deleted: [] };
+      dashboardIndexCache.set(empty);
+      return empty;
+    }
+    const { data: blobData } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path: DASHBOARD_INDEX_PATH,
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      const parsed = parseYaml(content) as DashboardIndex | null;
-      if (!parsed) return { sites: [], deleted: [] };
-      // Backfill new fields for entries written before pages_project/zone_id existed
-      parsed.sites = parsed.sites.map((s) => {
-        const partial = s as Partial<DashboardSiteEntry>;
-        // Derive pages_subdomain from preview_url when not explicitly set.
-        // preview_url format: https://<branch-slug>.<subdomain>.pages.dev
-        let pagesSubdomain = partial.pages_subdomain ?? null;
-        if (!pagesSubdomain && partial.preview_url) {
-          const m = partial.preview_url.match(/\.([^.]+)\.pages\.dev/);
-          if (m) pagesSubdomain = m[1]!;
-        }
-        return {
-          ...s,
-          pages_project: partial.pages_project ?? null,
-          pages_subdomain: pagesSubdomain,
-          zone_id: partial.zone_id ?? null,
-          staging_branch: partial.staging_branch ?? null,
-          preview_url: partial.preview_url ?? null,
-          saved_previews: partial.saved_previews ?? null,
-          custom_domain: partial.custom_domain ?? null,
-        };
-      });
-      parsed.deleted = parsed.deleted ?? [];
-      dashboardIndexCache.set(parsed);
-      return parsed;
-    }
-    const empty: DashboardIndex = { sites: [], deleted: [] };
-    dashboardIndexCache.set(empty);
-    return empty;
+    const content = Buffer.from(blobData.content, "base64").toString("utf-8");
+    const parsed = parseYaml(content) as DashboardIndex | null;
+    if (!parsed) return { sites: [], deleted: [] };
+    // Backfill new fields for entries written before pages_project/zone_id existed
+    parsed.sites = parsed.sites.map((s) => {
+      const partial = s as Partial<DashboardSiteEntry>;
+      // Derive pages_subdomain from preview_url when not explicitly set.
+      // preview_url format: https://<branch-slug>.<subdomain>.pages.dev
+      let pagesSubdomain = partial.pages_subdomain ?? null;
+      if (!pagesSubdomain && partial.preview_url) {
+        const m = partial.preview_url.match(/\.([^.]+)\.pages\.dev/);
+        if (m) pagesSubdomain = m[1]!;
+      }
+      return {
+        ...s,
+        pages_project: partial.pages_project ?? null,
+        pages_subdomain: pagesSubdomain,
+        zone_id: partial.zone_id ?? null,
+        staging_branch: partial.staging_branch ?? null,
+        preview_url: partial.preview_url ?? null,
+        saved_previews: partial.saved_previews ?? null,
+        custom_domain: partial.custom_domain ?? null,
+      };
+    });
+    parsed.deleted = parsed.deleted ?? [];
+    dashboardIndexCache.set(parsed);
+    return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) {
       const empty: DashboardIndex = { sites: [], deleted: [] };
@@ -145,17 +196,13 @@ export async function writeDashboardIndex(
 
   let sha: string | undefined;
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: DASHBOARD_INDEX_PATH,
-    });
-    if ("sha" in data) {
-      sha = data.sha;
-    }
-  } catch (error: unknown) {
-    if (!isNotFoundError(error)) throw error;
+    const tree = await getTreeCached();
+    const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
+    sha = entry?.sha;
+  } catch {
+    // File doesn't exist yet
   }
+  invalidateTreeCache();
 
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
@@ -275,47 +322,14 @@ export async function permanentlyRemoveFromTrash(
  *  No-op if neither directory exists. */
 export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   const octokit = getOctokit();
+  const tree = await getTreeCached();
 
-  // Collect files from both sites/<domain>/ and overrides/<domain>/
-  let files: Array<{ path: string; sha: string }> = [];
-
-  for (const basePath of [`sites/${domain}`, `overrides/${domain}`]) {
-    try {
-      const { data } = await octokit.repos.getContent({
-        owner: NETWORK_REPO_OWNER,
-        repo: NETWORK_REPO_NAME,
-        path: basePath,
-      });
-      if (Array.isArray(data)) {
-        for (const item of data) {
-          if (item.type === "file") {
-            files.push({ path: item.path, sha: item.sha });
-          } else if (item.type === "dir") {
-            // Recurse one level into subdirs (articles/, assets/)
-            try {
-              const { data: subData } = await octokit.repos.getContent({
-                owner: NETWORK_REPO_OWNER,
-                repo: NETWORK_REPO_NAME,
-                path: item.path,
-              });
-              if (Array.isArray(subData)) {
-                for (const subItem of subData) {
-                  if (subItem.type === "file") {
-                    files.push({ path: subItem.path, sha: subItem.sha });
-                  }
-                }
-              }
-            } catch {
-              // Skip subdirs that fail
-            }
-          }
-        }
+  const files: Array<{ path: string; sha: string }> = [];
+  for (const prefix of [`sites/${domain}/`, `overrides/${domain}/`]) {
+    for (const entry of tree) {
+      if (entry.path?.startsWith(prefix) && entry.type === "blob" && entry.sha) {
+        files.push({ path: entry.path, sha: entry.sha });
       }
-    } catch (error: unknown) {
-      if (isNotFoundError(error)) {
-        continue; // This directory doesn't exist — try the next one
-      }
-      throw error;
     }
   }
 
@@ -490,20 +504,38 @@ export async function readFileContent(
   branch?: string,
   repo?: { owner: string; name: string },
 ): Promise<string | null> {
-  const octokit = getOctokit();
-  const repoOwner = repo?.owner ?? NETWORK_REPO_OWNER;
-  const repoName = repo?.name ?? NETWORK_REPO_NAME;
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: repoOwner,
-      repo: repoName,
-      path,
-      ...(branch ? { ref: branch } : {}),
-    });
-    if ("content" in data && data.content) {
-      return Buffer.from(data.content, "base64").toString("utf-8");
+  if (repo) {
+    // Custom repo — can't use tree cache
+    const octokit = getOctokit();
+    try {
+      const { data } = await octokit.repos.getContent({
+        owner: repo.owner,
+        repo: repo.name,
+        path,
+        ...(branch ? { ref: branch } : {}),
+      });
+      if ("content" in data && data.content) {
+        return Buffer.from(data.content, "base64").toString("utf-8");
+      }
+      return null;
+    } catch (error: unknown) {
+      if (isNotFoundError(error)) return null;
+      throw error;
     }
-    return null;
+  }
+
+  try {
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) return null;
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      file_sha: entry.sha,
+    });
+    return Buffer.from(data.content, "base64").toString("utf-8");
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -515,18 +547,18 @@ export async function readFileBase64(
   path: string,
   branch?: string,
 ): Promise<string | null> {
-  const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) return null;
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path,
-      ...(branch ? { ref: branch } : {}),
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      return data.content.replace(/\n/g, "");
-    }
-    return null;
+    return data.content.replace(/\n/g, "");
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -538,19 +570,20 @@ export async function readSiteConfig(
   domain: string,
   branch?: string
 ): Promise<Record<string, unknown> | null> {
-  const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached(branch);
+    const path = `sites/${domain}/site.yaml`;
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) return null;
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path: `sites/${domain}/site.yaml`,
-      ...(branch ? { ref: branch } : {}),
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      return parseYaml(content) as Record<string, unknown>;
-    }
-    return null;
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
+    return parseYaml(content) as Record<string, unknown>;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -566,17 +599,16 @@ export async function countArticles(domain: string, branch?: string): Promise<nu
   const cached = articleCountCache.get(key);
   if (cached && Date.now() < cached.expiresAt) return cached.count;
 
-  const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: `sites/${domain}/articles`,
-      ...(branch ? { ref: branch } : {}),
-    });
-    if (!Array.isArray(data)) return 0;
-    const count = data.filter(
-      (f) => f.name.endsWith(".md") && f.name !== ".gitkeep",
+    const tree = await getTreeCached(branch);
+    const prefix = `sites/${domain}/articles/`;
+    const count = tree.filter(
+      (f) =>
+        f.path?.startsWith(prefix) &&
+        f.type === "blob" &&
+        f.path.endsWith(".md") &&
+        !f.path.endsWith(".gitkeep") &&
+        !f.path.slice(prefix.length).includes("/"),
     ).length;
     articleCountCache.set(key, { count, expiresAt: Date.now() + ARTICLE_COUNT_CACHE_TTL });
     return count;
@@ -636,51 +668,45 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
 
   const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: `sites/${domain}/articles`,
-      ...(branch ? { ref: branch } : {}),
-    });
-    if (!Array.isArray(data)) return [];
-
-    const mdFiles = data.filter(
-      (file) => file.name.endsWith(".md") && file.name !== ".gitkeep",
+    const tree = await getTreeCached(branch);
+    const prefix = `sites/${domain}/articles/`;
+    const mdEntries = tree.filter(
+      (f) =>
+        f.path?.startsWith(prefix) &&
+        f.type === "blob" &&
+        f.path.endsWith(".md") &&
+        !f.path.endsWith(".gitkeep") &&
+        !f.path.slice(prefix.length).includes("/"),
     );
 
     const results = await Promise.allSettled(
-      mdFiles.map(async (file) => {
-        const { data: fileData } = await octokit.repos.getContent({
+      mdEntries.map(async (entry) => {
+        const { data } = await octokit.git.getBlob({
           owner: NETWORK_REPO_OWNER,
           repo: NETWORK_REPO_NAME,
-          path: file.path,
-          ...(branch ? { ref: branch } : {}),
+          file_sha: entry.sha!,
         });
-        if ("content" in fileData && fileData.content) {
-          const content = Buffer.from(fileData.content, "base64").toString("utf-8");
-          const frontmatter = extractFrontmatter(content);
-          return {
-            slug: file.name.replace(".md", ""),
-            title: (frontmatter.title as string) ?? file.name,
-            type: (frontmatter.type as string) ?? "standard",
-            status: (frontmatter.status as string) ?? "draft",
-            publishDate: (frontmatter.publishDate as string) ?? "",
-            featuredImage: (frontmatter.featuredImage as string) ?? undefined,
-            score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
-            scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
-            qualityNote: frontmatter.quality_note as string | undefined,
-            reviewerNotes: frontmatter.reviewer_notes as string | undefined,
-          } as ArticleEntry;
-        }
-        return null;
+        const content = Buffer.from(data.content, "base64").toString("utf-8");
+        const frontmatter = extractFrontmatter(content);
+        const fileName = entry.path!.split("/").pop()!;
+        return {
+          slug: fileName.replace(".md", ""),
+          title: (frontmatter.title as string) ?? fileName,
+          type: (frontmatter.type as string) ?? "standard",
+          status: (frontmatter.status as string) ?? "draft",
+          publishDate: (frontmatter.publishDate as string) ?? "",
+          featuredImage: (frontmatter.featuredImage as string) ?? undefined,
+          score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
+          scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
+          qualityNote: frontmatter.quality_note as string | undefined,
+          reviewerNotes: frontmatter.reviewer_notes as string | undefined,
+        } as ArticleEntry;
       }),
     );
 
     const articles: ArticleEntry[] = [];
     for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        articles.push(r.value);
-      }
+      if (r.status === "fulfilled" && r.value) articles.push(r.value);
     }
     setCachedArticles(domain, branch, articles);
     return articles;
@@ -780,22 +806,17 @@ export async function triggerWorkflowViaPush(
   const octokit = getOctokit();
   const triggerPath = `sites/${siteFolder}/.build-trigger`;
 
-  // Check if the trigger file already exists (to get its SHA for update)
   let existingSha: string | undefined;
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: triggerPath,
-      ref: branch,
-    });
-    if ("sha" in data) {
-      existingSha = data.sha;
-    }
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === triggerPath && f.type === "blob");
+    existingSha = entry?.sha;
   } catch {
-    // File doesn't exist yet — that's fine
+    // File doesn't exist yet
   }
+  invalidateTreeCache(branch);
 
+  // KEEP createOrUpdateFileContents — triggers GitHub Actions
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
