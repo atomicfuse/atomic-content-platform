@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Octokit } from "@octokit/rest";
-
-const OWNER = "atomicfuse";
-const REPO = "atomic-labs-network";
+import { commitSiteFiles } from "@/lib/github";
 
 /**
  * Commit an article to the network repo via GitHub API.
@@ -21,14 +18,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       { status: "error", message: "articlePath is required" },
       { status: 400 }
-    );
-  }
-
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      { status: "error", message: "GITHUB_TOKEN not configured" },
-      { status: 500 }
     );
   }
 
@@ -57,33 +46,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Commit to GitHub
-    const octokit = new Octokit({ auth: token });
-
-    // Check if file already exists (need SHA for update)
-    let sha: string | undefined;
-    try {
-      const existing = await octokit.repos.getContent({
-        owner: OWNER,
-        repo: REPO,
-        path: body.articlePath,
-      });
-      if ("sha" in existing.data) {
-        sha = existing.data.sha;
-      }
-    } catch {
-      // New file — no SHA needed
-    }
-
+    // Extract domain from path like "sites/coolnews.dev/articles/my-article.md"
+    const parts = body.articlePath.split("/");
+    const domain = parts[1] ?? "unknown";
     const slug = path.basename(body.articlePath, ".md");
-    await octokit.repos.createOrUpdateFileContents({
-      owner: OWNER,
-      repo: REPO,
-      path: body.articlePath,
-      message: `feat(content): add article ${slug}`,
-      content: Buffer.from(content, "utf-8").toString("base64"),
-      ...(sha ? { sha } : {}),
-    });
+
+    await commitSiteFiles(
+      domain,
+      [{ path: body.articlePath, content }],
+      `add article ${slug}`,
+    );
 
     return NextResponse.json({
       status: "committed",
