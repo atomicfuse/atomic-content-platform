@@ -212,7 +212,8 @@ function applyCacheHeaders(pathname: string, response: Response): void {
   // gets no explicit Cache-Control; CF defaults apply.
 }
 
-/** Strip the port and lowercase — KV keys are case-sensitive. */
+/** Strip port, lowercase, and drop www. prefix — KV keys use bare domains. */
 function normaliseHostname(raw: string): string {
-  return raw.toLowerCase().split(':')[0] ?? raw.toLowerCase();
+  const host = raw.toLowerCase().split(':')[0] ?? raw.toLowerCase();
+  return host.startsWith('www.') ? host.slice(4) : host;
 }
