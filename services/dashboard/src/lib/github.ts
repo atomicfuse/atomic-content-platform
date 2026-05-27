@@ -689,6 +689,35 @@ export function clearArticlesCache(): void {
   articlesCache.clear();
 }
 
+// ---------------------------------------------------------------------------
+// Periodic cache eviction — sweep ALL caches every 5 min to prevent OOM.
+// Module-level Maps (treeCacheStore, articlesCache, articleCountCache) only
+// evict entries on read; stale entries from branches/sites that aren't
+// re-accessed accumulate forever, reaching 100-200 MB over hours.
+// ---------------------------------------------------------------------------
+function sweepExpiredEntries(): void {
+  const now = Date.now();
+  let swept = 0;
+  for (const [key, entry] of treeCacheStore) {
+    if (now >= entry.expiresAt) { treeCacheStore.delete(key); swept++; }
+  }
+  for (const [key, entry] of articlesCache) {
+    if (now >= entry.expiresAt) { articlesCache.delete(key); swept++; }
+  }
+  for (const [key, entry] of articleCountCache) {
+    if (now >= entry.expiresAt) { articleCountCache.delete(key); swept++; }
+  }
+  if (swept > 0) {
+    console.log(`[github] Cache sweep: evicted ${swept} expired entries (tree=${treeCacheStore.size}, articles=${articlesCache.size}, counts=${articleCountCache.size})`);
+  }
+}
+
+// Start sweep timer. unref() so it doesn't keep the process alive on shutdown.
+const _evictionTimer = setInterval(sweepExpiredEntries, 5 * 60_000);
+if (typeof _evictionTimer === "object" && "unref" in _evictionTimer) {
+  (_evictionTimer as NodeJS.Timeout).unref();
+}
+
 export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {
   const cached = getCachedArticles(domain, branch);
   if (cached) return cached;
