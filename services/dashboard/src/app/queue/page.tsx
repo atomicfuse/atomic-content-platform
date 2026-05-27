@@ -8,6 +8,7 @@ import { useEffect, useState, useCallback } from "react";
 
 interface QueueJob {
   id: string;
+  type?: "generate" | "import";
   status: "completed" | "failed" | "active" | "waiting" | "delayed";
   domain: string;
   triggeredBy: string;
@@ -106,6 +107,7 @@ const TRIGGER_STYLE: Record<string, string> = {
   manual: "bg-violet-500/20 text-violet-400",
   scheduled: "bg-[var(--bg-surface)] text-[var(--text-muted)]",
   "scheduled-forced": "bg-violet-500/20 text-violet-400",
+  "wp-import": "bg-orange-500/20 text-orange-400",
 };
 
 function JobCard({ job }: { job: QueueJob }): React.ReactElement {
@@ -152,13 +154,15 @@ function JobCard({ job }: { job: QueueJob }): React.ReactElement {
               TRIGGER_STYLE[job.triggeredBy] ?? TRIGGER_STYLE.scheduled
             }`}
           >
-            {job.triggeredBy === "scheduled-forced" ? "forced" : job.triggeredBy}
+            {job.triggeredBy === "scheduled-forced" ? "forced" : job.triggeredBy === "wp-import" ? "WP Import" : job.triggeredBy}
           </span>
         </div>
         <div className="flex items-center gap-4 shrink-0">
           {job.status === "completed" && (
             <span className="text-xs font-mono text-green-400">
-              {job.articlesCreated}/{job.requested ?? job.count ?? "?"} articles
+              {job.type === "import"
+                ? `${job.articlesCreated} imported${job.articlesErrored ? `, ${job.articlesErrored} failed` : ""}`
+                : `${job.articlesCreated}/${job.requested ?? job.count ?? "?"} articles`}
             </span>
           )}
           {hasImages && (
@@ -217,21 +221,27 @@ function JobCard({ job }: { job: QueueJob }): React.ReactElement {
           {job.totalResults !== undefined && job.totalResults > 0 && (
             <div className="flex gap-4 font-mono text-[var(--text-secondary)]">
               <span className="text-green-400">
-                {job.articlesCreated} created
+                {job.articlesCreated} {job.type === "import" ? "imported" : "created"}
               </span>
               {(job.articlesErrored ?? 0) > 0 && (
                 <span className="text-red-400">
                   {job.articlesErrored} failed
                 </span>
               )}
-              {(job.duplicateCount ?? 0) > 0 && (
+              {job.type !== "import" && (job.duplicateCount ?? 0) > 0 && (
                 <span className="text-orange-400">
                   {job.duplicateCount} duplicates
                 </span>
               )}
-              <span className="text-[var(--text-muted)]">
-                {job.totalSourced ?? 0} sourced
-              </span>
+              {job.type === "import" ? (
+                <span className="text-[var(--text-muted)]">
+                  {job.totalResults} total from WP
+                </span>
+              ) : (
+                <span className="text-[var(--text-muted)]">
+                  {job.totalSourced ?? 0} sourced
+                </span>
+              )}
             </div>
           )}
 
