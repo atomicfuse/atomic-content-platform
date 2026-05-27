@@ -14,7 +14,7 @@ interface MockResponse {
   end: (body?: string) => void;
 }
 
-function createMockResponse(): MockResponse {
+function createMockResponse(): MockResponse & ServerResponse {
   const res: MockResponse = {
     _statusCode: 0,
     _body: "",
@@ -27,7 +27,7 @@ function createMockResponse(): MockResponse {
       res._body = body ?? "";
     },
   };
-  return res;
+  return res as MockResponse & ServerResponse;
 }
 
 interface RedisMock {
@@ -58,14 +58,14 @@ describe("handleActiveImport", () => {
   it("returns 400 when domain is missing from URL", async () => {
     const req = createMockRequest("/wp-migrate/active-import/");
     const res = createMockResponse();
-    await handleActiveImport(req, res as unknown as ServerResponse, redis as never);
+    await handleActiveImport(req, res, redis as never);
     expect(res._statusCode).toBe(400);
   });
 
   it("returns 404 when no active import exists", async () => {
     const req = createMockRequest("/wp-migrate/active-import/example.com");
     const res = createMockResponse();
-    await handleActiveImport(req, res as unknown as ServerResponse, redis as never);
+    await handleActiveImport(req, res, redis as never);
     expect(res._statusCode).toBe(404);
     expect(JSON.parse(res._body)).toEqual({ active: false });
   });
@@ -86,7 +86,7 @@ describe("handleActiveImport", () => {
 
     const req = createMockRequest("/wp-migrate/active-import/example.com");
     const res = createMockResponse();
-    await handleActiveImport(req, res as unknown as ServerResponse, redis as never);
+    await handleActiveImport(req, res, redis as never);
 
     expect(res._statusCode).toBe(200);
     const body = JSON.parse(res._body);
@@ -100,7 +100,7 @@ describe("handleActiveImport", () => {
 
     const req = createMockRequest("/wp-migrate/active-import/example.com");
     const res = createMockResponse();
-    await handleActiveImport(req, res as unknown as ServerResponse, redis as never);
+    await handleActiveImport(req, res, redis as never);
 
     expect(res._statusCode).toBe(200);
     const body = JSON.parse(res._body);
