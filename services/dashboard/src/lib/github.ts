@@ -112,7 +112,7 @@ interface TreeEntry {
   size?: number;
 }
 
-const TREE_CACHE_TTL = 60_000;
+const TREE_CACHE_TTL = 5 * 60_000; // 5 min — was 60s, raised to reduce tree re-fetches
 const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
 
 async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
@@ -592,16 +592,26 @@ export async function readFileBase64(
   }
 }
 
-/** Read a site's config YAML from the network repo. */
+/** Read a site's config YAML from the network repo. 5-minute cache. */
+const siteConfigCache = new Map<string, { data: Record<string, unknown> | null; expiresAt: number }>();
+const SITE_CONFIG_CACHE_TTL = 5 * 60_000;
+
 export async function readSiteConfig(
   domain: string,
   branch?: string
 ): Promise<Record<string, unknown> | null> {
+  const cacheKey = `${domain}@${branch ?? "main"}`;
+  const cached = siteConfigCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
   try {
     const tree = await getTreeCached(branch);
     const path = `sites/${domain}/site.yaml`;
     const entry = tree.find((f) => f.path === path && f.type === "blob");
-    if (!entry?.sha) return null;
+    if (!entry?.sha) {
+      siteConfigCache.set(cacheKey, { data: null, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+      return null;
+    }
 
     const octokit = getOctokit();
     const { data } = await octokit.git.getBlob({
@@ -610,7 +620,9 @@ export async function readSiteConfig(
       file_sha: entry.sha,
     });
     const content = Buffer.from(data.content, "base64").toString("utf-8");
-    return parseYaml(content) as Record<string, unknown>;
+    const parsed = parseYaml(content) as Record<string, unknown>;
+    siteConfigCache.set(cacheKey, { data: parsed, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+    return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -706,6 +718,9 @@ function sweepExpiredEntries(): void {
   }
   for (const [key, entry] of articleCountCache) {
     if (now >= entry.expiresAt) { articleCountCache.delete(key); swept++; }
+  }
+  for (const [key, entry] of siteConfigCache) {
+    if (now >= entry.expiresAt) { siteConfigCache.delete(key); swept++; }
   }
   if (swept > 0) {
     console.log(`[github] Cache sweep: evicted ${swept} expired entries (tree=${treeCacheStore.size}, articles=${articlesCache.size}, counts=${articleCountCache.size})`);

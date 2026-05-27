@@ -9,6 +9,7 @@ import {
   triggerWorkflowViaPush,
   mergeBranchToMain,
 } from "@/lib/github";
+import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
@@ -42,7 +43,7 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
     // is appended by the consumer (per-article path).
     const stagingBaseUrl = site.staging_branch ? WORKER_STAGING_URL : null;
 
-    const articles = await readArticles(site.domain, branch);
+    const articles = await readArticlesWithKVFallback(site.domain, branch, readArticles);
     for (const article of articles) {
       if (article.status !== "review") continue;
       reviewArticles.push({

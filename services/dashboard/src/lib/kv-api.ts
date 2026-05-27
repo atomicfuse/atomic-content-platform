@@ -1,5 +1,6 @@
 import { getKvNamespaces } from "@/lib/constants";
 import { getCredentials } from "@/lib/cloudflare";
+import type { ArticleEntry } from "@/types/dashboard";
 
 /**
  * Minimal article metadata stored in KV at `article-index:<siteId>`.
@@ -61,4 +62,50 @@ export async function readArticleIndexFromKV(
   } catch {
     return null;
   }
+}
+
+/**
+ * Convert KV article-index entries to the dashboard's ArticleEntry format.
+ *
+ * KV has all metadata the list views need (slug, title, status, type, date,
+ * featuredImage). Score fields (score, scoreBreakdown, qualityNote,
+ * reviewerNotes) are NOT in KV — they're only in article frontmatter.
+ * The article detail page still reads from Git to get those.
+ */
+export function kvEntriesToArticles(entries: KVArticleIndexEntry[]): ArticleEntry[] {
+  return entries.map((e) => ({
+    slug: e.slug,
+    title: e.title,
+    type: e.type ?? "standard",
+    status: e.status ?? "draft",
+    publishDate: e.publishDate ?? "",
+    featuredImage: e.featuredImage,
+    // Score fields not available from KV — shown on article detail page
+    score: undefined,
+    scoreBreakdown: undefined,
+    qualityNote: undefined,
+    reviewerNotes: undefined,
+  }));
+}
+
+/**
+ * Read articles for a site: KV first (1 REST call), Git fallback (N+1 calls).
+ *
+ * Returns ArticleEntry[] from KV article-index. If KV is unavailable or
+ * returns null, falls back to readArticles() from GitHub.
+ */
+export async function readArticlesWithKVFallback(
+  domain: string,
+  branch?: string,
+  readArticlesGit?: (domain: string, branch?: string) => Promise<ArticleEntry[]>,
+): Promise<ArticleEntry[]> {
+  const kvEntries = await readArticleIndexFromKV(domain, "staging");
+  if (kvEntries) return kvEntriesToArticles(kvEntries);
+
+  // KV unavailable — fall back to Git (expensive)
+  if (readArticlesGit) {
+    console.warn(`[kv-api] KV miss for "${domain}" — falling back to Git`);
+    return readArticlesGit(domain, branch);
+  }
+  return [];
 }
