@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
+import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
@@ -29,7 +30,7 @@ export default async function SiteDetailPage({
 
   const [siteConfig, articles] = await Promise.all([
     readSiteConfig(decodedDomain, branch),
-    readArticles(decodedDomain, branch),
+    readArticlesWithKVFallback(decodedDomain, branch, readArticles),
   ]);
 
   const brief = siteConfig?.brief as {
