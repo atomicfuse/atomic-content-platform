@@ -32,6 +32,7 @@ import {
   handleImportStatus,
   handleEnqueueArticleImport,
   handleArticleImportStatus,
+  handleActiveImport,
 } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
@@ -517,6 +518,16 @@ async function handleRequest(
       return;
     }
     await handleArticleImportStatus(req, res, queueInstances.connection);
+    return;
+  }
+
+  // WordPress migration — check active import for a domain (cross-user awareness)
+  if (req.method === "GET" && req.url?.startsWith("/wp-migrate/active-import/")) {
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleActiveImport(req, res, queueInstances.connection);
     return;
   }
 
