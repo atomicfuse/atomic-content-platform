@@ -21,6 +21,7 @@ import { Octokit } from "@octokit/rest";
 
 import matter from "gray-matter";
 import { ClaudeGenerator } from "../src/agents/content-generation/generators/claude-generator.js";
+import { OpenAIGenerator } from "../src/agents/content-generation/generators/openai-generator.js";
 import type { ContentItem } from "../src/agents/content-generation/types.js";
 import { ensureTopicTag } from "../src/agents/content-generation/agent.js";
 import { estimateReadingTime } from "../src/agents/migration/frontmatter-builder.js";
@@ -37,6 +38,7 @@ interface CliArgs {
   site: string;
   slugs: string[];
   dryRun: boolean;
+  generator: "claude" | "openai";
 }
 
 function parseCli(): CliArgs {
@@ -45,13 +47,14 @@ function parseCli(): CliArgs {
       site: { type: "string" },
       slugs: { type: "string" },
       "dry-run": { type: "boolean", default: false },
+      generator: { type: "string", default: "claude" },
     },
     allowPositionals: false,
   });
 
   if (!values.site || !values.slugs) {
     console.error(
-      "Usage: tsx scripts/generate-articles-for-slugs.ts --site=<siteId> --slugs=a,b,c [--dry-run]",
+      "Usage: tsx scripts/generate-articles-for-slugs.ts --site=<siteId> --slugs=a,b,c [--dry-run] [--generator=claude|openai]",
     );
     process.exit(1);
   }
@@ -62,7 +65,13 @@ function parseCli(): CliArgs {
     process.exit(1);
   }
 
-  return { site: values.site, slugs, dryRun: values["dry-run"] ?? false };
+  const gen = values.generator;
+  if (gen !== "claude" && gen !== "openai") {
+    console.error(`--generator must be "claude" or "openai" (got "${gen}")`);
+    process.exit(1);
+  }
+
+  return { site: values.site, slugs, dryRun: values["dry-run"] ?? false, generator: gen };
 }
 
 function titleizeSlug(slug: string): string {
@@ -142,7 +151,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const claudeGenerator = new ClaudeGenerator();
+  const generator = args.generator === "openai" ? new OpenAIGenerator() : new ClaudeGenerator();
+  console.log(`[generate] Generator: ${generator.name}`);
 
   const files: BatchFileEntry[] = [];
   interface PendingImage { slug: string; title: string; description: string }
@@ -159,7 +169,7 @@ async function main(): Promise<void> {
       if (i > 0) await sleep(INTER_REQUEST_DELAY_MS);
 
       const item = buildSyntheticItem(targetSlug, brief);
-      const generated = await claudeGenerator.generate(item, { siteName, brief });
+      const generated = await generator.generate(item, { siteName, brief });
 
       const tags = ensureTopicTag(generated.tags ?? [], brief.topics ?? [], generated.title);
       console.log(`  generated title: ${generated.title}`);
@@ -207,7 +217,7 @@ async function main(): Promise<void> {
         reviewer_notes: articleStatus === "review" ? (quality_note ?? "") : "",
         source_url: "",
         source_item_id: `synthetic-${targetSlug}`,
-        generated_by: "claude",
+        generated_by: generator.name,
         featuredImage: defaultImagePath,
         reading_time: readingTime,
       };
