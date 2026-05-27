@@ -109,26 +109,51 @@ export function ImportPanel(): React.ReactElement {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [log]);
 
-  const handleSiteChange = useCallback((domain: string): void => {
-    setSelectedDomain(domain);
-    setSiteTopics([]);
-    setWpUrl(domain ? `https://${domain}/wp-json/wp/v2/posts` : "");
-    if (domain) {
-      fetch(`/api/sites/site-config?domain=${encodeURIComponent(domain)}`)
-        .then((r) => r.ok ? r.json() : null)
-        .then((data: { config?: { brief?: { topics?: string[] } } } | null) => {
-          const topics = data?.config?.brief?.topics;
-          if (Array.isArray(topics) && topics.length > 0) {
-            setSiteTopics(topics);
-          }
-        })
-        .catch(() => { /* non-fatal */ });
-    }
-  }, []);
-
   const appendLog = useCallback((msg: string): void => {
     setLog((prev) => [...prev, msg]);
   }, []);
+
+  const handleSiteChange = useCallback((domain: string): void => {
+    setSelectedDomain(domain);
+    setSiteTopics([]);
+    setErrorMsg(null);
+    setWpUrl(domain ? `https://${domain}/wp-json/wp/v2/posts` : "");
+
+    // Clear previous job state when switching sites
+    if (!domain) {
+      setJobId(null);
+      setProgress(null);
+      setLog([]);
+      return;
+    }
+
+    // Fetch site topics (existing behavior)
+    fetch(`/api/sites/site-config?domain=${encodeURIComponent(domain)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { config?: { brief?: { topics?: string[] } } } | null) => {
+        const topics = data?.config?.brief?.topics;
+        if (Array.isArray(topics) && topics.length > 0) {
+          setSiteTopics(topics);
+        }
+      })
+      .catch(() => { /* non-fatal */ });
+
+    // Check for active import (cross-user awareness)
+    fetch(`/api/agent/wp-migrate/active-import/${encodeURIComponent(domain)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data: { active?: boolean; jobId?: string; progress?: ArticleImportProgress | null } | null) => {
+        if (data?.active && data.jobId) {
+          setJobId(data.jobId);
+          if (data.progress) {
+            setProgress(data.progress);
+          }
+          appendLog(`Detected active import (job ${data.jobId.slice(0, 8)}) — attaching to progress`);
+          // Save to localStorage so it persists on refresh
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ jobId: data.jobId, domain }));
+        }
+      })
+      .catch(() => { /* non-fatal — don't block the user */ });
+  }, [appendLog]);
 
   // Poll for job status
   useEffect(() => {
@@ -139,7 +164,17 @@ export function ImportPanel(): React.ReactElement {
     const poll = async (): Promise<void> => {
       try {
         const res = await fetch(`/api/agent/wp-migrate/article-import-status/${jobId}`);
-        if (cancelled || !res.ok) return;
+        if (cancelled) return;
+
+        // Job expired or doesn't exist — clean up stale state
+        if (res.status === 404) {
+          setJobId(null);
+          setProgress(null);
+          localStorage.removeItem(STORAGE_KEY);
+          return;
+        }
+
+        if (!res.ok) return;
         const data = (await res.json()) as ArticleImportProgress;
         if (cancelled) return;
 
@@ -336,6 +371,13 @@ export function ImportPanel(): React.ReactElement {
           )}
         </div>
       </div>
+
+      {/* Submission error (e.g. dedup lock — no job created, so no progress to show) */}
+      {errorMsg && !progress && !isRunning && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {errorMsg}
+        </div>
+      )}
 
       {/* Progress steps */}
       {progress && (

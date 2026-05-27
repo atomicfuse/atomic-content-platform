@@ -127,3 +127,17 @@ export async function readArticleImportProgress(
     return null;
   }
 }
+
+export const ARTICLE_IMPORT_LOCK_PREFIX = "article-import-active:";
+
+export async function readActiveImport(
+  redis: Redis,
+  siteDomain: string,
+): Promise<{ jobId: string; progress: ArticleImportProgress | null } | null> {
+  const lockKey = `${ARTICLE_IMPORT_LOCK_PREFIX}${siteDomain}`;
+  const jobId = await redis.get(lockKey);
+  if (!jobId) return null;
+
+  const progress = await readArticleImportProgress(redis, jobId);
+  return { jobId, progress };
+}

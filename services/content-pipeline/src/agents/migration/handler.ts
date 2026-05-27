@@ -9,7 +9,7 @@ import { runMigration } from "./orchestrator.js";
 import type { MigrationConfig } from "./orchestrator.js";
 import type { CsvSiteRow, MigrationProgress } from "./types.js";
 import { validateBatch, submitBatch } from "./batch-import.js";
-import { readBatchStatus, readArticleImportProgress, writeArticleImportProgress } from "./import-status.js";
+import { readBatchStatus, readArticleImportProgress, writeArticleImportProgress, readActiveImport } from "./import-status.js";
 
 function sendSSE(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -352,4 +352,52 @@ export async function handleArticleImportStatus(
 
   res.writeHead(200, { "Content-Type": "application/json" });
   res.end(JSON.stringify(progress));
+}
+
+// ---------------------------------------------------------------------------
+// GET /wp-migrate/active-import/:domain
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns active article import status for a given domain.
+ * Reads the dedup lock key to discover the jobId, then reads progress.
+ * Enables cross-user awareness — any user can see if an import is running.
+ */
+export async function handleActiveImport(
+  req: IncomingMessage,
+  res: ServerResponse,
+  redis: Redis,
+): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const segments = url.pathname.split("/").filter(Boolean);
+  // Expected: ["wp-migrate", "active-import", "<domain>"]
+  const domain = segments[2];
+
+  if (!domain) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "domain is required" }));
+    return;
+  }
+
+  try {
+    const result = await readActiveImport(redis, domain);
+
+    if (!result) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ active: false }));
+      return;
+    }
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({
+      active: true,
+      jobId: result.jobId,
+      progress: result.progress,
+    }));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[wp-migrate] Failed to check active import for ${domain}:`, message);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Failed to check active import: ${message}` }));
+  }
 }

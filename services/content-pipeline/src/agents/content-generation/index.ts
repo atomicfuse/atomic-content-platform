@@ -32,6 +32,7 @@ import {
   handleImportStatus,
   handleEnqueueArticleImport,
   handleArticleImportStatus,
+  handleActiveImport,
 } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
@@ -163,6 +164,7 @@ async function handleRequest(
       // --- Pass 1: collect all BullMQ jobs and extract metadata ---
       interface JobSummary {
         id: string | undefined;
+        type: "generate" | "import";
         status: string;
         domain: string;
         triggeredBy: string;
@@ -216,6 +218,7 @@ async function handleRequest(
 
           jobSummaries.push({
             id: job.id,
+            type: "generate",
             status,
             domain: data?.siteDomain ?? "unknown",
             triggeredBy: data?.triggeredBy ?? "unknown",
@@ -230,6 +233,45 @@ async function handleRequest(
             n8nImagesTriggered: rv?.n8nImagesTriggered ?? 0,
             failedReason: job.failedReason ?? undefined,
             errorReasons: errorReasons.length > 0 ? errorReasons : undefined,
+            attemptsMade: job.attemptsMade,
+            timestamp: job.timestamp,
+            processedOn: job.processedOn,
+            finishedOn: job.finishedOn,
+          });
+        }
+      }
+
+      // Also query importArticlesQueue for WP article import jobs
+      for (const status of statuses) {
+        const importJobs = await queueInstances.importArticlesQueue.getJobs(
+          [status],
+          0,
+          limit - 1,
+        );
+        for (const job of importJobs) {
+          const data = job.data as {
+            siteDomain?: string;
+            branch?: string;
+          } | undefined;
+          const rv = job.returnvalue as {
+            totalArticles?: number;
+            successful?: number;
+            failed?: number;
+            n8nImagesTriggered?: number;
+          } | undefined;
+
+          jobSummaries.push({
+            id: job.id,
+            type: "import",
+            status,
+            domain: data?.siteDomain ?? "unknown",
+            triggeredBy: "wp-import",
+            branch: data?.branch,
+            articlesCreated: rv?.successful ?? 0,
+            articlesErrored: rv?.failed ?? 0,
+            totalResults: rv?.totalArticles ?? 0,
+            n8nImagesTriggered: rv?.n8nImagesTriggered ?? 0,
+            failedReason: job.failedReason ?? undefined,
             attemptsMade: job.attemptsMade,
             timestamp: job.timestamp,
             processedOn: job.processedOn,
@@ -476,6 +518,16 @@ async function handleRequest(
       return;
     }
     await handleArticleImportStatus(req, res, queueInstances.connection);
+    return;
+  }
+
+  // WordPress migration — check active import for a domain (cross-user awareness)
+  if (req.method === "GET" && req.url?.startsWith("/wp-migrate/active-import/")) {
+    if (!queueInstances) {
+      sendJson(res, 503, { status: "error", message: "Queue not configured — REDIS_URL not set" });
+      return;
+    }
+    await handleActiveImport(req, res, queueInstances.connection);
     return;
   }
 
