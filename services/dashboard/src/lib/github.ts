@@ -47,6 +47,32 @@ function createTtlCache<T>(ttlMs: number): {
 }
 
 // ---------------------------------------------------------------------------
+// Concurrency limiter — caps parallel async work (replaces unbounded
+// Promise.allSettled on getBlob calls that trigger GitHub abuse detection).
+// ---------------------------------------------------------------------------
+function createLimiter(concurrency: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  return <T>(fn: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = (): void => {
+        active++;
+        fn()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            if (queue.length > 0) queue.shift()!();
+          });
+      };
+      if (active < concurrency) run();
+      else queue.push(run);
+    });
+}
+
+/** Shared limiter for GitHub blob fetches — prevents secondary rate limits. */
+const blobLimit = createLimiter(5);
+
+// ---------------------------------------------------------------------------
 // Octokit singleton
 // ---------------------------------------------------------------------------
 let _octokit: Octokit | null = null;
@@ -64,8 +90,9 @@ function getOctokit(): Octokit {
         console.warn(`[octokit] Rate limit hit for ${String(options.url)} — retry ${retryCount + 1} after ${retryAfter}s`);
         return retryCount < 2;
       },
-      onSecondaryRateLimit: (retryAfter: number, options: Record<string, unknown>): void => {
-        console.warn(`[octokit] Secondary rate limit for ${String(options.url)} — waiting ${retryAfter}s`);
+      onSecondaryRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[octokit] Secondary rate limit for ${String(options.url)} — retry ${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 1;
       },
     },
   });
@@ -680,28 +707,30 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
     );
 
     const results = await Promise.allSettled(
-      mdEntries.map(async (entry) => {
-        const { data } = await octokit.git.getBlob({
-          owner: NETWORK_REPO_OWNER,
-          repo: NETWORK_REPO_NAME,
-          file_sha: entry.sha!,
-        });
-        const content = Buffer.from(data.content, "base64").toString("utf-8");
-        const frontmatter = extractFrontmatter(content);
-        const fileName = entry.path!.split("/").pop()!;
-        return {
-          slug: fileName.replace(".md", ""),
-          title: (frontmatter.title as string) ?? fileName,
-          type: (frontmatter.type as string) ?? "standard",
-          status: (frontmatter.status as string) ?? "draft",
-          publishDate: (frontmatter.publishDate as string) ?? "",
-          featuredImage: (frontmatter.featuredImage as string) ?? undefined,
-          score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
-          scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
-          qualityNote: frontmatter.quality_note as string | undefined,
-          reviewerNotes: frontmatter.reviewer_notes as string | undefined,
-        } as ArticleEntry;
-      }),
+      mdEntries.map((entry) =>
+        blobLimit(async () => {
+          const { data } = await octokit.git.getBlob({
+            owner: NETWORK_REPO_OWNER,
+            repo: NETWORK_REPO_NAME,
+            file_sha: entry.sha!,
+          });
+          const content = Buffer.from(data.content, "base64").toString("utf-8");
+          const frontmatter = extractFrontmatter(content);
+          const fileName = entry.path!.split("/").pop()!;
+          return {
+            slug: fileName.replace(".md", ""),
+            title: (frontmatter.title as string) ?? fileName,
+            type: (frontmatter.type as string) ?? "standard",
+            status: (frontmatter.status as string) ?? "draft",
+            publishDate: (frontmatter.publishDate as string) ?? "",
+            featuredImage: (frontmatter.featuredImage as string) ?? undefined,
+            score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
+            scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
+            qualityNote: frontmatter.quality_note as string | undefined,
+            reviewerNotes: frontmatter.reviewer_notes as string | undefined,
+          } as ArticleEntry;
+        }),
+      ),
     );
 
     const articles: ArticleEntry[] = [];
