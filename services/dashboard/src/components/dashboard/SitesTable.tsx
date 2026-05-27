@@ -65,7 +65,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(25);
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -73,6 +73,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
   const [articleCounts, setArticleCounts] = useState<Record<string, number>>({});
   const [countsLoaded, setCountsLoaded] = useState(false);
+  const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
 
   useEffect(() => {
     fetch("/api/sites/article-counts")
@@ -84,7 +86,18 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       .catch(() => setCountsLoaded(true));
   }, []);
 
-  const PAGE_SIZE_OPTIONS = [10, 20, 30, 40 , 50] as const;
+  useEffect(() => {
+    fetch("/api/sites/groups")
+      .then((r) => r.json())
+      .then((data: Record<string, string[]>) => setSiteGroups(data))
+      .catch(() => { /* leave empty */ });
+    fetch("/api/groups")
+      .then(async (r) => (r.ok ? ((await r.json()) as Array<{ id: string; name?: string }>) : []))
+      .then(setAvailableGroups)
+      .catch(() => setAvailableGroups([]));
+  }, []);
+
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
   // Get the site entry for the delete target so we can show what will be cleaned up
   const deleteTargetSite = deleteTarget ? sites.find((s) => s.domain === deleteTarget) : null;
@@ -220,6 +233,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   Company
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Group
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Category
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -256,7 +272,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -282,6 +298,18 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                         site.company = newCompany;
                         toast(`Company updated for ${site.domain}`, "success");
                         router.refresh();
+                      }}
+                      onError={(msg): void => { toast(msg, "error"); }}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">
+                    <InlineGroupSelect
+                      domain={site.domain}
+                      value={siteGroups[site.domain] ?? []}
+                      options={availableGroups}
+                      onSaved={(newGroups): void => {
+                        setSiteGroups((prev) => ({ ...prev, [site.domain]: newGroups }));
+                        toast(`Group updated for ${site.domain}`, "success");
                       }}
                       onError={(msg): void => { toast(msg, "error"); }}
                     />
@@ -566,6 +594,102 @@ function InlineCompanySelect({
       disabled={saving}
     >
       {display || <span className="text-[var(--text-muted)]">&mdash;</span>}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Inline Group Selector                                               */
+/* ------------------------------------------------------------------ */
+
+function InlineGroupSelect({
+  domain,
+  value,
+  options,
+  onSaved,
+  onError,
+}: {
+  domain: string;
+  value: string[];
+  options: Array<{ id: string; name?: string }>;
+  onSaved: (newGroups: string[]) => void;
+  onError: (msg: string) => void;
+}): React.ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Optimistic display — updated immediately on selection, before server round-trip.
+  const [optimistic, setOptimistic] = useState<string[] | undefined>(undefined);
+
+  const display = optimistic !== undefined ? optimistic : value;
+  const labelFor = (id: string): string => options.find((o) => o.id === id)?.name ?? id;
+
+  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
+    e.stopPropagation();
+    const selected = e.target.value;
+    const newGroups = selected ? [selected] : [];
+    const currentJoined = value.join(",");
+    const newJoined = newGroups.join(",");
+    if (currentJoined === newJoined) {
+      setEditing(false);
+      return;
+    }
+    setOptimistic(newGroups);
+    setEditing(false);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sites/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          logoBase64: null,
+          faviconBase64: null,
+          configUpdates: { groups: newGroups },
+        }),
+      });
+      const data = (await res.json()) as { status: string; message?: string };
+      if (data.status !== "ok") throw new Error(data.message ?? "Failed to update group");
+      onSaved(newGroups);
+    } catch (err) {
+      setOptimistic(undefined);
+      onError(err instanceof Error ? err.message : "Failed to update group");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        value={display[0] ?? ""}
+        onChange={(e): void => { void handleChange(e); }}
+        onBlur={(): void => setEditing(false)}
+        onClick={(e): void => e.stopPropagation()}
+        disabled={saving}
+        className="px-1.5 py-0.5 rounded border border-cyan/50 bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none cursor-pointer"
+      >
+        <option value="">No Group</option>
+        {options.map((g) => (
+          <option key={g.id} value={g.id}>{g.name ?? g.id}</option>
+        ))}
+      </select>
+    );
+  }
+
+  const displayText = display.length === 0
+    ? null
+    : display.map(labelFor).join(", ");
+
+  return (
+    <button
+      type="button"
+      onClick={(e): void => { e.stopPropagation(); setEditing(true); }}
+      className={`hover:text-cyan transition-colors cursor-pointer ${saving ? "opacity-50" : ""}`}
+      title="Click to change group"
+      disabled={saving}
+    >
+      {displayText ?? <span className="text-[var(--text-muted)]">&mdash;</span>}
     </button>
   );
 }
