@@ -406,7 +406,7 @@ describe('mergeScriptLayers', () => {
 
   it('returns empty arrays when no layers have scripts', () => {
     const result = mergeScriptLayers([{ tracking: {} }, { ads_config: {} }]);
-    expect(result).toEqual({ head: [], body_start: [], body_end: [] });
+    expect(result).toEqual({ head: [], body_start: [], body_end: [], before_footer: [] });
   });
 
   it('handles org → group → override → site (4-layer chain)', () => {
@@ -419,6 +419,13 @@ describe('mergeScriptLayers', () => {
     expect(result.head[0]).toEqual({ id: 'analytics', inline: 'override()' }); // override replaced org
     expect(result.head[1]).toEqual({ id: 'group-tag', inline: 'grp()' });
     expect(result.head[2]).toEqual({ id: 'bg-test', inline: 'bg()' });
+  });
+
+  it('merges before_footer entries by id', () => {
+    const org = { scripts: { before_footer: [{ id: 'feed', src: 'https://example.com/feed.js' }] } };
+    const site = { scripts: { before_footer: [{ id: 'feed', src: 'https://new.com/feed.js' }] } };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.before_footer).toEqual([{ id: 'feed', src: 'https://new.com/feed.js' }]);
   });
 
   it('replace mode: last layer with merge_modes.scripts="replace" discards inherited', () => {

@@ -12,7 +12,7 @@ import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import AdSlot from '../../components/AdSlot.astro';
-import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
@@ -30,6 +30,7 @@ if (!slug) {
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
 const preview = isPreviewMode(Astro);
+const staging = isStagingEnv(Astro);
 
 // Shared pages live at top-level slugs (`/about`, `/privacy`, ...) and
 // take precedence over the article namespace.
@@ -136,7 +137,7 @@ if (article) {
       <RelatedPosts articles={related} />
     </main>
 
-    <Footer config={config} />
+    <Footer config={config} staging={staging} />
     <AdSlot position="sticky-bottom" pageType="article" server:defer />
   </BaseLayout>
 )}

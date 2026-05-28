@@ -44,6 +44,9 @@ export function getConfig(astro: APIContext | { locals: App.Locals }): ResolvedC
   } else {
     (config as Record<string, unknown>).layout = { ...LAYOUT_DEFAULTS };
   }
+  if (config.scripts) {
+    (config.scripts as Record<string, unknown>).before_footer ??= [];
+  }
   return config;
 }
 

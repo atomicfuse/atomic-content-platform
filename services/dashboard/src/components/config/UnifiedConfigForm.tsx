@@ -35,6 +35,7 @@ interface ScriptsConfig {
   head: ScriptEntry[];
   body_start: ScriptEntry[];
   body_end: ScriptEntry[];
+  before_footer: ScriptEntry[];
 }
 
 export interface AdPlaceholderHeights {
@@ -103,6 +104,7 @@ const DEFAULT_SCRIPTS: ScriptsConfig = {
   head: [],
   body_start: [],
   body_end: [],
+  before_footer: [],
 };
 
 const DEFAULT_ADS_CONFIG: AdsConfigFormValue = {
