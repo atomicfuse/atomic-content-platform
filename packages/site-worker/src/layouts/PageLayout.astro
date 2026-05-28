@@ -10,7 +10,7 @@ import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
 import AdSlot from '../components/AdSlot.astro';
-import { getConfig, getCanonicalDomain } from '../lib/config';
+import { getConfig, getCanonicalDomain, isStagingEnv } from '../lib/config';
 
 interface Props {
   title: string;
@@ -20,6 +20,7 @@ interface Props {
 
 const { title, description, slug } = Astro.props;
 const config = getConfig(Astro);
+const staging = isStagingEnv(Astro);
 const canonicalUrl = `https://${getCanonicalDomain(Astro)}/${slug}`;
 ---
 
@@ -48,7 +49,7 @@ const canonicalUrl = `https://${getCanonicalDomain(Astro)}/${slug}`;
     </article>
   </main>
 
-  <Footer config={config} />
+  <Footer config={config} staging={staging} />
 
   <AdSlot position="sticky-bottom" pageType="article" server:defer />
 </BaseLayout>

@@ -665,6 +665,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'init', inline: "init('{{site_id}}', '{{zone}}')" }],
       body_start: [],
       body_end: [],
+      before_footer: [],
     };
     const vars = { site_id: 'my-site-001', zone: 'news' };
     const result = resolveScriptVars(scripts, vars);
@@ -676,6 +677,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'dup', inline: '{{x}} and {{x}} again' }],
       body_start: [],
       body_end: [],
+      before_footer: [],
     };
     const result = resolveScriptVars(scripts, { x: 'VALUE' });
     expect(result.head[0].inline).toBe('VALUE and VALUE again');
@@ -686,6 +688,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'bad', inline: "load('{{unknown_var}}')" }],
       body_start: [],
       body_end: [],
+      before_footer: [],
     };
     expect(() => resolveScriptVars(scripts, {})).toThrowError(/unresolved/i);
   });
@@ -695,6 +698,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'ext', src: '/external.js' }],
       body_start: [],
       body_end: [],
+      before_footer: [],
     };
     const result = resolveScriptVars(scripts, {});
     expect(result.head[0]).toEqual({ id: 'ext', src: '/external.js' });
@@ -705,6 +709,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'h', inline: 'H={{v}}' }],
       body_start: [{ id: 'bs', inline: 'BS={{v}}' }],
       body_end: [{ id: 'be', inline: 'BE={{v}}' }],
+      before_footer: [],
     };
     const result = resolveScriptVars(scripts, { v: '42' });
     expect(result.head[0].inline).toBe('H=42');
@@ -717,6 +722,7 @@ describe('resolveScriptVars — placeholder substitution', () => {
       head: [{ id: 'plain', inline: 'console.log("hello")' }],
       body_start: [],
       body_end: [],
+      before_footer: [],
     };
     const result = resolveScriptVars(scripts, {});
     expect(result.head[0].inline).toBe('console.log("hello")');

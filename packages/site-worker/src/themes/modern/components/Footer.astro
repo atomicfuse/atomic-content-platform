@@ -10,11 +10,17 @@ import NewsletterForm from './_newsletter-form.astro';
 
 interface Props {
   config: ResolvedConfig;
+  staging?: boolean;
 }
 
-const { config } = Astro.props;
+const { config, staging = false } = Astro.props;
 const year = new Date().getFullYear();
 const footerLogoSrc = config.theme.footer_logo || config.theme.logo;
+
+const beforeFooterScripts = (() => {
+  const all = config.scripts?.before_footer ?? [];
+  return staging ? all.filter((s: { src?: string }) => !!s.src?.startsWith('/')) : all;
+})();
 
 const quickLinks = [
   { label: 'Home', href: '/' },
@@ -26,6 +32,14 @@ const quickLinks = [
   { label: 'Amazon Disclaimer', href: '/amazon' },
 ];
 ---
+
+{beforeFooterScripts.map((s) =>
+  s.src
+    ? <script is:inline async={s.async} src={s.src}></script>
+    : s.inline
+      ? <Fragment set:html={s.inline} />
+      : null
+)}
 
 <footer class="site-footer">
   <div class="footer-inner">

@@ -312,6 +312,8 @@ export interface ScriptsConfig {
     body_start: ScriptEntry[];
     /** Scripts injected just before the closing `</body>` tag. */
     body_end: ScriptEntry[];
+    /** Scripts injected immediately before the `<footer>` element. */
+    before_footer: ScriptEntry[];
 }
 /**
  * Organisation-level configuration — the root of the config hierarchy.

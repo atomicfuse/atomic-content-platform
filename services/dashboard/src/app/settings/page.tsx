@@ -44,6 +44,7 @@ function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConf
     head: normalizeEntries(raw?.head),
     body_start: normalizeEntries(raw?.body_start),
     body_end: normalizeEntries(raw?.body_end),
+    before_footer: normalizeEntries(raw?.before_footer),
   };
 }
 
