@@ -19,7 +19,7 @@ const footerLogoSrc = config.theme.footer_logo || config.theme.logo;
 
 const beforeFooterScripts = (() => {
   const all = config.scripts?.before_footer ?? [];
-  return staging ? all.filter((s: { src?: string }) => !!s.src?.startsWith('/')) : all;
+  return staging ? all.filter((s: { src?: string; inline?: string }) => !!s.inline || !!s.src?.startsWith('/')) : all;
 })();
 
 const quickLinks = [
