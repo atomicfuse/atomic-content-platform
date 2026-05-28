@@ -16,6 +16,7 @@ import {
   createOctokit,
   readFile,
   commitFile,
+  commitBatch,
 } from "../../lib/github.js";
 import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
@@ -220,6 +221,183 @@ function scheduleImageAlert(
 }
 
 // ---------------------------------------------------------------------------
+// Bulk image run buffer — batches all callbacks into a single commit when
+// triggered via the /bulk-generate-images endpoint.
+// ---------------------------------------------------------------------------
+
+interface BufferedFile {
+  path: string;
+  content: string;
+  slug: string;
+}
+
+interface BulkRunBuffer {
+  expectedSlugs: Set<string>;
+  receivedCount: number;
+  buffered: Map<string, BufferedFile[]>;
+  github: GitHubConfig;
+  flushTimer: ReturnType<typeof setTimeout> | null;
+}
+
+let activeBulkRun: BulkRunBuffer | null = null;
+
+const BULK_FLUSH_TIMEOUT_MS = 5 * 60 * 1000;
+
+export function registerBulkRun(
+  articles: Array<{ domain: string; slug: string }>,
+  github: GitHubConfig,
+): void {
+  if (activeBulkRun) {
+    console.warn(`[n8n-image] Previous bulk run still active — flushing before starting new one`);
+    void flushBulkBuffer();
+  }
+
+  const expectedSlugs = new Set(articles.map(a => `${a.domain}/${a.slug}`));
+  activeBulkRun = {
+    expectedSlugs,
+    receivedCount: 0,
+    buffered: new Map(),
+    github,
+    flushTimer: null,
+  };
+  console.log(`[n8n-image] Bulk run registered: ${expectedSlugs.size} articles expected`);
+}
+
+function isPartOfBulkRun(siteDomain: string, slug: string): boolean {
+  return activeBulkRun?.expectedSlugs.has(`${siteDomain}/${slug}`) ?? false;
+}
+
+function bufferBulkResult(branch: string, file: BufferedFile): void {
+  if (!activeBulkRun) return;
+  const files = activeBulkRun.buffered.get(branch) ?? [];
+  files.push(file);
+  activeBulkRun.buffered.set(branch, files);
+}
+
+function markBulkCallbackReceived(siteDomain: string, slug: string): void {
+  if (!activeBulkRun) return;
+  const key = `${siteDomain}/${slug}`;
+  if (!activeBulkRun.expectedSlugs.has(key)) return;
+
+  activeBulkRun.receivedCount++;
+  const total = activeBulkRun.expectedSlugs.size;
+  const bufferedCount = Array.from(activeBulkRun.buffered.values())
+    .reduce((sum, f) => sum + f.length, 0);
+  console.log(
+    `[n8n-image] Bulk progress: ${activeBulkRun.receivedCount}/${total} callbacks, ` +
+    `${bufferedCount} images buffered (${key})`,
+  );
+
+  if (activeBulkRun.receivedCount >= total) {
+    console.log(`[n8n-image] All bulk callbacks received — flushing buffer`);
+    void flushBulkBuffer();
+  }
+}
+
+export function removeBulkExpected(siteDomain: string, slug: string): void {
+  if (!activeBulkRun) return;
+  const key = `${siteDomain}/${slug}`;
+  if (!activeBulkRun.expectedSlugs.delete(key)) return;
+
+  console.log(
+    `[n8n-image] Removed ${key} from bulk run (trigger failed), ` +
+    `${activeBulkRun.expectedSlugs.size} remaining`,
+  );
+
+  if (activeBulkRun.receivedCount >= activeBulkRun.expectedSlugs.size) {
+    console.log(`[n8n-image] All remaining bulk callbacks received — flushing buffer`);
+    void flushBulkBuffer();
+  }
+}
+
+export function scheduleBulkFlush(): void {
+  if (!activeBulkRun) return;
+  if (activeBulkRun.flushTimer) return;
+
+  console.log(
+    `[n8n-image] Scheduling bulk flush timeout (${BULK_FLUSH_TIMEOUT_MS / 1000}s) — ` +
+    `${activeBulkRun.receivedCount}/${activeBulkRun.expectedSlugs.size} callbacks so far`,
+  );
+
+  activeBulkRun.flushTimer = setTimeout(() => {
+    if (!activeBulkRun) return;
+    console.warn(
+      `[n8n-image] Bulk flush timeout — received ${activeBulkRun.receivedCount}/` +
+      `${activeBulkRun.expectedSlugs.size}, flushing what we have`,
+    );
+    void flushBulkBuffer();
+  }, BULK_FLUSH_TIMEOUT_MS);
+
+  if (activeBulkRun.flushTimer.unref) activeBulkRun.flushTimer.unref();
+}
+
+async function flushBulkBuffer(): Promise<void> {
+  const run = activeBulkRun;
+  if (!run) return;
+
+  if (run.flushTimer) clearTimeout(run.flushTimer);
+  activeBulkRun = null;
+
+  const totalBuffered = Array.from(run.buffered.values())
+    .reduce((sum, f) => sum + f.length, 0);
+
+  if (totalBuffered === 0) {
+    console.log(`[n8n-image] Bulk flush — no successful images to commit`);
+    return;
+  }
+
+  console.log(
+    `[n8n-image] Flushing bulk buffer: ${totalBuffered} images across ` +
+    `${run.buffered.size} branch(es)`,
+  );
+
+  const octokit = createOctokit(run.github);
+
+  for (const [branch, files] of run.buffered) {
+    const message = files.length === 1
+      ? `feat(image): add hero image for ${files[0]!.slug}`
+      : `feat(image): add hero images for ${files.length} articles`;
+
+    try {
+      await commitBatch(
+        octokit,
+        run.github.repo,
+        files.map(f => ({ path: f.path, content: f.content })),
+        [],
+        message,
+        branch,
+      );
+      console.log(
+        `[n8n-image] Bulk commit OK → ${files.length} files on branch ${branch}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[n8n-image] Bulk commit FAILED for branch ${branch}: ${msg} — falling back to individual commits`,
+      );
+      for (const file of files) {
+        try {
+          await enqueueForBranch(branch, () =>
+            commitFile(octokit, run.github.repo, {
+              path: file.path,
+              content: file.content,
+              message: `feat(image): add hero image for ${file.slug}`,
+              branch,
+            }),
+          );
+          console.log(`[n8n-image] Fallback commit OK → ${file.path}`);
+        } catch (fbErr) {
+          console.error(
+            `[n8n-image] Fallback commit FAILED → ${file.path}: ` +
+            `${fbErr instanceof Error ? fbErr.message : String(fbErr)}`,
+          );
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // triggerN8nImage — fire-and-forget POST to n8n
 // ---------------------------------------------------------------------------
 
@@ -325,12 +503,14 @@ export async function handleImageCallback(
     const reason = payload.error ?? `n8n status: ${status}`;
     console.error(`${tag} FAIL — n8n error: ${reason} (provider=${provider}, duration=${durationMs ?? "?"}ms)`);
     alertFailure(`n8n image generation failed: ${reason}`);
+    markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: reason };
   }
 
   if (!payload.data_base64) {
     console.error(`${tag} FAIL — no image data in payload`);
     alertFailure("n8n returned no image data");
+    markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: "No image data in callback" };
   }
 
@@ -352,6 +532,7 @@ export async function handleImageCallback(
       `${tag} SUCCESS — image delivered (provider=${provider}, ` +
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
     );
+    markBulkCallbackReceived(site_domain, slug);
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -366,6 +547,7 @@ export async function handleImageCallback(
         reason: `Image processing failed: ${message}`,
       });
     }
+    markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message };
   }
 }
@@ -401,15 +583,25 @@ export async function processN8nImageResult(
   }
   console.log(`${tag} R2 upload OK → ${r2Key}`);
 
-  // 3. Read article, update frontmatter, commit — serialized per branch.
-  // The branch queue ensures only one callback commits at a time, avoiding
-  // the SHA conflicts that occur when the GitHub Contents API's internal
-  // ref fast-forward races with concurrent commits to the same branch.
-  // Retry logic is kept as a safety net for external concurrent commits.
+  // 3. Read article, update frontmatter, commit (or buffer for bulk mode).
   const octokit = createOctokit(github);
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
   const imageUrl = `/assets/images/${slug}.webp`;
 
+  if (isPartOfBulkRun(siteDomain, slug)) {
+    // Bulk mode: buffer for single batch commit when all callbacks arrive
+    const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+    const parsed = matter(rawContent);
+    parsed.data["featuredImage"] = imageUrl;
+    parsed.data["image_alt"] = altText;
+    const updatedContent = matter.stringify(parsed.content, parsed.data);
+
+    bufferBulkResult(branch, { path: articlePath, content: updatedContent, slug });
+    console.log(`${tag} Buffered for bulk commit → ${articlePath} (branch: ${branch})`);
+    return;
+  }
+
+  // Individual mode: commit immediately, serialized per branch to avoid SHA conflicts
   await enqueueForBranch(branch, async () => {
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -417,8 +609,6 @@ export async function processN8nImageResult(
         const rawContent = await readFile(octokit, github.repo, articlePath, branch);
 
         const parsed = matter(rawContent);
-        // Use the convention without siteId prefix — seed-kv's rewriteFrontmatterUrl
-        // adds the `/<siteId>/` prefix at sync time when writing to KV.
         parsed.data["featuredImage"] = imageUrl;
         parsed.data["image_alt"] = altText;
 
