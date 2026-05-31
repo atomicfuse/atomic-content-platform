@@ -66,6 +66,18 @@ export const articleKey = (siteId: string, slug: string): string => `article:${s
 export const syncStatusKey = (siteId: string): string => `sync-status:${siteId}`;
 export const sharedPageKey = (siteId: string, name: string): string => `shared-page:${siteId}:${name}`;
 
+/** A conditional override stored in KV. Stripped of meta-fields except
+ *  activation (needed at request-time for query-param matching). */
+export interface ConditionalOverrideEntry {
+  override_id: string;
+  priority: number;
+  activation: { query_param: string; query_value?: string };
+  /** The config patch to deep-merge when activation matches. */
+  config: Record<string, unknown>;
+}
+
+export const conditionalOverridesKey = (siteId: string): string => `cond-overrides:${siteId}`;
+
 /** Shared legal/info page rendered into KV at sync time. The Worker
  *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca` | `amazon`)
  *  via the [page] route. */
