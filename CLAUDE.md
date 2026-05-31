@@ -95,6 +95,28 @@ groups/<group>.yaml          Group-level config overrides (same fields as org, a
 - `staging/<domain>` — where `sites/<domain>/` lives while in development or staging. The dashboard's "Worker Preview" button serves any `staging/*` branch via `?_atl_site=<domain>` against the staging Worker — no per-site Pages deploy needed.
 - **Do not enumerate `sites/` on main** — it only contains published sites. Use `dashboard-index.yaml` as the source of truth.
 
+### Staging → Production publish flow
+
+Each site has its own isolated staging branch. Publishing copies **only** that site's folder to main — never a full git merge.
+
+```
+main:           A─────────B (site1 publish)────C (site2 publish)────D (site1 publish)
+                 \          ↑  \                 ↑  \                 ↑
+staging/site1:    ─e1──e2───┘   ─(reset)──e3─────┼───────────e3──────┘
+                   \                             │
+staging/site2:      ──────────────eA──eB─────────┘   ─(reset)──...
+```
+
+**How it works:**
+
+1. User edits site1 → changes go to `staging/site1`, only in `sites/site1/`.
+2. Click "Apply to Live Site" → dashboard reads **only** `sites/site1/` from `staging/site1` and commits those files to `main` via `commitNetworkFiles()`.
+3. Staging branch resets → `staging/site1` is deleted and recreated from current `main` (clean slate for next edit cycle).
+
+**Key invariant: sites never interfere with each other.** Publishing site1 never touches site2's files on main. Each staging branch is independent and the publish function (`mergeOrCopySiteToMain` in `wizard.ts` / `review.ts`) only reads `sites/<domain>/` — it never does a full `git merge`.
+
+**CLI alternative:** `./scripts/publish-site.sh <site-name>` in the network repo does the same scoped copy locally.
+
 ## Services
 
 ### dashboard
@@ -165,7 +187,7 @@ org.yaml → groups[0].yaml → groups[1].yaml → … → overrides/config (by 
 
 ### Layer 1: `org.yaml` — Org-Wide Defaults
 
-Root of the inheritance chain. Contains: `organization`, `legal_entity`, `support_email_pattern`, `default_theme`, `default_fonts`, `default_groups`, `tracking` (GA4/GTM/Google Ads/Facebook Pixel), `scripts` (head/body_start/body_end injection), `scripts_vars` (placeholder substitution), `ads_config` (placements, interstitial, layout), `ad_placeholder_heights` (CLS prevention), `ads_txt`, `legal`, feature flags (`preview_page`, `categories`, `sidebar`, `search`).
+Root of the inheritance chain. Contains: `organization`, `legal_entity`, `support_email_pattern`, `default_theme`, `default_fonts`, `default_groups`, `tracking` (GA4/GTM/Google Ads/Facebook Pixel), `scripts` (head/body_start/body_end/before_footer injection), `scripts_vars` (placeholder substitution), `ads_config` (placements, interstitial, layout), `ad_placeholder_heights` (CLS prevention), `ads_txt`, `legal`, feature flags (`preview_page`, `categories`, `sidebar`, `search`).
 
 **Dashboard:** Settings → Org tab → `GET/PUT /api/settings/org` → reads/writes `org.yaml` on `main`.
 
@@ -220,7 +242,7 @@ The leaf. Site-level values always win. Contains `domain`, `groups`, `active`, `
 ### Key merge rules at build time
 
 - **Tracking, theme, legal:** deep merge across layers, later wins per-key.
-- **Scripts:** merge-by-id (same `id` replaces, new `id` appends).
+- **Scripts:** merge-by-id across four positions (head, body_start, body_end, before_footer). Same `id` replaces, new `id` appends. `before_footer` inline entries render as raw HTML (`Fragment set:html`), not wrapped in `<script>` tags — designed for widget snippets containing both `<script>` and `<div>` elements. Rendering happens in `Footer.astro` (single injection point, all pages).
 - **Ads config:** deep merge for top-level fields; `ad_placements` is **replacement** — last layer with non-empty placements wins.
 - **Ads.txt:** additive append from all layers, deduped.
 - **Script vars:** shallow merge, then `{{placeholder}}` tokens resolved in all scripts; unresolved tokens throw.
@@ -435,6 +457,8 @@ Service contract (both services satisfy):
 
 39. **Video embeds require both worker deploy and KV re-seed.** Videos are stored in article frontmatter (`videos: ArticleVideo[]`) and injected at render time by `inject-videos.ts` in the site-worker. Adding a video via the dashboard only writes to Git (staging branch). To see it on the site: (1) deploy the site-worker (`pnpm deploy:staging`), (2) re-seed KV for the site (`pnpm seed:kv <siteId>` with network repo on the staging branch). Without both steps, KV won't have the `videos` field and/or the worker won't have the injection code.
 40. **Video embed YAML round-trip strips quotes.** The `yaml` library's `stringify()` outputs unquoted strings by default. When saving videos (or scripts) via the dashboard API, existing quoted YAML values (`title: "Foo"`) become unquoted (`title: Foo`). Both forms parse identically — no data loss, purely cosmetic.
+41. **Dashboard has local `ScriptsConfig` type copies.** `UnifiedConfigForm.tsx` and `ScriptsEditor.tsx` each define their own `ScriptsConfig` interface (not imported from `@atomic-platform/shared-types`). When adding a new script position (like `before_footer`), you must update THREE places: shared-types, `UnifiedConfigForm.tsx` (interface + `DEFAULT_SCRIPTS`), and `ScriptsEditor.tsx` (interface + `SECTIONS`). The org settings page (`src/app/settings/page.tsx`) also has its own local `normalizeScripts` — distinct from the shared `config-normalizers.ts` version.
+42. **`before_footer` scripts render as raw HTML, not JavaScript.** Unlike head/body_start/body_end positions where inline entries are wrapped in `<script>` tags, `before_footer` inline entries are injected via `Fragment set:html` — raw HTML including `<script>` tags, `<div>` elements, etc. The dashboard's `ScriptsEditor` uses `RAW_HTML_POSITIONS` set to disable auto-stripping of `<script>` tags and show appropriate labels ("Inline HTML" vs "Inline JavaScript") for these positions. The staging filter allows inline entries through while suppressing external `src` URLs.
 
 ## Cloudflare Account Migration & WordPress Migration
 
