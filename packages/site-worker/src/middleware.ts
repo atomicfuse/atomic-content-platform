@@ -146,6 +146,38 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
   const hasConditionalOverride = matchedActivationParams.length > 0;
 
+  // --- Template variable resolution in widget code ---
+  // Ad placement `code` fields can contain `${paramName}` placeholders
+  // that get resolved from URL query params at request-time. This works
+  // on ALL requests (not just conditional overrides) so UTM params and
+  // ad-network tracking values flow into widget code automatically.
+  //
+  // Example: code `<div id="widget-${giladqp}">` with URL
+  // `?giladqp=test` → `<div id="widget-test">`.
+  //
+  // Values are sanitised to alphanumeric + safe punctuation to prevent
+  // HTML injection via crafted URLs.
+  const templateParams: Array<[string, string]> = [];
+  if (context.url.searchParams.toString()) {
+    const placements = config.ads_config?.ad_placements;
+    if (placements) {
+      for (const p of placements) {
+        if (p.code && p.code.includes('${')) {
+          p.code = p.code.replace(/\$\{([a-zA-Z0-9_]+)\}/g, (_: string, name: string) => {
+            const val = context.url.searchParams.get(name) ?? '';
+            if (val) {
+              const sanitised = val.replace(/[^a-zA-Z0-9_\-.:]/g, '');
+              templateParams.push([name, sanitised]);
+              return sanitised;
+            }
+            return '';
+          });
+        }
+      }
+    }
+  }
+  const hasTemplateVars = templateParams.length > 0;
+
   const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
   context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
 
@@ -170,13 +202,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
     finalResponse.headers.set('cache-control', 'private, no-store');
   }
 
-  // Propagate conditional override query params across navigation.
-  // Same pattern as _atl_site: rewrite <a> hrefs and patch fetch().
-  if (hasConditionalOverride) {
+  // Propagate activation params + template variable params across
+  // navigation. Combines both sets so clicking an internal link
+  // carries e.g. `?stickytest=true&giladqp=test&utm_campaign=summer`.
+  const allPropagatedParams = [...matchedActivationParams, ...templateParams];
+  if (allPropagatedParams.length > 0) {
     const contentType = finalResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
       const html = await finalResponse.text();
-      const script = generateParamPropagationScript(matchedActivationParams);
+      const script = generateParamPropagationScript(allPropagatedParams);
       const modifiedHtml = html.replace('</head>', `${script}\n</head>`);
       finalResponse = new Response(modifiedHtml, {
         status: finalResponse.status,
@@ -184,6 +218,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
         headers: new Headers(finalResponse.headers),
       });
     }
+    // Conditional overrides and template-var responses must not be
+    // edge-cached — the content varies per URL query params.
     finalResponse.headers.set('cache-control', 'private, no-store');
   }
 
