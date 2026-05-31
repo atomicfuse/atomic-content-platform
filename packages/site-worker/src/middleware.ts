@@ -1,8 +1,9 @@
 import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
-import { siteLookupKey, siteConfigKey, type SiteLookup } from './lib/kv-schema';
+import { siteLookupKey, siteConfigKey, conditionalOverridesKey, type SiteLookup, type ConditionalOverrideEntry } from './lib/kv-schema';
 import { resolvePreview, generatePreviewScript } from './lib/preview-override';
+import { deepMerge } from './lib/deep-merge';
 
 /**
  * Multi-tenant site resolution.
@@ -111,7 +112,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     siteId = lookup.siteId;
   }
 
-  const config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(siteId), 'json');
+  let config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(siteId), 'json');
   if (!config) {
     return new Response(
       `siteId "${siteId}" has no config in KV.`,
@@ -121,6 +122,29 @@ export const onRequest = defineMiddleware(async (context, next) => {
       },
     );
   }
+
+  // --- Conditional overrides (query-param-activated) ---
+  // Only triggered when the URL contains a matching query param.
+  // If no conditional overrides exist for this site, the KV read returns
+  // null and we skip — zero impact on the config.
+  let matchedActivationParams: Array<[string, string]> = [];
+  if (context.url.searchParams.toString()) {
+    const condOverrides = await env.CONFIG_KV.get<ConditionalOverrideEntry[]>(
+      conditionalOverridesKey(siteId),
+      'json',
+    );
+    if (condOverrides && condOverrides.length > 0) {
+      for (const co of condOverrides) {
+        const paramValue = context.url.searchParams.get(co.activation.query_param);
+        if (paramValue === null) continue;
+        if (co.activation.query_value && paramValue !== co.activation.query_value) continue;
+        // Match — merge this override's config on top.
+        config = deepMerge(config, co.config) as ResolvedConfig;
+        matchedActivationParams.push([co.activation.query_param, paramValue]);
+      }
+    }
+  }
+  const hasConditionalOverride = matchedActivationParams.length > 0;
 
   const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
   context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
