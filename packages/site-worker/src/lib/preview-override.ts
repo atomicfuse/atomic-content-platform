@@ -126,3 +126,23 @@ export function generatePreviewScript(siteId: string): string {
     `})()</script>`,
   ].join('');
 }
+
+/**
+ * Generates an inline script that propagates the given query params
+ * across internal link clicks and fetch calls — same pattern as
+ * `generatePreviewScript` for `_atl_site`.
+ *
+ * Used for conditional override activation params so navigating between
+ * pages keeps the override active.
+ */
+export function generateParamPropagationScript(params: Array<[string, string]>): string {
+  if (params.length === 0) return '';
+  const paramsJson = JSON.stringify(params);
+  return [
+    `<script data-atl-param-propagation>(function(){`,
+    `var ps=${paramsJson};`,
+    `document.addEventListener('click',function(e){var a=e.target.closest('a');if(!a)return;try{var u=new URL(a.href);if(u.origin!==location.origin)return;var changed=false;for(var i=0;i<ps.length;i++){if(!u.searchParams.has(ps[i][0])){u.searchParams.set(ps[i][0],ps[i][1]);changed=true;}}if(changed)a.href=u.pathname+u.search+u.hash}catch(x){}},true);`,
+    `var _f=window.fetch;window.fetch=function(r,o){try{var u=(typeof r==='string')?new URL(r,location.origin):r instanceof URL?r:null;if(u&&u.origin===location.origin){for(var i=0;i<ps.length;i++){if(!u.searchParams.has(ps[i][0]))u.searchParams.set(ps[i][0],ps[i][1]);}r=u.toString()}}catch(x){}return _f.call(this,r,o)};`,
+    `})()</script>`,
+  ].join('');
+}

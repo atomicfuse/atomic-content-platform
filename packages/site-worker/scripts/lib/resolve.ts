@@ -247,6 +247,10 @@ export interface OverrideConfig extends Record<string, unknown> {
   /** Lowest priority is applied FIRST; highest LAST (so it wins). */
   priority?: number;
   targets?: { groups?: string[]; sites?: string[] };
+  /** When present, this override is NOT merged at seed-time. Instead it's
+   *  stored separately and applied at request-time only when the specified
+   *  query parameter is present in the URL. */
+  activation?: { query_param: string; query_value?: string };
 }
 
 /**
@@ -262,6 +266,29 @@ export function selectMatchingOverrides(
   siteGroups: readonly string[],
 ): OverrideConfig[] {
   const matching = overrides.filter((o) => {
+    // Skip conditional overrides — they're handled at request-time, not seed-time.
+    if (o.activation) return false;
+    const t = o.targets ?? {};
+    const sites = Array.isArray(t.sites) ? t.sites : [];
+    const groups = Array.isArray(t.groups) ? t.groups : [];
+    if (sites.includes(siteId)) return true;
+    if (groups.some((g) => siteGroups.includes(g))) return true;
+    return false;
+  });
+  return [...matching].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+}
+
+/**
+ * Filters overrides that have an `activation` condition AND target the given
+ * site. These are stored separately in KV and evaluated at request-time.
+ */
+export function selectConditionalOverrides(
+  overrides: OverrideConfig[],
+  siteId: string,
+  siteGroups: readonly string[],
+): OverrideConfig[] {
+  const matching = overrides.filter((o) => {
+    if (!o.activation?.query_param) return false;
     const t = o.targets ?? {};
     const sites = Array.isArray(t.sites) ? t.sites : [];
     const groups = Array.isArray(t.groups) ? t.groups : [];
@@ -358,9 +385,9 @@ export function resolveSharedPageVars(
  * `targets`) that the merged site-config shouldn't keep. Strip them.
  */
 export function stripOverrideMetaFields(config: Record<string, unknown>): Record<string, unknown> {
-  const { override_id, name, priority, targets, ...rest } = config;
+  const { override_id, name, priority, targets, activation, ...rest } = config;
   // Reference the destructured names so the lint rule for unused vars
   // doesn't fire — we genuinely want them dropped.
-  void override_id; void name; void priority; void targets;
+  void override_id; void name; void priority; void targets; void activation;
   return rest;
 }

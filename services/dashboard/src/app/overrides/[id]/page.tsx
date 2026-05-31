@@ -19,6 +19,7 @@ interface OverrideConfig {
   name?: string;
   priority?: number;
   targets?: { groups?: string[]; sites?: string[] };
+  activation?: { query_param: string; query_value?: string };
   tracking?: Record<string, unknown>;
   scripts?: Record<string, unknown>;
   scripts_vars?: Record<string, string>;
@@ -280,6 +281,56 @@ export default function OverrideDetailPage(): React.ReactElement {
             <p className="text-xs text-[var(--text-muted)]">
               Higher = applied later = wins conflicts.
             </p>
+          </div>
+          <div className="mt-6 space-y-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Activation Condition <span className="font-normal text-[var(--text-muted)]">(optional)</span>
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              When set, this override only applies when the URL contains the specified query parameter.
+              Leave empty to apply the override to all requests (default behavior).
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Query Parameter Name"
+                placeholder="e.g. tamirtest"
+                value={config.activation?.query_param ?? ""}
+                onChange={(e): void => {
+                  const val = e.target.value.trim();
+                  if (!val) {
+                    // Clear activation entirely
+                    const { activation: _, ...rest } = config;
+                    setConfig(rest as OverrideConfig);
+                  } else {
+                    updateField("activation", {
+                      query_param: val,
+                      query_value: config.activation?.query_value,
+                    });
+                  }
+                }}
+              />
+              <Input
+                label="Query Value"
+                placeholder="e.g. true (leave empty = any value)"
+                value={config.activation?.query_value ?? ""}
+                onChange={(e): void => {
+                  const val = e.target.value.trim();
+                  updateField("activation", {
+                    query_param: config.activation?.query_param ?? "",
+                    ...(val ? { query_value: val } : {}),
+                  });
+                }}
+              />
+            </div>
+            {config.activation?.query_param && targetSites.length > 0 && (
+              <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-[var(--text-secondary)]">
+                <span className="font-semibold text-emerald-600">Preview URL: </span>
+                <code className="break-all">
+                  https://{targetSites[0]}?{config.activation.query_param}
+                  {config.activation.query_value ? `=${config.activation.query_value}` : ""}
+                </code>
+              </div>
+            )}
           </div>
         </div>
       ),

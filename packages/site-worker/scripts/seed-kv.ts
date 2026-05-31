@@ -35,8 +35,10 @@ import {
   articleIndexKey,
   articleKey,
   syncStatusKey,
+  conditionalOverridesKey,
   type ArticleIndexEntry,
   type ArticleRecord,
+  type ConditionalOverrideEntry,
   type SiteLookup,
   type SyncStatus,
 } from '../src/lib/kv-schema';
@@ -50,6 +52,7 @@ import {
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
   selectMatchingOverrides,
+  selectConditionalOverrides,
   stripModeKeys,
   stripOverrideMetaFields,
   type MergeModes,
@@ -274,7 +277,11 @@ function buildSharedPageVars(config: ResolvedConfig): Record<string, string> {
 
 // ---------- Group + site config resolution ----------
 
-async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConfig; site: Record<string, unknown> }> {
+async function resolveSiteConfig(siteId: string): Promise<{
+  config: ResolvedConfig;
+  site: Record<string, unknown>;
+  conditionalOverrides: ConditionalOverrideEntry[];
+}> {
   const org = (await readYaml<Record<string, unknown>>(join(NETWORK_DATA_PATH, 'org.yaml'))) ?? {};
   const sitePath = join(NETWORK_DATA_PATH, 'sites', siteId, 'site.yaml');
   // Fail hard if the site directory doesn't exist on the current branch
@@ -327,6 +334,19 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
   for (const o of matchingOverrides) {
     layers.push(stripModeKeys(o) as Record<string, unknown>);
     console.log(`[seed-kv]   merged override: ${o.override_id ?? '(unnamed)'} (priority ${o.priority ?? 0})`);
+  }
+
+  // Conditional overrides — stored separately, applied at request-time
+  // when the activation query param is present in the URL.
+  const conditionalMatches = selectConditionalOverrides(overrideFiles, siteId, groups);
+  const condEntries: ConditionalOverrideEntry[] = conditionalMatches.map((o) => ({
+    override_id: o.override_id ?? 'unnamed',
+    priority: o.priority ?? 0,
+    activation: o.activation!,
+    config: stripOverrideMetaFields(stripModeKeys(o) as Record<string, unknown>),
+  }));
+  if (condEntries.length > 0) {
+    console.log(`[seed-kv]   conditional overrides: ${condEntries.map((o) => o.override_id).join(', ')}`);
   }
 
   layers.push(site);
@@ -448,7 +468,7 @@ async function resolveSiteConfig(siteId: string): Promise<{ config: ResolvedConf
     if (typeof theme.footer_logo === 'string') theme.footer_logo = rewriteFrontmatterUrl(theme.footer_logo, siteId);
   }
 
-  return { config, site };
+  return { config, site, conditionalOverrides: condEntries };
 }
 
 // ---------- KV write ----------
@@ -489,7 +509,7 @@ async function main(): Promise<void> {
   console.log(`[seed-kv] siteId=${siteId}, hostnames=${hostnames.join(',') || '(none)'}`);
 
   // 1. Resolve config
-  const { config } = await resolveSiteConfig(siteId);
+  const { config, conditionalOverrides } = await resolveSiteConfig(siteId);
   const adCount = (config.ads_config?.ad_placements ?? []).length;
   console.log(`[seed-kv] ad_placements resolved: ${adCount}`);
 
@@ -545,6 +565,14 @@ async function main(): Promise<void> {
     ok: true,
   };
   entries.push({ key: syncStatusKey(siteId), value: JSON.stringify(status) });
+
+  entries.push({
+    key: conditionalOverridesKey(siteId),
+    value: JSON.stringify(conditionalOverrides),
+  });
+  if (conditionalOverrides.length > 0) {
+    console.log(`[seed-kv] conditional overrides for KV: ${conditionalOverrides.length}`);
+  }
 
   console.log(`[seed-kv] entries=${entries.length} (1 config + ${index.length} articles + ${sharedPages.length} shared pages + ${hostnames.length} hostnames + 1 sync-status)`);
   await bulkPut(entries);
