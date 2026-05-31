@@ -9,7 +9,6 @@ import {
   commitNetworkFiles,
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
-  mergeBranchToMain,
   listNetworkDirectory,
 } from "@/lib/github";
 import { readArticlesWithKVFallback } from "@/lib/kv-api";
@@ -161,17 +160,8 @@ export async function applyReviewDecisions(decisions: {
 }
 
 // ---------------------------------------------------------------------------
-// Merge helpers (same pattern as wizard.ts)
+// Publish helpers — scoped file copy (never merges entire branch)
 // ---------------------------------------------------------------------------
-
-function isMergeConflictError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "status" in err &&
-    (err as { status: number }).status === 409
-  );
-}
 
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
@@ -198,42 +188,43 @@ async function readFilePreservingBinary(
   return { path, content: text };
 }
 
+/**
+ * Publish a single site's files from staging to main.
+ *
+ * Instead of merging the entire staging branch (which drags in stale
+ * copies of OTHER sites' files), we read only sites/{domain}/ from
+ * the staging branch and commit those files directly to main.
+ */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
 ): Promise<void> {
-  try {
-    await mergeBranchToMain(stagingBranch, commitMessage);
-  } catch (err: unknown) {
-    if (!isMergeConflictError(err)) throw err;
+  const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
+  const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
 
-    const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
-    const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
-
-    for (const entry of topLevel) {
-      if (entry.type === "file") {
-        const file = await readFilePreservingBinary(entry.path, stagingBranch);
-        if (file) siteFiles.push(file);
-      } else if (entry.type === "dir") {
-        const children = await listNetworkDirectory(entry.path, stagingBranch);
-        for (const child of children) {
-          if (child.type === "file") {
-            const file = await readFilePreservingBinary(child.path, stagingBranch);
-            if (file) siteFiles.push(file);
-          }
+  for (const entry of topLevel) {
+    if (entry.type === "file") {
+      const file = await readFilePreservingBinary(entry.path, stagingBranch);
+      if (file) siteFiles.push(file);
+    } else if (entry.type === "dir") {
+      const children = await listNetworkDirectory(entry.path, stagingBranch);
+      for (const child of children) {
+        if (child.type === "file") {
+          const file = await readFilePreservingBinary(child.path, stagingBranch);
+          if (file) siteFiles.push(file);
         }
       }
     }
-
-    if (siteFiles.length === 0) {
-      throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
-    }
-
-    await commitNetworkFiles(
-      siteFiles,
-      `${commitMessage} (conflict resolved)`,
-      "main",
-    );
   }
+
+  if (siteFiles.length === 0) {
+    throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
+  }
+
+  await commitNetworkFiles(
+    siteFiles,
+    commitMessage,
+    "main",
+  );
 }
