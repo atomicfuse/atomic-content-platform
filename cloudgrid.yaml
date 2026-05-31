@@ -12,7 +12,7 @@ services:
     type: nextjs
     path: /
     env:
-      NODE_OPTIONS: "--max-old-space-size=512"
+      NODE_OPTIONS: "--max-old-space-size=4096"
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
       CONTENT_AGENT_URL: http://content-pipeline-app
       # IMPORTANT: CloudGrid auto-injects CONTENT_AGGREGATOR_URL as a
