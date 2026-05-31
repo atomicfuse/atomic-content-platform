@@ -68,7 +68,7 @@ export function buildSiteYaml(row: CsvSiteRow): string {
         articles_per_day: 3,
         preferred_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
       },
-      quality_threshold: 75,
+      quality_threshold: 40,
     },
     theme: {
       base: "modern",

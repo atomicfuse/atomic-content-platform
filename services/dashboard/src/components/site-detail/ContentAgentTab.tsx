@@ -193,7 +193,7 @@ export function ContentAgentTab({
   const initImageGuidelines = Array.isArray(brief?.image_guidelines)
     ? brief.image_guidelines.join("\n")
     : (brief?.image_guidelines ?? "");
-  const initQualityThreshold = brief?.quality_threshold ?? 75;
+  const initQualityThreshold = brief?.quality_threshold ?? 40;
   const initQualityWeights = {
     seo_quality: brief?.quality_weights?.seo_quality ?? 20,
     tone_match: brief?.quality_weights?.tone_match ?? 20,
