@@ -590,7 +590,7 @@ async function processItem(
 
       console.log(
         `[agent] Quality score: ${qualityScore}/100 → ${articleStatus}` +
-        ` (threshold: ${brief.quality_threshold ?? 75})`,
+        ` (threshold: ${brief.quality_threshold ?? 40})`,
       );
     } catch (scoreErr) {
       const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
