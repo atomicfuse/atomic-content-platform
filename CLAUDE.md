@@ -233,6 +233,41 @@ ads_txt:
 
 **Dashboard:** `/overrides` page lists all `overrides/config/*.yaml`. Detail page `/overrides/[id]` has three tabs: General (ID, name, priority), Targeting (group/site selectors), Config (`UnifiedConfigForm` in `mode="override"` — shows `MergeModeSelector` dropdowns). API: `GET/PUT/DELETE /api/overrides/[id]`.
 
+### Layer 3b: Conditional Overrides (query-param-activated)
+
+Overrides with an `activation` field are **not** merged at seed-time. Instead they're stored separately in KV (`cond-overrides:<siteId>`) and applied at request-time by middleware only when the matching query param is present in the URL.
+
+```yaml
+# overrides/config/test-sticky.yaml
+override_id: test-sticky
+activation:
+  query_param: stickytest
+  query_value: "true"       # optional — omit to match any value
+targets:
+  sites: [travelswire]
+ads_config:
+  ad_placements: [...]
+```
+
+- `seed-kv.ts` calls `selectConditionalOverrides()` → writes to `cond-overrides:<siteId>` in KV
+- Middleware reads `cond-overrides:*` only when URL has query params (zero overhead otherwise)
+- Responses with conditional overrides get `cache-control: private, no-store`
+- Activation params propagate across navigation via inline script (same pattern as `_atl_site`)
+
+### Template Variables in Widget Code
+
+Ad placement `code` fields support `${paramName}` placeholders resolved from URL query params at request-time. Works on **all requests** (not just conditional overrides) — UTM params flow into widget code automatically.
+
+```
+Widget code:  <script src="https://ad.com/w?c=${utm_campaign}">
+URL:          travelswire.com/article?utm_campaign=summer
+Rendered:     <script src="https://ad.com/w?c=summer">
+```
+
+- Values sanitised to `[a-zA-Z0-9_-.:` — no HTML injection risk
+- Unresolved `${vars}` (no matching URL param) become empty strings
+- Template params propagate across navigation automatically
+
 ### Layer 4: `sites/<domain>/site.yaml` — Per-Site Config
 
 The leaf. Site-level values always win. Contains `domain`, `groups`, `active`, `brief` (editorial — never merged), plus optional `tracking`, `scripts_vars`, `ads_config`, `ads_txt`, `theme`, `legal`, feature flags.
@@ -459,6 +494,8 @@ Service contract (both services satisfy):
 40. **Video embed YAML round-trip strips quotes.** The `yaml` library's `stringify()` outputs unquoted strings by default. When saving videos (or scripts) via the dashboard API, existing quoted YAML values (`title: "Foo"`) become unquoted (`title: Foo`). Both forms parse identically — no data loss, purely cosmetic.
 41. **Dashboard has local `ScriptsConfig` type copies.** `UnifiedConfigForm.tsx` and `ScriptsEditor.tsx` each define their own `ScriptsConfig` interface (not imported from `@atomic-platform/shared-types`). When adding a new script position (like `before_footer`), you must update THREE places: shared-types, `UnifiedConfigForm.tsx` (interface + `DEFAULT_SCRIPTS`), and `ScriptsEditor.tsx` (interface + `SECTIONS`). The org settings page (`src/app/settings/page.tsx`) also has its own local `normalizeScripts` — distinct from the shared `config-normalizers.ts` version.
 42. **`before_footer` scripts render as raw HTML, not JavaScript.** Unlike head/body_start/body_end positions where inline entries are wrapped in `<script>` tags, `before_footer` inline entries are injected via `Fragment set:html` — raw HTML including `<script>` tags, `<div>` elements, etc. The dashboard's `ScriptsEditor` uses `RAW_HTML_POSITIONS` set to disable auto-stripping of `<script>` tags and show appropriate labels ("Inline HTML" vs "Inline JavaScript") for these positions. The staging filter allows inline entries through while suppressing external `src` URLs.
+43. **Conditional overrides require re-seed after adding `activation` field.** Adding or removing an `activation` field on an existing override changes whether it's merged at seed-time or stored in `cond-overrides:<siteId>`. The change only takes effect after `seed-kv` runs for the affected sites. Without re-seeding, the override stays in (or out of) the base config.
+44. **Template `${var}` in widget code is resolved from URL params — sanitised values only.** Values are restricted to `[a-zA-Z0-9_-.:` characters. If an ad network requires special characters in their tracking params (e.g. `=`, `&`, `+`), those characters will be stripped. Use URL-encoded values or restructure the template.
 
 ## Cloudflare Account Migration & WordPress Migration
 
@@ -627,6 +664,7 @@ Per-domain rollback: remove from `MIGRATED_SITES`, redeploy manager. Instant —
 | Network manifest | Network repo, main, `network.yaml` |
 | Group configs | Network repo, main, `groups/<id>.yaml` |
 | Config overrides (targeted exceptions) | Network repo, main, `overrides/config/<id>.yaml` |
+| Conditional overrides (query-param activated) | KV `cond-overrides:<siteId>`, seeded from overrides with `activation` field |
 | Site config + articles | Network repo, staging branch |
 | Shared page base content | Network repo, main |
 | Per-site shared-page overrides | Network repo, main, `overrides/<site_id>/` |
@@ -641,4 +679,4 @@ Per-domain rollback: remove from `MIGRATED_SITES`, redeploy manager. Instant —
 
 For any user-visible feature, there should be a matching guide page in `services/dashboard/public/guide/`. Register new pages in `services/dashboard/src/app/guide/page.tsx` (`GUIDE_PAGES` array).
 
-Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site, error-handling, site-deletion, wordpress-import.
+Current pages: overview, sites, shared-pages, ads-txt, content-pipeline, subscribe, email-routing, cloudgrid, scheduler, config-inheritance, overrides, site-worker, theme-and-layout, articles-api, creating-a-site, error-handling, site-deletion, wordpress-import, bulk-image-api, query-param-overrides.
