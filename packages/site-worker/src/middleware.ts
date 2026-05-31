@@ -2,7 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import { siteLookupKey, siteConfigKey, conditionalOverridesKey, type SiteLookup, type ConditionalOverrideEntry } from './lib/kv-schema';
-import { resolvePreview, generatePreviewScript } from './lib/preview-override';
+import { resolvePreview, generatePreviewScript, generateParamPropagationScript } from './lib/preview-override';
 import { deepMerge } from './lib/deep-merge';
 
 /**
@@ -165,6 +165,23 @@ export const onRequest = defineMiddleware(async (context, next) => {
         status: response.status,
         statusText: response.statusText,
         headers: new Headers(response.headers),
+      });
+    }
+    finalResponse.headers.set('cache-control', 'private, no-store');
+  }
+
+  // Propagate conditional override query params across navigation.
+  // Same pattern as _atl_site: rewrite <a> hrefs and patch fetch().
+  if (hasConditionalOverride) {
+    const contentType = finalResponse.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const html = await finalResponse.text();
+      const script = generateParamPropagationScript(matchedActivationParams);
+      const modifiedHtml = html.replace('</head>', `${script}\n</head>`);
+      finalResponse = new Response(modifiedHtml, {
+        status: finalResponse.status,
+        statusText: finalResponse.statusText,
+        headers: new Headers(finalResponse.headers),
       });
     }
     finalResponse.headers.set('cache-control', 'private, no-store');
