@@ -62,7 +62,89 @@ export interface AdPlacement {
 
   /** Which devices this placement targets. */
   device: "all" | "desktop" | "mobile";
+
+  /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
+  dismissible?: boolean;
+
+  /**
+   * Raw HTML/JS widget code to inject inside the ad slot container.
+   * Users can paste ad network widget code as-is (including `<div>` and
+   * `<script>` tags). Rendered server-side inside the ad slot position
+   * so the widget appears in the correct layout location.
+   */
+  code?: string;
+
+  /** Which page types this placement appears on. Default: ["all"]. */
+  page_types?: InterstitialPageType[];
+
+  /** Page types to exclude this placement from (overrides page_types). */
+  exclude_pages?: InterstitialExcludePage[];
 }
+
+/**
+ * Trigger configuration for interstitial ads.
+ */
+export interface InterstitialTrigger {
+  /** How the interstitial is triggered. */
+  type: "delay" | "scroll" | "exit_intent";
+
+  /** Seconds to wait before showing (only for type "delay"). */
+  delay_seconds?: number;
+
+  /** Scroll depth percentage to trigger at (only for type "scroll"). */
+  scroll_percent?: number;
+}
+
+/**
+ * Frequency cap for interstitial ads.
+ */
+export interface InterstitialFrequency {
+  /** Frequency cap strategy. */
+  type: "once_per_session" | "once_per_day" | "custom";
+
+  /** Max times to show per session (only for type "custom"). */
+  max_per_session?: number;
+}
+
+/** Page types where interstitial ads can appear. */
+export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+
+/**
+ * Full interstitial ad configuration.
+ * The `script_url` is the external ad-network script that handles rendering
+ * the interstitial overlay. The wrapper injects it after trigger/frequency
+ * checks pass.
+ */
+export interface InterstitialConfig {
+  /** URL of the ad-network script to load. Mutually exclusive with `script_inline`. */
+  script_url: string;
+
+  /** Inline JavaScript code for the interstitial. Mutually exclusive with `script_url`. */
+  script_inline?: string;
+
+  /** When to trigger the interstitial. */
+  trigger: InterstitialTrigger;
+
+  /** How often to show the interstitial. */
+  frequency: InterstitialFrequency;
+
+  /** Which page types the interstitial appears on. */
+  page_types: InterstitialPageType[];
+
+  /** Seconds the close button is disabled (countdown). Default: 3. */
+  close_delay_seconds?: number;
+
+  /** Which devices the interstitial appears on. Default: "both". */
+  device?: "both" | "desktop" | "mobile";
+
+  /** Page types to exclude the interstitial from (overrides page_types). */
+  exclude_pages?: InterstitialExcludePage[];
+}
+
+/** Page types/slugs that can be excluded from interstitial display. */
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
 
 /**
  * Full advertising configuration for a site or group.
@@ -75,6 +157,9 @@ export interface AdPlacement {
 export interface AdsConfig {
   /** Whether interstitial (full-page) ads are enabled. */
   interstitial: boolean;
+
+  /** Interstitial ad configuration (script, trigger, frequency, page types). */
+  interstitial_config?: InterstitialConfig;
 
   /** Layout density identifier ("standard" | "high-density"). */
   layout: string;

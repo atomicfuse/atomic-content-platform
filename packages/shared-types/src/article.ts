@@ -61,4 +61,34 @@ export interface ArticleFrontmatter {
 
   /** Brief note from the quality agent explaining the score. */
   quality_note?: string;
+
+  /** Per-article script injections. */
+  scripts?: ArticleScript[];
+
+  /** Per-article embedded videos. */
+  videos?: ArticleVideo[];
+}
+
+export type ArticleScriptPosition =
+  | "head"
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+export interface ArticleScript {
+  id: string;
+  name: string;
+  position: ArticleScriptPosition;
+  content: string;
+}
+
+export type ArticleVideoPosition =
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+export interface ArticleVideo {
+  id: string;
+  url: string;
+  position: ArticleVideoPosition;
 }

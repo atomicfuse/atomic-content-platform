@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useRef } from "react";
+import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { createSiteAndBuildStaging } from "@/actions/wizard";
@@ -8,7 +8,7 @@ import type { WizardFormData } from "@/types/dashboard";
 
 interface StagingResult {
   stagingUrl: string;
-  pagesProject: string;
+  siteFolder: string;
 }
 
 interface StepPreviewProps {
@@ -21,12 +21,11 @@ interface StepPreviewProps {
 }
 
 const STAGING_STEPS = [
-  { key: "project", label: "Creating Cloudflare Pages project..." },
   { key: "branch", label: "Creating staging branch on GitHub..." },
   { key: "logo", label: "Generating logo with AI..." },
   { key: "commit", label: "Committing site files..." },
-  { key: "build", label: "Triggering staging build..." },
-  { key: "done", label: "Staging site created!" },
+  { key: "kv-sync", label: "Waiting for Worker KV sync (sync-kv.yml)..." },
+  { key: "done", label: "Staging site is ready!" },
 ] as const;
 
 export function StepPreview({
@@ -48,8 +47,12 @@ export function StepPreview({
   const [deployError, setDeployError] = useState<string | null>(null);
   const [waitingForBuild, setWaitingForBuild] = useState(false);
   const [buildStage, setBuildStage] = useState<string>("");
+  // EC-13: Track timeout so we can show "Check again" instead of a broken preview.
+  const [pollTimedOut, setPollTimedOut] = useState(false);
   const stepTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // EC-12: Synchronous guard against double-click — set before startTransition
+  const deployingRef = useRef(false);
   const { toast } = useToast();
 
   // Cleanup timers on unmount
@@ -61,11 +64,15 @@ export function StepPreview({
   }, []);
 
   function handleBuildStaging(): void {
+    // EC-12: Bail if already deploying (double-click guard).
+    if (deployingRef.current) return;
+    deployingRef.current = true;
+
     setDeployStep(0);
     setDeployError(null);
 
     // Advance steps on a timer to show progress (actual work is async)
-    const stepDurations = [2000, 1500, 4000, 3000, 2000];
+    const stepDurations = [1500, 4000, 3000, 8000];
     let currentStep = 0;
     let elapsed = 0;
 
@@ -82,74 +89,82 @@ export function StepPreview({
       try {
         const result = await createSiteAndBuildStaging(data);
 
-        // Stop progress timer and jump to "done" step
         if (stepTimerRef.current) {
           clearInterval(stepTimerRef.current);
           stepTimerRef.current = null;
         }
         setDeployStep(STAGING_STEPS.length - 1); // "done"
 
-        // Store result but DON'T show iframe yet — wait for CF build to finish
         setStagingUrl(result.stagingUrl);
         onStagingResult?.(result);
 
-        // Start polling CF for build readiness
+        // Poll the Worker preview URL until middleware stops returning 404 —
+        // i.e. until sync-kv.yml has populated CONFIG_KV with this site's
+        // hostname entry. 60s soft timeout falls through to "give it a moment".
         setWaitingForBuild(true);
-        setBuildStage("queued");
+        setBuildStage("kv-sync");
 
-        const pollUrl = `/api/agent/deployment?project=${encodeURIComponent(result.pagesProject)}&url=${encodeURIComponent(result.stagingUrl)}`;
+        const pollUrl = result.stagingUrl;
+        const startedAt = Date.now();
+        const TIMEOUT_MS = 120_000;
 
+        let pollInFlight = false;
+        // EC-11: Track consecutive non-404 error responses separately.
+        let consecutiveErrors = 0;
         pollRef.current = setInterval(async () => {
+          if (pollInFlight) return;
+          pollInFlight = true;
           try {
-            const res = await fetch(pollUrl);
-            if (!res.ok) return;
-            const pollData = (await res.json()) as {
-              is_ready?: boolean;
-              deploy_ready?: boolean;
-              ssl_ready?: boolean;
-              stage?: string;
-              stage_status?: string;
-              url?: string;
-            };
-            if (pollData.stage) setBuildStage(pollData.stage);
-            if (pollData.deploy_ready && !pollData.ssl_ready) {
-              setBuildStage("ssl");
+            try {
+              const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
+              // EC-11: Only treat 200-299 as "live". Non-404 error codes
+              // (500, 502, etc.) are transient — keep polling instead of
+              // incorrectly declaring the site live.
+              if (res.ok) {
+                consecutiveErrors = 0;
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                }
+                setWaitingForBuild(false);
+                setPreviewUrl(pollUrl);
+                toast("Staging site is live!", "success");
+                return;
+              }
+              if (res.status !== 404) {
+                consecutiveErrors++;
+                if (consecutiveErrors >= 5) {
+                  toast("Preview returned an error. The site may still be syncing.", "info");
+                  consecutiveErrors = 0; // reset so we don't spam toasts
+                }
+              } else {
+                consecutiveErrors = 0;
+              }
+            } catch {
+              // network blip — keep polling
             }
-            if (pollData.is_ready) {
+            if (Date.now() - startedAt > TIMEOUT_MS) {
               if (pollRef.current) {
                 clearInterval(pollRef.current);
                 pollRef.current = null;
               }
               setWaitingForBuild(false);
-              const liveUrl = pollData.url?.startsWith("http")
-                ? pollData.url
-                : pollData.url
-                  ? `https://${pollData.url}`
-                  : result.stagingUrl;
-              setStagingUrl(liveUrl);
-              setPreviewUrl(liveUrl);
-              toast("Staging build is live!", "success");
+              // EC-13: Do NOT auto-set previewUrl on timeout — the site
+              // isn't confirmed live. Show a helpful message instead.
+              setPollTimedOut(true);
+              toast("KV sync hasn't completed yet. Use 'Check again' or proceed — the preview will become available once sync finishes.", "info");
             }
-          } catch {
-            // Keep polling
+          } finally {
+            pollInFlight = false;
           }
         }, 5000);
-
-        // Safety timeout — stop polling after 5 minutes
-        setTimeout(() => {
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setWaitingForBuild(false);
-            setPreviewUrl(result.stagingUrl);
-            toast("Build may still be deploying. Preview link is ready to check.", "info");
-          }
-        }, 5 * 60 * 1000);
       } catch (error) {
         if (stepTimerRef.current) {
           clearInterval(stepTimerRef.current);
           stepTimerRef.current = null;
         }
+        // EC-12: Reset guard so the Retry button can fire again.
+        deployingRef.current = false;
         const msg = error instanceof Error ? error.message : "Unknown error";
         setDeployError(msg);
         toast(`Failed to build staging: ${msg}`, "error");
@@ -157,17 +172,47 @@ export function StepPreview({
     });
   }
 
+  // EC-13: Re-poll handler for "Check again" button after timeout.
+  const handleCheckAgain = useCallback((): void => {
+    if (!stagingUrl) return;
+    setPollTimedOut(false);
+    setWaitingForBuild(true);
+    setBuildStage("kv-sync");
+
+    const pollUrl = stagingUrl;
+    const startedAt = Date.now();
+    const REPOLL_TIMEOUT_MS = 60_000;
+    let pollInFlight = false;
+
+    pollRef.current = setInterval(async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
+      try {
+        try {
+          const res = await fetch(pollUrl, { method: "HEAD", cache: "no-store" });
+          if (res.ok) {
+            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+            setWaitingForBuild(false);
+            setPreviewUrl(pollUrl);
+            toast("Staging site is live!", "success");
+            return;
+          }
+        } catch { /* keep polling */ }
+        if (Date.now() - startedAt > REPOLL_TIMEOUT_MS) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setWaitingForBuild(false);
+          setPollTimedOut(true);
+          toast("Still not ready. You can try again or proceed.", "info");
+        }
+      } finally { pollInFlight = false; }
+    }, 5000);
+  }, [stagingUrl, toast]);
+
   const isDeploying = deployStep >= 0 && !deployError && !stagingUrl;
   const hasDeployed = !!previewUrl;
 
   const buildStageLabel: Record<string, string> = {
-    queued: "Queued — waiting for Cloudflare...",
-    initialize: "Initializing build environment...",
-    clone_repo: "Cloning repository...",
-    build: "Building site with Astro...",
-    deploy: "Deploying to edge network...",
-    ssl: "Deployed! Waiting for SSL certificate...",
-    active: "Deployment is live!",
+    "kv-sync": "Worker KV sync running (sync-kv.yml on staging branch)...",
   };
 
   return (
@@ -232,7 +277,7 @@ export function StepPreview({
         </div>
       )}
 
-      {/* Waiting for CF build to finish */}
+      {/* Waiting for KV sync to land */}
       {waitingForBuild && (
         <div className="rounded-xl bg-[var(--bg-elevated)] border border-cyan/30 p-6 space-y-4">
           <div className="flex items-center gap-3">
@@ -241,7 +286,7 @@ export function StepPreview({
               <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
             <h3 className="font-semibold text-[var(--text-primary)]">
-              Building on Cloudflare Pages...
+              Syncing site to Worker KV...
             </h3>
           </div>
           <p className="text-sm text-[var(--text-secondary)]">
@@ -254,14 +299,31 @@ export function StepPreview({
             <p className="text-xs text-[var(--text-muted)]">
               Preview will appear at{" "}
               <span className="font-mono text-cyan">{stagingUrl}</span>
-              {" "}once the build completes (~1-2 min)
+              {" "}once KV sync completes (~30-60s)
             </p>
           )}
         </div>
       )}
 
+      {/* EC-13: Timed out — show "Check again" instead of a broken iframe */}
+      {pollTimedOut && !previewUrl && !waitingForBuild && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-6 space-y-3">
+          <p className="text-sm text-amber-400 font-medium">
+            KV sync hasn&apos;t completed yet. The preview will become available once sync finishes.
+          </p>
+          <div className="flex gap-3">
+            <Button variant="ghost" size="sm" onClick={handleCheckAgain}>
+              Check again
+            </Button>
+            <Button variant="ghost" size="sm" onClick={(): void => { if (stagingUrl) setPreviewUrl(stagingUrl); }}>
+              Show preview anyway
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Initial state — not yet deployed, show Deploy button */}
-      {!previewUrl && !isDeploying && !deployError && !waitingForBuild && (
+      {!previewUrl && !isDeploying && !deployError && !waitingForBuild && !pollTimedOut && (
         <div className="space-y-4">
           <div className="rounded-xl border-2 border-[var(--border-primary)] bg-[var(--bg-elevated)] p-8 text-center space-y-4">
             <div className="w-12 h-12 rounded-xl bg-magenta/10 flex items-center justify-center mx-auto">
@@ -274,7 +336,7 @@ export function StepPreview({
                 Deploy to Staging
               </h3>
               <p className="text-sm text-[var(--text-muted)] mt-1 max-w-md mx-auto">
-                This will create a Cloudflare Pages project, commit your site files to GitHub, and build a live staging preview.
+                This commits your site files to a staging branch on GitHub and seeds the multi-tenant Worker so a live preview is ready in ~30-60s.
               </p>
             </div>
             <Button onClick={handleBuildStaging}>
@@ -310,7 +372,7 @@ export function StepPreview({
           </div>
 
           <p className="text-xs text-[var(--text-muted)]">
-            Live staging preview from Cloudflare Pages.
+            Live staging preview from the multi-tenant site-worker.
           </p>
         </div>
       )}
@@ -319,7 +381,7 @@ export function StepPreview({
         <Button variant="ghost" onClick={onBack} disabled={isDeploying || waitingForBuild}>
           &larr; Back
         </Button>
-        <Button onClick={onNext} disabled={!previewUrl || isDeploying}>
+        <Button onClick={onNext} disabled={(!previewUrl && !pollTimedOut) || isDeploying}>
           Next &rarr;
         </Button>
       </div>

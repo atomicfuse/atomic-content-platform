@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { StepIdentity } from "@/components/wizard/StepIdentity";
+import { StepNicheTargeting } from "@/components/wizard/StepNicheTargeting";
 import { StepGroups } from "@/components/wizard/StepGroups";
 import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
-import { StepScriptVars } from "@/components/wizard/StepScriptVars";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
 import type { WizardFormData } from "@/types/dashboard";
@@ -17,16 +17,43 @@ const DEFAULT_FORM: WizardFormData = {
   pagesProjectName: "",
   siteName: "",
   siteTagline: "",
-  company: "ATL",
-  vertical: "Other",
+  company: "",
+  vertical: "",
+  verticalId: "",
   groups: [],
-  themeBase: "modern",
-  audience: "",
+  themePreset: "classic",
+  themeColors: {
+    primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
+    text: "#1a1a2e", muted: "#6b7280", surface: "#f8f9fa", border: "#e5e7eb",
+    footer_bg: "#1a1a2e", must_reads_bg: "#1a1a2e",
+    hero_title: "#ffffff", must_reads_title: "#ffffff", article_hero_title: "#ffffff",
+    feed_title: "#1a1a2e", feed_desc: "#1a1a2e", feed_date: "#6b7280",
+    prose_heading: "#1a1a2e", prose_body: "#1a1a2e", category_header_text: "#ffffff",
+  },
+  themeLayout: {
+    hero: { enabled: true, count: 4 },
+    must_reads: { enabled: true, count: 5 },
+    whats_new: { enabled: true, count: 4 },
+    more_on: { enabled: true, page_size: 8 },
+    sidebar_topics: { auto: true, explicit: [] },
+    load_more: { page_size: 4 },
+  },
+  audiences: [],
+  audienceIds: [],
+  selectedCategories: [],
+  selectedTags: [],
+  iabVerticalCode: "",
+  bundleId: "",
   tone: "",
   topics: [],
   articlesPerDay: 1,
   preferredDays: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
   contentGuidelines: "",
+  imageGuidelines: "",
+  primaryColor: "#1a1a2e",
+  accentColor: "#f4c542",
+  fontHeading: "Inter",
+  fontBody: "Inter",
   scriptsVars: {},
 };
 
@@ -41,25 +68,8 @@ export default function WizardPage(): React.ReactElement {
   });
   const [stagingResult, setStagingResult] = useState<{
     stagingUrl: string;
-    pagesProject: string;
+    siteFolder: string;
   } | null>(null);
-  const [availableDomains, setAvailableDomains] = useState<string[]>([]);
-
-  // Fetch available "New" domains for the dropdown
-  useEffect(() => {
-    async function fetchDomains(): Promise<void> {
-      try {
-        const res = await fetch("/api/domains/available");
-        if (res.ok) {
-          const data = (await res.json()) as { domains: string[] };
-          setAvailableDomains(data.domains);
-        }
-      } catch {
-        // Fallback: if API not available, allow typed input
-      }
-    }
-    void fetchDomains();
-  }, []);
 
   function updateForm(updates: Partial<WizardFormData>): void {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -73,7 +83,6 @@ export default function WizardPage(): React.ReactElement {
             return (
               <StepIdentity
                 data={formData}
-                availableDomains={availableDomains}
                 onChange={updateForm}
                 onNext={goNext}
                 onCancel={(): void => router.push("/")}
@@ -81,7 +90,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 1:
             return (
-              <StepGroups
+              <StepNicheTargeting
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -90,7 +99,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 2:
             return (
-              <StepTheme
+              <StepGroups
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -99,7 +108,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 3:
             return (
-              <StepContentBrief
+              <StepTheme
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -108,7 +117,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 4:
             return (
-              <StepScriptVars
+              <StepContentBrief
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}

@@ -1,0 +1,46 @@
+{
+  "name": "@atomic-platform/site-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Astro 6 + Cloudflare Workers app — single multi-tenant runtime for the content network. Resolves per-site config from KV at request time. Runs alongside the legacy packages/site-builder during the Pages→Workers migration.",
+  "type": "module",
+  "scripts": {
+    "dev": "IS_STAGING=true astro dev",
+    "dev:worker": "IS_STAGING=true pnpm build && wrangler dev --config dist/server/wrangler.staging.json --port 8788",
+    "types": "wrangler types",
+    "prebuild": "wrangler types",
+    "build": "astro build && tsx scripts/emit-env-configs.ts",
+    "preview": "wrangler dev --config dist/server/wrangler.staging.json --port 8788",
+    "deploy:staging": "IS_STAGING=true pnpm build && wrangler deploy --config dist/server/wrangler.staging.json",
+    "deploy:production": "pnpm build && wrangler deploy --config dist/server/wrangler.production.json",
+    "seed:kv": "tsx scripts/seed-kv.ts",
+    "pretypecheck": "wrangler types",
+    "typecheck": "astro check && tsc --noEmit",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:build": "vitest run --project build",
+    "test:live": "vitest run --project live",
+    "test:audit": "tsx tests/audit-environment.ts",
+    "test:all": "pnpm test && pnpm test:build",
+    "clean": "rm -rf dist .astro .wrangler/tmp worker-configuration.d.ts"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^13.0.0",
+    "@astrojs/sitemap": "^3.3.0",
+    "@atomic-platform/shared-types": "workspace:*",
+    "astro": "^6.0.0"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.8",
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/node": "^25.5.0",
+    "marked": "^14.1.4",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "wrangler": "^4.77.0",
+    "yaml": "^2.7.0"
+  }
+}

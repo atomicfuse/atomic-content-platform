@@ -22,10 +22,10 @@ interface GenericBadgeProps {
 }
 
 const VARIANT_STYLES: Record<string, string> = {
-  default: "text-gray-300 bg-gray-500/20",
-  success: "text-green-300 bg-green-500/20",
-  warning: "text-yellow-300 bg-yellow-500/20",
-  error: "text-red-300 bg-red-500/20",
+  default: "text-gray-700 dark:text-gray-300 bg-gray-500/20",
+  success: "text-green-700 dark:text-green-300 bg-green-500/20",
+  warning: "text-yellow-700 dark:text-yellow-300 bg-yellow-500/20",
+  error: "text-red-700 dark:text-red-300 bg-red-500/20",
   info: "text-cyan bg-cyan/20",
 };
 

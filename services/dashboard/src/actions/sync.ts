@@ -45,7 +45,17 @@ async function detectSiteStatus(
 /** Fetch domains from Cloudflare (Zones + Pages) and sync to dashboard index. */
 export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
   // Get enriched domain info (zones cross-referenced with Pages projects)
-  const cfDomains = await listDomainsWithPagesInfo();
+  // Query both accounts for zones and merge
+  const [assetsDomains, dev1Domains] = await Promise.all([
+    listDomainsWithPagesInfo(),
+    listDomainsWithPagesInfo("financenewsbase"),
+  ]);
+  const seen = new Set<string>();
+  const cfDomains = [...assetsDomains, ...dev1Domains].filter((d) => {
+    if (seen.has(d.domain)) return false;
+    seen.add(d.domain);
+    return true;
+  });
   const index = await readDashboardIndex();
   const existingDomains = new Map(index.sites.map((s) => [s.domain, s]));
   const customDomains = new Set(
@@ -119,8 +129,9 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
         fixed_ad: false,
         last_updated: now,
         created_at: now,
-        pages_project: cfInfo.pagesProject,
-        zone_id: cfInfo.zoneId,
+        pages_project: null,
+        pages_subdomain: null,
+        zone_id: null,
         staging_branch: null,
         preview_url: null,
         saved_previews: null,

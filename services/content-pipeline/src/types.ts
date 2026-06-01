@@ -13,6 +13,17 @@ export interface QualityScoreBreakdown {
   keyword_relevance: number;
 }
 
+export type ArticleVideoPosition =
+  | "before-content"
+  | "after-content"
+  | `after-paragraph-${number}`;
+
+export interface ArticleVideo {
+  id: string;
+  url: string;
+  position: ArticleVideoPosition;
+}
+
 export interface ArticleFrontmatter {
   title: string;
   description: string;
@@ -27,6 +38,7 @@ export interface ArticleFrontmatter {
   quality_score?: number;
   score_breakdown?: QualityScoreBreakdown;
   quality_note?: string;
+  videos?: ArticleVideo[];
 }
 
 export interface QualityWeights {
@@ -47,16 +59,33 @@ export interface PublishSchedule {
 }
 
 export interface SiteBrief {
+  /** Display audience string (joined from audiences array or legacy single value). */
   audience: string;
+  /** Array of audience names — preferred over singular audience. */
+  audiences?: string[];
   tone: string;
   article_types: Record<string, number>;
   topics: string[];
   seo_keywords_focus: string[];
   content_guidelines: string | string[];
+  /** Free-form image generation guidelines for content agents. */
+  image_guidelines?: string | string[];
   review_percentage: number;
   schedule: PublishSchedule;
-  vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
-  audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+  vertical?: string;
+  /** Content Aggregator vertical ID — preferred over name for API queries. */
+  vertical_id?: string;
+  /** Content Aggregator category IDs — all categories the site targets. */
+  category_ids?: string[];
+  /** Content Aggregator tag IDs — all tags the site targets. */
+  tag_ids?: string[];
+  /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+  bundle_id?: string;
+  audience_type?: string;
+  /** Content Aggregator audience type IDs — preferred over name for API queries. */
+  audience_type_ids?: string[];
+  /** @deprecated Single audience type ID — use audience_type_ids instead. */
+  audience_type_id?: string;
   language?: string;
   quality_threshold?: number;
   quality_weights?: QualityWeights;
@@ -69,5 +98,7 @@ export interface SiteConfig {
   group: string;
   active: boolean;
   brief: SiteBrief;
+  /** Default author name for generated articles. */
+  author?: string;
   [key: string]: unknown;
 }

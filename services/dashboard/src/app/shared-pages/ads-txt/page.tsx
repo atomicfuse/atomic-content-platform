@@ -44,6 +44,8 @@ export default function AdsTxtPage(): React.ReactElement {
       .catch(() => toast("Failed to load data", "error"));
   }, [toast]);
 
+  const profileDirty = editingProfile !== null && editContent !== editingProfile.content;
+
   const saveProfile = async (): Promise<void> => {
     if (!editingProfile) return;
     setSaving(true);
@@ -56,6 +58,7 @@ export default function AdsTxtPage(): React.ReactElement {
       setProfiles((prev) =>
         prev.map((p) => (p.name === editingProfile.name ? { ...p, content: editContent } : p)),
       );
+      setEditingProfile({ ...editingProfile, content: editContent });
       toast("Profile saved", "success");
     } catch {
       toast("Failed to save", "error");
@@ -155,13 +158,20 @@ export default function AdsTxtPage(): React.ReactElement {
                   onChange={(e): void => setEditContent(e.target.value)}
                   className="w-full h-48 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--text-primary)] font-mono focus:outline-none focus:ring-2 focus:ring-cyan/50 resize-y"
                 />
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" size="sm" onClick={(): void => setEditingProfile(null)}>
-                    Cancel
-                  </Button>
-                  <Button size="sm" loading={saving} onClick={saveProfile}>
-                    Save
-                  </Button>
+                <div className="flex items-center justify-between gap-2">
+                  {profileDirty ? (
+                    <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={(): void => setEditingProfile(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" loading={saving} disabled={!profileDirty || saving} onClick={saveProfile}>
+                      Save
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (

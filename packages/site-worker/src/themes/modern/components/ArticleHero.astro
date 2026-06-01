@@ -1,0 +1,78 @@
+---
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props { article: ArticleIndexEntry; }
+const { article } = Astro.props;
+const date = new Date(article.publishDate).toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
+---
+
+<section class="article-hero">
+  <div class="article-hero-inner">
+    <div class="article-hero-text">
+      <h1 class="article-hero-title">{article.title}</h1>
+      <p class="article-hero-meta">
+        {article.author && (
+          <>
+            <span class="article-hero-author">By {article.author}</span>
+            <span class="article-hero-separator">&middot;</span>
+          </>
+        )}
+        <span class="article-hero-date">{date}</span>
+      </p>
+    </div>
+    {article.featuredImage && (
+      <div class="article-hero-image-wrap">
+        <img src={article.featuredImage} alt="" />
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .article-hero {
+    background: var(--color-primary, #1a1a2e);
+    padding: 4rem 1rem;
+  }
+  .article-hero-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    align-items: center;
+  }
+  @media (min-width: 960px) {
+    .article-hero-inner { grid-template-columns: 1fr 1fr; }
+  }
+  .article-hero-title {
+    color: var(--color-article_hero_title, #fff);
+    font-size: clamp(1.875rem, 3vw, 3rem);
+    line-height: 1.15;
+    margin: 0 0 1rem;
+  }
+  .article-hero-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    color: var(--color-article_hero_meta, var(--color-muted, #6b7280));
+    font-weight: 600;
+  }
+  .article-hero-separator {
+    opacity: 0.6;
+  }
+  .article-hero-image-wrap {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+  }
+  .article-hero-image-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+</style>

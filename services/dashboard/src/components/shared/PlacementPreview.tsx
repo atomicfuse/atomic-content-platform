@@ -135,8 +135,16 @@ export function PlacementPreview({ placements }: PlacementPreviewProps): React.R
           {stickyBottom.map((p, i) => (
             <div
               key={`sticky-${i}`}
-              className="border-2 border-dashed border-amber-500/60 rounded-lg bg-amber-500/5 px-3 py-2 text-xs text-[var(--text-secondary)]"
+              className="relative border-2 border-dashed border-amber-500/60 rounded-lg bg-amber-500/5 px-3 py-2 text-xs text-[var(--text-secondary)]"
             >
+              {p.dismissible !== false && (
+                <span
+                  className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 rounded-full border border-[var(--text-muted)] text-[var(--text-muted)] text-[10px] leading-none"
+                  title="Visitors can dismiss this ad"
+                >
+                  &times;
+                </span>
+              )}
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold text-amber-500">sticky-bottom</span>
                 <span className="text-[var(--text-muted)]">

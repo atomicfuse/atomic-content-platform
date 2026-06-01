@@ -1,0 +1,138 @@
+---
+export const prerender = false;
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEOHead from '../components/SEOHead.astro';
+import Header from '../themes/modern/components/Header.astro';
+import Footer from '../themes/modern/components/Footer.astro';
+import HeroGrid from '../themes/modern/components/HeroGrid.astro';
+import WhatsNewGrid from '../themes/modern/components/WhatsNewGrid.astro';
+import Sidebar from '../themes/modern/components/Sidebar.astro';
+import MustReads from '../themes/modern/components/MustReads.astro';
+import MoreOnSection from '../themes/modern/components/MoreOnSection.astro';
+import AdSlot from '../components/AdSlot.astro';
+import { env } from 'cloudflare:workers';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../lib/config';
+import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
+import { isVisibleArticle } from '../utils/article-status';
+import { selectFeatured } from '../lib/featured';
+import { sliceMoreOn, hasMoreOnAfter } from '../lib/articles-pagination';
+
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+const preview = isPreviewMode(Astro);
+const staging = isStagingEnv(Astro);
+
+const allArticles =
+  (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+
+const visible = allArticles
+  .filter((a) => preview || isVisibleArticle(a.status))
+  .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
+
+const url = new URL(Astro.request.url);
+const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1', 10));
+
+// Daily-stable random seed — the homepage SSR and /api/articles must
+// pass the SAME seed so they agree on which articles got "consumed"
+// by the must-reads random fallback, keeping section allocation
+// strictly disjoint within the day.
+const randomSeed = `${siteId}:${new Date().toISOString().slice(0, 10)}`;
+
+// --- Section: Hero -----------------------------------------------------------
+const heroArticles = config.layout.hero.enabled
+  ? selectFeatured(visible, 'hero', config.layout.hero.count)
+  : [];
+const heroSlugs = new Set(heroArticles.map((a) => a.slug));
+
+// --- Section: What's New (next N newest after hero) --------------------------
+const whatsNewArticles = config.layout.whats_new.enabled
+  ? visible.filter((a) => !heroSlugs.has(a.slug)).slice(0, config.layout.whats_new.count)
+  : [];
+const whatsNewSlugs = new Set(whatsNewArticles.map((a) => a.slug));
+
+const consumed = new Set<string>([...heroSlugs, ...whatsNewSlugs]);
+
+// --- Section: Must Reads (tagged first, random fallback) ---------------------
+const mustReadArticles = config.layout.must_reads.enabled
+  ? selectFeatured(visible, 'must-read', config.layout.must_reads.count, consumed, 'random', randomSeed)
+  : [];
+for (const a of mustReadArticles) consumed.add(a.slug);
+
+// --- Section: More on {site} -------------------------------------------------
+const moreOnPool = config.layout.more_on.enabled
+  ? visible.filter((a) => !consumed.has(a.slug))
+  : [];
+const moreOnArticles = sliceMoreOn(
+  moreOnPool,
+  page,
+  config.layout.more_on.page_size,
+  config.layout.load_more.page_size,
+);
+const hasMore = hasMoreOnAfter(
+  moreOnPool,
+  page,
+  config.layout.more_on.page_size,
+  config.layout.load_more.page_size,
+);
+---
+
+<BaseLayout
+  title={config.site_name}
+  description={config.site_tagline ?? `${config.site_name} — latest articles`}
+  pageType="homepage"
+>
+  <Fragment slot="head">
+    <SEOHead
+      title={config.site_name}
+      description={config.site_tagline ?? `${config.site_name} — latest articles`}
+      canonicalUrl={`https://${getCanonicalDomain(Astro)}`}
+      siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
+      image={config.theme?.logo}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath="/" />
+
+  <main class="homepage">
+    {config.layout.hero.enabled && <HeroGrid articles={heroArticles} />}
+    <AdSlot position="homepage-top" pageType="homepage" server:defer />
+    <section class="whats-new">
+      <div class="whats-new-inner">
+        {config.layout.whats_new.enabled
+          ? <WhatsNewGrid articles={whatsNewArticles} />
+          : <div />}
+        <Sidebar variant="home" config={config} />
+      </div>
+    </section>
+    {config.layout.must_reads.enabled && <MustReads articles={mustReadArticles} />}
+    {config.layout.more_on.enabled && (
+      <MoreOnSection
+        siteName={config.site_name}
+        articles={moreOnArticles}
+        nextPage={page + 1}
+        hasMore={hasMore}
+      />
+    )}
+  </main>
+
+  <Footer config={config} staging={staging} />
+  <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
+</BaseLayout>
+
+<style>
+  .homepage { min-height: 60vh; }
+  .whats-new { padding: 2.5rem 0; }
+  .whats-new-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 0 1rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  @media (min-width: 960px) {
+    .whats-new-inner { grid-template-columns: 1fr 320px; }
+  }
+</style>

@@ -1,0 +1,282 @@
+---
+/**
+ * Modern theme — site footer.
+ *
+ * Three-column layout: about / quick links / newsletter.
+ * Dark background with light text.
+ */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import NewsletterForm from './_newsletter-form.astro';
+
+interface Props {
+  config: ResolvedConfig;
+  staging?: boolean;
+}
+
+const { config, staging = false } = Astro.props;
+const year = new Date().getFullYear();
+const footerLogoSrc = config.theme.footer_logo || config.theme.logo;
+
+const beforeFooterScripts = (() => {
+  const all = config.scripts?.before_footer ?? [];
+  return staging ? all.filter((s: { src?: string; inline?: string }) => !!s.inline || !!s.src?.startsWith('/')) : all;
+})();
+
+const quickLinks = [
+  { label: 'Home', href: '/' },
+  { label: 'About', href: '/about' },
+  { label: 'Privacy Policy', href: '/privacy' },
+  { label: 'Terms of Service', href: '/terms' },
+  { label: 'Contact', href: '/contact' },
+  { label: 'DMCA', href: '/dmca' },
+  { label: 'Amazon Disclaimer', href: '/amazon' },
+];
+---
+
+{beforeFooterScripts.map((s) =>
+  s.src
+    ? <script is:inline async={s.async} src={s.src}></script>
+    : s.inline
+      ? <Fragment set:html={s.inline} />
+      : null
+)}
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    {/* Column 1: About */}
+    <div class="footer-col footer-about">
+      <div class="footer-logo-group">
+        {footerLogoSrc ? (
+          <img src={footerLogoSrc} alt={config.site_name} class="footer-logo" />
+        ) : (
+          <span class="footer-logo-text">{config.site_name}</span>
+        )}
+      </div>
+      {/* Tagline rules:
+          - logo present: never render tagline (the brand image is enough)
+          - no logo + tagline set: render tagline below the site_name
+          - no logo + no tagline: render nothing below site_name */}
+      {!footerLogoSrc && config.site_tagline && (
+        <p class="footer-tagline">{config.site_tagline}</p>
+      )}
+    </div>
+
+    {/* Column 2: Quick Links */}
+    <div class="footer-col">
+      <h4 class="footer-heading">Quick Links</h4>
+      <ul class="footer-links">
+        {quickLinks.map(({ label, href }) => (
+          <li><a href={href}>{label}</a></li>
+        ))}
+      </ul>
+    </div>
+
+    {/* Column 3: Newsletter */}
+    <div class="footer-col">
+      <h4 class="footer-heading">Newsletter</h4>
+      <p class="footer-newsletter-desc">
+        Get the latest stories delivered to your inbox.
+      </p>
+      <NewsletterForm source="footer" domain={config.domain} />
+      <p class="footer-newsletter-status" data-newsletter-status></p>
+    </div>
+  </div>
+
+  {/* Bottom bar */}
+  <div class="footer-bottom">
+    <p>&copy; {year} {config.site_name}. All rights reserved.</p>
+  </div>
+  {/* Newsletter subscribe script will come back as a Server Island in Phase 4. */}
+</footer>
+
+<style>
+  .site-footer {
+    background: var(--color-footer_bg, var(--color-secondary, #1a1a2e));
+    color: var(--color-footer_text, #d1d5db);
+    margin-top: 4rem;
+  }
+
+  .footer-inner {
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 3rem 1rem 2rem;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .footer-inner {
+      grid-template-columns: 1.2fr 0.8fr 1fr;
+    }
+  }
+
+  /* About column */
+  .footer-logo-group {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin-bottom: 1rem;
+  }
+
+  .footer-logo {
+    height: var(--logo-height-footer, 48px);
+    width: auto;
+    object-fit: contain;
+  }
+
+  .footer-logo-text {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--color-footer_heading, #fff);
+    white-space: nowrap;
+  }
+
+  .footer-tagline {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: var(--color-footer_text, #9ca3af);
+  }
+
+  /* Headings */
+  .footer-heading {
+    font-family: var(--fontHeading, sans-serif);
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--color-footer_heading, #fff);
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Links */
+  .footer-links {
+    list-style: none;
+    padding: 0;
+  }
+
+  .footer-links li {
+    margin-bottom: 0.5rem;
+  }
+
+  .footer-links a {
+    color: var(--color-footer_link, #9ca3af);
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color var(--transition-fast, 150ms ease);
+  }
+
+  .footer-links a:hover {
+    color: var(--color-footer_link_hover, #fff);
+  }
+
+  /* Newsletter */
+  .footer-newsletter-desc {
+    font-size: 0.875rem;
+    color: var(--color-footer_text, #9ca3af);
+    margin-bottom: 1rem;
+  }
+
+  .footer-newsletter {
+    display: flex;
+    gap: 0;
+  }
+
+  .footer-email-input {
+    flex: 1;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #374151;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #111827;
+    color: #fff;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color var(--transition-fast, 150ms ease);
+  }
+
+  .footer-email-input::placeholder {
+    color: #6b7280;
+  }
+
+  .footer-email-input:focus {
+    border-color: var(--color-primary, #0066ff);
+  }
+
+  .footer-subscribe-btn {
+    padding: 0.625rem 1.25rem;
+    background: var(--color-secondary, #1a1a2e);
+    color: #fff;
+    border: none;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast, 150ms ease);
+    white-space: nowrap;
+  }
+
+  .footer-subscribe-btn:hover {
+    background: var(--color-accent, #00ccff);
+  }
+
+  .footer-col :global(.atl-newsletter-form) {
+    display: flex;
+    gap: 0;
+  }
+  .footer-col :global(.atl-newsletter-email) {
+    flex: 1;
+    padding: 0.625rem 0.875rem;
+    border: 1px solid #374151;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    background: #111827;
+    color: #fff;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color var(--transition-fast, 150ms ease);
+  }
+  .footer-col :global(.atl-newsletter-email)::placeholder {
+    color: #6b7280;
+  }
+  .footer-col :global(.atl-newsletter-email):focus {
+    border-color: var(--color-primary, #0066ff);
+  }
+  .footer-col :global(.atl-newsletter-submit) {
+    padding: 0.625rem 1.25rem;
+    background: var(--color-secondary, #1a1a2e);
+    color: #fff;
+    border: none;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .footer-newsletter-status:empty { display: none; }
+  .footer-newsletter-status { font-size: 0.8125rem; margin-top: 0.5rem; }
+
+  /* Bottom bar */
+  .footer-bottom {
+    border-top: 1px solid #374151;
+    max-width: var(--container-max, 1200px);
+    margin: 0 auto;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    font-size: 0.8125rem;
+    color: var(--color-footer_text, #6b7280);
+  }
+
+  :global(.newsletter-success) {
+    color: #10b981;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+  }
+
+  :global(.newsletter-error) {
+    color: #ef4444;
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+  }
+</style>

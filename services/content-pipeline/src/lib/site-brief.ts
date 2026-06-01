@@ -13,6 +13,7 @@ import type { SiteConfig, SiteBrief } from "../types.js";
 export interface SiteBriefData {
   domain: string;
   siteName: string;
+  author?: string;
   group: string;
   brief: SiteBrief;
 }
@@ -33,11 +34,23 @@ export async function readSiteBrief(
     throw new Error(`Site ${domain} has no content brief defined`);
   }
 
+  // Normalize: ensure audience string is populated from audiences array
+  const brief = config.brief;
+  if (!brief.audience && brief.audiences?.length) {
+    brief.audience = brief.audiences.join(", ");
+  }
+
+  // Propagate top-level bundle_id into brief for backward compat
+  if (!brief.bundle_id && (config as Record<string, unknown>).bundle_id) {
+    brief.bundle_id = (config as Record<string, unknown>).bundle_id as string;
+  }
+
   return {
     domain: config.domain,
     siteName: config.site_name,
+    author: config.author,
     group: config.group,
-    brief: config.brief,
+    brief,
   };
 }
 
@@ -61,6 +74,8 @@ export interface ActiveSiteEntry {
   domain: string;
   /** Branch where the site's config lives. Falls back to `staging/<domain>`. */
   branch: string;
+  /** Site status from dashboard-index.yaml (lowercased). */
+  status: string;
 }
 
 interface DashboardIndexFile {
@@ -86,6 +101,7 @@ export async function listActiveSites(
     .map((s) => ({
       domain: s.domain as string,
       branch: s.staging_branch || `staging/${s.domain}`,
+      status: (s.status ?? "").toLowerCase(),
     }));
 }
 

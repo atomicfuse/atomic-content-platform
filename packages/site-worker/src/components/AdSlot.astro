@@ -1,0 +1,202 @@
+---
+/**
+ * Server Island — emits an empty ad container per the resolved
+ * monetization config in KV. The bundled `mock-ad-fill.js` script
+ * (loaded in BaseLayout) scans for `[data-ad-id]` elements at runtime
+ * and fills them with mock creatives — preserving the visual parity
+ * we had with the legacy site-builder.
+ *
+ * Real ad-network SDKs replace `mock-ad-fill.js` later (see
+ * `docs/future-decisions.md`).
+ *
+ * Sticky-bottom rendering: the slot div + close button are wrapped in
+ * a position:fixed container so the close button anchors to the
+ * sticky bar (not the viewport corner) and survives mock-ad-fill.js
+ * replacing the inner ad div content.
+ */
+import { getConfig, isStagingEnv } from '../lib/config';
+
+export interface Props {
+  position: string;
+  pageType: 'homepage' | 'article' | 'category';
+}
+
+interface Placement {
+  id?: string;
+  position?: string;
+  device?: 'all' | 'desktop' | 'mobile';
+  sizes?: { desktop?: number[][]; mobile?: number[][] };
+  pages?: string[];
+  code?: string;
+  page_types?: string[];
+  exclude_pages?: string[];
+}
+
+/** Map pageType prop value to the exclude_pages slug used for that category. */
+const EXCLUDE_MAP: Record<string, string> = {
+  homepage: 'homepage',
+  article: 'articles',
+  category: 'categories',
+};
+
+const { position, pageType } = Astro.props;
+const config = getConfig(Astro);
+const heights = config.ad_placeholder_heights as unknown as Record<string, number> | undefined;
+const placements = ((config.ads_config?.ad_placements as Placement[] | undefined) ?? []).filter(
+  (p) => {
+    if (p.position !== position) return false;
+    // Legacy pages filter
+    if (p.pages && !p.pages.includes(pageType)) return false;
+    // page_types filter: default to ["all"] if not set
+    const pt = p.page_types ?? ['all'];
+    if (!pt.includes('all') && !pt.includes(pageType)) return false;
+    // exclude_pages filter
+    const excludeKey = EXCLUDE_MAP[pageType];
+    if (excludeKey && p.exclude_pages?.includes(excludeKey)) return false;
+    return true;
+  },
+);
+
+const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')] ?? 0;
+// Sidebar ads are below the fold and load via server island — fixed min-height
+// creates empty space when no ad is configured or the ad is smaller than the
+// reservation. Let sidebar slots size responsively (width: 100%, height: auto).
+const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${reserved}px` : '';
+const isSticky = position === 'sticky-bottom';
+const staging = isStagingEnv(Astro);
+
+---
+
+{!isSticky && placements.map((p) => {
+  const widgetCode = staging ? '' : (p.code ?? '');
+  return (
+    <div
+      data-ad-id={p.id ?? `${position}-${pageType}`}
+      data-ad-position={position}
+      data-ad-page-type={pageType}
+      data-ad-device={p.device ?? 'all'}
+      data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+      data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+      class={`atl-ad-slot atl-ad-${position}`}
+      style={slotInlineStyle}
+    >
+      <Fragment set:html={widgetCode} />
+    </div>
+  );
+})}
+
+{isSticky && placements.length > 0 && (
+  <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
+    {placements.map((p) => {
+      const widgetCode = staging ? '' : (p.code ?? '');
+      return (
+        <div
+          data-ad-id={p.id ?? `${position}-${pageType}`}
+          data-ad-position={position}
+          data-ad-page-type={pageType}
+          data-ad-device={p.device ?? 'all'}
+          data-sizes-desktop={JSON.stringify(p.sizes?.desktop ?? [])}
+          data-sizes-mobile={JSON.stringify(p.sizes?.mobile ?? [])}
+          class={`atl-ad-slot atl-ad-${position}`}
+          style={slotInlineStyle}
+        >
+          <Fragment set:html={widgetCode} />
+        </div>
+      );
+    })}
+    <button
+      class="atl-ad-close"
+      aria-label="Close advertisement"
+      data-atl-close="sticky-bottom"
+      type="button"
+    >×</button>
+  </div>
+)}
+
+<script>
+  // Sticky-bottom dismiss + auto-hide when Must Reads section is in view.
+  let dismissed = sessionStorage.getItem('_atl_sticky_dismissed') === '1';
+
+  function setSticky(visible: boolean): void {
+    document.querySelectorAll('[data-atl-sticky-wrapper]').forEach((el) => {
+      (el as HTMLElement).style.display = visible ? '' : 'none';
+    });
+  }
+
+  if (dismissed) setSticky(false);
+
+  // Manual close — permanent for the session.
+  document.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.matches('[data-atl-close="sticky-bottom"]')) {
+      dismissed = true;
+      sessionStorage.setItem('_atl_sticky_dismissed', '1');
+      setSticky(false);
+    }
+  });
+
+  // Auto-hide once the user scrolls to the Must Reads section.
+  const mustReads = document.querySelector('.must-reads');
+  if (mustReads && !dismissed) {
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (dismissed) return;
+        setSticky(!entry.isIntersecting);
+      },
+      { threshold: 0 },
+    );
+    obs.observe(mustReads);
+  }
+</script>
+
+<style is:global>
+  .atl-ad-slot {
+    display: block;
+    margin: 0.75rem auto;
+  }
+  .atl-ad-sidebar {
+    width: 100% !important;
+  }
+  /* Hide desktop-only ads on mobile, mobile-only ads on desktop */
+  @media (max-width: 959px) {
+    .atl-ad-slot[data-ad-device="desktop"] { display: none !important; }
+  }
+  @media (min-width: 960px) {
+    .atl-ad-slot[data-ad-device="mobile"] { display: none !important; }
+  }
+  .atl-ad-sticky-wrapper {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: rgba(255, 255, 255, 0.95);
+    text-align: center;
+    /* Acts as the positioning context for .atl-ad-close. */
+  }
+  .atl-ad-sticky-wrapper .atl-ad-slot {
+    margin: 0 auto;
+  }
+  .atl-ad-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 32px;
+    height: 32px;
+    border: 1px solid #333;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.95);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    z-index: 101;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+  .atl-ad-close:focus-visible {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+  }
+</style>

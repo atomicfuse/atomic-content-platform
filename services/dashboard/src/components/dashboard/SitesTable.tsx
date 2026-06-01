@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardSiteEntry, SiteStatus, Company, Vertical } from "@/types/dashboard";
 import { StatusBadge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { deleteSiteEntry } from "@/actions/sites";
+import { deleteSiteEntry, updateSiteEntry } from "@/actions/sites";
+import { COMPANIES } from "@/lib/constants";
 import { Filters } from "./Filters";
 
 interface SitesTableProps {
@@ -44,7 +45,9 @@ function ColumnHeader({ label, tooltip }: { label: string; tooltip: string }): R
 function formatRelativeDate(dateStr: string): string {
   if (!dateStr) return "—";
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  const normalized = dateStr.length <= 13 ? `${dateStr}:00:00Z` : dateStr;
+  const then = new Date(normalized).getTime();
+  if (isNaN(then)) return "—";
   const diff = now - then;
   const days = Math.floor(diff / 86400000);
   const months = Math.floor(days / 30);
@@ -63,9 +66,50 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [companyFilter, setCompanyFilter] = useState<Company | "">("");
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
+  const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
+  const [lastArticlesSort, setLastArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
+  const [articleCounts, setArticleCounts] = useState<Record<string, number>>({});
+  const [countsLoaded, setCountsLoaded] = useState(false);
+  const [latestArticles, setLatestArticles] = useState<Record<string, string>>({});
+  const [latestLoaded, setLatestLoaded] = useState(false);
+  const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
+  const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
+
+  useEffect(() => {
+    fetch("/api/sites/article-counts")
+      .then((r) => r.json())
+      .then((data: Record<string, number>) => {
+        setArticleCounts(data);
+        setCountsLoaded(true);
+      })
+      .catch(() => setCountsLoaded(true));
+    fetch("/api/sites/latest-articles")
+      .then((r) => r.json())
+      .then((data: Record<string, string>) => {
+        setLatestArticles(data);
+        setLatestLoaded(true);
+      })
+      .catch(() => setLatestLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/sites/groups")
+      .then((r) => r.json())
+      .then((data: Record<string, string[]>) => setSiteGroups(data))
+      .catch(() => { /* leave empty */ });
+    fetch("/api/groups")
+      .then(async (r) => (r.ok ? ((await r.json()) as Array<{ id: string; name?: string }>) : []))
+      .then(setAvailableGroups)
+      .catch(() => setAvailableGroups([]));
+  }, []);
+
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
   // Get the site entry for the delete target so we can show what will be cleaned up
   const deleteTargetSite = deleteTarget ? sites.find((s) => s.domain === deleteTarget) : null;
@@ -101,7 +145,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   }
 
   const filteredSites = useMemo(() => {
-    return sites.filter((site) => {
+    setCurrentPage(1);
+    const filtered = sites.filter((site) => {
       if (search && !site.domain.toLowerCase().includes(search.toLowerCase())) {
         return false;
       }
@@ -110,7 +155,45 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       if (statusFilter && site.status !== statusFilter) return false;
       return true;
     });
-  }, [sites, search, companyFilter, verticalFilter, statusFilter]);
+    if (websiteSort) {
+      filtered.sort((a, b) => {
+        const aName = (a.custom_domain ?? a.domain).toLowerCase();
+        const bName = (b.custom_domain ?? b.domain).toLowerCase();
+        return websiteSort === "asc"
+          ? aName.localeCompare(bName)
+          : bName.localeCompare(aName);
+      });
+    }
+    if (articlesSort && countsLoaded) {
+      filtered.sort((a, b) => {
+        const aCount = articleCounts[a.domain] ?? 0;
+        const bCount = articleCounts[b.domain] ?? 0;
+        return articlesSort === "asc" ? aCount - bCount : bCount - aCount;
+      });
+    }
+    if (lastArticlesSort && latestLoaded) {
+      filtered.sort((a, b) => {
+        const aRaw = latestArticles[a.domain] ?? "";
+        const bRaw = latestArticles[b.domain] ?? "";
+        const aNorm = aRaw.length <= 13 ? `${aRaw}:00:00Z` : aRaw;
+        const bNorm = bRaw.length <= 13 ? `${bRaw}:00:00Z` : bRaw;
+        const aTime = aRaw ? new Date(aNorm).getTime() : 0;
+        const bTime = bRaw ? new Date(bNorm).getTime() : 0;
+        return lastArticlesSort === "asc" ? aTime - bTime : bTime - aTime;
+      });
+    }
+    return filtered;
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
+  const paginatedSites = filteredSites.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+
+  const goToPage = useCallback((page: number): void => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
 
   function handleRowClick(site: DashboardSiteEntry): void {
     switch (site.status) {
@@ -154,37 +237,70 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             <thead>
               <tr className="border-b border-[var(--border-secondary)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Website
+                  <button
+                    type="button"
+                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Website
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${websiteSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {websiteSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Company
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Vertical
+                  Group
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  Category
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Status
+                </th>
+                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
+                  >
+                    Articles
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {articlesSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Last Articles
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${lastArticlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {lastArticlesSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Exclusivity" tooltip="Exclusivity configuration and state for the site as captured in ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="OB EPID" tooltip="Outbrain EPID value configured for the site as part of ad config setup." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="GA Info" tooltip="Google Analytics configuration data associated with the site (e.g., property or measurement identifiers)." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="CF APO" tooltip="Cloudflare APO (Automatic Platform Optimization) enablement status for the site." />
-                </th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Fixed Ad" tooltip="Fixed ad placement configuration and status for the site as defined in ad config setup." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Actions
@@ -195,7 +311,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={12}
+                    colSpan={10}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -204,7 +320,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                 </tr>
               )}
-              {filteredSites.map((site) => (
+              {paginatedSites.map((site) => (
                 <tr
                   key={site.domain}
                   onClick={(): void => handleRowClick(site)}
@@ -214,7 +330,28 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     {site.custom_domain ?? site.domain}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.company}
+                    <InlineCompanySelect
+                      domain={site.domain}
+                      value={site.company}
+                      onSaved={(newCompany): void => {
+                        site.company = newCompany;
+                        toast(`Company updated for ${site.domain}`, "success");
+                        router.refresh();
+                      }}
+                      onError={(msg): void => { toast(msg, "error"); }}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-secondary)]">
+                    <InlineGroupSelect
+                      domain={site.domain}
+                      value={siteGroups[site.domain] ?? []}
+                      options={availableGroups}
+                      onSaved={(newGroups): void => {
+                        setSiteGroups((prev) => ({ ...prev, [site.domain]: newGroups }));
+                        toast(`Group updated for ${site.domain}`, "success");
+                      }}
+                      onError={(msg): void => { toast(msg, "error"); }}
+                    />
                   </td>
                   <td className="px-4 py-3 text-[var(--text-secondary)]">
                     {site.vertical}
@@ -227,34 +364,23 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums">
+                    {countsLoaded
+                      ? (articleCounts[site.domain] ?? "—")
+                      : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
+                    {latestLoaded
+                      ? (latestArticles[site.domain] ? formatRelativeDate(latestArticles[site.domain]) : "—")
+                      : <span className="inline-block w-12 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    }
+                  </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}
                   </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.exclusivity ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.ob_epid ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)] font-mono text-xs">
-                    {site.ga_info ?? "—"}
-                  </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.cf_apo ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {site.fixed_ad ? (
-                      <span className="text-green-400">&#10003;</span>
-                    ) : (
-                      <span className="text-[var(--text-muted)]">—</span>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-center">
                     <button
@@ -272,6 +398,68 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                Show
+                <select
+                  value={pageSize}
+                  onChange={(e): void => {
+                    const newSize = Number(e.target.value);
+                    setPageSize(newSize);
+                    setCurrentPage(1);
+                  }}
+                  className="bg-[var(--bg-elevated)] border border-[var(--border-secondary)] rounded-md px-1.5 py-0.5 text-xs text-[var(--text-secondary)] cursor-pointer"
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>{size}</option>
+                  ))}
+                </select>
+                rows
+              </label>
+              <span className="text-xs text-[var(--text-muted)]">
+                {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, filteredSites.length)} of {filteredSites.length}
+              </span>
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(): void => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    type="button"
+                    onClick={(): void => goToPage(page)}
+                    className={`min-w-[28px] px-1.5 py-1 text-xs rounded-md transition-colors ${
+                      page === currentPage
+                        ? "bg-[var(--accent-primary)] text-white font-medium"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(): void => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-2 py-1 text-xs rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Delete confirmation modal */}
@@ -375,5 +563,178 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         </div>
       </Modal>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Inline Company Selector                                             */
+/* ------------------------------------------------------------------ */
+
+function InlineCompanySelect({
+  domain,
+  value,
+  onSaved,
+  onError,
+}: {
+  domain: string;
+  value: Company | null;
+  onSaved: (newCompany: Company | null) => void;
+  onError: (msg: string) => void;
+}): React.ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Optimistic display — updated immediately on selection, before server round-trip.
+  const [optimistic, setOptimistic] = useState<Company | null | undefined>(undefined);
+
+  const display = optimistic !== undefined ? optimistic : (value || null);
+
+  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
+    e.stopPropagation();
+    const newValue = (e.target.value || null) as Company | null;
+    if (newValue === (value || null)) {
+      setEditing(false);
+      return;
+    }
+    // Show new value immediately.
+    setOptimistic(newValue);
+    setEditing(false);
+    setSaving(true);
+    try {
+      await updateSiteEntry(domain, { company: newValue });
+      onSaved(newValue);
+    } catch (err) {
+      // Revert optimistic update on failure.
+      setOptimistic(undefined);
+      onError(err instanceof Error ? err.message : "Failed to update company");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        value={(display ?? "")}
+        onChange={(e): void => { void handleChange(e); }}
+        onBlur={(): void => setEditing(false)}
+        onClick={(e): void => e.stopPropagation()}
+        disabled={saving}
+        className="px-1.5 py-0.5 rounded border border-cyan/50 bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none cursor-pointer"
+      >
+        <option value="">No Company</option>
+        {COMPANIES.map((c) => (
+          <option key={c} value={c}>{c}</option>
+        ))}
+      </select>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e): void => { e.stopPropagation(); setEditing(true); }}
+      className={`hover:text-cyan transition-colors cursor-pointer ${saving ? "opacity-50" : ""}`}
+      title="Click to change company"
+      disabled={saving}
+    >
+      {display || <span className="text-[var(--text-muted)]">&mdash;</span>}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Inline Group Selector                                               */
+/* ------------------------------------------------------------------ */
+
+function InlineGroupSelect({
+  domain,
+  value,
+  options,
+  onSaved,
+  onError,
+}: {
+  domain: string;
+  value: string[];
+  options: Array<{ id: string; name?: string }>;
+  onSaved: (newGroups: string[]) => void;
+  onError: (msg: string) => void;
+}): React.ReactElement {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // Optimistic display — updated immediately on selection, before server round-trip.
+  const [optimistic, setOptimistic] = useState<string[] | undefined>(undefined);
+
+  const display = optimistic !== undefined ? optimistic : value;
+  const labelFor = (id: string): string => options.find((o) => o.id === id)?.name ?? id;
+
+  async function handleChange(e: React.ChangeEvent<HTMLSelectElement>): Promise<void> {
+    e.stopPropagation();
+    const selected = e.target.value;
+    const newGroups = selected ? [selected] : [];
+    const currentJoined = value.join(",");
+    const newJoined = newGroups.join(",");
+    if (currentJoined === newJoined) {
+      setEditing(false);
+      return;
+    }
+    setOptimistic(newGroups);
+    setEditing(false);
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sites/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          logoBase64: null,
+          faviconBase64: null,
+          configUpdates: { groups: newGroups },
+        }),
+      });
+      const data = (await res.json()) as { status: string; message?: string };
+      if (data.status !== "ok") throw new Error(data.message ?? "Failed to update group");
+      onSaved(newGroups);
+    } catch (err) {
+      setOptimistic(undefined);
+      onError(err instanceof Error ? err.message : "Failed to update group");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <select
+        autoFocus
+        value={display[0] ?? ""}
+        onChange={(e): void => { void handleChange(e); }}
+        onBlur={(): void => setEditing(false)}
+        onClick={(e): void => e.stopPropagation()}
+        disabled={saving}
+        className="px-1.5 py-0.5 rounded border border-cyan/50 bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none cursor-pointer"
+      >
+        <option value="">No Group</option>
+        {options.map((g) => (
+          <option key={g.id} value={g.id}>{g.name ?? g.id}</option>
+        ))}
+      </select>
+    );
+  }
+
+  const displayText = display.length === 0
+    ? null
+    : display.map(labelFor).join(", ");
+
+  return (
+    <button
+      type="button"
+      onClick={(e): void => { e.stopPropagation(); setEditing(true); }}
+      className={`hover:text-cyan transition-colors cursor-pointer ${saving ? "opacity-50" : ""}`}
+      title="Click to change group"
+      disabled={saving}
+    >
+      {displayText ?? <span className="text-[var(--text-muted)]">&mdash;</span>}
+    </button>
   );
 }

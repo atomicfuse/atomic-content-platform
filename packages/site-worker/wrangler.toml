@@ -1,0 +1,74 @@
+# Cloudflare Worker configuration for the multi-tenant Astro site-worker.
+
+name = "atomic-site-worker-staging"
+compatibility_date = "2026-04-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Static assets — the Astro Cloudflare adapter emits the Worker entrypoint
+# + hashed asset bundle into ./dist. `run_worker_first = true` forces every
+# request through the Worker so middleware.ts can run (for SSR routes like
+# `/` that don't have a corresponding static file).
+#
+# Note: per-site article assets (logos, hero images, etc.) live in R2,
+# NOT in this directory — see the [[r2_buckets]] binding below + the
+# /<siteId>/assets/[...path] route handler.
+assets = { directory = "./dist", binding = "ASSETS", run_worker_first = true }
+
+# KV namespaces — the Worker always reads from `env.CONFIG_KV`. The backing
+# namespace differs per env so staging and prod don't share state.
+[[kv_namespaces]]
+binding = "CONFIG_KV"
+id = "f6c35e1fa8c841b8b193509a3a237f7f" # CONFIG_KV_STAGING — Assets @ AtomicLabs
+
+# R2 bucket for per-site assets. Keys are `<siteId>/assets/<path>`.
+# sync-kv.yml uploads on push; the /<siteId>/assets/[...path] route
+# reads on request. Bundling these into the Worker (the previous
+# approach) required a redeploy on every new image — R2 makes
+# new-asset deploys instant.
+[[r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and additive
+
+# Service binding — query handler worker. When a request carries a
+# recognised query param (e.g. ?x=1), middleware forwards to this
+# service instead of rendering the site.
+[[services]]
+binding = "QUERY_HANDLER"
+service = "atl-query-handler-t"
+
+# Service binding — streamed lander. When a request carries monetization
+# params (e.g. ?agi=1011), middleware forwards to this service.
+[[services]]
+binding = "ATL_STREAMED_LANDER"
+service = "atl-streamed-lander"
+
+# Observability — Workers Logs (enabled by default on Workers Paid).
+[observability]
+enabled = true
+
+[env.staging]
+name = "atomic-site-worker-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "CONFIG_KV"
+id = "f6c35e1fa8c841b8b193509a3a237f7f" # CONFIG_KV_STAGING — Assets @ AtomicLabs
+
+[[env.staging.r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-prod"  # shared bucket — assets are site-scoped and additive
+
+[env.production]
+name = "atomic-site-worker"
+# No custom domain routes — all custom domains are registered on the
+# atl-sites-workers-manager worker, which routes traffic here via the
+# ATL_SITES_MAIN Service Binding. This worker is reachable only via
+# the manager (production) and workers.dev (staging).
+routes = []
+
+[[env.production.kv_namespaces]]
+binding = "CONFIG_KV"
+id = "b258e47065274b8b8af1a0b6d6529c1d" # CONFIG_KV — Assets @ AtomicLabs (prod)
+
+[[env.production.r2_buckets]]
+binding = "ASSET_BUCKET"
+bucket_name = "atl-assets-prod"

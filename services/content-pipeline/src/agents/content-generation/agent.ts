@@ -3,9 +3,9 @@
  *
  * Steps:
  * 1. Read site brief (local YAML or GitHub API)
- * 2. Fetch enriched items from Content Aggregator v2 API (targetCount * 2)
+ * 2. Fetch enriched items from Content Aggregator v2 API (paginated)
  * 3. Fetch settings for factual classification
- * 4. Deduplicate against already-processed source URLs + titles
+ * 4. Deduplicate against already-processed source URLs + titles (paginate for more if needed)
  * 5. For each candidate (up to targetCount successes):
  *    a. Route: factual → Claude, general → OpenAI
  *    b. Generate article (cross-model fallback on failure)
@@ -15,7 +15,7 @@
  *    f. Build frontmatter + serialize to markdown
  * 6. Batch-write all articles in a single commit
  *
- * LIGHTWEIGHT: fetches only targetCount * 2 items. No pagination loops.
+ * Paginates through aggregator results to find fresh (non-duplicate) items.
  */
 
 import * as path from "node:path";
@@ -24,24 +24,58 @@ import matter from "gray-matter";
 import { parse as parseYaml } from "yaml";
 
 // v2 pipeline modules
-import { getContent, getSettings } from "./api-client.js";
+import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
-import { generateImage } from "./image-pipeline/generator.js";
+import { randomUUID } from "node:crypto";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
 import type { Generator, GeneratorConfig } from "./generators/base-generator.js";
 
 // Existing infrastructure
-import { createGitHubClient } from "../../lib/github.js";
+import { createOctokit } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
-import { writeArticleBatch } from "../../lib/writer.js";
-import type { PendingArticle, PendingAsset } from "../../lib/writer.js";
+import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
+import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
+
+// ---------------------------------------------------------------------------
+// Body validation — rejects empty/garbage content before quality scoring
+// ---------------------------------------------------------------------------
+
+const BODY_PLACEHOLDER_PATTERNS = [
+  /no article content was available/i,
+  /system prompt artifact/i,
+  /please provide the original article/i,
+  /content for cleanup/i,
+  /unable to generate.*article/i,
+];
+
+const MIN_BODY_WORDS = 50;
+
+export function validateArticleBody(
+  body: string,
+): { valid: true } | { valid: false; reason: string } {
+  const trimmed = body.trim();
+  if (!trimmed) return { valid: false, reason: "empty body" };
+
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (wordCount < MIN_BODY_WORDS) {
+    return { valid: false, reason: `too short (${wordCount} words, minimum ${MIN_BODY_WORDS})` };
+  }
+
+  for (const pattern of BODY_PLACEHOLDER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { valid: false, reason: "detected placeholder/failure content" };
+    }
+  }
+
+  return { valid: true };
+}
 
 // ---------------------------------------------------------------------------
 // Public interfaces (preserved for backward compat with index.ts)
@@ -52,6 +86,15 @@ export interface ContentGenerationParams {
   branch?: string;
   /** Override article count — for on-demand generation from dashboard. */
   count?: number;
+  /** BullMQ job ID — passed to n8n for image callback tracking. */
+  jobId?: string;
+  /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
+  preloadedBrief?: {
+    siteName: string;
+    author?: string;
+    group: string;
+    brief: SiteBrief;
+  };
 }
 
 export interface ContentGenerationResult {
@@ -68,8 +111,18 @@ export interface ContentGenerationResult {
   generatedBy?: "claude" | "openai";
   /** @internal Pending file data — used for batch commit, stripped before API response. */
   _pendingArticle?: PendingArticle;
-  /** @internal Pending asset data — used for batch commit, stripped before API response. */
-  _pendingAsset?: PendingAsset;
+  /** @internal n8n image request data — used to fire background image generation. */
+  _imageRequest?: {
+    requestId: string;
+    siteDomain: string;
+    slug: string;
+    articleTitle: string;
+    articleDescription: string;
+    articleSummary: string;
+    vertical: string;
+    sourceThumbnailUrl?: string;
+    imageGuidelines: string | string[] | null;
+  };
 }
 
 export interface BatchContentGenerationResult {
@@ -82,6 +135,8 @@ export interface BatchContentGenerationResult {
   duplicateCount: number;
   /** How many new items were available after dedup */
   availableNew: number;
+  /** How many n8n image requests were triggered (0 if n8n not configured) */
+  n8nImagesTriggered: number;
   results: ContentGenerationResult[];
 }
 
@@ -144,8 +199,8 @@ export function ensureTopicTag(
 // Deduplication — bulk load all existing source_urls + titles
 // ---------------------------------------------------------------------------
 
-/** Normalize a URL for dedup comparison. */
-function normalizeUrl(url: string): string {
+/** Normalize a URL for dedup comparison. @internal Exported for testing. */
+export function normalizeUrl(url: string): string {
   try {
     const u = new URL(url);
     const host = u.hostname.replace(/^www\./, "").toLowerCase();
@@ -156,8 +211,8 @@ function normalizeUrl(url: string): string {
   }
 }
 
-/** Normalize a title for fuzzy dedup. */
-function normalizeTitleKey(title: string): string {
+/** Normalize a title for fuzzy dedup. @internal Exported for testing. */
+export function normalizeTitleKey(title: string): string {
   return title
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
@@ -165,11 +220,58 @@ function normalizeTitleKey(title: string): string {
     .trim();
 }
 
-interface ExistingArticles {
+export interface ExistingArticles {
   urls: Set<string>;
   titles: Set<string>;
 }
 
+// ---------------------------------------------------------------------------
+// Dedup index — persisted alongside articles to avoid N GitHub API reads
+// ---------------------------------------------------------------------------
+
+const DEDUP_INDEX_FILENAME = "dedup-index.json";
+
+interface DedupIndexData {
+  version: 1;
+  urls: string[];
+  titles: string[];
+}
+
+/** @internal Exported for testing. */
+export function dedupIndexPath(siteDomain: string): string {
+  return `sites/${siteDomain}/${DEDUP_INDEX_FILENAME}`;
+}
+
+/** @internal Exported for testing. */
+export function serializeDedupIndex(existing: ExistingArticles): string {
+  const data: DedupIndexData = {
+    version: 1,
+    urls: Array.from(existing.urls),
+    titles: Array.from(existing.titles),
+  };
+  return JSON.stringify(data);
+}
+
+/** @internal Exported for testing. */
+export function parseDedupIndex(raw: string): ExistingArticles | null {
+  try {
+    const data = JSON.parse(raw) as Partial<DedupIndexData>;
+    if (data.version === 1 && Array.isArray(data.urls) && Array.isArray(data.titles)) {
+      return { urls: new Set(data.urls), titles: new Set(data.titles) };
+    }
+  } catch {
+    // Invalid JSON
+  }
+  return null;
+}
+
+/**
+ * Load existing articles' source URLs and titles for deduplication.
+ *
+ * Fast path: read `sites/<domain>/dedup-index.json` (1 API call).
+ * Slow path: fall back to reading every article file individually (N calls).
+ * The index is written/updated atomically with article batch commits.
+ */
 async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
@@ -184,8 +286,21 @@ async function getAllExistingArticles(
   }
 
   if (config.localNetworkPath && !branch) {
-    const articlesDir = path.join(config.localNetworkPath, "sites", siteDomain, "articles");
+    // Local mode — try dedup index first
+    const indexPath = path.join(config.localNetworkPath, dedupIndexPath(siteDomain));
+    try {
+      const raw = await fs.readFile(indexPath, "utf-8");
+      const parsed = parseDedupIndex(raw);
+      if (parsed) {
+        console.log(`[agent] Loaded dedup index (local): ${parsed.urls.size} URLs, ${parsed.titles.size} titles`);
+        return parsed;
+      }
+    } catch {
+      // No index — fall through to full scan
+    }
 
+    // Full scan (local)
+    const articlesDir = path.join(config.localNetworkPath, "sites", siteDomain, "articles");
     let files: string[];
     try {
       files = await fs.readdir(articlesDir);
@@ -204,14 +319,27 @@ async function getAllExistingArticles(
       }
     }
 
+    console.log(`[agent] Built dedup index from full scan (local): ${urls.size} URLs, ${titles.size} titles`);
     return { urls, titles };
   }
 
-  // GitHub mode
+  // GitHub mode — try dedup index first
   const { listFiles, readFile } = await import("../../lib/github.js");
-  const octokit = createGitHubClient(config.github);
-  const articlesPath = `sites/${siteDomain}/articles`;
+  const octokit = createOctokit(config.github);
 
+  try {
+    const raw = await readFile(octokit, config.networkRepo, dedupIndexPath(siteDomain), branch);
+    const parsed = parseDedupIndex(raw);
+    if (parsed) {
+      console.log(`[agent] Loaded dedup index: ${parsed.urls.size} URLs, ${parsed.titles.size} titles`);
+      return parsed;
+    }
+  } catch {
+    // No index — fall through to full scan
+  }
+
+  // Full scan (GitHub) — reads every article file individually
+  const articlesPath = `sites/${siteDomain}/articles`;
   let files: string[];
   try {
     files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
@@ -235,6 +363,7 @@ async function getAllExistingArticles(
     }
   }
 
+  console.log(`[agent] Built dedup index from full scan: ${urls.size} URLs, ${titles.size} titles (${files.length} files read)`);
   return { urls, titles };
 }
 
@@ -282,7 +411,7 @@ async function slugExists(
   }
 
   const { readFile } = await import("../../lib/github.js");
-  const octokit = createGitHubClient(config.github);
+  const octokit = createOctokit(config.github);
   try {
     await readFile(
       octokit,
@@ -318,23 +447,49 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     throw new Error(`Site ${siteDomain} has no content brief defined`);
   }
 
+  // Propagate top-level bundle_id into brief for backward compat
+  if (!siteConfig.brief.bundle_id && (siteConfig as Record<string, unknown>).bundle_id) {
+    siteConfig.brief.bundle_id = (siteConfig as Record<string, unknown>).bundle_id as string;
+  }
+
   return {
     domain: siteConfig.domain,
     siteName: siteConfig.site_name,
+    author: siteConfig.author,
     group: siteConfig.group,
     brief: siteConfig.brief,
   };
 }
 
-async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
+async function getSiteBrief(
+  config: AgentConfig,
+  siteDomain: string,
+  branch?: string,
+  preloaded?: ContentGenerationParams["preloadedBrief"],
+) {
+  if (preloaded) {
+    if (!preloaded.brief.vertical) {
+      try {
+        const vertical = await resolveVerticalFromIndex(config, siteDomain);
+        if (vertical) {
+          preloaded.brief.vertical = vertical;
+          console.log(`[agent] Resolved vertical from dashboard index: ${vertical}`);
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+    return preloaded;
+  }
+
   let result;
-  if (config.localNetworkPath) {
+  if (config.localNetworkPath && !branch) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
     if (local) result = local;
   }
 
   if (!result) {
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     result = await readSiteBrief(octokit, config.networkRepo, siteDomain, branch);
   }
 
@@ -374,7 +529,7 @@ async function resolveVerticalFromIndex(
     }
   } else {
     const { readFile } = await import("../../lib/github.js");
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     raw = await readFile(octokit, config.networkRepo, "dashboard-index.yaml");
   }
 
@@ -401,6 +556,7 @@ async function processItem(
   siteName: string,
   brief: SiteBrief,
   branch?: string,
+  author?: string,
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -432,42 +588,32 @@ async function processItem(
     } catch (primaryErr) {
       const msg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
       console.warn(`[agent] ${primary.name} failed for "${item.title}", falling back to ${fallback.name}: ${msg}`);
-      generated = await fallback.generate(item, genConfig);
-      actualGenerator = fallback.name as "claude" | "openai";
+      try {
+        generated = await fallback.generate(item, genConfig);
+        actualGenerator = fallback.name as "claude" | "openai";
+      } catch (fallbackErr) {
+        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        throw new Error(
+          `Both generators failed for "${item.title}": ` +
+          `${primary.name}: ${msg} | ${fallback.name}: ${fallbackMsg}`,
+        );
+      }
+    }
+
+    // Step 2b: Validate generated body
+    const bodyCheck = validateArticleBody(generated.body);
+    if (!bodyCheck.valid) {
+      console.warn(`[agent] Article body validation failed for "${item.title}": ${bodyCheck.reason}`);
+      return { status: "error", message: `Body validation failed: ${bodyCheck.reason}` };
     }
 
     // Step 3: Generate slug (from SEO module, then deduplicate)
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Image pipeline — generate from article content → fallback to source thumbnail
-    let pendingImageAsset: PendingAsset | undefined;
-    let featuredImageUrl: string | undefined;
-
-    try {
-      const imageResult = await generateImage({
-        articleTitle: generated.title,
-        articleDescription: generated.description,
-        articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
-      });
-
-      if (imageResult) {
-        const assetPath = `assets/images/${slug}.png`;
-        pendingImageAsset = { siteDomain, assetPath, data: imageResult.data };
-        featuredImageUrl = `/assets/images/${slug}.png`;
-        console.log(`[agent] Generated image: ${assetPath}`);
-      }
-    } catch (imgErr) {
-      const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-      console.error(`[agent] Image generation failed: ${msg}`);
-    }
-
-    // Fallback: use source thumbnail URL if generation didn't produce an image
-    if (!featuredImageUrl && item.thumbnail?.url) {
-      console.log(`[agent] Using source thumbnail as fallback: ${item.thumbnail.url}`);
-      featuredImageUrl = item.thumbnail.url;
-    }
+    // Step 4: Default image — real image generated async by n8n after commit
+    const defaultImagePath = `/assets/images/${siteDomain}-general-article.webp`;
+    const featuredImageUrl = defaultImagePath;
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);
@@ -512,12 +658,14 @@ async function processItem(
 
       console.log(
         `[agent] Quality score: ${qualityScore}/100 → ${articleStatus}` +
-        ` (threshold: ${brief.quality_threshold ?? 75})`,
+        ` (threshold: ${brief.quality_threshold ?? 40})`,
       );
     } catch (scoreErr) {
       const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
-      console.warn(`[agent] Quality scoring failed, defaulting to published: ${errMsg}`);
+      console.warn(`[agent] Quality scoring failed, defaulting to review: ${errMsg}`);
       qualityNote = `Quality scoring failed: ${errMsg}`;
+      qualityScore = 0;
+      articleStatus = "review";
     }
 
     // Step 9: Build frontmatter
@@ -529,7 +677,7 @@ async function processItem(
       type: articleType,
       status: articleStatus,
       publishDate,
-      author: "Editorial Team",
+      author: author || "Editorial Team",
       tags,
       slug,
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
@@ -543,7 +691,23 @@ async function processItem(
       ...(seo.readingTime ? { reading_time: seo.readingTime } : {}),
     };
 
-    const markdown = matter.stringify(generated.body, frontmatter);
+    // If the source item is a video, embed it after paragraph 1
+    if (item.content_type === "video" && item.url) {
+      frontmatter.videos = [
+        {
+          id: randomUUID(),
+          url: item.url,
+          position: "after-paragraph-1",
+        },
+      ];
+      console.log(`[agent] Video content detected — embedding ${item.url} after paragraph 1`);
+    }
+
+    // Strip leading H1 from body — the title is in frontmatter and rendered
+    // by the layout. Models sometimes include it despite prompt instructions.
+    const cleanBody = generated.body.replace(/^\s*#\s+[^\n]+\n*/, "");
+
+    const markdown = matter.stringify(cleanBody, frontmatter);
     const filePath = `sites/${siteDomain}/articles/${slug}.md`;
 
     return {
@@ -554,66 +718,31 @@ async function processItem(
       articleStatus,
       generatedBy: actualGenerator,
       _pendingArticle: { siteDomain, slug, content: markdown },
-      _pendingAsset: pendingImageAsset,
+      _imageRequest: {
+        requestId: `img_${randomUUID().replace(/-/g, "").slice(0, 24)}`,
+        siteDomain,
+        slug,
+        articleTitle: generated.title,
+        articleDescription: generated.description,
+        articleSummary: item.summary,
+        vertical: item.vertical?.name ?? "General",
+        sourceThumbnailUrl: item.thumbnail?.url,
+        imageGuidelines: brief.image_guidelines ?? null,
+      },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`[agent] Failed to process item "${item.title}":`, message);
+    console.error(`[agent] Failed to process item "${item.title}" (${siteDomain}):`, message);
+    if (err instanceof Error && err.stack) {
+      console.error(`[agent] Stack trace:`, err.stack);
+    }
     return { status: "error", message };
   }
 }
 
 // ---------------------------------------------------------------------------
-// Concurrency-limited processing
+// Concurrency-limited processing — imported from ../../lib/concurrency.js
 // ---------------------------------------------------------------------------
-
-async function processWithConcurrency<T, R>(
-  items: T[],
-  maxConcurrency: number,
-  targetCount: number,
-  processor: (item: T) => Promise<R>,
-  isSuccess: (result: R) => boolean,
-): Promise<R[]> {
-  const results: R[] = [];
-  let successCount = 0;
-  let nextIndex = 0;
-  const inFlight = new Set<Promise<void>>();
-
-  function canProcess(): boolean {
-    return successCount < targetCount && nextIndex < items.length;
-  }
-
-  async function processNext(): Promise<void> {
-    if (!canProcess()) return;
-
-    const idx = nextIndex++;
-    const item = items[idx]!;
-
-    const result = await processor(item);
-    results.push(result);
-
-    if (isSuccess(result)) {
-      successCount++;
-    }
-  }
-
-  while (canProcess() || inFlight.size > 0) {
-    // Fill up to maxConcurrency
-    while (canProcess() && inFlight.size < maxConcurrency) {
-      const p = processNext().then(() => {
-        inFlight.delete(p);
-      });
-      inFlight.add(p);
-    }
-
-    // Wait for at least one to complete
-    if (inFlight.size > 0) {
-      await Promise.race(inFlight);
-    }
-  }
-
-  return results;
-}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -629,54 +758,130 @@ export async function runContentGeneration(
   params: ContentGenerationParams,
   config: AgentConfig,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count } = params;
+  const { siteDomain, branch, count, jobId } = params;
   const targetCount = count ?? 3;
 
   try {
-    // Step 1: Read site brief
-    const { siteName, brief } = await getSiteBrief(config, siteDomain, branch);
+    // Step 1: Read site brief (skip GitHub read if preloaded from scheduler)
+    const { siteName, author: siteAuthor, brief } = await getSiteBrief(
+      config, siteDomain, branch, params.preloadedBrief,
+    );
 
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);
 
-    // Step 3: Fetch enriched items — LIGHTWEIGHT: only targetCount * 2
-    const fetchLimit = targetCount * 2;
-    console.log(`[agent] Fetching ${fetchLimit} items from aggregator (target: ${targetCount})`);
+    // Step 3: Resolve tag IDs from topics if the brief doesn't have them
+    let tagIds = brief.tag_ids?.filter((id) => !!id && id.length > 0);
+    if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
+      console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
+      tagIds = await resolveTopicTagIds(brief.topics);
+      tagIds = tagIds.filter((id) => !!id && id.length > 0);
+      if (tagIds.length > 0) {
+        console.log(`[agent] Resolved ${tagIds.length} tag ID(s): ${tagIds.join(", ")}`);
+      }
+    }
 
-    const [items, settings] = await Promise.all([
-      getContent({
-        limit: fetchLimit,
-        language: brief.language ?? "EN",
-      }),
-      getSettings(),
-    ]);
+    // Step 4: Fetch enriched items with pagination — skip past duplicates
+    const PAGE_SIZE = 20;
+    const MAX_PAGES = 5;
 
-    if (items.length === 0) {
+    const settings = await getSettings();
+
+    // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
+    // into category_ids for the aggregator query.
+    const categoryIds = brief.category_ids ?? [];
+    const mergedCategoryIds = brief.vertical_id
+      ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
+      : categoryIds;
+
+    // Helper: paginated fetch + dedup against existing articles
+    async function fetchNewItems(
+      useTagIds: string[] | undefined,
+      label: string,
+    ): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+      const newItems: ContentItem[] = [];
+      let totalFetched = 0;
+      let duplicateCount = 0;
+
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        console.log(`[agent] [${label}] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
+
+        const response = await getContent({
+          limit: PAGE_SIZE,
+          page,
+          language: brief.language ?? "EN",
+          bundle_id: brief.bundle_id,
+          category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
+          tag_ids: useTagIds,
+        });
+
+        const pageItems = response.items;
+        totalFetched += pageItems.length;
+
+        if (pageItems.length === 0) break;
+
+        for (const item of pageItems) {
+          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
+          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
+          newItems.push(item);
+        }
+
+        const totalPages = response.total_pages ?? 1;
+        if (newItems.length >= targetCount || page >= totalPages) break;
+
+        console.log(
+          `[agent] [${label}] Page ${page}: found ${newItems.length} new so far ` +
+          `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
+        );
+      }
+
+      return { newItems, totalFetched, duplicateCount };
+    }
+
+    // Narrow search: categories + tags
+    let { newItems, totalFetched, duplicateCount } = await fetchNewItems(tagIds, "narrow");
+
+    // Fallback: if narrow search yielded no usable items (either 0 results
+    // from the API or all duplicates), retry with a broader search
+    // (categories only, drop tags) to find fresh content.
+    if (newItems.length === 0 && tagIds && tagIds.length > 0) {
+      const reason = totalFetched === 0
+        ? "returned 0 items"
+        : `returned ${totalFetched} items but all ${duplicateCount} were duplicates`;
+      console.log(
+        `[agent] Narrow search (categories + tags) ${reason}. ` +
+        `Retrying with broader search (categories only, no tags)…`,
+      );
+      const broad = await fetchNewItems(undefined, "broad");
+      newItems = broad.newItems;
+      totalFetched += broad.totalFetched;
+      duplicateCount += broad.duplicateCount;
+
+      if (newItems.length > 0) {
+        console.log(`[agent] Broad search found ${newItems.length} new item(s) — proceeding`);
+      }
+    }
+
+    if (totalFetched === 0) {
       return {
         siteDomain,
         requested: targetCount,
         totalSourced: 0,
         duplicateCount: 0,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "no items found from aggregator" }],
       };
     }
-
-    // Step 4: Deduplicate — by URL AND title
-    const newItems = items.filter((item) => {
-      if (existing.urls.has(normalizeUrl(item.url))) return false;
-      if (existing.titles.has(normalizeTitleKey(item.title))) return false;
-      return true;
-    });
-    const duplicateCount = items.length - newItems.length;
 
     if (newItems.length === 0) {
       return {
         siteDomain,
         requested: targetCount,
-        totalSourced: items.length,
+        totalSourced: totalFetched,
         duplicateCount,
         availableNew: 0,
+        n8nImagesTriggered: 0,
         results: [{ status: "skipped", reason: "all items already processed" }],
       };
     }
@@ -684,7 +889,7 @@ export async function runContentGeneration(
     console.log(
       `[agent] Processing up to ${targetCount} articles for ${siteDomain}` +
       ` from pool of ${newItems.length}` +
-      ` (fetched: ${items.length}, duplicates: ${duplicateCount})`,
+      ` (fetched: ${totalFetched}, duplicates: ${duplicateCount})`,
     );
 
     // Step 5: Process items with concurrency limit, stop at targetCount successes
@@ -692,7 +897,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor),
       (result) => result.status === "created",
     );
 
@@ -700,42 +905,19 @@ export async function runContentGeneration(
     const createdCount = results.filter((r) => r.status === "created").length;
     if (createdCount < targetCount) {
       console.warn(
-        `[agent] Only ${createdCount}/${targetCount} articles created from ${fetchLimit} fetched items. ` +
-        `Returning what we have — not fetching more.`,
+        `[agent] Only ${createdCount}/${targetCount} articles created from ${totalFetched} fetched items. ` +
+        `Returning what we have.`,
       );
     }
-
-    // Step 6: Batch-write all created articles in a SINGLE commit
-    const created = results.filter((r) => r.status === "created");
-    if (created.length > 0) {
-      const pendingArticles = created
-        .map((r) => r._pendingArticle)
-        .filter((a): a is PendingArticle => !!a);
-      const pendingAssets = created
-        .map((r) => r._pendingAsset)
-        .filter((a): a is PendingAsset => !!a);
-
-      const slugList = pendingArticles.map((a) => a.slug).join(", ");
-      const commitMsg = `feat(content): add ${pendingArticles.length} article(s) for ${siteDomain}\n\n${slugList}`;
-
-      await writeArticleBatch(
-        { localNetworkPath: config.localNetworkPath, github: config.github, branch },
-        pendingArticles,
-        pendingAssets,
-        commitMsg,
-      );
-    }
-
-    // Strip internal fields before returning API response
-    const cleanResults = results.map(({ _pendingArticle, _pendingAsset, ...rest }) => rest);
 
     return {
       siteDomain,
       requested: targetCount,
-      totalSourced: items.length,
+      totalSourced: totalFetched,
       duplicateCount,
       availableNew: newItems.length,
-      results: cleanResults,
+      n8nImagesTriggered: 0,
+      results,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -746,6 +928,7 @@ export async function runContentGeneration(
       totalSourced: 0,
       duplicateCount: 0,
       availableNew: 0,
+      n8nImagesTriggered: 0,
       results: [{ status: "error", message }],
     };
   }

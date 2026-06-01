@@ -71,6 +71,9 @@ export interface SiteBrief {
   /** Free-form editorial guidelines for content agents. */
   content_guidelines: string | string[];
 
+  /** Free-form image generation guidelines for content agents. */
+  image_guidelines?: string | string[];
+
   /** Percentage of articles that require human review before publishing. */
   review_percentage: number;
 
@@ -80,8 +83,23 @@ export interface SiteBrief {
   /** Content vertical for aggregator API queries. */
   vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
 
+  /** Content Aggregator vertical ID — preferred over name for API queries. */
+  vertical_id?: string;
+
+  /** Content Aggregator category IDs — all categories the site targets. */
+  category_ids?: string[];
+
+  /** Content Aggregator tag IDs — all tags the site targets. */
+  tag_ids?: string[];
+
+  /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+  bundle_id?: string;
+
   /** Target audience type for aggregator API queries. */
   audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
+
+  /** Content Aggregator audience type IDs — preferred over name for API queries. */
+  audience_type_ids?: string[];
 
   /** Content language code (ISO 639-1). Defaults to "EN". */
   language?: string;
@@ -104,11 +122,28 @@ export interface ThemeConfig {
   /** Base theme template to extend. */
   base?: "modern" | "editorial" | "bold" | "classic";
 
-  /** Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }). */
+  /**
+   * Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }).
+   * Recognised keys include: primary, accent, background, secondary, text,
+   * muted, surface, border, heading, link, link_hover, nav_link_hover,
+   * footer_bg, must_reads_bg, hero_title, must_reads_title,
+   * article_hero_title, article_hero_meta, feed_title, feed_desc, feed_date,
+   * prose_heading, prose_body, category_header_text, footer_text,
+   * footer_heading, footer_link, footer_link_hover.
+   */
   colors?: Record<string, string>;
 
   /** URL or path to the site logo. */
   logo?: string;
+
+  /** Optional alternate logo shown only in the footer (e.g. a light-on-dark variant). Falls back to `logo` when unset. */
+  footer_logo?: string;
+
+  /** Header logo height in pixels. Defaults to 52. */
+  logo_height?: number;
+
+  /** Footer logo height in pixels. Defaults to ~92% of `logo_height` (≈48 when logo_height is 52). */
+  logo_height_footer?: number;
 
   /** URL or path to the site favicon. */
   favicon?: string;
@@ -136,6 +171,15 @@ export interface ResolvedThemeConfig {
   /** URL or path to the site logo. */
   logo: string;
 
+  /** Alternate footer logo. Empty string when unset (falls back to `logo`). */
+  footer_logo: string;
+
+  /** Header logo height in pixels. */
+  logo_height: number;
+
+  /** Footer logo height in pixels. `null` means auto-derive (CSS calc 92% of header). */
+  logo_height_footer: number | null;
+
   /** URL or path to the site favicon. */
   favicon: string;
 
@@ -145,6 +189,137 @@ export interface ResolvedThemeConfig {
     body: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+/**
+ * Configuration for the homepage hero block in the v2 magazine layout.
+ */
+export interface HeroLayoutConfig {
+  /** Whether the hero block is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Number of hero cards to display. Default: 4. */
+  count?: 3 | 4;
+}
+
+/**
+ * Configuration for the must-reads strip in the v2 magazine layout.
+ */
+export interface MustReadsLayoutConfig {
+  /** Whether the must-reads strip is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Number of must-reads (>= 1; values < 1 are clamped at runtime). Default: 5. */
+  count?: number;
+}
+
+/**
+ * Configuration for the sidebar topics list in the v2 magazine layout.
+ */
+export interface SidebarTopicsConfig {
+  /** Whether topics are auto-derived from site brief topics. Default: true. */
+  auto?: boolean;
+
+  /** Explicit ordered list of topic slugs. Default: []. */
+  explicit?: string[];
+}
+
+/**
+ * Configuration for the homepage "load more" pagination in the v2 magazine layout.
+ */
+export interface LoadMoreConfig {
+  /** Articles per page (>= 1; values < 1 are clamped at runtime). Default: 4. */
+  page_size?: number;
+}
+
+/**
+ * Configuration for the homepage "What's New" grid in the v2 magazine layout.
+ */
+export interface WhatsNewLayoutConfig {
+  /** Whether the What's New grid is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Number of cards to display (>= 1; values < 1 are clamped at runtime). Default: 4. */
+  count?: number;
+}
+
+/**
+ * Configuration for the homepage "More on {site_name}" section in the v2 magazine layout.
+ */
+export interface MoreOnLayoutConfig {
+  /** Whether the More on section is rendered. Default: true. */
+  enabled?: boolean;
+
+  /** Initial articles rendered before any "Show More" click (>= 1; clamped). Default: 8. */
+  page_size?: number;
+}
+
+/**
+ * Layout knobs for the v2 magazine layout.
+ * All fields are optional partials that get merged across the
+ * org -> group -> site inheritance chain and then resolved against
+ * `LAYOUT_DEFAULTS`.
+ */
+export interface LayoutConfig {
+  /** Hero block configuration. */
+  hero?: HeroLayoutConfig;
+
+  /** Must-reads strip configuration. */
+  must_reads?: MustReadsLayoutConfig;
+
+  /** What's New grid configuration. */
+  whats_new?: WhatsNewLayoutConfig;
+
+  /** More on {site_name} section configuration. */
+  more_on?: MoreOnLayoutConfig;
+
+  /** Sidebar topics list configuration. */
+  sidebar_topics?: SidebarTopicsConfig;
+
+  /** Homepage "load more" pagination configuration. */
+  load_more?: LoadMoreConfig;
+}
+
+/**
+ * Fully-resolved layout configuration where every field is required.
+ * Produced by `resolveLayout()` after merging org -> group -> site layers
+ * over `LAYOUT_DEFAULTS`.
+ */
+export interface ResolvedLayoutConfig {
+  /** Resolved hero block configuration. */
+  hero: { enabled: boolean; count: 3 | 4 };
+
+  /** Resolved must-reads strip configuration (count clamped to >= 1). */
+  must_reads: { enabled: boolean; count: number };
+
+  /** Resolved What's New grid (count clamped to >= 1). */
+  whats_new: { enabled: boolean; count: number };
+
+  /** Resolved More on section (page_size clamped to >= 1). */
+  more_on: { enabled: boolean; page_size: number };
+
+  /** Resolved sidebar topics configuration. */
+  sidebar_topics: { auto: boolean; explicit: string[] };
+
+  /** Resolved load-more pagination configuration (page_size clamped to >= 1). */
+  load_more: { page_size: number };
+}
+
+/**
+ * Baseline defaults for the v2 magazine layout. Used as the starting point
+ * by `resolveLayout()` before merging org/group/site overrides.
+ */
+export const LAYOUT_DEFAULTS: ResolvedLayoutConfig = {
+  hero: { enabled: true, count: 4 },
+  must_reads: { enabled: true, count: 5 },
+  whats_new: { enabled: true, count: 4 },
+  more_on: { enabled: true, page_size: 8 },
+  sidebar_topics: { auto: true, explicit: [] },
+  load_more: { page_size: 4 },
+};
 
 // ---------------------------------------------------------------------------
 // Preview page
@@ -242,6 +417,9 @@ export interface ScriptsConfig {
 
   /** Scripts injected just before the closing `</body>` tag. */
   body_end: ScriptEntry[];
+
+  /** Scripts injected immediately before the `<footer>` element. */
+  before_footer: ScriptEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -272,6 +450,12 @@ export interface OrgConfig {
   default_fonts?: {
     heading: string;
     body: string;
+  };
+
+  /** Default colours applied to new sites (flow through inheritance). */
+  default_colors?: {
+    primary?: string;
+    accent?: string;
   };
 
   /**
@@ -319,6 +503,9 @@ export interface OrgConfig {
 
   /** Default search configuration. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -367,6 +554,9 @@ export interface GroupConfig {
 
   /** Group-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +575,9 @@ export interface SiteConfig {
 
   /** Optional tagline shown in headers / meta tags. */
   site_tagline?: string | null;
+
+  /** Default author name for generated articles. */
+  author?: string;
 
   /**
    * @deprecated Legacy single-group field. Use `groups` array instead.
@@ -446,6 +639,9 @@ export interface SiteConfig {
 
   /** Site-level search overrides. */
   search?: Partial<SearchConfig>;
+
+  /** Layout knobs for the new magazine-style layout. */
+  layout?: LayoutConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +707,9 @@ export interface ResolvedConfig {
 
   /** Fully-resolved theme configuration (all fields required). */
   theme: ResolvedThemeConfig;
+
+  /** Fully-resolved layout configuration (all fields required). */
+  layout: ResolvedLayoutConfig;
 
   /** Editorial brief for the site. */
   brief: SiteBrief;

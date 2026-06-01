@@ -1,0 +1,202 @@
+---
+/**
+ * Phase 2 HTML shell.
+ *
+ * Loads Google Fonts, sets theme CSS custom properties, renders the
+ * head + body slots. Inline ads, pixels, and the ad-loader.js script
+ * are intentionally absent — Phase 4 brings them back as Server Islands.
+ */
+import { getConfig, isStagingEnv } from '../lib/config';
+import PixelLoader from '../components/PixelLoader.astro';
+import InterstitialLoader from '../components/InterstitialLoader.astro';
+import '../themes/modern/styles/theme.css';
+
+interface Props {
+  title: string;
+  description: string;
+  pageType?: 'homepage' | 'article' | 'category';
+}
+
+const { title, description, pageType = 'article' } = Astro.props;
+const config = getConfig(Astro);
+const staging = isStagingEnv(Astro);
+const { theme, scripts, tracking } = config;
+const facebookDomainVerification = (tracking?.facebook_domain_verification as string | null | undefined) ?? null;
+
+// On staging (workers.dev / localhost), only allow local scripts (src starts
+// with "/") so mock-ad-fill.js works for QA. External ad SDKs and inline
+// widget loaders are suppressed to avoid burning real impressions.
+function isLocalScript(s: { src?: string }): boolean {
+  return !!s.src?.startsWith('/');
+}
+const allHeadScripts = scripts?.head ?? [];
+const allBodyStartScripts = scripts?.body_start ?? [];
+const allBodyEndScripts = scripts?.body_end ?? [];
+const headScripts = staging ? allHeadScripts.filter(isLocalScript) : allHeadScripts;
+const bodyStartScripts = staging ? allBodyStartScripts.filter(isLocalScript) : allBodyStartScripts;
+const bodyEndScripts = staging ? allBodyEndScripts.filter(isLocalScript) : allBodyEndScripts;
+
+const fontFamilies = [theme.fonts.heading, theme.fonts.body]
+  .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
+  .map((f) => f.replace(/ /g, '+'))
+  .filter((v, i, a) => a.indexOf(v) === i);
+
+const googleFontsUrl =
+  fontFamilies.length > 0
+    ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
+    : null;
+
+const rawLogoHeight = typeof theme.logo_height === 'number' ? theme.logo_height : 52;
+const logoHeight = Math.min(rawLogoHeight, 104); // clamp so logo never overflows nav cap
+const logoHeightFooter = typeof theme.logo_height_footer === 'number' ? theme.logo_height_footer : null;
+// Nav grows with the logo (8px padding top + 8px bottom), min 64px (mobile), max 120px.
+const navHeight = Math.min(Math.max(64, logoHeight + 16), 120);
+
+const colorVars = Object.entries(theme.colors)
+  .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+
+const cssVars = [
+  colorVars,
+  `--logo-height: ${logoHeight}px;`,
+  `--nav-height: ${navHeight}px;`,
+  logoHeightFooter != null ? `--logo-height-footer: ${logoHeightFooter}px;` : '',
+]
+  .filter(Boolean)
+  .join(' ');
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {facebookDomainVerification && (
+      <meta name="facebook-domain-verification" content={facebookDomainVerification} />
+    )}
+    {theme.favicon && (
+      <>
+        <link rel="icon" type="image/png" sizes="32x32" href={theme.favicon} />
+        <link rel="apple-touch-icon" sizes="180x180" href={theme.favicon} />
+      </>
+    )}
+
+    {googleFontsUrl && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontsUrl} />
+      </>
+    )}
+
+    <slot name="head" />
+
+    {/* Injected head scripts from config.scripts.head (org/group/override/site layers). */}
+    {headScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    {/* Server Island — GA4/GTM/Meta pixels re-render per request from KV. */}
+    <PixelLoader server:defer />
+
+    <style
+      define:vars={{
+        fontHeading: theme.fonts.heading,
+        fontBody: theme.fonts.body,
+      }}
+    >
+      :root {
+        font-family: var(--fontBody), sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--fontHeading), sans-serif;
+      }
+    </style>
+
+    <style is:global>
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+    </style>
+
+    <style set:html={`:root { ${cssVars} }`}></style>
+  </head>
+
+  <body>
+    {/* Injected body_start scripts from config layers. */}
+    {bodyStartScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    <slot />
+
+    {/* Injected body_end scripts from config layers.
+         External (src) scripts load immediately. Inline scripts are deferred
+         to the window load event so they fire AFTER Server Islands (ad slots)
+         and async head scripts (ad SDKs) have loaded. This lets users paste
+         widget code as-is without worrying about timing. */}
+    {bodyEndScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={`window.addEventListener('load',function(){${s.inline}});`} />
+          : null
+    )}
+
+    {/* Interstitial ad loader — trigger + frequency + external script.
+         Suppressed on staging to avoid burning real ad impressions. */}
+    {!staging && <InterstitialLoader pageType={pageType} />}
+
+    {/* Site-wide newsletter form handler — any form with data-newsletter-form. */}
+    <script is:inline>
+      (function() {
+        document.querySelectorAll('form[data-newsletter-form]').forEach(function(form) {
+          form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            var hp = form.querySelector('input[name="_hp"]');
+            if (hp && hp.value) return;
+            var emailEl = form.querySelector('input[type="email"]');
+            var status = form.parentElement.querySelector('[data-newsletter-status]');
+            var email = emailEl && emailEl.value && emailEl.value.trim();
+            if (!email) return;
+            if (status) status.textContent = 'Subscribing…';
+            try {
+              var res = await fetch('https://sites-platform-e297.atomic.cloudgrid.io/api/subscribe', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  email: email,
+                  domain: form.dataset.domain,
+                  source: form.dataset.source,
+                }),
+              });
+              if (res.ok) {
+                if (status) status.textContent = 'Thanks — check your inbox.';
+                form.reset();
+              } else {
+                if (status) status.textContent = 'Hmm, that didn\'t work. Please try again.';
+              }
+            } catch {
+              if (status) status.textContent = 'Network error. Please try again.';
+            }
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

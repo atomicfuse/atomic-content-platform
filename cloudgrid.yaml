@@ -1,28 +1,63 @@
-name: atomic-content-platform
+# CloudGrid deploy config for the atomic-content-platform entity.
+# Entity slug (sites-platform-e297) is pinned in .cloudgrid/link.json.
+# Reference: https://cloudgrid.io/docs (cloudgrid.yaml spec)
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # dashboard — public Next.js UI. Owns all /api/* (Next.js App Router routes)
+  # and serves at the entity outlet (https://sites-platform-e297.atomic.cloudgrid.io).
+  # ---------------------------------------------------------------------------
   dashboard:
     type: nextjs
     path: /
     env:
-      CONTENT_AGENT_URL: http://content-pipeline-app
-      NEXTAUTH_URL: https://atomic-content-platform.apps.cloudgrid.io
+      NODE_OPTIONS: "--max-old-space-size=4096"
       GOOGLE_SHEET_ID: "1XE56hNxuhCg4fP8gC59cv2quGp38Im3ASJ1ADj9gzZY"
-    # Secrets (via: cloudgrid secrets set atomic-content-platform KEY=value):
-    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY
+      CONTENT_AGENT_URL: http://content-pipeline-app
+      # IMPORTANT: CloudGrid auto-injects CONTENT_AGGREGATOR_URL as a
+      # platform read-only env var pointing to a stale entity URL. Use
+      # CONTENT_API_BASE_URL instead — all API routes check it first.
+      CONTENT_API_BASE_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
+    # Secrets (via `cloudgrid secrets set KEY=VALUE`):
+    #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+    #   GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
+    #   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
 
+  # ---------------------------------------------------------------------------
+  # content-pipeline — internal worker (no public path). Reached by the
+  # dashboard at http://content-pipeline-app via cluster DNS.
+  # Endpoints: GET /health, POST /content-generate, GET /scheduled-publish.
+  # ---------------------------------------------------------------------------
   content-pipeline:
     type: node
     lang: typescript
-    path: /pipeline
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
-      CONTENT_AGGREGATOR_URL: https://content-aggregator-cloudgrid.apps.cloudgrid.io
-    # Secrets: GITHUB_TOKEN, GEMINI_API_KEY
-    # Note: ANTHROPIC_API_KEY not needed — CloudGrid AI Gateway handles it
+      # IMPORTANT: CloudGrid auto-injects CONTENT_AGGREGATOR_URL as a
+      # platform read-only env var pointing to a stale entity URL. Use
+      # CONTENT_API_BASE_URL instead — api-client.ts checks it first.
+      CONTENT_API_BASE_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
+    # Secrets (via `cloudgrid secrets set KEY=VALUE`):
+    #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY,
+    #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (Assets account — for article image uploads)
+    # REDIS_URL is auto-injected by `requires: redis: private`.
+    # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
+    # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
+    #   articles) and OpenAI image generator (Tier B fallback). Without it,
+    #   the pipeline relies entirely on Claude + Gemini; if either fails,
+    #   the source thumbnail is used as a last-resort image fallback.
 
+  # ---------------------------------------------------------------------------
+  # scheduled-publisher — hourly cron that pings the pipeline. The pipeline
+  # gates execution against scheduler/config.yaml in the network repo, so
+  # most ticks are no-ops.
+  # ---------------------------------------------------------------------------
   scheduled-publisher:
     type: cron
     schedule: "0 * * * *"
     timezone: EST
     run: http://content-pipeline-app/scheduled-publish
+
+requires:
+  - redis: private

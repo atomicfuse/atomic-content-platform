@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
+import { SizeConfigPanel } from "./SizeConfigPanel";
+import type { AdSizeConfig } from "./ad-size-config";
+import {
+  createDefaultSizeConfig,
+  configToSizeTuples,
+  sizeTuplesToConfig,
+} from "./ad-size-config";
 /** Ad placement — mirrors @atomic-platform/shared-types */
 interface AdPlacementSizes {
   desktop?: number[][];
@@ -12,10 +19,59 @@ export interface AdPlacement {
   position: string;
   sizes: AdPlacementSizes;
   device: "all" | "desktop" | "mobile";
+  /** Whether visitors can dismiss this ad. Only meaningful for sticky-bottom. Default: true. */
+  dismissible?: boolean;
+  /** Structured desktop size config for the editor UI. */
+  desktopSizeConfig?: AdSizeConfig;
+  /** Structured mobile size config for the editor UI. */
+  mobileSizeConfig?: AdSizeConfig;
+  /** Raw HTML/JS widget code to inject inside the ad slot container. */
+  code?: string;
+  /** Which page types this placement appears on. Default: ["all"]. */
+  page_types?: InterstitialPageType[];
+  /** Page types to exclude this placement from (overrides page_types). */
+  exclude_pages?: InterstitialExcludePage[];
 }
+
+export { validatePlacementConfigs } from "./ad-size-config";
+
+export type InterstitialPageType = "all" | "article" | "category" | "homepage";
+export type InterstitialExcludePage =
+  | "homepage" | "articles" | "categories"
+  | "about" | "contact" | "privacy" | "terms" | "dmca" | "amazon";
+
+export interface InterstitialConfigFormValue {
+  script_url: string;
+  script_inline: string;
+  trigger: {
+    type: "delay" | "scroll" | "exit_intent";
+    delay_seconds: number;
+    scroll_percent: number;
+  };
+  frequency: {
+    type: "once_per_session" | "once_per_day" | "custom";
+    max_per_session: number;
+  };
+  page_types: InterstitialPageType[];
+  close_delay_seconds: number;
+  device: "both" | "desktop" | "mobile";
+  exclude_pages: InterstitialExcludePage[];
+}
+
+export const DEFAULT_INTERSTITIAL_CONFIG: InterstitialConfigFormValue = {
+  script_url: "",
+  script_inline: "",
+  trigger: { type: "delay", delay_seconds: 5, scroll_percent: 50 },
+  frequency: { type: "once_per_session", max_per_session: 1 },
+  page_types: ["all"],
+  close_delay_seconds: 3,
+  device: "both",
+  exclude_pages: [],
+};
 
 export interface AdsConfigFormValue {
   interstitial: boolean;
+  interstitial_config: InterstitialConfigFormValue;
   layout: string;
   ad_placements: AdPlacement[];
 }
@@ -34,6 +90,25 @@ const DEVICE_OPTIONS: Array<{ value: AdPlacement["device"]; label: string }> = [
   { value: "all", label: "All Devices" },
   { value: "desktop", label: "Desktop" },
   { value: "mobile", label: "Mobile" },
+];
+
+const PAGE_TYPE_OPTIONS: Array<{ value: InterstitialPageType; label: string }> = [
+  { value: "all", label: "All Pages" },
+  { value: "homepage", label: "Homepage" },
+  { value: "article", label: "Articles" },
+  { value: "category", label: "Categories" },
+];
+
+const EXCLUDE_PAGE_OPTIONS: Array<{ value: InterstitialExcludePage; label: string; group?: string }> = [
+  { value: "homepage", label: "Homepage" },
+  { value: "articles", label: "Articles" },
+  { value: "categories", label: "Categories" },
+  { value: "about", label: "About", group: "Shared Pages" },
+  { value: "contact", label: "Contact", group: "Shared Pages" },
+  { value: "privacy", label: "Privacy", group: "Shared Pages" },
+  { value: "terms", label: "Terms", group: "Shared Pages" },
+  { value: "dmca", label: "DMCA", group: "Shared Pages" },
+  { value: "amazon", label: "Amazon Disclosure", group: "Shared Pages" },
 ];
 
 const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
@@ -78,6 +153,10 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
       position: "above-content",
       device: "all",
       sizes: {},
+      desktopSizeConfig: createDefaultSizeConfig(),
+      mobileSizeConfig: createDefaultSizeConfig(),
+      page_types: ["all"],
+      exclude_pages: [],
     };
     onChange({ ...value, ad_placements: [...value.ad_placements, newPlacement] });
   }, [value, onChange]);
@@ -103,16 +182,6 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
     [value, onChange],
   );
 
-  const updateSizes = useCallback(
-    (placementIndex: number, device: keyof AdPlacementSizes, sizesStr: string): void => {
-      const placement = value.ad_placements[placementIndex];
-      const parsed = parseSizes(sizesStr);
-      const newSizes = { ...placement.sizes, [device]: parsed.length > 0 ? parsed : undefined };
-      updatePlacement(placementIndex, { sizes: newSizes });
-    },
-    [value, updatePlacement],
-  );
-
   return (
     <div className="space-y-6">
       {/* Toggle fields */}
@@ -125,6 +194,16 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
           }}
         />
       </div>
+
+      {/* Interstitial Config — shown when toggle is ON */}
+      {value.interstitial && (
+        <InterstitialConfigPanel
+          config={value.interstitial_config}
+          onChange={(cfg): void => {
+            updateField("interstitial_config", cfg);
+          }}
+        />
+      )}
 
       {/* Layout dropdown */}
       <div className="space-y-1.5">
@@ -265,43 +344,607 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
               </div>
             </div>
 
-            {/* Sizes */}
+            {/* Size Config Panels */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Desktop Sizes
-                </label>
-                <input
-                  type="text"
-                  value={formatSizes(placement.sizes.desktop)}
-                  placeholder="728x90, 970x250"
-                  onChange={(e): void => {
-                    updateSizes(index, "desktop", e.target.value);
-                  }}
-                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Mobile Sizes
-                </label>
-                <input
-                  type="text"
-                  value={formatSizes(placement.sizes.mobile)}
-                  placeholder="320x50, 300x250"
-                  onChange={(e): void => {
-                    updateSizes(index, "mobile", e.target.value);
-                  }}
-                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-                />
-              </div>
+              <SizeConfigPanel
+                label="Desktop Sizes"
+                config={
+                  placement.desktopSizeConfig ??
+                  sizeTuplesToConfig(placement.sizes.desktop)
+                }
+                onChange={(cfg): void => {
+                  const tuples = configToSizeTuples(cfg);
+                  updatePlacement(index, {
+                    desktopSizeConfig: cfg,
+                    sizes: {
+                      ...placement.sizes,
+                      desktop: tuples.length > 0 ? tuples : undefined,
+                    },
+                  });
+                }}
+                disabled={placement.device === "mobile"}
+              />
+              <SizeConfigPanel
+                label="Mobile Sizes"
+                config={
+                  placement.mobileSizeConfig ??
+                  sizeTuplesToConfig(placement.sizes.mobile)
+                }
+                onChange={(cfg): void => {
+                  const tuples = configToSizeTuples(cfg);
+                  updatePlacement(index, {
+                    mobileSizeConfig: cfg,
+                    sizes: {
+                      ...placement.sizes,
+                      mobile: tuples.length > 0 ? tuples : undefined,
+                    },
+                  });
+                }}
+                disabled={placement.device === "desktop"}
+              />
             </div>
+
+            {/* Dismissible toggle — sticky-bottom only */}
+            {placement.position === "sticky-bottom" && (
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={placement.dismissible !== false}
+                  onChange={(e): void => {
+                    updatePlacement(index, { dismissible: e.target.checked });
+                  }}
+                  className="mt-0.5 h-4 w-4 rounded border-[var(--border-primary)] text-cyan accent-cyan"
+                />
+                <div>
+                  <span className="text-sm text-[var(--text-primary)]">
+                    Allow visitors to dismiss this ad (&times;)
+                  </span>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    If unchecked, the sticky ad stays until the user leaves the page.
+                  </p>
+                </div>
+              </label>
+            )}
+
+            {/* Widget Code — raw HTML+JS to inject inside the ad slot */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Widget Code <span className="font-normal normal-case">(optional)</span>
+              </label>
+              <textarea
+                value={placement.code ?? ""}
+                placeholder={'Paste ad widget code here, e.g.:\n<div id="widget-1"></div>\n<script>loadWidget(...);</script>'}
+                onChange={(e): void => {
+                  updatePlacement(index, { code: e.target.value || undefined });
+                }}
+                rows={4}
+                className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-mono text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
+              />
+              <p className="text-xs text-[var(--text-muted)]">
+                Raw HTML + script tags from your ad network. Rendered server-side inside this ad position.
+              </p>
+            </div>
+
+            {/* Page Types */}
+            <PlacementPageTypes
+              pageTypes={placement.page_types ?? ["all"]}
+              excludePages={placement.exclude_pages ?? []}
+              onChange={(patch): void => {
+                updatePlacement(index, patch);
+              }}
+            />
           </div>
         ))}
       </div>
 
       {/* Placement Preview */}
       <PlacementPreview placements={value.ad_placements} />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Placement Page Types / Exclude Pages                                */
+/* ------------------------------------------------------------------ */
+
+function PlacementPageTypes({
+  pageTypes,
+  excludePages,
+  onChange,
+}: {
+  pageTypes: InterstitialPageType[];
+  excludePages: InterstitialExcludePage[];
+  onChange: (patch: Pick<AdPlacement, "page_types" | "exclude_pages">) => void;
+}): React.ReactElement {
+  const togglePageType = (pt: InterstitialPageType): void => {
+    if (pt === "all") {
+      onChange({ page_types: pageTypes.includes("all") ? [] : ["all"], exclude_pages: excludePages });
+      return;
+    }
+    let next: InterstitialPageType[] = pageTypes.filter((t) => t !== "all");
+    if (next.includes(pt)) {
+      next = next.filter((t) => t !== pt);
+    } else {
+      next = [...next, pt];
+    }
+    if (next.length === 3 && next.includes("homepage") && next.includes("article") && next.includes("category")) {
+      next = ["all"];
+    }
+    onChange({ page_types: next.length > 0 ? next : ["all"], exclude_pages: excludePages });
+  };
+
+  const selectClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none";
+
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Show On Page Types
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {PAGE_TYPE_OPTIONS.map((opt) => {
+            const active = pageTypes.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(): void => {
+                  togglePageType(opt.value);
+                }}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold border transition-colors ${
+                  active
+                    ? "bg-cyan/20 border-cyan/50 text-cyan"
+                    : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          Exclude From Pages
+        </label>
+        <select
+          value=""
+          onChange={(e): void => {
+            const val = e.target.value as InterstitialExcludePage;
+            if (val && !excludePages.includes(val)) {
+              onChange({ page_types: pageTypes, exclude_pages: [...excludePages, val] });
+            }
+            e.target.value = "";
+          }}
+          className={selectClass}
+        >
+          <option value="">+ Add page to exclude...</option>
+          {(() => {
+            let lastGroup = "";
+            const elements: React.ReactElement[] = [];
+            for (const opt of EXCLUDE_PAGE_OPTIONS) {
+              if (excludePages.includes(opt.value)) continue;
+              if (opt.group && opt.group !== lastGroup) {
+                lastGroup = opt.group;
+                elements.push(
+                  <option key={`group-${opt.group}`} disabled className="font-semibold">
+                    {"── " + opt.group + " ──"}
+                  </option>,
+                );
+              } else if (!opt.group && lastGroup) {
+                lastGroup = "";
+              }
+              elements.push(
+                <option key={opt.value} value={opt.value}>
+                  {opt.group ? "  " + opt.label : opt.label}
+                </option>,
+              );
+            }
+            return elements;
+          })()}
+        </select>
+        {excludePages.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {excludePages.map((p) => {
+              const opt = EXCLUDE_PAGE_OPTIONS.find((o) => o.value === p);
+              return (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-500/10 border border-red-500/30 px-2 py-0.5 text-xs font-medium text-red-400"
+                >
+                  {opt?.label ?? p}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      onChange({ page_types: pageTypes, exclude_pages: excludePages.filter((x) => x !== p) });
+                    }}
+                    className="ml-0.5 text-red-400/70 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${opt?.label ?? p}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Interstitial Config Panel                                           */
+/* ------------------------------------------------------------------ */
+
+const TRIGGER_OPTIONS: Array<{ value: InterstitialConfigFormValue["trigger"]["type"]; label: string }> = [
+  { value: "delay", label: "Time Delay" },
+  { value: "scroll", label: "Scroll Depth" },
+  { value: "exit_intent", label: "Exit Intent" },
+];
+
+const FREQUENCY_OPTIONS: Array<{ value: InterstitialConfigFormValue["frequency"]["type"]; label: string }> = [
+  { value: "once_per_session", label: "Once Per Session" },
+  { value: "once_per_day", label: "Once Per Day" },
+  { value: "custom", label: "Custom (N per Session)" },
+];
+
+const INTERSTITIAL_DEVICE_OPTIONS: Array<{ value: InterstitialConfigFormValue["device"]; label: string }> = [
+  { value: "both", label: "Both" },
+  { value: "desktop", label: "Desktop Only" },
+  { value: "mobile", label: "Mobile Only" },
+];
+
+function InterstitialConfigPanel({
+  config,
+  onChange,
+}: {
+  config: InterstitialConfigFormValue;
+  onChange: (config: InterstitialConfigFormValue) => void;
+}): React.ReactElement {
+  const initialTab = config.script_inline ? "inline" : "url";
+  const [scriptTab, setScriptTab] = useState<"url" | "inline">(initialTab);
+
+  const update = <K extends keyof InterstitialConfigFormValue>(
+    key: K,
+    val: InterstitialConfigFormValue[K],
+  ): void => {
+    onChange({ ...config, [key]: val });
+  };
+
+  const togglePageType = (pt: InterstitialPageType): void => {
+    if (pt === "all") {
+      // Toggle "all" — if already selected, deselect; otherwise select only "all"
+      update("page_types", config.page_types.includes("all") ? [] : ["all"]);
+      return;
+    }
+    // Deselect "all" when picking specific types
+    let next: InterstitialPageType[] = config.page_types.filter((t) => t !== "all");
+    if (next.includes(pt)) {
+      next = next.filter((t) => t !== pt);
+    } else {
+      next = [...next, pt];
+    }
+    // If all specific types selected, collapse to "all"
+    if (next.length === 3 && next.includes("homepage") && next.includes("article") && next.includes("category")) {
+      next = ["all"];
+    }
+    update("page_types", next.length > 0 ? next : ["all"]);
+  };
+
+  const selectClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none";
+  const inputClass =
+    "w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors";
+  const labelClass =
+    "block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]";
+
+  return (
+    <div className="rounded-lg border border-cyan/20 bg-cyan/5 p-4 space-y-4">
+      <h4 className="text-xs font-semibold uppercase tracking-wider text-cyan">
+        Interstitial Configuration
+      </h4>
+
+      {/* Script — tabbed: External URL / Inline Code */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Script</label>
+        <div className="flex gap-1 mb-2">
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("url")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "url"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            External URL
+          </button>
+          <button
+            type="button"
+            onClick={(): void => setScriptTab("inline")}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+              scriptTab === "inline"
+                ? "bg-cyan/20 border-cyan/50 text-cyan"
+                : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+            }`}
+          >
+            Inline Code
+          </button>
+        </div>
+
+        {scriptTab === "url" ? (
+          <>
+            <input
+              type="url"
+              value={config.script_url}
+              placeholder="https://cdn.adnetwork.com/interstitial.js"
+              onChange={(e): void => {
+                update("script_url", e.target.value);
+              }}
+              className={inputClass}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              External ad-network script that renders the interstitial overlay.
+            </p>
+          </>
+        ) : (
+          <>
+            <textarea
+              value={config.script_inline}
+              placeholder={"// Inline JavaScript for the interstitial overlay\n(function() {\n  // ...\n})();"}
+              onChange={(e): void => {
+                update("script_inline", e.target.value);
+              }}
+              rows={6}
+              className={inputClass + " font-mono text-xs"}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              Inline JavaScript injected directly. Use when no external script URL is available.
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Trigger + Frequency row */}
+      <div className="grid grid-cols-2 gap-4">
+        {/* Trigger */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Trigger</label>
+          <select
+            value={config.trigger.type}
+            onChange={(e): void => {
+              onChange({
+                ...config,
+                trigger: { ...config.trigger, type: e.target.value as InterstitialConfigFormValue["trigger"]["type"] },
+              });
+            }}
+            className={selectClass}
+          >
+            {TRIGGER_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {config.trigger.type === "delay" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={config.trigger.delay_seconds}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    trigger: { ...config.trigger, delay_seconds: Math.max(1, parseInt(e.target.value) || 5) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">seconds</span>
+            </div>
+          )}
+
+          {config.trigger.type === "scroll" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                value={config.trigger.scroll_percent}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    trigger: { ...config.trigger, scroll_percent: Math.max(1, Math.min(100, parseInt(e.target.value) || 50)) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">% scroll depth</span>
+            </div>
+          )}
+        </div>
+
+        {/* Frequency */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Frequency Cap</label>
+          <select
+            value={config.frequency.type}
+            onChange={(e): void => {
+              onChange({
+                ...config,
+                frequency: { ...config.frequency, type: e.target.value as InterstitialConfigFormValue["frequency"]["type"] },
+              });
+            }}
+            className={selectClass}
+          >
+            {FREQUENCY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+
+          {config.frequency.type === "custom" && (
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={config.frequency.max_per_session}
+                onChange={(e): void => {
+                  onChange({
+                    ...config,
+                    frequency: { ...config.frequency, max_per_session: Math.max(1, parseInt(e.target.value) || 1) },
+                  });
+                }}
+                className={inputClass + " w-20"}
+              />
+              <span className="text-xs text-[var(--text-muted)]">times per session</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Page Types */}
+      <div className="space-y-1.5">
+        <label className={labelClass}>Show On Page Types</label>
+        <div className="flex flex-wrap gap-2">
+          {PAGE_TYPE_OPTIONS.map((opt) => {
+            const active = config.page_types.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(): void => {
+                  togglePageType(opt.value);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold border transition-colors ${
+                  active
+                    ? "bg-cyan/20 border-cyan/50 text-cyan"
+                    : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-muted)] hover:border-cyan/30"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Close Button Delay + Device row */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-1.5">
+          <label className={labelClass}>Close Button Delay</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              max={30}
+              value={config.close_delay_seconds}
+              onChange={(e): void => {
+                update("close_delay_seconds", Math.max(0, Math.min(30, parseInt(e.target.value) || 0)));
+              }}
+              className={inputClass + " w-20"}
+            />
+            <span className="text-xs text-[var(--text-muted)]">seconds</span>
+          </div>
+          <p className="text-xs text-[var(--text-muted)]">
+            How long the close button is disabled before visitors can dismiss. Set to 0 for no delay.
+          </p>
+        </div>
+
+        {/* Device targeting */}
+        <div className="space-y-1.5">
+          <label className={labelClass}>Show On Device</label>
+          <select
+            value={config.device}
+            onChange={(e): void => {
+              update("device", e.target.value as InterstitialConfigFormValue["device"]);
+            }}
+            className={selectClass}
+          >
+            {INTERSTITIAL_DEVICE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Exclude Pages */}
+      <div className="space-y-2">
+        <label className={labelClass}>Exclude From Pages</label>
+        <select
+          value=""
+          onChange={(e): void => {
+            const val = e.target.value as InterstitialExcludePage;
+            if (val && !config.exclude_pages.includes(val)) {
+              update("exclude_pages", [...config.exclude_pages, val]);
+            }
+            e.target.value = "";
+          }}
+          className={selectClass}
+        >
+          <option value="">+ Add page to exclude...</option>
+          {(() => {
+            let lastGroup = "";
+            const elements: React.ReactElement[] = [];
+            for (const opt of EXCLUDE_PAGE_OPTIONS) {
+              if (config.exclude_pages.includes(opt.value)) continue;
+              if (opt.group && opt.group !== lastGroup) {
+                lastGroup = opt.group;
+                elements.push(
+                  <option key={`group-${opt.group}`} disabled className="font-semibold">
+                    {"── " + opt.group + " ──"}
+                  </option>,
+                );
+              } else if (!opt.group && lastGroup) {
+                lastGroup = "";
+              }
+              elements.push(
+                <option key={opt.value} value={opt.value}>
+                  {opt.group ? "  " + opt.label : opt.label}
+                </option>,
+              );
+            }
+            return elements;
+          })()}
+        </select>
+        {config.exclude_pages.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {config.exclude_pages.map((p) => {
+              const opt = EXCLUDE_PAGE_OPTIONS.find((o) => o.value === p);
+              return (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-md bg-red-500/10 border border-red-500/30 px-2.5 py-1 text-xs font-medium text-red-400"
+                >
+                  {opt?.label ?? p}
+                  <button
+                    type="button"
+                    onClick={(): void => {
+                      update("exclude_pages", config.exclude_pages.filter((x) => x !== p));
+                    }}
+                    className="ml-0.5 text-red-400/70 hover:text-red-300 transition-colors"
+                    aria-label={`Remove ${opt?.label ?? p}`}
+                  >
+                    &times;
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+        )}
+        <p className="text-xs text-[var(--text-muted)]">
+          Interstitial will not appear on selected pages, even if they match &ldquo;Show On Page Types&rdquo; above.
+        </p>
+      </div>
     </div>
   );
 }
@@ -422,7 +1065,30 @@ function PlacementPreview({ placements }: { placements: AdPlacement[] }): React.
           <div className="text-[10px] uppercase tracking-wider text-amber-500 font-semibold mb-2">
             Sticky bottom (always visible at runtime)
           </div>
-          <PreviewSlot placements={stickyBottom} />
+          {stickyBottom.map((p, i) => (
+            <div
+              key={`${p.id}-sticky-${i}`}
+              className="relative rounded-md border border-dashed border-cyan/50 bg-cyan/10 px-3 py-3 text-center"
+            >
+              {p.dismissible !== false && (
+                <span
+                  className="absolute top-1 right-1 flex items-center justify-center w-5 h-5 rounded-full border border-[var(--text-muted)] text-[var(--text-muted)] text-[10px] leading-none"
+                  title="Visitors can dismiss this ad"
+                >
+                  &times;
+                </span>
+              )}
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan">
+                Ad slot &middot; {p.position}
+              </div>
+              <div className="mt-1 text-xs font-medium text-[var(--text-primary)]">
+                {p.id || "(no id)"}
+              </div>
+              <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                {formatPlacementSizes(p.sizes) || "no sizes"} &middot; {p.device}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -484,20 +1150,3 @@ function ToggleField({
   );
 }
 
-function formatSizes(sizes?: number[][]): string {
-  if (!sizes || sizes.length === 0) return "";
-  return sizes.map((s) => `${s[0]}x${s[1]}`).join(", ");
-}
-
-function parseSizes(str: string): number[][] {
-  if (!str.trim()) return [];
-  return str
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.includes("x"))
-    .map((s) => {
-      const [w, h] = s.split("x").map(Number);
-      return [w, h];
-    })
-    .filter(([w, h]) => !isNaN(w) && !isNaN(h));
-}

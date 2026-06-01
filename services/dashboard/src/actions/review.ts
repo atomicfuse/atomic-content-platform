@@ -4,11 +4,15 @@ import {
   readDashboardIndex,
   readArticles,
   readFileContent,
+  readFileBase64,
   commitSiteFiles,
+  commitNetworkFiles,
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
-  mergeBranchToMain,
+  listNetworkDirectory,
 } from "@/lib/github";
+import { readArticlesWithKVFallback } from "@/lib/kv-api";
+import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import type { ArticleEntry } from "@/types/dashboard";
@@ -18,7 +22,11 @@ import type { ArticleEntry } from "@/types/dashboard";
  */
 export interface ReviewArticle extends ArticleEntry {
   domain: string;
-  /** Staging preview base URL (e.g., "https://staging-mysite.mysite.pages.dev") */
+  /** Worker preview base URL — origin only (e.g.,
+   *  "https://atomic-site-worker-staging.accounts-4a8.workers.dev"). Caller
+   *  appends `/<slug>?_atl_site=<domain>` to build the article preview
+   *  link. Replaces the pre-Phase-7 `*.pages.dev` URL pattern; the
+   *  staging Pages projects no longer exist. */
   stagingBaseUrl: string | null;
   /** Git branch where the article lives */
   branch: string | null;
@@ -31,13 +39,13 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
 
   for (const site of index.sites) {
     const branch = site.staging_branch ?? undefined;
-    // Build stable staging URL from branch + pages project (not deployment-specific preview_url)
-    const stagingBaseUrl =
-      site.staging_branch && site.pages_project
-        ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
-        : site.preview_url ?? null;
+    // Worker preview origin. Articles in review live on `staging/<domain>`
+    // — sync-kv.yml writes those to staging KV (CONFIG_KV_STAGING) on
+    // push, and the staging Worker reads from there. The site-id override
+    // is appended by the consumer (per-article path).
+    const stagingBaseUrl = site.staging_branch ? WORKER_STAGING_URL : null;
 
-    const articles = await readArticles(site.domain, branch);
+    const articles = await readArticlesWithKVFallback(site.domain, branch, readArticles);
     for (const article of articles) {
       if (article.status !== "review") continue;
       reviewArticles.push({
@@ -132,14 +140,8 @@ export async function applyReviewDecisions(decisions: {
 
     // 4. If site is Live or Ready → merge staging to main
     if (site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
-      try {
-        await mergeBranchToMain(
-          site.staging_branch,
-          `review: merge ${domain} staging → main (${approved.length} approved, ${rejected.length} rejected)`,
-        );
-      } catch {
-        // Merge may fail if branches diverged — non-fatal
-      }
+      const mergeMsg = `review: merge ${domain} staging → main (${approved.length} approved, ${rejected.length} rejected)`;
+      await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
     }
 
     const parts: string[] = [];
@@ -155,4 +157,74 @@ export async function applyReviewDecisions(decisions: {
   return {
     summary: summaryParts.join("; "),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Publish helpers — scoped file copy (never merges entire branch)
+// ---------------------------------------------------------------------------
+
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
+  ".woff", ".woff2", ".ttf", ".eot", ".otf",
+  ".pdf", ".zip",
+]);
+
+function isBinaryFile(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
+  return BINARY_EXTENSIONS.has(ext);
+}
+
+async function readFilePreservingBinary(
+  path: string,
+  branch: string,
+): Promise<{ path: string; content: string | Buffer } | null> {
+  if (isBinaryFile(path)) {
+    const base64 = await readFileBase64(path, branch);
+    if (base64 === null) return null;
+    return { path, content: Buffer.from(base64, "base64") };
+  }
+  const text = await readFileContent(path, branch);
+  if (text === null) return null;
+  return { path, content: text };
+}
+
+/**
+ * Publish a single site's files from staging to main.
+ *
+ * Instead of merging the entire staging branch (which drags in stale
+ * copies of OTHER sites' files), we read only sites/{domain}/ from
+ * the staging branch and commit those files directly to main.
+ */
+async function mergeOrCopySiteToMain(
+  domain: string,
+  stagingBranch: string,
+  commitMessage: string,
+): Promise<void> {
+  const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
+  const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
+
+  for (const entry of topLevel) {
+    if (entry.type === "file") {
+      const file = await readFilePreservingBinary(entry.path, stagingBranch);
+      if (file) siteFiles.push(file);
+    } else if (entry.type === "dir") {
+      const children = await listNetworkDirectory(entry.path, stagingBranch);
+      for (const child of children) {
+        if (child.type === "file") {
+          const file = await readFilePreservingBinary(child.path, stagingBranch);
+          if (file) siteFiles.push(file);
+        }
+      }
+    }
+  }
+
+  if (siteFiles.length === 0) {
+    throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
+  }
+
+  await commitNetworkFiles(
+    siteFiles,
+    commitMessage,
+    "main",
+  );
 }

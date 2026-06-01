@@ -12,9 +12,9 @@ import type { ScriptsConfig, ThemeConfig, DeepPartial } from "./config.js";
 /** Merge modes for tracking, scripts_vars, theme, legal fields. */
 export type SimpleMergeMode = "merge" | "replace";
 /** Merge modes for the scripts field. */
-export type ScriptsMergeMode = "merge_by_id" | "append" | "replace";
+export type ScriptsMergeMode = "merge_by_id" | "replace";
 /** Merge modes for the ads_config field. */
-export type AdsConfigMergeMode = "replace" | "merge_placements";
+export type AdsConfigMergeMode = "add" | "replace" | "merge_placements";
 /** Merge modes for the ads_txt field. */
 export type AdsTxtMergeMode = "add" | "replace";
 /** Union of all merge modes. */

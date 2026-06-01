@@ -58,16 +58,28 @@ export function StagingEditPanel({
   const faviconFileInputRef = useRef<HTMLInputElement>(null);
 
   const [pendingLogo, setPendingLogo] = useState<string | null>(null);
+  const [pendingFooterLogo, setPendingFooterLogo] = useState<string | null>(null);
   const [pendingFavicon, setPendingFavicon] = useState<string | null>(null);
+  const [autoFooterVariant, setAutoFooterVariant] = useState(true);
+  const [clearLogo, setClearLogo] = useState(false);
+  const [clearFooterLogo, setClearFooterLogo] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const base64 = await generateLogoPreview(domain);
-        if (base64) {
-          setPendingLogo(base64);
+        const { logo, footerLogo } = await generateLogoPreview(domain, {
+          generateFooterVariant: autoFooterVariant,
+        });
+        if (logo) {
+          setPendingLogo(logo);
+          setPendingFooterLogo(footerLogo);
+          setClearLogo(false);
+          setClearFooterLogo(false);
           setShowSuccess(false);
+          if (footerLogo) {
+            toast("Generated a footer variant — header and footer backgrounds invert", "info");
+          }
         } else {
           toast("AI could not generate an image — try again", "error");
         }
@@ -141,8 +153,19 @@ export function StagingEditPanel({
     }
   }
 
+  function handleRemoveLogo(): void {
+    setPendingLogo(null);
+    setPendingFavicon(null);
+    setClearLogo(true);
+  }
+
+  function handleRemoveFooterLogo(): void {
+    setPendingFooterLogo(null);
+    setClearFooterLogo(true);
+  }
+
   async function handleSave(): Promise<void> {
-    if (!pendingLogo && !pendingFavicon) return;
+    if (!pendingLogo && !pendingFavicon && !pendingFooterLogo && !clearLogo && !clearFooterLogo) return;
     setIsSaving(true);
     try {
       const res = await fetch("/api/sites/save", {
@@ -152,13 +175,19 @@ export function StagingEditPanel({
           domain,
           configUpdates: null,
           logoBase64: pendingLogo,
+          footerLogoBase64: pendingFooterLogo ?? undefined,
           faviconBase64: pendingFavicon,
+          clearLogo: clearLogo || undefined,
+          clearFooterLogo: clearFooterLogo || undefined,
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
       if (!res.ok) throw new Error(data.message ?? "Save failed");
       setPendingLogo(null);
+      setPendingFooterLogo(null);
       setPendingFavicon(null);
+      setClearLogo(false);
+      setClearFooterLogo(false);
       setShowSuccess(true);
       router.refresh();
     } catch (err) {
@@ -171,7 +200,7 @@ export function StagingEditPanel({
     }
   }
 
-  const hasPendingChanges = !!pendingLogo || !!pendingFavicon;
+  const hasPendingChanges = !!pendingLogo || !!pendingFooterLogo || !!pendingFavicon || clearLogo || clearFooterLogo;
 
   // Resolve favicon preview source
   const faviconPreviewSrc = pendingFavicon
@@ -213,7 +242,7 @@ export function StagingEditPanel({
 
       {showSuccess && (
         <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4 space-y-2">
-          <p className="text-sm font-medium text-green-400">
+          <p className="text-sm font-medium text-green-700 dark:text-green-400">
             Assets saved! A staging rebuild has been triggered.
           </p>
           <p className="text-xs text-[var(--text-muted)]">
@@ -290,7 +319,7 @@ export function StagingEditPanel({
             </div>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Button
               variant="secondary"
               size="sm"
@@ -306,6 +335,19 @@ export function StagingEditPanel({
             >
               {isGeneratingLogo ? "Generating..." : "Generate with AI"}
             </Button>
+            {(currentLogoPath || pendingLogo) && !clearLogo && (
+              <Button variant="ghost" size="sm" onClick={handleRemoveLogo}>
+                Remove Logo
+              </Button>
+            )}
+            {clearLogo && (
+              <span className="text-xs text-red-400">
+                Logo will be removed on save.{" "}
+                <button type="button" onClick={(): void => setClearLogo(false)} className="underline hover:text-red-300">
+                  Undo
+                </button>
+              </span>
+            )}
             <input
               ref={fileInputRef}
               type="file"
@@ -314,6 +356,38 @@ export function StagingEditPanel({
               onChange={handleFileUpload}
             />
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoFooterVariant}
+              onChange={(e): void => setAutoFooterVariant(e.target.checked)}
+              className="accent-cyan"
+            />
+            <span className="text-xs text-[var(--text-secondary)]">
+              Auto-generate footer variant when header/footer contrast inverts
+            </span>
+          </label>
+          {pendingFooterLogo && !clearFooterLogo && (
+            <div className="flex items-center gap-2">
+              <img
+                src={`data:image/png;base64,${pendingFooterLogo}`}
+                alt="Footer logo preview"
+                className="w-10 h-10 rounded object-contain bg-[var(--bg-elevated)] border border-[var(--border-secondary)]"
+              />
+              <span className="text-xs text-[var(--text-muted)]">Footer variant ready</span>
+              <Button variant="ghost" size="sm" onClick={handleRemoveFooterLogo}>
+                Remove Footer Logo
+              </Button>
+            </div>
+          )}
+          {clearFooterLogo && (
+            <span className="text-xs text-red-400">
+              Footer logo will be removed on save.{" "}
+              <button type="button" onClick={(): void => setClearFooterLogo(false)} className="underline hover:text-red-300">
+                Undo
+              </button>
+            </span>
+          )}
           <p className="text-xs text-[var(--text-muted)]">
             PNG, JPG or SVG, max 2MB.
           </p>

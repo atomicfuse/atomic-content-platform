@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
@@ -8,6 +8,8 @@ import { GeneralForm } from "@/components/settings/GeneralForm";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import { ColorPickerField } from "@/components/wizard/ColorPickerField";
+import { FontPickerField } from "@/components/wizard/FontPickerField";
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -23,6 +25,7 @@ function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedCon
     gtm: (raw?.gtm as string) ?? null,
     google_ads: (raw?.google_ads as string) ?? null,
     facebook_pixel: (raw?.facebook_pixel as string) ?? null,
+    facebook_domain_verification: (raw?.facebook_domain_verification as string) ?? null,
     custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
   };
 }
@@ -41,13 +44,34 @@ function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConf
     head: normalizeEntries(raw?.head),
     body_start: normalizeEntries(raw?.body_start),
     body_end: normalizeEntries(raw?.body_end),
+    before_footer: normalizeEntries(raw?.before_footer),
   };
 }
 
 function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
   const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
+  const rawIc = raw?.interstitial_config as Record<string, unknown> | undefined;
+  const rawTrigger = rawIc?.trigger as Record<string, unknown> | undefined;
+  const rawFreq = rawIc?.frequency as Record<string, unknown> | undefined;
   return {
     interstitial: (raw?.interstitial as boolean) ?? false,
+    interstitial_config: {
+      script_url: (rawIc?.script_url as string) ?? "",
+      script_inline: (rawIc?.script_inline as string) ?? "",
+      trigger: {
+        type: (rawTrigger?.type as "delay" | "scroll" | "exit_intent") ?? "delay",
+        delay_seconds: (rawTrigger?.delay_seconds as number) ?? 5,
+        scroll_percent: (rawTrigger?.scroll_percent as number) ?? 50,
+      },
+      frequency: {
+        type: (rawFreq?.type as "once_per_session" | "once_per_day" | "custom") ?? "once_per_session",
+        max_per_session: (rawFreq?.max_per_session as number) ?? 1,
+      },
+      page_types: Array.isArray(rawIc?.page_types) ? rawIc.page_types : ["all"],
+      close_delay_seconds: (rawIc?.close_delay_seconds as number) ?? 3,
+      device: (rawIc?.device as "both" | "desktop" | "mobile") ?? "both",
+      exclude_pages: Array.isArray(rawIc?.exclude_pages) ? rawIc.exclude_pages : [],
+    },
     layout: (raw?.layout as string) ?? "standard",
     ad_placements: placements.map((p: Record<string, unknown>) => {
       const rawSizes = p.sizes;
@@ -75,6 +99,8 @@ export default function OrgSettingsPage(): React.ReactElement {
   >([]);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const initialConfigRef = useRef<string>("");
+  const dirty = config !== null && JSON.stringify(config) !== initialConfigRef.current;
 
   const fetchConfig = useCallback(async (): Promise<void> => {
     try {
@@ -86,6 +112,7 @@ export default function OrgSettingsPage(): React.ReactElement {
       if (!orgRes.ok) throw new Error(`HTTP ${orgRes.status}`);
       const data = (await orgRes.json()) as OrgConfig;
       setConfig(data);
+      initialConfigRef.current = JSON.stringify(data);
       if (sitesRes.ok) {
         const sites = (await sitesRes.json()) as Array<{ domain: string }>;
         setAllSites(sites);
@@ -112,6 +139,7 @@ export default function OrgSettingsPage(): React.ReactElement {
         body: JSON.stringify(config),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialConfigRef.current = JSON.stringify(config);
       toast("Org settings saved", "success");
       setShowRebuildModal(true);
     } catch (err) {
@@ -147,6 +175,156 @@ export default function OrgSettingsPage(): React.ReactElement {
     legal: (config.legal ?? {}) as Record<string, string>,
   };
 
+  // Defaults tab data
+  const defaultColors = (config.default_colors ?? {}) as Record<string, string>;
+  const defaultFonts = (config.default_fonts ?? {}) as Record<string, string>;
+  const layoutConfig = (config.layout ?? {}) as Record<string, unknown>;
+  const layoutHero = (layoutConfig.hero ?? {}) as Record<string, unknown>;
+  const layoutMustReads = (layoutConfig.must_reads ?? {}) as Record<string, unknown>;
+  const layoutLoadMore = (layoutConfig.load_more ?? {}) as Record<string, unknown>;
+
+  const defaultsContent = (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Colors</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Inherited by all sites unless overridden at group or site level.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <ColorPickerField
+            label="Primary color"
+            value={defaultColors.primary ?? "#1a1a2e"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_colors: { ...defaultColors, primary: v },
+              });
+            }}
+            helperText="Header, navigation, dark sections"
+          />
+          <ColorPickerField
+            label="Accent color"
+            value={defaultColors.accent ?? "#f4c542"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_colors: { ...defaultColors, accent: v },
+              });
+            }}
+            helperText="CTAs, newsletter band, highlights"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Fonts</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <FontPickerField
+            label="Heading font"
+            value={defaultFonts.heading ?? "Inter"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_fonts: { ...defaultFonts, heading: v },
+              });
+            }}
+          />
+          <FontPickerField
+            label="Body font"
+            value={defaultFonts.body ?? "Inter"}
+            onChange={(v): void => {
+              setConfig({
+                ...config,
+                default_fonts: { ...defaultFonts, body: v },
+              });
+            }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-[var(--text-primary)]">Default Layout</h3>
+        <p className="text-xs text-[var(--text-muted)]">
+          Layout knobs inherited by all sites.
+        </p>
+        <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={(layoutHero.enabled as boolean) ?? true}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    hero: { ...layoutHero, enabled: e.target.checked },
+                  },
+                });
+              }}
+              className="accent-cyan"
+            />
+            Hero grid enabled
+          </label>
+          <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
+            <span>Hero count:</span>
+            <select
+              value={(layoutHero.count as number) ?? 4}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    hero: { ...layoutHero, count: parseInt(e.target.value, 10) },
+                  },
+                });
+              }}
+              className="px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+            >
+              <option value={3}>3</option>
+              <option value={4}>4</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={(layoutMustReads.enabled as boolean) ?? true}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    must_reads: { ...layoutMustReads, enabled: e.target.checked },
+                  },
+                });
+              }}
+              className="accent-cyan"
+            />
+            Must Reads enabled
+          </label>
+          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <span>Load more page size:</span>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={(layoutLoadMore.page_size as number) ?? 10}
+              onChange={(e): void => {
+                setConfig({
+                  ...config,
+                  layout: {
+                    ...layoutConfig,
+                    load_more: { page_size: parseInt(e.target.value, 10) || 10 },
+                  },
+                });
+              }}
+              className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   const tabs = [
     {
       id: "general",
@@ -170,6 +348,11 @@ export default function OrgSettingsPage(): React.ReactElement {
           }}
         />
       ),
+    },
+    {
+      id: "defaults",
+      label: "Defaults",
+      content: defaultsContent,
     },
     {
       id: "config",
@@ -197,8 +380,13 @@ export default function OrgSettingsPage(): React.ReactElement {
 
       <Tabs tabs={tabs} defaultTab="general" />
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>
+      <div className="flex items-center justify-between">
+        {dirty ? (
+          <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+        ) : (
+          <span />
+        )}
+        <Button onClick={save} loading={saving} disabled={!dirty || saving}>
           Save
         </Button>
       </div>

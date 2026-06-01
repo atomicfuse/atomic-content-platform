@@ -23,6 +23,14 @@ const GUIDE_PAGES = [
   { slug: "10-config-inheritance", title: "Config Inheritance & Groups" },
   { slug: "11-overrides", title: "Overrides & Config" },
   { slug: "12-site-builder", title: "Site Builder Flow" },
+  { slug: "13-theme-and-layout", title: "Theme & Layout" },
+  { slug: "14-articles-api", title: "Articles API" },
+  { slug: "15-creating-a-site", title: "Creating a Site" },
+  { slug: "16-error-handling", title: "Error Handling & Alerts" },
+  { slug: "17-site-deletion", title: "Deleting a Site" },
+  { slug: "18-wordpress-import", title: "WordPress Import" },
+  { slug: "19-bulk-image-api", title: "Bulk Image Generation API" },
+  { slug: "20-query-param-overrides", title: "Query-Param Overrides & Template Vars" },
 ];
 
 export default function GuidePage(): React.ReactElement {

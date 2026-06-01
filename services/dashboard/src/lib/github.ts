@@ -1,4 +1,6 @@
 import { Octokit } from "@octokit/rest";
+import { retry } from "@octokit/plugin-retry";
+import { throttling } from "@octokit/plugin-throttling";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   DashboardIndex,
@@ -12,6 +14,8 @@ import {
   NETWORK_REPO_NAME,
   DASHBOARD_INDEX_PATH,
 } from "@/lib/constants";
+
+const RetryOctokit = Octokit.plugin(retry, throttling);
 
 // ---------------------------------------------------------------------------
 // TTL cache utility (no external dependencies)
@@ -43,6 +47,32 @@ function createTtlCache<T>(ttlMs: number): {
 }
 
 // ---------------------------------------------------------------------------
+// Concurrency limiter — caps parallel async work (replaces unbounded
+// Promise.allSettled on getBlob calls that trigger GitHub abuse detection).
+// ---------------------------------------------------------------------------
+function createLimiter(concurrency: number): <T>(fn: () => Promise<T>) => Promise<T> {
+  let active = 0;
+  const queue: Array<() => void> = [];
+  return <T>(fn: () => Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const run = (): void => {
+        active++;
+        fn()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            if (queue.length > 0) queue.shift()!();
+          });
+      };
+      if (active < concurrency) run();
+      else queue.push(run);
+    });
+}
+
+/** Shared limiter for GitHub blob fetches — prevents secondary rate limits. */
+const blobLimit = createLimiter(5);
+
+// ---------------------------------------------------------------------------
 // Octokit singleton
 // ---------------------------------------------------------------------------
 let _octokit: Octokit | null = null;
@@ -51,45 +81,127 @@ function getOctokit(): Octokit {
   if (_octokit) return _octokit;
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN is not set");
-  _octokit = new Octokit({ auth: token });
+  _octokit = new RetryOctokit({
+    auth: token,
+    request: { timeout: 30_000 },
+    retry: { retries: 3 },
+    throttle: {
+      onRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[octokit] Rate limit hit for ${String(options.url)} — retry ${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 2;
+      },
+      onSecondaryRateLimit: (retryAfter: number, options: Record<string, unknown>, _octo: unknown, retryCount: number): boolean => {
+        console.warn(`[octokit] Secondary rate limit for ${String(options.url)} — retry ${retryCount + 1} after ${retryAfter}s`);
+        return retryCount < 1;
+      },
+    },
+  });
   return _octokit;
 }
 
-const dashboardIndexCache = createTtlCache<DashboardIndex>(30_000);
+const dashboardIndexCache = createTtlCache<DashboardIndex>(5 * 60_000); // 5 min
 
-/** Read and parse dashboard-index.yaml from the network repo. */
-export async function readDashboardIndex(): Promise<DashboardIndex> {
-  const cached = dashboardIndexCache.get();
-  if (cached) return cached;
+// ---------------------------------------------------------------------------
+// Tree cache — single recursive tree fetch, shared across read helpers
+// ---------------------------------------------------------------------------
+interface TreeEntry {
+  path?: string;
+  mode?: string;
+  type?: string;
+  sha?: string;
+  size?: number;
+}
+
+const TREE_CACHE_TTL = 5 * 60_000; // 5 min — was 60s, raised to reduce tree re-fetches
+const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
+
+async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
+  const ref = branch ?? "main";
+  const cached = treeCacheStore.get(ref);
+  if (cached && Date.now() < cached.expiresAt) return cached.tree;
+
+  const octokit = getOctokit();
+  const { data: refData } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${ref}`,
+  });
+  const { data: tree } = await octokit.git.getTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    tree_sha: refData.object.sha,
+    recursive: "true",
+  });
+
+  if (tree.truncated) {
+    console.warn(`[github] Tree for ${ref} is truncated`);
+    throw new Error(`Tree truncated for ${ref}`);
+  }
+
+  treeCacheStore.set(ref, { tree: tree.tree, expiresAt: Date.now() + TREE_CACHE_TTL });
+  return tree.tree;
+}
+
+function invalidateTreeCache(branch?: string): void {
+  if (branch) {
+    treeCacheStore.delete(branch);
+  } else {
+    treeCacheStore.clear();
+  }
+}
+
+/** Read and parse dashboard-index.yaml from the network repo.
+ *  Pass `fresh: true` to bypass the 30s TTL cache (e.g. before a
+ *  uniqueness check that needs real-time data). */
+export async function readDashboardIndex(
+  opts?: { fresh?: boolean },
+): Promise<DashboardIndex> {
+  if (!opts?.fresh) {
+    const cached = dashboardIndexCache.get();
+    if (cached) return cached;
+  }
 
   const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached();
+    const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
+    if (!entry?.sha) {
+      const empty: DashboardIndex = { sites: [], deleted: [] };
+      dashboardIndexCache.set(empty);
+      return empty;
+    }
+    const { data: blobData } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path: DASHBOARD_INDEX_PATH,
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      const parsed = parseYaml(content) as DashboardIndex | null;
-      if (!parsed) return { sites: [], deleted: [] };
-      // Backfill new fields for entries written before pages_project/zone_id existed
-      parsed.sites = parsed.sites.map((s) => ({
+    const content = Buffer.from(blobData.content, "base64").toString("utf-8");
+    const parsed = parseYaml(content) as DashboardIndex | null;
+    if (!parsed) return { sites: [], deleted: [] };
+    // Backfill new fields for entries written before pages_project/zone_id existed
+    parsed.sites = parsed.sites.map((s) => {
+      const partial = s as Partial<DashboardSiteEntry>;
+      // Derive pages_subdomain from preview_url when not explicitly set.
+      // preview_url format: https://<branch-slug>.<subdomain>.pages.dev
+      let pagesSubdomain = partial.pages_subdomain ?? null;
+      if (!pagesSubdomain && partial.preview_url) {
+        const m = partial.preview_url.match(/\.([^.]+)\.pages\.dev/);
+        if (m) pagesSubdomain = m[1]!;
+      }
+      return {
         ...s,
-        pages_project: (s as Partial<DashboardSiteEntry>).pages_project ?? null,
-        zone_id: (s as Partial<DashboardSiteEntry>).zone_id ?? null,
-        staging_branch: (s as Partial<DashboardSiteEntry>).staging_branch ?? null,
-        preview_url: (s as Partial<DashboardSiteEntry>).preview_url ?? null,
-        saved_previews: (s as Partial<DashboardSiteEntry>).saved_previews ?? null,
-        custom_domain: (s as Partial<DashboardSiteEntry>).custom_domain ?? null,
-      }));
-      parsed.deleted = parsed.deleted ?? [];
-      dashboardIndexCache.set(parsed);
-      return parsed;
-    }
-    const empty: DashboardIndex = { sites: [], deleted: [] };
-    dashboardIndexCache.set(empty);
-    return empty;
+        pages_project: partial.pages_project ?? null,
+        pages_subdomain: pagesSubdomain,
+        zone_id: partial.zone_id ?? null,
+        staging_branch: partial.staging_branch ?? null,
+        preview_url: partial.preview_url ?? null,
+        saved_previews: partial.saved_previews ?? null,
+        custom_domain: partial.custom_domain ?? null,
+      };
+    });
+    parsed.deleted = parsed.deleted ?? [];
+    dashboardIndexCache.set(parsed);
+    return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) {
       const empty: DashboardIndex = { sites: [], deleted: [] };
@@ -111,17 +223,13 @@ export async function writeDashboardIndex(
 
   let sha: string | undefined;
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: DASHBOARD_INDEX_PATH,
-    });
-    if ("sha" in data) {
-      sha = data.sha;
-    }
-  } catch (error: unknown) {
-    if (!isNotFoundError(error)) throw error;
+    const tree = await getTreeCached();
+    const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
+    sha = entry?.sha;
+  } catch {
+    // File doesn't exist yet
   }
+  invalidateTreeCache();
 
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
@@ -133,23 +241,41 @@ export async function writeDashboardIndex(
   });
 }
 
-/** Update a single site entry in the dashboard index. */
+/** Update a single site entry in the dashboard index.
+ *  Retries automatically on SHA conflicts (409/422) caused by concurrent
+ *  writes to dashboard-index.yaml — e.g. rapid inline company edits. */
 export async function updateSiteInIndex(
   domain: string,
   updates: Partial<DashboardSiteEntry>
 ): Promise<DashboardIndex> {
-  const index = await readDashboardIndex();
-  const siteIndex = index.sites.findIndex((s) => s.domain === domain);
-  if (siteIndex === -1) {
-    throw new Error(`Site ${domain} not found in dashboard index`);
+  const MAX_RETRIES = 4;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const index = await readDashboardIndex({ fresh: true });
+    const siteIndex = index.sites.findIndex((s) => s.domain === domain);
+    if (siteIndex === -1) {
+      throw new Error(`Site ${domain} not found in dashboard index`);
+    }
+    index.sites[siteIndex] = {
+      ...index.sites[siteIndex]!,
+      ...updates,
+      last_updated: new Date().toISOString(),
+    };
+    try {
+      await writeDashboardIndex(index, `dashboard: update ${domain}`);
+      return index;
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status;
+      if ((status === 409 || status === 422) && attempt < MAX_RETRIES) {
+        // SHA conflict — another write landed first. Retry with fresh data.
+        const delay = 200 * (attempt + 1);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
   }
-  index.sites[siteIndex] = {
-    ...index.sites[siteIndex]!,
-    ...updates,
-    last_updated: new Date().toISOString(),
-  };
-  await writeDashboardIndex(index, `dashboard: update ${domain}`);
-  return index;
+  // Unreachable, but satisfies TS return type.
+  throw new Error(`Failed to update ${domain} after ${MAX_RETRIES} retries`);
 }
 
 /** Move a site from the active list to the deleted (trash) list. */
@@ -218,50 +344,20 @@ export async function permanentlyRemoveFromTrash(
   return index;
 }
 
-/** Delete site files (site.yaml, skill.md, articles, assets) from the Git repo. */
+/** Delete site files (site.yaml, articles, assets) AND shared-page override
+ *  files (overrides/<domain>/) from the Git repo in a single atomic commit.
+ *  No-op if neither directory exists. */
 export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   const octokit = getOctokit();
-  const basePath = `sites/${domain}`;
+  const tree = await getTreeCached();
 
-  // List all files under sites/{domain}/
-  let files: Array<{ path: string; sha: string }> = [];
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: basePath,
-    });
-    if (Array.isArray(data)) {
-      // Collect top-level files
-      for (const item of data) {
-        if (item.type === "file") {
-          files.push({ path: item.path, sha: item.sha });
-        } else if (item.type === "dir") {
-          // Recurse one level into subdirs (articles/, assets/)
-          try {
-            const { data: subData } = await octokit.repos.getContent({
-              owner: NETWORK_REPO_OWNER,
-              repo: NETWORK_REPO_NAME,
-              path: item.path,
-            });
-            if (Array.isArray(subData)) {
-              for (const subItem of subData) {
-                if (subItem.type === "file") {
-                  files.push({ path: subItem.path, sha: subItem.sha });
-                }
-              }
-            }
-          } catch {
-            // Skip subdirs that fail
-          }
-        }
+  const files: Array<{ path: string; sha: string }> = [];
+  for (const prefix of [`sites/${domain}/`, `overrides/${domain}/`]) {
+    for (const entry of tree) {
+      if (entry.path?.startsWith(prefix) && entry.type === "blob" && entry.sha) {
+        files.push({ path: entry.path, sha: entry.sha });
       }
     }
-  } catch (error: unknown) {
-    if (isNotFoundError(error)) {
-      return; // No files to delete
-    }
-    throw error;
   }
 
   if (files.length === 0) return;
@@ -299,7 +395,7 @@ export async function deleteSiteFilesFromRepo(domain: string): Promise<void> {
   const { data: newCommit } = await octokit.git.createCommit({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
-    message: `site(${domain}): delete all site files`,
+    message: `site(${domain}): delete all site files and overrides`,
     tree: newTree.sha,
     parents: [latestCommitSha],
   });
@@ -435,20 +531,38 @@ export async function readFileContent(
   branch?: string,
   repo?: { owner: string; name: string },
 ): Promise<string | null> {
-  const octokit = getOctokit();
-  const repoOwner = repo?.owner ?? NETWORK_REPO_OWNER;
-  const repoName = repo?.name ?? NETWORK_REPO_NAME;
-  try {
-    const { data } = await octokit.repos.getContent({
-      owner: repoOwner,
-      repo: repoName,
-      path,
-      ...(branch ? { ref: branch } : {}),
-    });
-    if ("content" in data && data.content) {
-      return Buffer.from(data.content, "base64").toString("utf-8");
+  if (repo) {
+    // Custom repo — can't use tree cache
+    const octokit = getOctokit();
+    try {
+      const { data } = await octokit.repos.getContent({
+        owner: repo.owner,
+        repo: repo.name,
+        path,
+        ...(branch ? { ref: branch } : {}),
+      });
+      if ("content" in data && data.content) {
+        return Buffer.from(data.content, "base64").toString("utf-8");
+      }
+      return null;
+    } catch (error: unknown) {
+      if (isNotFoundError(error)) return null;
+      throw error;
     }
-    return null;
+  }
+
+  try {
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) return null;
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
+      owner: NETWORK_REPO_OWNER,
+      repo: NETWORK_REPO_NAME,
+      file_sha: entry.sha,
+    });
+    return Buffer.from(data.content, "base64").toString("utf-8");
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -460,97 +574,214 @@ export async function readFileBase64(
   path: string,
   branch?: string,
 ): Promise<string | null> {
-  const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) return null;
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path,
-      ...(branch ? { ref: branch } : {}),
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      return data.content.replace(/\n/g, "");
-    }
-    return null;
+    return data.content.replace(/\n/g, "");
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
   }
 }
 
-/** Read a site's config YAML from the network repo. */
+/** Read a site's config YAML from the network repo. 5-minute cache. */
+const siteConfigCache = new Map<string, { data: Record<string, unknown> | null; expiresAt: number }>();
+const SITE_CONFIG_CACHE_TTL = 5 * 60_000;
+
 export async function readSiteConfig(
   domain: string,
   branch?: string
 ): Promise<Record<string, unknown> | null> {
-  const octokit = getOctokit();
+  const cacheKey = `${domain}@${branch ?? "main"}`;
+  const cached = siteConfigCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
   try {
-    const { data } = await octokit.repos.getContent({
+    const tree = await getTreeCached(branch);
+    const path = `sites/${domain}/site.yaml`;
+    const entry = tree.find((f) => f.path === path && f.type === "blob");
+    if (!entry?.sha) {
+      siteConfigCache.set(cacheKey, { data: null, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+      return null;
+    }
+
+    const octokit = getOctokit();
+    const { data } = await octokit.git.getBlob({
       owner: NETWORK_REPO_OWNER,
       repo: NETWORK_REPO_NAME,
-      path: `sites/${domain}/site.yaml`,
-      ...(branch ? { ref: branch } : {}),
+      file_sha: entry.sha,
     });
-    if ("content" in data && data.content) {
-      const content = Buffer.from(data.content, "base64").toString("utf-8");
-      return parseYaml(content) as Record<string, unknown>;
-    }
-    return null;
+    const content = Buffer.from(data.content, "base64").toString("utf-8");
+    const parsed = parseYaml(content) as Record<string, unknown>;
+    siteConfigCache.set(cacheKey, { data: parsed, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+    return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
   }
 }
 
+/** Count articles for a site — lightweight: 1 API call (directory listing only). */
+const articleCountCache = new Map<string, { count: number; expiresAt: number }>();
+const ARTICLE_COUNT_CACHE_TTL = 15 * 60_000; // 15 min (matches readArticles cache)
+
+export async function countArticles(domain: string, branch?: string): Promise<number> {
+  const key = `${domain}@${branch ?? "main"}`;
+  const cached = articleCountCache.get(key);
+  if (cached && Date.now() < cached.expiresAt) return cached.count;
+
+  try {
+    const tree = await getTreeCached(branch);
+    const prefix = `sites/${domain}/articles/`;
+    const count = tree.filter(
+      (f) =>
+        f.path?.startsWith(prefix) &&
+        f.type === "blob" &&
+        f.path.endsWith(".md") &&
+        !f.path.endsWith(".gitkeep") &&
+        !f.path.slice(prefix.length).includes("/"),
+    ).length;
+    articleCountCache.set(key, { count, expiresAt: Date.now() + ARTICLE_COUNT_CACHE_TTL });
+    return count;
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) return 0;
+    throw error;
+  }
+}
+
+/** Count articles for multiple sites in parallel. */
+export async function countArticlesForSites(
+  sites: Array<{ domain: string; staging_branch: string | null }>,
+): Promise<Record<string, number>> {
+  const results = await Promise.allSettled(
+    sites.map(async (s) => {
+      const count = await countArticles(s.domain, s.staging_branch ?? undefined);
+      return { domain: s.domain, count };
+    }),
+  );
+  const counts: Record<string, number> = {};
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      counts[r.value.domain] = r.value.count;
+    }
+  }
+  return counts;
+}
+
 /** List articles for a site from the network repo. */
+// Per-site article cache — keyed by "domain@branch", 2-minute TTL.
+// readArticles makes 1 + N API calls (directory listing + 1 per article),
+// so caching here is the single biggest rate-limit saver.
+const articlesCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
+const ARTICLES_CACHE_TTL = 15 * 60_000; // 15 min
+
+function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | null {
+  const key = `${domain}@${branch ?? "main"}`;
+  const entry = articlesCache.get(key);
+  if (entry && Date.now() < entry.expiresAt) return entry.data;
+  articlesCache.delete(key);
+  return null;
+}
+
+function setCachedArticles(domain: string, branch: string | undefined, data: ArticleEntry[]): void {
+  const key = `${domain}@${branch ?? "main"}`;
+  articlesCache.set(key, { data, expiresAt: Date.now() + ARTICLES_CACHE_TTL });
+}
+
+/** Clear all cached articles — used by review queue refresh. */
+export function clearArticlesCache(): void {
+  articlesCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Periodic cache eviction — sweep ALL caches every 5 min to prevent OOM.
+// Module-level Maps (treeCacheStore, articlesCache, articleCountCache) only
+// evict entries on read; stale entries from branches/sites that aren't
+// re-accessed accumulate forever, reaching 100-200 MB over hours.
+// ---------------------------------------------------------------------------
+function sweepExpiredEntries(): void {
+  const now = Date.now();
+  let swept = 0;
+  for (const [key, entry] of treeCacheStore) {
+    if (now >= entry.expiresAt) { treeCacheStore.delete(key); swept++; }
+  }
+  for (const [key, entry] of articlesCache) {
+    if (now >= entry.expiresAt) { articlesCache.delete(key); swept++; }
+  }
+  for (const [key, entry] of articleCountCache) {
+    if (now >= entry.expiresAt) { articleCountCache.delete(key); swept++; }
+  }
+  for (const [key, entry] of siteConfigCache) {
+    if (now >= entry.expiresAt) { siteConfigCache.delete(key); swept++; }
+  }
+  if (swept > 0) {
+    console.log(`[github] Cache sweep: evicted ${swept} expired entries (tree=${treeCacheStore.size}, articles=${articlesCache.size}, counts=${articleCountCache.size})`);
+  }
+}
+
+// Start sweep timer. unref() so it doesn't keep the process alive on shutdown.
+const _evictionTimer = setInterval(sweepExpiredEntries, 5 * 60_000);
+if (typeof _evictionTimer === "object" && "unref" in _evictionTimer) {
+  (_evictionTimer as NodeJS.Timeout).unref();
+}
+
 export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {
+  const cached = getCachedArticles(domain, branch);
+  if (cached) return cached;
+
   const octokit = getOctokit();
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: `sites/${domain}/articles`,
-      ...(branch ? { ref: branch } : {}),
-    });
-    if (!Array.isArray(data)) return [];
-
-    const mdFiles = data.filter(
-      (file) => file.name.endsWith(".md") && file.name !== ".gitkeep",
+    const tree = await getTreeCached(branch);
+    const prefix = `sites/${domain}/articles/`;
+    const mdEntries = tree.filter(
+      (f) =>
+        f.path?.startsWith(prefix) &&
+        f.type === "blob" &&
+        f.path.endsWith(".md") &&
+        !f.path.endsWith(".gitkeep") &&
+        !f.path.slice(prefix.length).includes("/"),
     );
 
     const results = await Promise.allSettled(
-      mdFiles.map(async (file) => {
-        const { data: fileData } = await octokit.repos.getContent({
-          owner: NETWORK_REPO_OWNER,
-          repo: NETWORK_REPO_NAME,
-          path: file.path,
-          ...(branch ? { ref: branch } : {}),
-        });
-        if ("content" in fileData && fileData.content) {
-          const content = Buffer.from(fileData.content, "base64").toString("utf-8");
+      mdEntries.map((entry) =>
+        blobLimit(async () => {
+          const { data } = await octokit.git.getBlob({
+            owner: NETWORK_REPO_OWNER,
+            repo: NETWORK_REPO_NAME,
+            file_sha: entry.sha!,
+          });
+          const content = Buffer.from(data.content, "base64").toString("utf-8");
           const frontmatter = extractFrontmatter(content);
+          const fileName = entry.path!.split("/").pop()!;
           return {
-            slug: file.name.replace(".md", ""),
-            title: (frontmatter.title as string) ?? file.name,
+            slug: fileName.replace(".md", ""),
+            title: (frontmatter.title as string) ?? fileName,
             type: (frontmatter.type as string) ?? "standard",
             status: (frontmatter.status as string) ?? "draft",
             publishDate: (frontmatter.publishDate as string) ?? "",
+            featuredImage: (frontmatter.featuredImage as string) ?? undefined,
             score: (frontmatter.quality_score as number) ?? (frontmatter.score as number | undefined),
             scoreBreakdown: frontmatter.score_breakdown as ArticleEntry["scoreBreakdown"],
             qualityNote: frontmatter.quality_note as string | undefined,
             reviewerNotes: frontmatter.reviewer_notes as string | undefined,
           } as ArticleEntry;
-        }
-        return null;
-      }),
+        }),
+      ),
     );
 
     const articles: ArticleEntry[] = [];
     for (const r of results) {
-      if (r.status === "fulfilled" && r.value) {
-        articles.push(r.value);
-      }
+      if (r.status === "fulfilled" && r.value) articles.push(r.value);
     }
+    setCachedArticles(domain, branch, articles);
     return articles;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return [];
@@ -630,11 +861,16 @@ export async function commitSiteFiles(
 }
 
 /**
- * Trigger a workflow run by pushing a build-trigger file via the Contents API.
+ * Trigger the sync-kv workflow by pushing a .build-trigger file via the
+ * Contents API. The push event on `sites/**` fires `sync-kv.yml`, which
+ * seeds CONFIG_KV + R2 for the site.
  *
  * Git Data API commits (createTree → createCommit → updateRef) do NOT trigger
  * GitHub Actions. The Contents API (createOrUpdateFileContents) DOES. So after
  * committing site files, we push a small trigger file to fire the workflow.
+ *
+ * NOTE: workflow_dispatch would be cleaner but requires `actions:write` scope
+ * which the current GITHUB_TOKEN does not have.
  */
 export async function triggerWorkflowViaPush(
   branch: string,
@@ -643,27 +879,22 @@ export async function triggerWorkflowViaPush(
   const octokit = getOctokit();
   const triggerPath = `sites/${siteFolder}/.build-trigger`;
 
-  // Check if the trigger file already exists (to get its SHA for update)
   let existingSha: string | undefined;
   try {
-    const { data } = await octokit.repos.getContent({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      path: triggerPath,
-      ref: branch,
-    });
-    if ("sha" in data) {
-      existingSha = data.sha;
-    }
+    const tree = await getTreeCached(branch);
+    const entry = tree.find((f) => f.path === triggerPath && f.type === "blob");
+    existingSha = entry?.sha;
   } catch {
-    // File doesn't exist yet — that's fine
+    // File doesn't exist yet
   }
+  invalidateTreeCache(branch);
 
+  // KEEP createOrUpdateFileContents — triggers GitHub Actions
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
     repo: NETWORK_REPO_NAME,
     path: triggerPath,
-    message: `ci: trigger staging build for ${siteFolder}`,
+    message: `ci: trigger KV sync for ${siteFolder}`,
     content: Buffer.from(new Date().toISOString()).toString("base64"),
     sha: existingSha,
     branch,
@@ -722,7 +953,7 @@ export async function deleteBranch(branchName: string): Promise<void> {
  * dashboard" — `sites/{site}/` on main only appears after publish-to-prod, so
  * we can't rely on the main tree for site enumeration.
  */
-const stagingSitesCache = createTtlCache<string[]>(60_000);
+const stagingSitesCache = createTtlCache<string[]>(5 * 60_000); // 5 min
 
 export async function listStagingSites(): Promise<string[]> {
   const cached = stagingSitesCache.get();

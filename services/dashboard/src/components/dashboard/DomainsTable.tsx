@@ -58,8 +58,8 @@ export function DomainsTable({ initialDomains }: DomainsTableProps): React.React
                 <td className="px-4 py-2.5">
                   <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
                     d.zoneStatus === "active"
-                      ? "text-emerald-400"
-                      : "text-amber-400"
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-amber-700 dark:text-amber-400"
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
                       d.zoneStatus === "active" ? "bg-emerald-400" : "bg-amber-400"

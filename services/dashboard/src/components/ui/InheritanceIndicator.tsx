@@ -38,10 +38,10 @@ function getLabelText(source: "org" | "group" | "custom", groupName?: string): s
 function getStyles(source: "org" | "group" | "custom"): string {
   switch (source) {
     case "org":
-      return "text-blue-400 bg-blue-500/10";
+      return "text-blue-700 dark:text-blue-400 bg-blue-500/10";
     case "group":
-      return "text-purple-400 bg-purple-500/10";
+      return "text-purple-700 dark:text-purple-400 bg-purple-500/10";
     case "custom":
-      return "text-green-400 bg-green-500/10";
+      return "text-green-700 dark:text-green-400 bg-green-500/10";
   }
 }

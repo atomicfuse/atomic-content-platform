@@ -14,7 +14,7 @@
 
 import matter from "gray-matter";
 import { generateContent } from "../../lib/ai.js";
-import { createGitHubClient, readFile, commitFile } from "../../lib/github.js";
+import { createOctokit, readFile, commitFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { SiteBrief } from "../../types.js";
@@ -46,7 +46,7 @@ export async function regenerateArticle(
 
   try {
     // Read original article
-    const octokit = createGitHubClient(config.github);
+    const octokit = createOctokit(config.github);
     const raw = await readFile(octokit, config.networkRepo, articlePath, branch);
     const { data: frontmatter, content: body } = matter(raw);
 
@@ -97,7 +97,11 @@ export async function regenerateArticle(
       quality_note: "Auto-revised by regeneration agent",
     };
 
-    const markdown = matter.stringify(revised.body, updatedFrontmatter);
+    // Strip leading H1 from body — the title is in frontmatter and rendered
+    // by the layout. Models sometimes include it despite prompt instructions.
+    const cleanBody = revised.body.replace(/^\s*#\s+[^\n]+\n*/, "");
+
+    const markdown = matter.stringify(cleanBody, updatedFrontmatter);
 
     // Commit revised article
     await commitFile(octokit, config.networkRepo, {

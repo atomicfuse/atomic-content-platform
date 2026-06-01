@@ -1,0 +1,55 @@
+---
+import AdSlot from '../../../components/AdSlot.astro';
+import NewsletterBox from './NewsletterBox.astro';
+import CategoryList from './CategoryList.astro';
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import type { ArticleIndexEntry } from '../../../lib/kv-schema';
+
+interface Props {
+  variant: 'home' | 'article';
+  config: ResolvedConfig;
+  categories?: { topic: string; articles: ArticleIndexEntry[] }[];
+}
+const { config, variant, categories = [] } = Astro.props;
+---
+
+<aside class="sidebar">
+  <div class="sidebar-sticky">
+    {variant === 'home' && (
+      <>
+        <AdSlot position="sidebar" pageType="homepage" server:defer />
+        <NewsletterBox domain={config.domain} />
+      </>
+    )}
+    {variant === 'article' && (
+      <>
+        <AdSlot position="sidebar" pageType="article" server:defer />
+        <NewsletterBox domain={config.domain} />
+        {categories.map((c) => (
+          <CategoryList topic={c.topic} articles={c.articles} />
+        ))}
+      </>
+    )}
+  </div>
+</aside>
+
+<style>
+  .sidebar {
+    /* Grid item must stretch to the full cell height so that the sticky
+       child has vertical room to scroll. Without explicit stretch some
+       browsers (especially Safari) collapse the grid item to content
+       height, which kills sticky behaviour entirely. */
+    align-self: stretch;
+  }
+  .sidebar-sticky {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  @media (min-width: 960px) {
+    .sidebar-sticky {
+      position: sticky;
+      top: calc(var(--nav-height, 64px) + 1rem);
+    }
+  }
+</style>

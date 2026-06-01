@@ -1,3 +1,10 @@
+import { WORKER_NAME_PROD, isDev1Domain, DEV1_ACCOUNT_ID } from "@/lib/constants";
+import {
+  S3Client,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+} from "@aws-sdk/client-s3";
+
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
 
 // --- Types ---
@@ -51,36 +58,64 @@ export interface CloudflareDomainInfo {
   hasDeployment: boolean;
 }
 
-// --- Helpers ---
+/** A Workers Custom Domain registered on the Cloudflare account. */
+export interface WorkerCustomDomain {
+  id: string;
+  hostname: string;
+  zone_id: string;
+  service: string;
+  environment: string;
+}
 
-function getHeaders(): HeadersInit {
+// --- Credential resolver ---
+
+export interface CfCredentials {
+  accountId: string;
+  token: string;
+}
+
+/** Resolve CF credentials for a domain. Dev1 domains use DEV1_CLOUDFLARE_API_TOKEN;
+ *  everything else uses the primary CLOUDFLARE_API_TOKEN.
+ *  Accepts both siteIds ("financenewsbase") and custom domains ("financenewsbase.com"). */
+export function getCredentials(domain?: string): CfCredentials {
+  if (domain && isDev1Domain(domain)) {
+    const token = process.env.DEV1_CLOUDFLARE_API_TOKEN;
+    if (!token) throw new Error("DEV1_CLOUDFLARE_API_TOKEN is not set");
+    return { accountId: DEV1_ACCOUNT_ID, token };
+  }
   const token = process.env.CLOUDFLARE_API_TOKEN;
   if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set");
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!accountId) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
+  return { accountId, token };
+}
+
+export function headersFromCreds(creds: CfCredentials): HeadersInit {
   return {
-    Authorization: `Bearer ${token}`,
+    Authorization: `Bearer ${creds.token}`,
     "Content-Type": "application/json",
   };
 }
 
+// Backward-compat wrapper for callers that don't have domain context.
 export function getAccountId(): string {
-  const id = process.env.CLOUDFLARE_ACCOUNT_ID;
-  if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set");
-  return id;
+  return getCredentials().accountId;
 }
 
 // --- Zones API ---
 
 /** Fetch all domains (zones) from the Cloudflare account. */
-export async function listZones(): Promise<CloudflareZone[]> {
-  const accountId = getAccountId();
+export async function listZones(domain?: string): Promise<CloudflareZone[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const zones: CloudflareZone[] = [];
   let page = 1;
   let hasMore = true;
 
   while (hasMore) {
     const response = await fetch(
-      `${CF_API_BASE}/zones?account.id=${accountId}&per_page=50&page=${page}`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/zones?account.id=${creds.accountId}&per_page=50&page=${page}`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<CloudflareZone[]>;
     if (!data.success) {
@@ -99,11 +134,12 @@ export async function listZones(): Promise<CloudflareZone[]> {
 // --- Pages API ---
 
 /** Fetch all Cloudflare Pages projects. */
-export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
-  const accountId = getAccountId();
+export async function listPagesProjects(domain?: string): Promise<CloudflarePagesProject[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects`,
-    { headers: getHeaders() }
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects`,
+    { headers }
   );
   const data = (await response.json()) as CloudflareResponse<CloudflarePagesProject[]>;
   if (!data.success) {
@@ -116,27 +152,21 @@ export async function listPagesProjects(): Promise<CloudflarePagesProject[]> {
 
 /** Get custom domains for a specific Pages project. */
 export async function getPagesProjectDomains(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<string[]> {
-  const result = await getPagesProjectDomainsDetailed(projectName);
-  return result.map((d) => d.name);
-}
-
-/** Get custom domains with IDs for a specific Pages project. */
-export async function getPagesProjectDomainsDetailed(
-  projectName: string
-): Promise<Array<{ id: string; name: string; status: string }>> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   try {
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/domains`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<
       Array<{ id: string; name: string; status: string }>
     >;
     if (!data.success) return [];
-    return data.result;
+    return data.result.map((d) => d.name);
   } catch {
     return [];
   }
@@ -150,10 +180,10 @@ export async function getPagesProjectDomainsDetailed(
  * For each zone (domain), checks if any Pages project has that domain
  * as a custom domain. This tells us if the domain is deployed.
  */
-export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]> {
+export async function listDomainsWithPagesInfo(domain?: string): Promise<CloudflareDomainInfo[]> {
   const [zones, projects] = await Promise.all([
-    listZones(),
-    listPagesProjects(),
+    listZones(domain),
+    listPagesProjects(domain),
   ]);
 
   // Build a map: custom domain → Pages project
@@ -164,10 +194,10 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
   // First pass: use the `domains` field from project list
   for (const project of projects) {
     if (project.domains) {
-      for (const domain of project.domains) {
+      for (const d of project.domains) {
         // Skip *.pages.dev subdomains — we want custom domains only
-        if (!domain.endsWith(".pages.dev")) {
-          domainToProject.set(domain, project);
+        if (!d.endsWith(".pages.dev")) {
+          domainToProject.set(d, project);
         }
       }
     }
@@ -180,9 +210,9 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
       (d) => !d.endsWith(".pages.dev")
     );
     if (!hasCustomDomain) {
-      const customDomains = await getPagesProjectDomains(project.name);
-      for (const domain of customDomains) {
-        domainToProject.set(domain, project);
+      const customDomains = await getPagesProjectDomains(project.name, domain);
+      for (const d of customDomains) {
+        domainToProject.set(d, project);
       }
     }
   }
@@ -206,14 +236,16 @@ export async function listDomainsWithPagesInfo(): Promise<CloudflareDomainInfo[]
 
 /** Trigger a Cloudflare Pages deployment. */
 export async function triggerPagesBuild(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<{ id: string; url: string }> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/deployments`,
     {
       method: "POST",
-      headers: getHeaders(),
+      headers,
     }
   );
   const data = (await response.json()) as CloudflareResponse<{
@@ -230,7 +262,8 @@ export async function triggerPagesBuild(
 
 /** Get the latest deployment for a Pages project. */
 export async function getLatestDeployment(
-  projectName: string
+  projectName: string,
+  domain?: string,
 ): Promise<{
   id: string;
   url: string;
@@ -238,11 +271,12 @@ export async function getLatestDeployment(
   created_on: string;
   latest_stage?: { name: string; status: string };
 } | null> {
-  const accountId = getAccountId();
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   try {
     const response = await fetch(
-      `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments?per_page=1`,
-      { headers: getHeaders() }
+      `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${projectName}/deployments?per_page=1`,
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<
       Array<{
@@ -263,11 +297,12 @@ export async function getLatestDeployment(
 }
 
 /** Check if Cloudflare APO is enabled for a zone. */
-export async function getAPOStatus(zoneId: string): Promise<boolean> {
+export async function getAPOStatus(zoneId: string, domain?: string): Promise<boolean> {
+  const headers = headersFromCreds(getCredentials(domain));
   try {
     const response = await fetch(
       `${CF_API_BASE}/zones/${zoneId}/settings/automatic_platform_optimization`,
-      { headers: getHeaders() }
+      { headers }
     );
     const data = (await response.json()) as CloudflareResponse<{
       value: { enabled: boolean };
@@ -280,36 +315,15 @@ export async function getAPOStatus(zoneId: string): Promise<boolean> {
 
 // --- Pages Project Management ---
 
-/** Create a new Cloudflare Pages project. */
-export async function createPagesProject(
-  name: string
-): Promise<CloudflarePagesProject> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects`,
-    {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ name, production_branch: "main" }),
-    }
-  );
-  const data = (await response.json()) as CloudflareResponse<CloudflarePagesProject>;
-  if (!data.success) {
-    throw new Error(
-      `Failed to create Pages project: ${data.errors.map((e) => e.message).join(", ")}`
-    );
-  }
-  return data.result;
-}
-
 /** Delete a Cloudflare Pages project. */
-export async function deletePagesProject(name: string): Promise<void> {
-  const accountId = getAccountId();
+export async function deletePagesProject(name: string, domain?: string): Promise<void> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${name}`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/pages/projects/${name}`,
     {
       method: "DELETE",
-      headers: getHeaders(),
+      headers,
     }
   );
   const data = (await response.json()) as CloudflareResponse<null>;
@@ -320,87 +334,475 @@ export async function deletePagesProject(name: string): Promise<void> {
   }
 }
 
-/** Add a custom domain to a Pages project. */
-export async function addCustomDomainToProject(
-  projectName: string,
-  domain: string
-): Promise<{ id: string; name: string; status: string }> {
-  const accountId = getAccountId();
+
+// --- Workers Custom Domains API ---
+
+/** Register a custom domain on the production worker.
+ *  Cloudflare auto-manages the DNS A/AAAA record for the hostname. */
+export async function registerWorkerCustomDomain(
+  hostname: string,
+  zoneId: string,
+  domain?: string,
+): Promise<{ id: string }> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
   const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains`,
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains`,
     {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify({ name: domain }),
-    }
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        zone_id: zoneId,
+        hostname,
+        service: WORKER_NAME_PROD,
+        environment: "production",
+      }),
+    },
   );
-  const data = (await response.json()) as CloudflareResponse<{
-    id: string;
-    name: string;
-    status: string;
-  }>;
+  const data = (await response.json()) as CloudflareResponse<{ id: string }>;
   if (!data.success) {
     throw new Error(
-      `Failed to add custom domain: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to register custom domain ${hostname}: ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
   return data.result;
 }
 
-/** Remove a custom domain from a Pages project. CF deletes by domain name. */
-export async function removeCustomDomainFromProject(
-  projectName: string,
-  domainName: string
+/** Deregister a custom domain from the production worker.
+ *  No-op if the domain is not currently registered. */
+export async function deregisterWorkerCustomDomain(
+  hostname: string,
+  domain?: string,
 ): Promise<void> {
-  const accountId = getAccountId();
-  const response = await fetch(
-    `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/domains/${domainName}`,
-    {
-      method: "DELETE",
-      headers: getHeaders(),
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  // Find the domain ID by hostname (server-side filter avoids pagination)
+  const listResp = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains?hostname=${encodeURIComponent(hostname)}&service=${WORKER_NAME_PROD}`,
+    { headers },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list custom domains: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  const match = listData.result.find((d) => d.hostname === hostname);
+  if (!match) return; // Already removed — no-op
+
+  const delResp = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains/${match.id}`,
+    { method: "DELETE", headers },
+  );
+  const delData = (await delResp.json()) as CloudflareResponse<null>;
+  if (!delData.success) {
+    throw new Error(
+      `Failed to deregister custom domain ${hostname}: ${delData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all Workers Custom Domains registered for the production worker.
+ *  Handles pagination (same pattern as listZones). */
+export async function listWorkerCustomDomains(domain?: string): Promise<WorkerCustomDomain[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const domains: WorkerCustomDomain[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await fetch(
+      `${CF_API_BASE}/accounts/${creds.accountId}/workers/domains?service=${WORKER_NAME_PROD}&per_page=50&page=${page}`,
+      { headers },
+    );
+    const data = (await response.json()) as CloudflareResponse<WorkerCustomDomain[]>;
+    if (!data.success) {
+      throw new Error(
+        `Failed to list worker custom domains: ${data.errors.map((e) => e.message).join(", ")}`,
+      );
     }
+    domains.push(...data.result);
+    hasMore = data.result.length === 50;
+    page++;
+  }
+
+  return domains;
+}
+
+// --- DNS Records API ---
+
+interface CloudflareDnsRecord {
+  id: string;
+  type: string;
+  name: string;
+  content: string;
+}
+
+/** Upsert a DNS TXT record on a zone. If a TXT record with the same name
+ *  and content prefix exists, update it; otherwise create a new one.
+ *  Used for facebook-domain-verification and similar verification records. */
+export async function upsertDnsTxtRecord(
+  zoneId: string,
+  name: string,
+  content: string,
+  domain?: string,
+): Promise<void> {
+  const headers = headersFromCreds(getCredentials(domain));
+
+  // List existing TXT records matching this name
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+    { headers },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list DNS records: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  // Find an existing record with the same content prefix (e.g. "facebook-domain-verification=")
+  const prefix = content.split("=")[0] + "=";
+  const existing = listData.result.find((r) => r.content.startsWith(prefix));
+
+  if (existing) {
+    if (existing.content === content) return; // Already correct
+    // Update
+    const updateResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ content }),
+      },
+    );
+    const updateData = (await updateResp.json()) as CloudflareResponse<CloudflareDnsRecord>;
+    if (!updateData.success) {
+      throw new Error(
+        `Failed to update DNS TXT record: ${updateData.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+  } else {
+    // Create
+    const createResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records`,
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ type: "TXT", name: "@", content }),
+      },
+    );
+    const createData = (await createResp.json()) as CloudflareResponse<CloudflareDnsRecord>;
+    if (!createData.success) {
+      throw new Error(
+        `Failed to create DNS TXT record: ${createData.errors.map((e) => e.message).join(", ")}`,
+      );
+    }
+  }
+}
+
+/** Delete a DNS TXT record from a zone by content prefix match.
+ *  No-op if no matching record exists. */
+export async function deleteDnsTxtRecord(
+  zoneId: string,
+  name: string,
+  contentPrefix: string,
+  domain?: string,
+): Promise<void> {
+  const headers = headersFromCreds(getCredentials(domain));
+
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+    { headers },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) return; // Best-effort
+
+  const existing = listData.result.find((r) => r.content.startsWith(contentPrefix));
+  if (!existing) return;
+
+  await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records/${existing.id}`,
+    { method: "DELETE", headers },
+  );
+}
+
+// --- KV Direct Write API ---
+
+/** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
+ *  Content-Type is overridden to text/plain because the KV values API expects a raw
+ *  body — the default application/json from headersFromCreds() would be semantically incorrect. */
+export async function putKVEntry(
+  namespaceId: string,
+  key: string,
+  value: string,
+  domain?: string,
+): Promise<void> {
+  const creds = getCredentials(domain);
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    {
+      method: "PUT",
+      headers: {
+        ...headersFromCreds(creds),
+        "Content-Type": "text/plain",
+      },
+      body: value,
+    },
   );
   const data = (await response.json()) as CloudflareResponse<null>;
   if (!data.success) {
     throw new Error(
-      `Failed to remove custom domain: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to write KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
 }
 
-/** List deployments for a Pages project. */
-export async function listDeployments(
-  projectName: string,
-  env?: "preview" | "production"
-): Promise<
-  Array<{
-    id: string;
-    url: string;
-    environment: string;
-    created_on: string;
-    aliases?: string[];
-    deployment_trigger?: { metadata?: { branch?: string } };
-  }>
-> {
-  const accountId = getAccountId();
-  const url = env
-    ? `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments?env=${env}`
-    : `${CF_API_BASE}/accounts/${accountId}/pages/projects/${projectName}/deployments`;
-  const response = await fetch(url, { headers: getHeaders() });
-  const data = (await response.json()) as CloudflareResponse<
-    Array<{
-      id: string;
-      url: string;
-      environment: string;
-      created_on: string;
-      aliases?: string[];
-      deployment_trigger?: { metadata?: { branch?: string } };
-    }>
-  >;
+/** Delete a single KV entry by key. No-op if key does not exist. */
+export async function deleteKVEntry(
+  namespaceId: string,
+  key: string,
+  domain?: string,
+): Promise<void> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    {
+      method: "DELETE",
+      headers,
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
   if (!data.success) {
+    // KV delete on a missing key returns success=true, so a failure here is a real error
     throw new Error(
-      `Failed to list deployments: ${data.errors.map((e) => e.message).join(", ")}`
+      `Failed to delete KV key "${key}": ${data.errors.map((e) => e.message).join(", ")}`,
     );
   }
-  return data.result;
+}
+
+/** Read a single KV entry by key. Returns the raw string value, or null if the key
+ *  doesn't exist. The KV values API returns the raw body (not JSON-wrapped). */
+export async function getKVEntry(
+  namespaceId: string,
+  key: string,
+  domain?: string,
+): Promise<string | null> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`,
+    { headers },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`Failed to read KV key "${key}": ${response.status} ${response.statusText}`);
+  }
+  return response.text();
+}
+
+/** List KV keys matching a prefix. Handles pagination automatically.
+ *  Returns just the key names (not values). */
+export async function listKVKeys(
+  namespaceId: string,
+  prefix: string,
+  domain?: string,
+): Promise<string[]> {
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const keys: string[] = [];
+  let cursor: string | undefined;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const params = new URLSearchParams({ prefix, limit: '1000' });
+    if (cursor) params.set('cursor', cursor);
+
+    const response = await fetch(
+      `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/keys?${params}`,
+      { headers },
+    );
+    const data = (await response.json()) as CloudflareResponse<Array<{ name: string }>> & {
+      result_info?: { cursor?: string };
+    };
+    if (!data.success) {
+      throw new Error(`Failed to list KV keys with prefix "${prefix}": ${data.errors.map((e) => e.message).join(", ")}`);
+    }
+    keys.push(...data.result.map((k) => k.name));
+
+    cursor = data.result_info?.cursor;
+    if (!cursor || data.result.length === 0) break;
+  }
+
+  return keys;
+}
+
+/** Bulk write KV entries. Accepts up to 10,000 key-value pairs per call.
+ *  Each entry is { key, value } where value is a raw string. */
+export async function bulkPutKV(
+  namespaceId: string,
+  entries: Array<{ key: string; value: string }>,
+  domain?: string,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(entries),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to bulk write ${entries.length} KV entries: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** Bulk delete KV entries by key. Accepts up to 10,000 keys per call.
+ *  No-op if keys array is empty. Missing keys are silently ignored. */
+export async function bulkDeleteKV(
+  namespaceId: string,
+  keys: string[],
+  domain?: string,
+): Promise<void> {
+  if (keys.length === 0) return;
+  const creds = getCredentials(domain);
+  const headers = headersFromCreds(creds);
+  const response = await fetch(
+    `${CF_API_BASE}/accounts/${creds.accountId}/storage/kv/namespaces/${namespaceId}/bulk`,
+    {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify(keys),
+    },
+  );
+  const data = (await response.json()) as CloudflareResponse<null>;
+  if (!data.success) {
+    throw new Error(
+      `Failed to bulk delete ${keys.length} KV keys: ${data.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+}
+
+/** List all KV keys matching a prefix, then bulk-delete them.
+ *  Returns the number of keys deleted. Handles pagination internally. */
+export async function deleteKVByPrefix(
+  namespaceId: string,
+  prefix: string,
+  domain?: string,
+): Promise<number> {
+  const keys = await listKVKeys(namespaceId, prefix, domain);
+  if (keys.length === 0) return 0;
+  // CF bulk delete supports up to 10,000 keys per call
+  for (let i = 0; i < keys.length; i += 10_000) {
+    await bulkDeleteKV(namespaceId, keys.slice(i, i + 10_000), domain);
+  }
+  return keys.length;
+}
+
+// --- R2 Cleanup (S3-compatible API) ---
+
+/** Account-keyed S3 client cache for R2 operations.
+ *  Requires R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY env vars (or DEV1_ variants). */
+const _s3Clients = new Map<string, S3Client>();
+
+export function getR2Client(domain?: string): S3Client | null {
+  const creds = getCredentials(domain);
+  const existing = _s3Clients.get(creds.accountId);
+  if (existing) return existing;
+
+  const accessKeyId = domain && isDev1Domain(domain)
+    ? process.env.DEV1_R2_ACCESS_KEY_ID
+    : process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = domain && isDev1Domain(domain)
+    ? process.env.DEV1_R2_SECRET_ACCESS_KEY
+    : process.env.R2_SECRET_ACCESS_KEY;
+  if (!accessKeyId || !secretAccessKey) {
+    console.warn("R2 cleanup skipped: R2 credentials not configured");
+    return null;
+  }
+  const client = new S3Client({
+    region: "auto",
+    endpoint: `https://${creds.accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+  _s3Clients.set(creds.accountId, client);
+  return client;
+}
+
+/** Delete all R2 objects matching a prefix from a bucket.
+ *  Handles pagination (ListObjectsV2) and batch deletion (DeleteObjects, 1000 per batch).
+ *  Returns the number of objects deleted. Returns 0 if R2 credentials are not configured. */
+export async function deleteR2ObjectsByPrefix(
+  bucket: string,
+  prefix: string,
+  domain?: string,
+): Promise<number> {
+  const client = getR2Client(domain);
+  if (!client) return 0;
+
+  let deleted = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const objects = list.Contents;
+    if (!objects || objects.length === 0) break;
+
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objects.map((o) => ({ Key: o.Key })),
+          Quiet: true,
+        },
+      }),
+    );
+
+    deleted += objects.length;
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return deleted;
+}
+
+/** Delete specific R2 objects by exact keys.
+ *  Best-effort: returns the number of keys sent for deletion.
+ *  Returns 0 if R2 credentials are not configured. */
+export async function deleteR2Objects(
+  bucket: string,
+  keys: string[],
+  domain?: string,
+): Promise<number> {
+  if (keys.length === 0) return 0;
+  const client = getR2Client(domain);
+  if (!client) return 0;
+
+  await client.send(
+    new DeleteObjectsCommand({
+      Bucket: bucket,
+      Delete: {
+        Objects: keys.map((k) => ({ Key: k })),
+        Quiet: true,
+      },
+    }),
+  );
+
+  return keys.length;
 }

@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATL Content Network — Article Lifecycle Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; line-height: 1.6; padding: 2rem; }
+  h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #f8fafc; }
+  h2 { font-size: 1.3rem; margin: 2.5rem 0 1rem; color: #38bdf8; border-bottom: 1px solid #1e3a5f; padding-bottom: 0.5rem; }
+  h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; color: #a78bfa; }
+  .subtitle { color: #94a3b8; margin-bottom: 2rem; }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* Flow diagram styles */
+  .flow { display: flex; flex-direction: column; gap: 0; align-items: center; margin: 1.5rem 0; }
+  .flow-row { display: flex; align-items: center; gap: 0.75rem; }
+  .arrow-down { font-size: 1.5rem; color: #64748b; margin: 0.25rem 0; }
+  .arrow-right { font-size: 1.3rem; color: #64748b; }
+
+  .box { border-radius: 8px; padding: 0.75rem 1.25rem; text-align: center; font-size: 0.85rem; font-weight: 500; min-width: 140px; }
+  .box-git { background: #1e293b; border: 2px solid #f97316; color: #fb923c; }
+  .box-action { background: #1e293b; border: 2px solid #a78bfa; color: #c4b5fd; }
+  .box-seed { background: #1e293b; border: 2px solid #22d3ee; color: #67e8f9; }
+  .box-kv { background: #1e293b; border: 2px solid #34d399; color: #6ee7b7; }
+  .box-r2 { background: #1e293b; border: 2px solid #fbbf24; color: #fde68a; }
+  .box-worker { background: #1e293b; border: 2px solid #f472b6; color: #f9a8d4; }
+  .box-browser { background: #1e293b; border: 2px solid #e2e8f0; color: #f1f5f9; }
+  .box-pipeline { background: #1e293b; border: 2px solid #fb923c; color: #fdba74; }
+  .box-dashboard { background: #1e293b; border: 2px solid #60a5fa; color: #93c5fd; }
+  .box-llm { background: #1e293b; border: 2px solid #c084fc; color: #d8b4fe; }
+
+  .box small { display: block; font-size: 0.7rem; color: #94a3b8; font-weight: 400; margin-top: 2px; }
+
+  /* KV table */
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+  th { background: #1e293b; color: #38bdf8; text-align: left; padding: 0.6rem 0.75rem; border-bottom: 2px solid #334155; }
+  td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #1e293b; }
+  code { background: #1e293b; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.8rem; color: #34d399; }
+
+  /* Section cards */
+  .card { background: #1e293b; border-radius: 10px; padding: 1.25rem; margin: 1rem 0; border-left: 3px solid #38bdf8; }
+  .card-warn { border-left-color: #fbbf24; }
+  .card-green { border-left-color: #34d399; }
+  .card-red { border-left-color: #f87171; }
+
+  .card p { margin: 0.4rem 0; font-size: 0.9rem; }
+  .card .label { font-weight: 600; color: #38bdf8; }
+  .card-warn .label { color: #fbbf24; }
+  .card-green .label { color: #34d399; }
+  .card-red .label { color: #f87171; }
+
+  ul { margin: 0.5rem 0 0.5rem 1.5rem; font-size: 0.9rem; }
+  li { margin: 0.3rem 0; }
+
+  /* Big diagram */
+  .diagram { background: #0c1524; border: 1px solid #1e3a5f; border-radius: 12px; padding: 2rem; margin: 1.5rem 0; overflow-x: auto; }
+  .diagram-title { text-align: center; font-size: 1rem; color: #94a3b8; margin-bottom: 1.5rem; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; font-size: 0.8rem; }
+  .legend-item { display: flex; align-items: center; gap: 0.4rem; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+  .proposal { background: #1a1a2e; border: 2px dashed #a78bfa; border-radius: 10px; padding: 1.5rem; margin: 1.5rem 0; }
+  .proposal h3 { color: #c4b5fd; margin-top: 0; }
+  .proposal-item { background: #1e293b; border-radius: 6px; padding: 0.75rem 1rem; margin: 0.5rem 0; }
+  .proposal-item .title { font-weight: 600; color: #f8fafc; }
+  .proposal-item .detail { font-size: 0.85rem; color: #94a3b8; margin-top: 0.25rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>ATL Content Network — How Articles Reach The Browser</h1>
+<p class="subtitle">Architecture reference for new team members. Updated May 2026.</p>
+
+<!-- ============================================================ -->
+<h2>1. The Two Repos</h2>
+
+<div class="card">
+  <p><span class="label">atomic-content-platform</span> (this repo) — All code: Dashboard (Next.js), Content Pipeline (Node), Site Worker (Astro). Deployed to CloudGrid + Cloudflare Workers.</p>
+  <p><span class="label">atomic-labs-network</span> (data repo) — Pure data: configs, articles (markdown), overrides. Zero code. Git is the database.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. Article Creation — How An Article Gets Into Git</h2>
+
+<div class="diagram">
+  <div class="diagram-title">Two paths: Automated (scheduler) or Manual (dashboard trigger)</div>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="box box-dashboard">Dashboard<small>User clicks "Generate"</small></div>
+      <span class="arrow-right">→</span>
+      <div class="box box-pipeline">Content Pipeline<small>POST /content-generate</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-llm">Claude / Gemini LLM<small>Generates article markdown</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-pipeline">Quality Score<small>Claude scores 1-10</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-git">Git Commit<small>articles/slug.md → staging branch</small></div>
+      <span class="arrow-right">→</span>
+      <div class="box box-action">n8n Webhook<small>Triggers AI image generation</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <p><span class="label">BullMQ Job Queue</span> manages this. Three phases (since the resilience update):</p>
+  <ul>
+    <li><strong>Phase 1 — LLM Generation:</strong> Calls Claude to write the article. Results cached in Redis so retries skip this.</li>
+    <li><strong>Phase 2 — Git Push:</strong> Commits the markdown file to the staging branch. This is where rate limits hit.</li>
+    <li><strong>Phase 3 — n8n Image:</strong> Fires webhook for AI image generation (fire-and-forget).</li>
+  </ul>
+  <p>If Phase 2 fails (GitHub rate limit), BullMQ retries only Phases 2+3. The expensive LLM call is NOT repeated.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>3. Git → KV — The Sync Pipeline</h2>
+
+<div class="diagram">
+  <div class="diagram-title">One-way push: Git commit triggers sync-kv.yml → seed-kv.ts → KV + R2</div>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="box box-git">Git Commit<small>atomic-labs-network main</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-action">GitHub Action<small>sync-kv.yml</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-seed">seed-kv.ts<small>Reads Git files, resolves config</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-seed">Markdown → HTML<small>marked.parse() at seed time</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-kv">Cloudflare KV<small>Config + article index + full HTML</small></div>
+      <span style="margin: 0 0.5rem; color: #64748b;">+</span>
+      <div class="box box-r2">R2 Bucket<small>Images, logos, assets</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="card card-warn">
+  <p><span class="label">⚠ Key insight:</span> Markdown is converted to HTML at seed time, NOT at request time. The Worker never parses markdown. This is why KV has pre-rendered HTML — zero processing at the edge.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. What's Stored In KV</h2>
+
+<table>
+  <thead>
+    <tr><th>Key Pattern</th><th>Contains</th><th>Used By</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>site:travelswire.com</code></td>
+      <td>{ siteId: "travelswire" }</td>
+      <td>Middleware — maps hostname → siteId</td>
+    </tr>
+    <tr>
+      <td><code>site-config:travelswire</code></td>
+      <td>Full merged config (5-layer inheritance)</td>
+      <td>Every page — theme, ads, layout settings</td>
+    </tr>
+    <tr>
+      <td><code>article-index:travelswire</code></td>
+      <td>JSON array of ALL article metadata</td>
+      <td>Homepage, /api/articles, search, categories</td>
+    </tr>
+    <tr>
+      <td><code>article:travelswire:best-movies-2026</code></td>
+      <td>{ frontmatter, body: "&lt;p&gt;Full HTML...&lt;/p&gt;" }</td>
+      <td>Article detail page (/best-movies-2026)</td>
+    </tr>
+    <tr>
+      <td><code>shared-page:travelswire:privacy</code></td>
+      <td>Rendered shared page with overrides applied</td>
+      <td>/privacy, /about, /terms, etc.</td>
+    </tr>
+    <tr>
+      <td><code>sync-status:travelswire</code></td>
+      <td>Last git SHA + timestamp</td>
+      <td>Audit trail — when was KV last synced?</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2>5. Serving a Request — The Worker</h2>
+
+<h3>5a. Homepage (travelswire.com/)</h3>
+
+<div class="diagram">
+  <div class="diagram-title">3 KV reads total: hostname lookup + config + article index</div>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="box box-browser">Browser<small>GET travelswire.com/</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">Middleware<small>KV: site:travelswire.com → siteId</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">Middleware<small>KV: site-config:travelswire → config</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">index.astro<small>KV: article-index:travelswire → all metadata</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">Astro SSR<small>Sorts → Hero + What's New + Must Reads + More On</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-browser">Browser<small>HTML rendered, cache: 60s edge</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="card card-green">
+  <p><span class="label">Homepage sections</span> are computed from the single <code>article-index</code> array:</p>
+  <ul>
+    <li><strong>Hero:</strong> Tagged as "hero" (or newest N if none tagged)</li>
+    <li><strong>What's New:</strong> Next N newest after hero</li>
+    <li><strong>Must Reads:</strong> Tagged as "must-read" (random fallback from remaining)</li>
+    <li><strong>More On:</strong> Everything else, paginated (Load More button calls /api/articles)</li>
+  </ul>
+  <p>All sections are <strong>disjoint</strong> — an article appears in exactly one section.</p>
+</div>
+
+<h3>5b. Article Page (travelswire.com/best-movies-2026)</h3>
+
+<div class="diagram">
+  <div class="diagram-title">4 KV reads: hostname + config + full article body + article index (for related)</div>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="box box-browser">Browser<small>GET /best-movies-2026</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">Middleware<small>hostname → siteId → config (2 KV reads)</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">[slug]/index.astro<small>KV: article:travelswire:best-movies-2026</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-worker">Inject Pipeline<small>1. Inline ads → 2. Video embeds → 3. Scripts</small></div>
+    </div>
+    <div class="arrow-down">↓</div>
+    <div class="flow-row">
+      <div class="box box-browser">Browser<small>Full article, cache: 300s edge</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <p><span class="label">Three injection steps</span> happen at request time on the pre-rendered HTML body:</p>
+  <ul>
+    <li><strong>Inline ads:</strong> Inserts ad slots at configured positions (after-paragraph-3, etc.)</li>
+    <li><strong>Video embeds:</strong> Inserts responsive YouTube iframes from frontmatter <code>videos</code> array</li>
+    <li><strong>Scripts:</strong> Injects per-article tracking/analytics scripts into &lt;head&gt; and body</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. Edge Caching</h2>
+
+<table>
+  <thead>
+    <tr><th>Route</th><th>Cache Header</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Homepage (<code>/</code>)</td><td><code>s-maxage=60</code></td><td>Edge serves stale for 60s, then re-renders</td></tr>
+    <tr><td>Articles (<code>/slug</code>)</td><td><code>s-maxage=300</code></td><td>Edge caches for 5 minutes</td></tr>
+    <tr><td>Errors (4xx/5xx)</td><td><code>no-store</code></td><td>Never cached — won't persist error pages</td></tr>
+    <tr><td>API (<code>/api/*</code>)</td><td><code>s-maxage=60</code></td><td>Pagination/search cached 60s at edge</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2>7. Failure Modes — What Happens When Things Break</h2>
+
+<div class="card card-red">
+  <p><span class="label">GitHub goes down / rate limited</span></p>
+  <p>Live sites: <strong>Zero impact.</strong> Worker reads from KV, never from GitHub. Sites keep serving.</p>
+  <p>New content: Stops flowing. Articles can't be committed to Git. BullMQ retries with backoff.</p>
+  <p>Dashboard: Slowed — reads use tree cache (60s TTL) and retry+throttle, but may timeout.</p>
+</div>
+
+<div class="card card-red">
+  <p><span class="label">Cloudflare KV outage (extremely rare)</span></p>
+  <p><code>site:hostname</code> lookup fails → <strong>500 for all pages.</strong> No fallback — Worker is fail-closed.</p>
+  <p>But: KV is replicated across 300+ edge PoPs. Outages are near-zero. In 5 years, maybe 2 incidents.</p>
+</div>
+
+<div class="card card-warn">
+  <p><span class="label">sync-kv.yml fails (Action error, rate limit)</span></p>
+  <p>Sites keep serving old content from KV. No visible error. Content is just stale until sync recovers.</p>
+  <p>This is actually the <strong>best failure mode</strong> — sites never go down, they just show slightly old data.</p>
+</div>
+
+<div class="card card-warn">
+  <p><span class="label">Article in Git but not in KV</span></p>
+  <p>Visitor gets <strong>404</strong> for that specific slug. The Worker has no way to read from Git.</p>
+  <p>Fix: Wait for sync-kv to run (auto on next commit to main), or manually run <code>pnpm seed:kv &lt;siteId&gt;</code>.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>8. The Full Picture — End-to-End</h2>
+
+<div class="diagram">
+  <div class="diagram-title">Complete article lifecycle: creation → storage → serving</div>
+  <div style="display: flex; justify-content: center; gap: 2rem; flex-wrap: wrap;">
+
+    <!-- Column 1: Creation -->
+    <div style="text-align: center;">
+      <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.75rem;">CREATION</div>
+      <div class="flow" style="gap: 0;">
+        <div class="box box-dashboard" style="min-width: 160px;">Dashboard / Scheduler<small>Triggers generation</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-pipeline" style="min-width: 160px;">Content Pipeline<small>LLM → Quality Score</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-git" style="min-width: 160px;">Git (Network Repo)<small>article.md committed</small></div>
+      </div>
+    </div>
+
+    <!-- Column 2: Sync -->
+    <div style="text-align: center;">
+      <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.75rem;">SYNC</div>
+      <div class="flow" style="gap: 0;">
+        <div class="box box-action" style="min-width: 160px;">GitHub Action<small>sync-kv.yml</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-seed" style="min-width: 160px;">seed-kv.ts<small>MD → HTML, resolve config</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-kv" style="min-width: 160px;">KV + R2<small>Pre-rendered, ready to serve</small></div>
+      </div>
+    </div>
+
+    <!-- Column 3: Serving -->
+    <div style="text-align: center;">
+      <div style="color: #94a3b8; font-size: 0.75rem; margin-bottom: 0.75rem;">SERVING</div>
+      <div class="flow" style="gap: 0;">
+        <div class="box box-browser" style="min-width: 160px;">Visitor<small>travelswire.com/slug</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-worker" style="min-width: 160px;">Worker (Astro SSR)<small>Reads KV, injects ads/videos</small></div>
+        <div class="arrow-down">↓</div>
+        <div class="box box-browser" style="min-width: 160px;">Browser<small>Full page, cached at edge</small></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background: #f97316;"></div> Git / Network Repo</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #a78bfa;"></div> GitHub Actions</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #22d3ee;"></div> seed-kv.ts</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #34d399;"></div> Cloudflare KV</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #fbbf24;"></div> R2 (assets)</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #f472b6;"></div> Worker (Astro)</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #60a5fa;"></div> Dashboard</div>
+  <div class="legend-item"><div class="legend-dot" style="background: #fb923c;"></div> Content Pipeline</div>
+</div>
+
+<!-- ============================================================ -->
+<h2>9. Key Facts To Remember</h2>
+
+<div class="card card-green">
+  <ul>
+    <li><strong>Worker never reads Git.</strong> All data comes from KV. Git is the authoring layer only.</li>
+    <li><strong>Markdown → HTML happens at seed time</strong> (in seed-kv.ts), not at request time.</li>
+    <li><strong>One <code>article-index</code> key</strong> holds ALL article metadata for a site — homepage reads this one key.</li>
+    <li><strong>One <code>article:siteId:slug</code> key</strong> holds the full pre-rendered HTML for one article detail page.</li>
+    <li><strong>Multi-tenant:</strong> One Worker deployment serves ALL sites. <code>site:hostname</code> KV key maps to the right config.</li>
+    <li><strong>Config is 5-layer merged:</strong> org → groups → overrides → site. Merged at seed time, stored flat in KV.</li>
+    <li><strong>Cache: homepage 60s, articles 5min, errors never cached.</strong></li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>10. Future Proposal — KV Size Optimization</h2>
+
+<div class="proposal">
+  <h3>🔮 Investigate: Evict Old Unpublished Article Bodies</h3>
+  <p style="color: #94a3b8; margin-bottom: 1rem;">Currently seed-kv writes ALL articles to KV — including old drafts. As sites grow to 200+ articles, the article-index key gets large and KV write volume grows. This is a proposal to investigate, not an urgent fix.</p>
+
+  <div class="proposal-item">
+    <div class="title">1. Measure current KV usage per site</div>
+    <div class="detail">Write a script to measure: how many articles per site, total bytes in article-index, total bytes in individual article keys. Establish baseline. Current estimate: ~400KB per site at 79 articles. Need to know the real numbers before optimizing.</div>
+  </div>
+
+  <div class="proposal-item">
+    <div class="title">2. Never evict published articles</div>
+    <div class="detail">Published articles are indexed by Google and linked from social media. Removing them from KV = 404 for live URLs = SEO damage. The <code>article:siteId:slug</code> key MUST stay for any article with <code>status: "published"</code>, regardless of age.</div>
+  </div>
+
+  <div class="proposal-item">
+    <div class="title">3. Keep article-index complete (metadata is tiny)</div>
+    <div class="detail">The <code>article-index</code> key is a JSON array of metadata (~100 bytes per article). At 500 articles, that's ~50KB — negligible. Never trim the index — homepage, search, and categories need it to show all content.</div>
+  </div>
+
+  <div class="proposal-item">
+    <div class="title">4. Candidate for eviction: draft/review article bodies older than 6 months</div>
+    <div class="detail">Articles with <code>status: "draft"</code> or <code>status: "review"</code> that haven't been published in 6+ months are invisible to visitors anyway. Their full HTML body (<code>article:siteId:slug</code> key, ~5-20KB each) could be skipped during seed-kv to save write volume. The article-index entry stays — only the body key is omitted.</div>
+  </div>
+
+  <div class="proposal-item">
+    <div class="title">5. On-demand hydration if evicted article is published</div>
+    <div class="detail">If a draft is later published, the next sync-kv run would write the body key. Between publish and sync, the article would 404 — same as any newly committed article before sync runs. Acceptable latency (usually seconds to minutes).</div>
+  </div>
+
+  <div class="proposal-item">
+    <div class="title">6. Investigate KV billing impact before acting</div>
+    <div class="detail">Cloudflare KV pricing is per-read and per-write, NOT per-storage-GB (free tier: 1GB, paid: $0.50/GB-month). The bigger cost driver is write volume during sync, not stored bytes. Measure whether fewer writes actually saves money before building eviction logic. It may not be worth the complexity.</div>
+  </div>
+</div>
+
+<p style="color: #64748b; text-align: center; margin-top: 3rem; font-size: 0.8rem;">
+  Generated May 2026 — Atomic Labs Content Network
+</p>
+
+</div>
+</body>
+</html>

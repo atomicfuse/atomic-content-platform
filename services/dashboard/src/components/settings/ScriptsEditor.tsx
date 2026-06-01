@@ -13,6 +13,7 @@ interface ScriptsConfig {
   head: ScriptEntry[];
   body_start: ScriptEntry[];
   body_end: ScriptEntry[];
+  before_footer: ScriptEntry[];
 }
 
 interface ScriptsEditorProps {
@@ -26,7 +27,10 @@ const SECTIONS: Array<{ key: ScriptPosition; label: string }> = [
   { key: "head", label: "Head" },
   { key: "body_start", label: "Body Start" },
   { key: "body_end", label: "Body End" },
+  { key: "before_footer", label: "Before Footer" },
 ];
+
+const RAW_HTML_POSITIONS: ReadonlySet<ScriptPosition> = new Set(["before_footer"]);
 
 export function ScriptsEditor({ value, onChange }: ScriptsEditorProps): React.ReactElement {
   const updateEntry = useCallback(
@@ -55,6 +59,22 @@ export function ScriptsEditor({ value, onChange }: ScriptsEditorProps): React.Re
       });
     },
     [value, onChange],
+  );
+
+  /** Strip wrapping <script> tags on blur — common user mistake. */
+  const stripScriptTags = useCallback(
+    (position: ScriptPosition, index: number): void => {
+      const raw = value[position][index]?.inline;
+      if (!raw) return;
+      const stripped = raw
+        .replace(/^\s*<script[^>]*>/i, "")
+        .replace(/<\/script>\s*$/i, "")
+        .trim();
+      if (stripped !== raw) {
+        updateEntry(position, index, { inline: stripped });
+      }
+    },
+    [value, updateEntry],
   );
 
   const toggleMode = useCallback(
@@ -94,6 +114,7 @@ export function ScriptsEditor({ value, onChange }: ScriptsEditorProps): React.Re
 
           {value[section.key].map((entry, index) => {
             const isInline = entry.inline !== undefined && entry.src === undefined;
+            const isRawHtml = RAW_HTML_POSITIONS.has(section.key);
             return (
               <div
                 key={index}
@@ -159,17 +180,57 @@ export function ScriptsEditor({ value, onChange }: ScriptsEditorProps): React.Re
                 {isInline ? (
                   <div className="space-y-1.5">
                     <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                      Inline JavaScript
+                      {isRawHtml ? "Inline HTML" : "Inline JavaScript"}
                     </label>
                     <textarea
                       value={entry.inline ?? ""}
-                      placeholder="// Your JavaScript code here..."
+                      placeholder={isRawHtml
+                        ? '<script src="https://example.com/widget.js" async></script>\n<div data-widget="my-widget"></div>'
+                        : "console.log('Hello');\ngtag('config', 'G-XXXXXX');"}
                       rows={4}
                       onChange={(e): void => {
                         updateEntry(section.key, index, { inline: e.target.value });
                       }}
-                      className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] px-3 py-2 text-sm font-mono text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y"
+                      onBlur={isRawHtml ? undefined : (): void => stripScriptTags(section.key, index)}
+                      className={`w-full rounded-lg border bg-[var(--bg-surface)] px-3 py-2 text-sm font-mono text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y ${
+                        !isRawHtml && (entry.inline ?? "").match(/<\/?script[\s>]/i)
+                          ? "border-amber-500"
+                          : "border-[var(--border-primary)]"
+                      }`}
                     />
+                    {!isRawHtml && (entry.inline ?? "").match(/<\/?script[\s>]/i) && (
+                      <p className="text-xs text-amber-500 flex items-center gap-1">
+                        <span className="font-bold">Warning:</span> Do not include{" "}
+                        <code className="bg-[var(--bg-surface)] px-1 rounded font-mono">&lt;script&gt;</code> tags.
+                        The wrapper is added automatically.
+                      </p>
+                    )}
+                    <div className="rounded-md bg-[var(--bg-surface)] border border-[var(--border-secondary)] px-3 py-2 text-[11px] text-[var(--text-muted)] space-y-1">
+                      {isRawHtml ? (
+                        <p>
+                          Paste <strong>raw HTML</strong> including{" "}
+                          <code className="font-mono bg-[var(--bg-primary)] px-0.5 rounded">&lt;script&gt;</code> tags
+                          and widget elements. Content is injected as-is before the footer.
+                        </p>
+                      ) : (
+                        <>
+                          <p>
+                            Enter <strong>only the JavaScript code</strong> &mdash;{" "}
+                            <code className="font-mono bg-[var(--bg-primary)] px-0.5 rounded">&lt;script&gt;</code> tags are added automatically.
+                          </p>
+                          <div className="flex gap-4">
+                            <div>
+                              <span className="text-green-500 font-semibold">Correct:</span>
+                              <pre className="font-mono mt-0.5 text-[var(--text-secondary)]">{"console.log('hi');"}</pre>
+                            </div>
+                            <div>
+                              <span className="text-red-400 font-semibold">Wrong:</span>
+                              <pre className="font-mono mt-0.5 text-[var(--text-secondary)]">{"<script>console.log('hi');</script>"}</pre>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">

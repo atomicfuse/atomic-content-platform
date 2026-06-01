@@ -9,11 +9,19 @@ export type {
   ScriptEntry,
   AdPlacementSizes,
   AdPlacement,
+  InterstitialTrigger,
+  InterstitialFrequency,
+  InterstitialPageType,
+  InterstitialConfig,
   AdsConfig,
 } from "./ads.js";
 
 export type {
   ArticleType,
+  ArticleScript,
+  ArticleScriptPosition,
+  ArticleVideo,
+  ArticleVideoPosition,
   ArticleFrontmatter,
   QualityScoreBreakdown,
 } from "./article.js";
@@ -30,12 +38,20 @@ export type {
   ThemeConfig,
   ResolvedThemeConfig,
   ScriptsConfig,
+  HeroLayoutConfig,
+  MustReadsLayoutConfig,
+  SidebarTopicsConfig,
+  LoadMoreConfig,
+  LayoutConfig,
+  ResolvedLayoutConfig,
   OrgConfig,
   GroupConfig,
   SiteConfig,
   ResolvedConfig,
   DeepPartial,
 } from "./config.js";
+
+export { LAYOUT_DEFAULTS } from "./config.js";
 
 export type {
   AdPlaceholderHeights,

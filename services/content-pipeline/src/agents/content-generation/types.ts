@@ -19,6 +19,7 @@ export interface ContentItem {
   summary: string;
   thumbnail: { url: string } | null;
   content_type: string;
+  /** @deprecated Dropped from API response 2026-04-29 — always null for new items. */
   vertical: { name: string } | null;
   categories: Array<{ name: string }>;
   tags: Array<{ name: string }>;

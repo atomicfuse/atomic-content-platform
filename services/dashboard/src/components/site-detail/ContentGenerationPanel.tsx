@@ -5,10 +5,13 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { publishStagingToProduction } from "@/actions/wizard";
+import { workerPreviewUrl } from "@/lib/constants";
+import { ArticleUploadPanel } from "./ArticleUploadPanel";
 
 interface ContentGenerationPanelProps {
   domain: string;
   pagesProject: string | null;
+  pagesSubdomain: string | null;
   stagingBranch: string | null;
 }
 
@@ -115,6 +118,7 @@ const MAX_ARTICLE_COUNT = 50;
 export function ContentGenerationPanel({
   domain,
   pagesProject,
+  pagesSubdomain,
   stagingBranch,
 }: ContentGenerationPanelProps): React.ReactElement {
   const [articleCount, setArticleCount] = useState(3);
@@ -126,8 +130,14 @@ export function ContentGenerationPanel({
   const [isPublishing, startPublish] = useTransition();
   const { toast } = useToast();
 
-  const domainSlug = domain.replace(/\./g, "-");
-  const projectName = pagesProject ?? domainSlug;
+  // pagesProject / pagesSubdomain were used to construct the legacy
+  // *.pages.dev preview URL + drive the Pages build-poll loop. After
+  // Phase 7, sync-kv.yml + the staging Worker handle preview entirely
+  // — the props are still in the interface for backward-compatibility
+  // with parent components but unused here. Remove on the next
+  // dashboard-component refactor pass.
+  void pagesProject;
+  void pagesSubdomain;
 
   const advancePipeline = useCallback(
     (step: PipelineStep, message: string, extras?: Partial<PipelineState>) => {
@@ -330,67 +340,21 @@ export function ContentGenerationPanel({
       }
       await delay(500);
 
-      // Trigger staging build on Cloudflare Pages
+      // Post-migration (Phase 7+): the agent's commit on `staging/<domain>`
+      // triggers `sync-kv.yml` in the network repo, which writes the new
+      // article into staging KV. The staging Worker reads from there at
+      // request time — no Pages build, no deployment URL polling. The
+      // first request after sync completes (~30–60s) renders the article.
       advancePipeline(
         "triggering_build",
-        "Triggering Cloudflare Pages build..."
+        "Syncing to KV via sync-kv.yml (~30–60s)..."
       );
 
-      let deploymentUrl: string | null = null;
-      const branchSlug = stagingBranch ? stagingBranch.replace(/\//g, "-") : null;
-      const stagingBaseUrl = branchSlug ? `https://${branchSlug}.${projectName}.pages.dev` : null;
-      const productionBaseUrl = `https://${projectName}.pages.dev`;
+      // Worker preview URL — siteId is the network-repo dir slug, which
+      // the dashboard stores in `domain`. Append slug per article.
+      const stagingUrl = workerPreviewUrl(domain);
 
-      try {
-        const buildRes = await fetch("/api/agent/build", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectName, stagingBranch, domain }),
-        });
-        if (buildRes.ok) {
-          const buildData = (await buildRes.json()) as {
-            status: string;
-            url?: string;
-          };
-          if (buildData.url) {
-            deploymentUrl = buildData.url;
-          }
-        }
-      } catch {
-        // CF may auto-deploy from the commit
-      }
-
-      if (!deploymentUrl) {
-        advancePipeline(
-          "triggering_build",
-          "Waiting for Cloudflare to pick up the commit..."
-        );
-        for (let i = 0; i < 6; i++) {
-          await delay(5000);
-          try {
-            const pollRes = await fetch(
-              `/api/agent/deployment?project=${encodeURIComponent(projectName)}`
-            );
-            if (pollRes.ok) {
-              const pollData = (await pollRes.json()) as {
-                url?: string;
-              };
-              if (pollData.url) {
-                deploymentUrl = pollData.url;
-                break;
-              }
-            }
-          } catch {
-            // Keep polling
-          }
-        }
-      }
-
-      const stagingUrl = deploymentUrl ?? stagingBaseUrl ?? productionBaseUrl;
-
-      const stagingMessage = deploymentUrl
-        ? `${batchSummary} — staged successfully. Review the preview before deploying to production.`
-        : `${batchSummary} — staged successfully. Cloudflare will deploy the preview within ~2 minutes.`;
+      const stagingMessage = `${batchSummary} — committed to staging branch. The Worker preview will reflect the new article(s) once sync-kv runs (~60s).`;
 
       // Check if any articles are published (high quality) — auto-deploy those to production
       const hasPublished = result.results.some(
@@ -615,7 +579,7 @@ export function ContentGenerationPanel({
           <div className="space-y-1">
             {PIPELINE_STEPS.map((step, index) => {
               const isActive = step.key === pipeline.step;
-              const isDone = currentStepIndex > index;
+              const isDone = currentStepIndex > index || (isActive && step.key === "complete");
               const isFuture = currentStepIndex < index;
               const isError = pipeline.step === "error" && index === currentStepIndex;
 
@@ -760,12 +724,12 @@ export function ContentGenerationPanel({
                     )}
                   </div>
                   {pipeline.step === "complete" && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-green-500/15 text-green-700 dark:text-green-400">
                       Live
                     </span>
                   )}
                   {pipeline.step === "staging_live" && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
                       Staging
                     </span>
                   )}
@@ -788,20 +752,20 @@ export function ContentGenerationPanel({
                       </span>
                       {r.qualityScore !== undefined && (
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                          r.qualityScore >= 80 ? "text-green-400 bg-green-500/10" :
-                          r.qualityScore >= 60 ? "text-yellow-400 bg-yellow-500/10" :
-                          "text-red-400 bg-red-500/10"
+                          r.qualityScore >= 80 ? "text-green-700 dark:text-green-400 bg-green-500/10" :
+                          r.qualityScore >= 60 ? "text-yellow-700 dark:text-yellow-400 bg-yellow-500/10" :
+                          "text-red-700 dark:text-red-400 bg-red-500/10"
                         }`}>
                           Score: {r.qualityScore}
                         </span>
                       )}
                       {r.articleStatus === "review" && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-700 dark:text-yellow-400">
                           Review
                         </span>
                       )}
                       {r.articleStatus === "published" && r.qualityScore !== undefined && (
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-400">
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-green-500/15 text-green-700 dark:text-green-400">
                           Published
                         </span>
                       )}
@@ -1003,6 +967,12 @@ export function ContentGenerationPanel({
           </div>
         </div>
       )}
+
+      {/* ─── Divider ─── */}
+      <div className="border-t border-[var(--border-primary)]" />
+
+      {/* ─── Upload Article ─── */}
+      <ArticleUploadPanel domain={domain} stagingBranch={stagingBranch} />
     </div>
   );
 }

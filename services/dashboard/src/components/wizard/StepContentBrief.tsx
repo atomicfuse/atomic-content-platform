@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useTransition } from "react";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { suggestTopics } from "@/actions/wizard";
+import { useAudiences } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -31,6 +33,7 @@ export function StepContentBrief({
   onNext,
   onBack,
 }: StepContentBriefProps): React.ReactElement {
+  const { audiences } = useAudiences();
   const [topicInput, setTopicInput] = useState("");
   const [isSuggesting, startSuggest] = useTransition();
   const [didAutoSuggest, setDidAutoSuggest] = useState(false);
@@ -46,7 +49,7 @@ export function StepContentBrief({
             siteTagline: data.siteTagline || undefined,
             vertical: data.vertical,
             company: data.company || undefined,
-            audience: data.audience || undefined,
+            audience: data.audiences.join(", ") || undefined,
             tone: data.tone || undefined,
             contentGuidelines: data.contentGuidelines || undefined,
           });
@@ -61,9 +64,12 @@ export function StepContentBrief({
     }
   }, [data.siteName, data.vertical, data.topics.length, didAutoSuggest, onChange]);
 
+  // EC-19: Cap topics at 20.
+  const MAX_TOPICS = 20;
+
   function addTopic(raw: string): void {
     const tag = raw.trim();
-    if (tag && !data.topics.includes(tag)) {
+    if (tag && !data.topics.includes(tag) && data.topics.length < MAX_TOPICS) {
       onChange({ topics: [...data.topics, tag] });
     }
     setTopicInput("");
@@ -101,7 +107,7 @@ export function StepContentBrief({
           siteTagline: data.siteTagline || undefined,
           vertical: data.vertical,
           company: data.company || undefined,
-          audience: data.audience || undefined,
+          audience: data.audiences.join(", ") || undefined,
           tone: data.tone || undefined,
           contentGuidelines: data.contentGuidelines || undefined,
         });
@@ -119,12 +125,54 @@ export function StepContentBrief({
       <h2 className="text-xl font-bold">Content Brief</h2>
 
       <div className="grid grid-cols-2 gap-4">
-        <Input
-          label="Target Audience"
-          placeholder="e.g. Young adults 25-40"
-          value={data.audience}
-          onChange={(e): void => onChange({ audience: e.target.value })}
-        />
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Target Audiences
+          </label>
+          {data.audienceIds.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5">
+              {data.audienceIds.map((id) => {
+                const name = audiences.find((a) => a.id === id)?.name ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                  >
+                    {name}
+                    <button
+                      type="button"
+                      onClick={(): void => {
+                        onChange({
+                          audienceIds: data.audienceIds.filter((x) => x !== id),
+                          audiences: data.audiences.filter((_, i) => data.audienceIds[i] !== id),
+                        });
+                      }}
+                      className="hover:text-red-400 transition-colors"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <Select
+            options={audiences
+              .filter((a) => !data.audienceIds.includes(a.id))
+              .map((a) => ({ value: a.id, label: a.name }))}
+            placeholder="Add audience..."
+            value=""
+            onChange={(e): void => {
+              const id = e.target.value;
+              if (!id) return;
+              const name = audiences.find((a) => a.id === id)?.name ?? "";
+              onChange({
+                audienceIds: [...data.audienceIds, id],
+                audiences: [...data.audiences, name],
+              });
+            }}
+          />
+        </div>
         <Input
           label="Tone"
           placeholder="e.g. Informative, friendly"
@@ -185,18 +233,26 @@ export function StepContentBrief({
                 </span>
               ))}
               <input
-                className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-                placeholder={data.topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
+                className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"
+                placeholder={data.topics.length >= MAX_TOPICS ? `Maximum ${MAX_TOPICS} topics` : data.topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
                 value={topicInput}
                 onChange={(e): void => setTopicInput(e.target.value)}
                 onKeyDown={handleTopicKeyDown}
                 onBlur={(): void => { if (topicInput.trim()) addTopic(topicInput); }}
+                disabled={data.topics.length >= MAX_TOPICS}
               />
             </>
           )}
         </div>
         <p className="text-xs text-[var(--text-muted)]">
           Press Enter or comma to add. Backspace to remove last. Topics are auto-suggested by AI.
+          {/* EC-19: Show topic count and cap. */}
+          {data.topics.length >= MAX_TOPICS && (
+            <span className="ml-1 text-amber-400">Maximum {MAX_TOPICS} topics reached.</span>
+          )}
+          {data.topics.length > 0 && data.topics.length < MAX_TOPICS && (
+            <span className="ml-1 tabular-nums">{data.topics.length}/{MAX_TOPICS}</span>
+          )}
         </p>
       </div>
 
@@ -207,9 +263,11 @@ export function StepContentBrief({
           min={1}
           max={10}
           value={data.articlesPerDay}
-          onChange={(e): void =>
-            onChange({ articlesPerDay: parseInt(e.target.value, 10) || 1 })
-          }
+          onChange={(e): void => {
+            // EC-17: Clamp to 1-10 to prevent scheduler abuse.
+            const raw = parseInt(e.target.value, 10) || 1;
+            onChange({ articlesPerDay: Math.max(1, Math.min(10, raw)) });
+          }}
         />
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
@@ -247,11 +305,28 @@ export function StepContentBrief({
         }
       />
 
+      <Textarea
+        label="Image Guidelines"
+        placeholder="Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."
+        rows={3}
+        value={data.imageGuidelines}
+        onChange={(e): void =>
+          onChange({ imageGuidelines: e.target.value })
+        }
+      />
+
+      {/* EC-18: Require at least one preferred day. */}
+      {data.preferredDays.length === 0 && (
+        <p className="text-xs text-amber-400">Select at least one preferred day.</p>
+      )}
+
       <div className="flex justify-between pt-4">
         <Button variant="ghost" onClick={onBack}>
           &larr; Back
         </Button>
-        <Button onClick={onNext}>Next &rarr;</Button>
+        <Button onClick={onNext} disabled={data.preferredDays.length === 0}>
+          Next &rarr;
+        </Button>
       </div>
     </div>
   );

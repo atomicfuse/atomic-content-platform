@@ -1,10 +1,12 @@
 import { notFound } from "next/navigation";
 import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
+import { readArticlesWithKVFallback } from "@/lib/kv-api";
+import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { ContentTab } from "@/components/site-detail/ContentTab";
 import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
 import { StagingTab } from "@/components/site-detail/StagingTab";
-import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
+import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,12 @@ export default async function SiteDetailPage({
 
   const [siteConfig, articles] = await Promise.all([
     readSiteConfig(decodedDomain, branch),
-    readArticles(decodedDomain, branch),
+    readArticlesWithKVFallback(decodedDomain, branch, readArticles),
   ]);
 
   const brief = siteConfig?.brief as {
     audience: string;
+    audiences?: string[];
     tone: string;
     topics: string[];
     articles_per_day?: number;
@@ -58,7 +61,7 @@ export default async function SiteDetailPage({
   // Dual-read: prefer articles_per_day; fall back to legacy articles_per_week.
   const normalizedBrief = brief
     ? {
-        audience: brief.audience,
+        audience: brief.audiences?.join(", ") ?? brief.audience ?? "",
         tone: brief.tone,
         topics: brief.topics,
         articles_per_day:
@@ -75,14 +78,26 @@ export default async function SiteDetailPage({
 
   return (
     <div className="space-y-6">
-      <SiteDetailHeader site={site} />
+      <SiteDetailHeader
+        site={site}
+        logoUrl={
+          (siteConfig?.theme as Record<string, unknown> | undefined)?.logo
+            ? `/api/sites/asset?domain=${encodeURIComponent(decodedDomain)}&file=${encodeURIComponent(((siteConfig!.theme as Record<string, unknown>).logo as string).replace(/^\//, ""))}`
+            : null
+        }
+      />
+      {(site.status === "Ready" || site.status === "Live") && site.staging_branch && (
+        <PendingChangesBar
+          domain={decodedDomain}
+          customDomain={site.custom_domain}
+        />
+      )}
       <SiteDetailTabs
         domain={decodedDomain}
         stagingTab={
-          site.pages_project ? (
+          site.staging_branch || site.pages_project ? (
             <StagingTab
               domain={decodedDomain}
-              pagesProject={site.pages_project}
               stagingBranch={site.staging_branch}
               previewUrl={site.preview_url}
               savedPreviews={site.saved_previews}
@@ -98,11 +113,10 @@ export default async function SiteDetailPage({
             articles={articles}
             domain={decodedDomain}
             stagingBranch={site.staging_branch}
-            previewUrl={
-              site.staging_branch && site.pages_project
-                ? `https://${site.staging_branch.replace(/\//g, "-")}.${site.pages_project}.pages.dev`
-                : site.preview_url ?? undefined
-            }
+            // Worker origin only — ContentTab appends `/<slug>?_atl_site=<domain>`
+            // per article via workerPreviewUrl(). Pass-through for any future
+            // override scenario; defaults to WORKER_STAGING_URL otherwise.
+            previewUrl={WORKER_STAGING_URL}
           />
         }
         identityTab={
@@ -112,16 +126,14 @@ export default async function SiteDetailPage({
             siteConfig={siteConfig}
             stagingBranch={site.staging_branch}
             pagesProject={site.pages_project}
+            pagesSubdomain={site.pages_subdomain}
+            customDomain={site.custom_domain}
+            currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
+            currentFaviconPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null}
+            previewUrl={site.preview_url ?? null}
           />
         }
       />
-      {site.pages_project && (
-        <AttachDomainPanel
-          domain={decodedDomain}
-          pagesProject={site.pages_project}
-          customDomain={site.custom_domain}
-        />
-      )}
     </div>
   );
 }

@@ -47,13 +47,10 @@ export default function OverridesPage(): React.ReactElement {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Overrides</h1>
-          <p className="mt-1 text-sm text-[var(--text-secondary)]">
-            Targeted config exceptions with REPLACE semantics. Fields defined in
-            an override completely replace the group chain for targeted sites.
-          </p>
-        </div>
+        <p className="text-sm text-[var(--text-secondary)]">
+          Targeted config exceptions with REPLACE semantics. Fields defined in
+          an override completely replace the group chain for targeted sites.
+        </p>
         <Link href="/overrides/new">
           <Button>Create Override</Button>
         </Link>

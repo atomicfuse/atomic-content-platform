@@ -1,19 +1,19 @@
 # Content Pipeline
 
-The content pipeline is an autonomous service that generates articles for sites in the network. It consumes pre-enriched content from the **Content Aggregator v2 API** and routes articles through a dual-model generation pipeline — Claude Sonnet for news/factual content, OpenAI GPT-4o-mini for general/evergreen content. It runs as a CloudGrid service, triggered on-demand from the dashboard or by a scheduled cron job.
+The content pipeline is an autonomous service that generates articles for sites in the network. It consumes pre-enriched content from the **Content Aggregator v2 API** and routes articles through a dual-model generation pipeline — Claude Sonnet for news/factual content, OpenAI GPT-4o-mini for general/evergreen content. Article images are generated **asynchronously** by an external **n8n workflow** — articles are committed immediately with a default image, and real images arrive via callback. It runs as a CloudGrid service, triggered on-demand from the dashboard or by a scheduled cron job. Jobs are processed through a **BullMQ queue** backed by Redis for reliability and observability.
 
 ## Architecture
 
 ```
 services/content-pipeline/
   src/
-    index.ts                              -- HTTP server (health, /content-generate, /scheduled-publish)
     agents/
       content-generation/
-        index.ts                          -- HTTP handler
-        agent.ts                          -- v2 orchestrator (fetch → route → generate → image → SEO → write)
+        index.ts                          -- HTTP server + queue bootstrap
+        agent.ts                          -- v2 orchestrator (fetch, route, generate, image, SEO, write)
+        n8n-image.ts                      -- Async n8n image generation (trigger + callback handler)
         api-client.ts                     -- Content Aggregator v2 typed HTTP client
-        router.ts                         -- isFactual() classifier → Claude or OpenAI
+        router.ts                         -- isFactual() classifier (Claude or OpenAI)
         types.ts                          -- ContentItem, ArticlePackage, SEOMetadata, etc.
         generators/
           base-generator.ts               -- Generator interface + shared prompt context builder
@@ -22,12 +22,8 @@ services/content-pipeline/
         prompts/
           news-article.ts                 -- Factual prompt: journalist tone, no invented facts
           general-article.ts              -- General prompt: engagement + SEO, conversational, TL;DR
-        image-pipeline/
-          analyzer.ts                     -- GPT-4o-mini vision: extract style/mood from thumbnail
-          generator.ts                    -- DALL-E 3: generate original image (never copy source)
-          types.ts                        -- ImageAnalysis, ImageGenerationResult
         seo/
-          slug-generator.ts               -- Title → kebab-case slug, stop-word removal
+          slug-generator.ts               -- Title to kebab-case slug, stop-word removal
           metadata-generator.ts           -- Meta tags, schema.org, OG tags, reading time
       content-quality/
         scorer.ts                         -- Quality scoring with Claude (5 criteria)
@@ -36,12 +32,22 @@ services/content-pipeline/
         prompts.ts                        -- Revision prompt templates
       scheduled-publisher/
         index.ts                          -- Cron-triggered batch publishing
+        history.ts                        -- Per-site run history persistence
     lib/
       ai.ts                              -- Claude / CloudGrid AI abstraction
       github.ts                          -- Git operations for committing articles
       writer.ts                          -- Markdown file generation (local or GitHub)
       site-brief.ts                      -- Read site briefs from data repo
       config.ts                          -- Environment config loader
+      image-optimizer.ts                 -- Sharp-based image optimization (WebP)
+      r2-upload.ts                       -- R2 S3-compatible upload client
+      concurrency.ts                     -- processWithConcurrency helper
+    queue/
+      connection.ts                      -- Redis / IORedis connection factory
+      content-generation.ts              -- BullMQ worker processor
+      scheduler-flow.ts                  -- BullMQ Flow for scheduled runs
+      types.ts                           -- Queue type definitions
+      index.ts                           -- Worker + queue bootstrap
 ```
 
 ## Content Generation Flow
@@ -50,19 +56,23 @@ services/content-pipeline/
   Content Aggregator v2 API (enriched items with summaries, taxonomy, thumbnails)
         |
         v
-  1. Fetch enriched items (targetCount * 2 — lightweight, no pagination loops)
+  1. Fetch enriched items with pagination (up to 5 pages of 20 items)
         |
         v
-  2. Deduplicate against existing articles (by URL + title)
+  2. Deduplicate against existing articles (by URL + title, via dedup-index.json)
         |
         v
-  3. Route each item: factual → Claude Sonnet, general → OpenAI GPT-4o-mini
+  2b. If ALL items are duplicates and tags were used:
+      retry with broader search (categories only, no tags)
+        |
+        v
+  3. Route each item: factual -> Claude Sonnet, general -> OpenAI GPT-4o-mini
         |
         v
   4. Generate article from structured summary (NO URL scraping)
         |
         v
-  5. Image pipeline: analyze source thumbnail → generate original image (DALL-E 3)
+  5. Assign per-site default image (e.g. /assets/images/{site-slug}-general-article.webp)
         |
         v
   6. SEO metadata: slug, meta title/description, schema.org, OG tags, reading time
@@ -71,11 +81,73 @@ services/content-pipeline/
   7. Quality scoring (5 criteria, weighted average)
         |
         v
-  8. Status assignment: score >= threshold → "published", below → "review"
+  8. Status assignment: score >= threshold -> "published", below -> "review"
         |
         v
-  9. Batch commit all articles + images to data repo (single git commit)
+  9. Batch commit all articles + dedup index to data repo (single git commit)
+        |
+        v
+  10. Trigger async image generation via n8n (fire-and-forget)
+      n8n generates images and POSTs results back to /image-callback
 ```
+
+## BullMQ Queue
+
+All content generation jobs run through a **BullMQ queue** backed by Redis. This provides:
+
+- **Reliability**: jobs survive server restarts; failed jobs are retried up to 3 times with exponential backoff
+- **Observability**: the Queue Monitor page shows job history, status, error reasons, and article counts
+- **Concurrency control**: only 2 jobs run at a time to avoid API rate limits
+- **Scheduled runs**: the scheduler creates a BullMQ Flow (parent + child jobs per site)
+
+### Job lifecycle
+
+1. Dashboard or scheduler sends a request to the content pipeline
+2. A BullMQ job is created with site domain, branch, and count
+3. The worker picks up the job and runs `runContentGeneration()`
+4. On success, the result (articles created, errors, duplicates) is stored in the job's return value
+5. On failure, the job is retried up to 3 times before being marked as failed
+
+### Retention
+
+- Completed jobs are retained for **7 days**
+- Failed jobs are retained for **30 days**
+
+### Direct execution fallback
+
+If `REDIS_URL` is not set, jobs run synchronously (direct execution mode). This is useful for local development without Redis.
+
+### Queue Monitor
+
+The dashboard includes a **Queue Monitor** page at `/queue` that shows all BullMQ jobs with:
+
+- Status filters (All, Active, Completed, Failed)
+- Expandable job cards with article breakdown (created, failed, duplicates)
+- Error reasons for failed jobs and individual article errors
+- Auto-refresh every 10 seconds
+
+## Aggregator Search Strategy
+
+The pipeline uses a two-phase search strategy to find fresh content:
+
+### Phase 1: Narrow search (categories + tags)
+
+The pipeline fetches items from the Content Aggregator filtered by both `category_ids` (from the site's vertical and category config) and `tag_ids` (resolved from the site's topics). This returns the most relevant content.
+
+Pages are fetched incrementally (up to 5 pages of 20 items) until enough fresh (non-duplicate) items are found.
+
+### Phase 2: Broad search fallback (categories only)
+
+If the narrow search returned items but **all** were duplicates (already exist on the site), the pipeline automatically retries with a broader search using **only category_ids** (dropping tag_ids). This widens the content pool to find articles the site hasn't covered yet.
+
+The fallback only triggers when:
+- The narrow search actually returned items (not empty)
+- ALL returned items were duplicates
+- Tags were being used (no point retrying without tags if there were none)
+
+### Deduplication
+
+Articles are deduplicated by both source URL and title. A `dedup-index.json` file is maintained alongside articles to avoid reading every article file on each run. The index is updated atomically in the same commit as new articles.
 
 ## Content Aggregator v2 API
 
@@ -90,8 +162,8 @@ The pipeline consumes pre-enriched content from the Content Aggregator v2 API. E
 | `id` | Unique content item ID |
 | `url` | Original source URL (for attribution, not scraping) |
 | `title` | Source article title |
-| `summary` | Structured brief: "What happened… Why it matters… Content opportunity…" |
-| `thumbnail.url` | Source image (analyzed for style, never copied) |
+| `summary` | Structured brief: "What happened... Why it matters... Content opportunity..." |
+| `thumbnail.url` | Source image (used as reference for style, never copied) |
 | `vertical.name` | Content vertical (Tech, News, Finance, etc.) |
 | `categories[].name` | Content categories |
 | `tags[].name` | Content tags (used for factual classification) |
@@ -102,16 +174,6 @@ The pipeline consumes pre-enriched content from the Content Aggregator v2 API. E
 
 **Settings endpoint:** `GET /api/settings` returns classification config (e.g. `factual_tags: ["news", "announcement", "breaking"]`).
 
-## Lightweight Fetching
-
-The pipeline follows a strict "fetch only what you need" rule. The orchestrator receives a `targetCount` (how many articles to produce) and fetches exactly `targetCount * 2` items from the API as a buffer for filtering and failures.
-
-- User wants 3 articles → fetch `page_size=6` from API
-- User wants 10 articles → fetch `page_size=20`
-- Generate until `targetCount` articles succeed, then **stop**
-- If the 2x buffer wasn't enough (too many failures), log a warning and return what we have
-- **No pagination loops.** One fetch with the right `page_size`, that's it
-
 ## Dual-Model Routing
 
 Each content item is classified as **factual** or **general** before generation. This determines which AI model produces the article.
@@ -120,9 +182,9 @@ Each content item is classified as **factual** or **general** before generation.
 
 The router checks two things in order:
 
-1. **Vertical name** — if the item's vertical is News, Politics, Finance, or World News → **factual**
-2. **Tags** — if any tag matches the `factual_tags` list from aggregator settings (e.g. "news", "announcement", "breaking") → **factual**
-3. **Otherwise** → **general**
+1. **Vertical name** — if the item's vertical is News, Politics, Finance, or World News -> **factual**
+2. **Tags** — if any tag matches the `factual_tags` list from aggregator settings (e.g. "news", "announcement", "breaking") -> **factual**
+3. **Otherwise** -> **general**
 
 ### Why Two Models
 
@@ -132,34 +194,88 @@ The router checks two things in order:
 | **Priority** | Accuracy and factual fidelity | Engagement and SEO |
 | **Tone** | Journalist, objective | Conversational, scannable |
 | **Word count** | 600-900 words | 800-1200 words |
-| **Cost** | ~$0.012/article | ~$0.0006/article |
 | **Use case** | Breaking news, finance, politics | How-tos, listicles, lifestyle |
 
 ### Cross-Model Fallback
 
 If the primary model fails, the pipeline falls back to the other model:
 
-- Claude fails → falls back to OpenAI for that item
-- OpenAI fails → falls back to Claude for that item
+- Claude fails -> falls back to OpenAI for that item
+- OpenAI fails -> falls back to Claude for that item
 - The fallback is logged so you can see which model actually generated each article
 
-## Image Pipeline
+## Image Generation (n8n Async)
 
-Every article gets an original image generated by DALL-E 3. The pipeline **never** copies or directly uses source thumbnails (copyright compliance).
+Image generation is **asynchronous** and **decoupled** from article creation. Articles are committed immediately with a per-site default image. Real images are generated in the background by an n8n workflow and arrive via callback.
 
-### How It Works
+### Flow
 
-1. **Analyze** — if the source item has a `thumbnail.url`, GPT-4o-mini vision extracts the style, mood, color palette, subject, and composition
-2. **Generate** — DALL-E 3 creates a completely new, original image inspired by the analysis + article context
-3. **Alt text** — generated automatically for accessibility and SEO
+```
+Article commit (with default image)
+        |
+        v
+POST to n8n webhook (fire-and-forget, ~100ms)
+        |  (returns immediately — article job is complete)
+        |
+        v  ... n8n generates image (~46s) ...
+        |
+n8n POSTs result to dashboard proxy /api/agent/image-callback
+        |
+        v
+Dashboard proxies to internal content-pipeline /image-callback
+        |
+        v
+Content pipeline: optimize (sharp/WebP) -> upload to R2 -> update Git frontmatter
+```
 
-If the source has no thumbnail, the image is generated purely from the article title and summary.
+### Default Images
+
+Each site has a generic default image in R2 at `{site-slug}/assets/images/{site-slug}-general-article.webp`. Articles reference it as `/assets/images/{site-slug}-general-article.webp` in frontmatter (the `seed-kv` script adds the siteId prefix at sync time).
+
+If n8n fails to generate an image, the article keeps the default image and a Slack notification is sent.
+
+### n8n Workflow
+
+The n8n workflow (`ACP - Image Generation`) handles image creation externally:
+
+1. Receives article context (title, summary, vertical, thumbnail URL)
+2. If source thumbnail exists: fetches it and uses GPT vision to describe the style
+3. Builds an image generation prompt via GPT (art-directed per vertical)
+4. Generates image with Gemini 3.1 Flash Image Preview (2 attempts with prompt revision)
+5. POSTs the result (base64 image + alt text) to our `/image-callback` endpoint
+
+The request payload includes `callback_url`, `site_domain`, `slug`, and `branch` so the callback handler knows where to commit the updated frontmatter.
+
+### Callback Routing
+
+The content-pipeline is an **internal-only CloudGrid service** with no public URL. n8n cannot reach it directly. Callbacks are routed through the dashboard:
+
+1. n8n POSTs to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`
+2. Dashboard API route (`/api/agent/image-callback`) proxies to `http://content-pipeline-app/image-callback`
+3. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work
+
+The default callback URL is set in `agent.ts`. Override with the `IMAGE_CALLBACK_URL` env var.
+
+### Callback Processing
+
+`POST /image-callback` on the content pipeline receives n8n results:
+
+1. Validates the payload (`site_domain`, `slug`, `branch`, `data_base64`)
+2. Optimizes the image via sharp (resize, WebP quality ladder, target ≤350KB)
+3. Uploads to R2 at key `{site_domain}/assets/images/{slug}.webp`
+4. Reads the article from Git, updates `featuredImage` and `image_alt` in frontmatter
+5. Commits the updated article to the staging branch (retries up to 3x on SHA conflicts from concurrent callbacks)
 
 ### Failure Handling
 
-Image generation is **non-critical**. If analysis or generation fails:
-- The article is still committed without a featured image
-- The failure is logged but doesn't block the pipeline
+| Failure | Result |
+|---------|--------|
+| n8n webhook trigger fails | Article keeps default image, Slack alert sent |
+| n8n image generation fails | n8n POSTs error status to callback, article keeps default image, Slack alert sent |
+| R2 upload fails | Git update skipped, article keeps default image, Slack alert sent |
+| Git SHA conflict (concurrent callbacks) | Retries up to 3x with 2s/4s backoff — re-reads file to get fresh SHA |
+| Git commit fails (after retries) | Image exists in R2 but frontmatter not updated, Slack alert sent |
+| Content pipeline restarts | No impact — n8n still POSTs to callback when the service is back up |
 
 ## SEO Metadata
 
@@ -167,7 +283,7 @@ Each article gets SEO metadata generated algorithmically (no extra AI call neede
 
 | Field | Details |
 |-------|---------|
-| **Slug** | Title → kebab-case, stop words removed, max 60 chars |
+| **Slug** | Title to kebab-case, stop words removed, max 60 chars |
 | **Meta title** | Truncated to 60 chars at word boundary |
 | **Meta description** | Truncated to 160 chars at word boundary |
 | **Schema.org** | `NewsArticle` for factual content, `Article` for general |
@@ -214,12 +330,15 @@ The pipeline is designed to degrade gracefully — no single failure kills the b
 | Failure | Recovery |
 |---------|----------|
 | API fetch fails | Retry 3x with exponential backoff (1s, 2s, 4s), then skip batch |
+| All aggregator results are duplicates | Retry with broader search (categories only, drop tags) |
 | Claude generation fails | Fall back to OpenAI for that item |
 | OpenAI generation fails | Fall back to Claude for that item |
-| Image analysis fails | Skip analysis, generate image from article context only |
-| Image generation fails | Commit article without featured image |
+| n8n webhook trigger fails | Article committed with default image, Slack alert sent |
+| n8n image generation fails | Article keeps default image, n8n POSTs error to callback |
+| R2 image upload fails | Git update skipped, article keeps default image |
 | SEO generation fails | Generate basic metadata algorithmically |
 | Quality scoring fails | Default to `published` status |
+| BullMQ job fails | Retry up to 3 times with exponential backoff |
 
 ## Article Frontmatter
 
@@ -234,7 +353,7 @@ status: published
 publishDate: 2026-04-19
 author: "Editorial Team"
 tags: ["travel", "beaches", "destinations"]
-featuredImage: "/assets/images/hidden-beaches-2026.png"
+featuredImage: "/assets/images/hidden-beaches-2026.webp"
 slug: "hidden-beaches-2026"
 source_url: "https://example.com/original-article"
 source_item_id: "agg-12345"
@@ -252,8 +371,6 @@ reviewer_notes: ""
 ---
 ```
 
-New fields in v2: `source_item_id` (aggregator item reference), `generated_by` (which model: "claude" or "openai"), `reading_time` (estimated minutes).
-
 ## Article Regeneration
 
 Articles rejected during review can be automatically revised. The regeneration agent:
@@ -266,12 +383,15 @@ Articles rejected during review can be automatically revised. The regeneration a
 
 A CloudGrid cron job (`0 * * * * EST`) hits the content pipeline's `/scheduled-publish` endpoint every hour. Most ticks return in ~50ms as no-ops — the global `scheduler/config.yaml` in the network repo decides which ticks actually publish.
 
+When Redis is configured, the scheduler creates a **BullMQ Flow** — a parent job with one child job per site. This provides per-site error isolation and parallel processing.
+
 For each active site in the network, the scheduled publisher:
 
 1. Reads the global scheduler config (skip tick unless enabled and current hour is in `run_at_hours`)
 2. Reads the site brief and publishing schedule from the staging branch
 3. Checks if today is a preferred publishing day
-4. Generates `articles_per_day` articles in one batch, committed to the site's staging branch via GitHub API
+4. Creates a BullMQ child job for each eligible site
+5. Each child job generates `articles_per_day` articles, committed to the site's staging branch via GitHub API
 
 See **Scheduler Agent** in the guide for the full spec, config shapes, and dashboard controls.
 
@@ -287,24 +407,29 @@ Decisions are batched per-domain: one commit for approvals, one for rejections, 
 ## Triggering Content Generation
 
 ### From Dashboard
-The dashboard's Content Brief tab sends a POST to the content pipeline:
+The dashboard's Content Brief tab sends a POST to the content pipeline via `/api/agent/generate`. When BullMQ is configured, this creates a queue job and returns a job ID. The dashboard polls `/api/agent/job/:id` for status updates.
+
 ```json
 POST /content-generate
 { "siteDomain": "coolnews.dev", "branch": "staging/coolnews-dev", "count": 5 }
 ```
 
-The `count` becomes the `targetCount` — the pipeline fetches `count * 2` items and generates until `count` articles succeed.
-
 ### From Cron
-The scheduled publisher calls `runContentGeneration()` directly (same process). The `articles_per_day` from the site brief becomes the `targetCount`.
+The scheduled publisher calls `runContentGeneration()` via BullMQ child jobs (or directly if Redis is not configured). The `articles_per_day` from the site brief becomes the `targetCount`.
 
 ## Environment Variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | Yes | For GPT-4o-mini (general articles) + DALL-E 3 (images) |
+| `OPENAI_API_KEY` | Yes | For GPT-4o-mini (general articles) |
 | `ANTHROPIC_API_KEY` | Local dev | For Claude (news articles) — not needed in CloudGrid |
+| `N8N_IMAGE_WEBHOOK_URL` | Yes | n8n webhook URL for async image generation |
+| `IMAGE_CALLBACK_URL` | No | Override callback URL (defaults to CloudGrid production URL) |
+| `R2_ACCESS_KEY_ID` | Yes | R2 S3 access key for image uploads |
+| `R2_SECRET_ACCESS_KEY` | Yes | R2 S3 secret for image uploads |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | For R2 endpoint |
 | `CONTENT_API_BASE_URL` | No | Content Aggregator v2 URL (has default) |
 | `GITHUB_TOKEN` | Yes | For committing articles to network repo |
 | `NETWORK_REPO` | Yes | Network repo in `owner/repo` format |
 | `LOCAL_NETWORK_PATH` | Dev only | Write articles to local filesystem instead of GitHub |
+| `REDIS_URL` | Production | Redis connection for BullMQ (e.g. `redis://localhost:6379`) |

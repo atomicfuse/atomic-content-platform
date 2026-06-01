@@ -62,6 +62,12 @@ export async function POST(
 
     const destination = await getDestinationForDomain(domain);
     const rule = await createEmailRoutingRule(site.zone_id, domain, destination);
+    if (!rule) {
+      return NextResponse.json(
+        { error: "Email routing unavailable — API token lacks Email Routing permissions" },
+        { status: 503 },
+      );
+    }
     return NextResponse.json({
       address: buildContactEmail(domain),
       destination,
@@ -90,9 +96,9 @@ export async function DELETE(
     }
 
     const email = buildContactEmail(domain);
-    const rule = await findEmailRule(site.zone_id, email);
+    const rule = await findEmailRule(site.zone_id, email, domain);
     if (rule) {
-      await deleteEmailRoutingRule(site.zone_id, rule.id);
+      await deleteEmailRoutingRule(site.zone_id, rule.id, domain);
     }
 
     return NextResponse.json({ ok: true });

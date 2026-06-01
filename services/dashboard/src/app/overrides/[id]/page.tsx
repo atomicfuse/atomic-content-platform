@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -11,12 +11,15 @@ import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
 import { DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
+import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig } from "@/lib/config-normalizers";
+import { COMPANIES } from "@/lib/constants";
 
 interface OverrideConfig {
   override_id?: string;
   name?: string;
   priority?: number;
   targets?: { groups?: string[]; sites?: string[] };
+  activation?: { query_param: string; query_value?: string };
   tracking?: Record<string, unknown>;
   scripts?: Record<string, unknown>;
   scripts_vars?: Record<string, string>;
@@ -35,64 +38,7 @@ interface GroupSummary {
 
 interface SiteSummary {
   domain: string;
-}
-
-// ---------------------------------------------------------------------------
-// Normalizers
-// ---------------------------------------------------------------------------
-
-function normalizeAdsTxt(raw: unknown): string[] {
-  if (Array.isArray(raw)) return raw as string[];
-  if (typeof raw === "string") return raw.split("\n").map((l) => l.trim()).filter(Boolean);
-  return [];
-}
-
-function normalizeTracking(raw: Record<string, unknown> | undefined): UnifiedConfigFields["tracking"] {
-  return {
-    ga4: (raw?.ga4 as string) ?? null,
-    gtm: (raw?.gtm as string) ?? null,
-    google_ads: (raw?.google_ads as string) ?? null,
-    facebook_pixel: (raw?.facebook_pixel as string) ?? null,
-    custom: (raw?.custom as UnifiedConfigFields["tracking"]["custom"]) ?? [],
-  };
-}
-
-function normalizeScripts(raw: Record<string, unknown> | undefined): UnifiedConfigFields["scripts"] {
-  function normalizeEntries(entries: unknown): UnifiedConfigFields["scripts"]["head"] {
-    if (!Array.isArray(entries)) return [];
-    return entries.map((e: Record<string, unknown>) => ({
-      id: (e.id as string) ?? "",
-      src: (e.src as string) ?? undefined,
-      inline: (e.inline as string) ?? (e.content as string) ?? undefined,
-      async: (e.async as boolean) ?? undefined,
-    }));
-  }
-  return {
-    head: normalizeEntries(raw?.head),
-    body_start: normalizeEntries(raw?.body_start),
-    body_end: normalizeEntries(raw?.body_end),
-  };
-}
-
-function normalizeAdsConfig(raw: Record<string, unknown> | undefined): UnifiedConfigFields["ads_config"] {
-  const placements = Array.isArray(raw?.ad_placements) ? raw.ad_placements : [];
-  return {
-    interstitial: (raw?.interstitial as boolean) ?? false,
-    layout: (raw?.layout as string) ?? "standard",
-    ad_placements: placements.map((p: Record<string, unknown>) => {
-      const rawSizes = p.sizes;
-      let sizes: { desktop?: number[][]; mobile?: number[][] } = {};
-      if (rawSizes && typeof rawSizes === "object" && !Array.isArray(rawSizes)) {
-        sizes = rawSizes as { desktop?: number[][]; mobile?: number[][] };
-      }
-      return {
-        id: (p.id as string) ?? "",
-        position: (p.position as string) ?? "",
-        device: (p.device ?? "all") as "all" | "desktop" | "mobile",
-        sizes,
-      };
-    }),
-  };
+  company?: string | null;
 }
 
 export default function OverrideDetailPage(): React.ReactElement {
@@ -102,6 +48,7 @@ export default function OverrideDetailPage(): React.ReactElement {
   const { toast } = useToast();
 
   const [config, setConfig] = useState<OverrideConfig | null>(null);
+  const initialSnapshotRef = useRef<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -134,7 +81,7 @@ export default function OverrideDetailPage(): React.ReactElement {
         sites: overrideData.targets?.sites ?? [],
       });
       // Extract _mode from each field for the merge mode selector
-      setMergeModes({
+      const initialMergeModes: OverrideMergeModes = {
         tracking: (overrideData.tracking as Record<string, unknown>)?._mode as OverrideMergeModes["tracking"] ?? DEFAULT_MERGE_MODES.tracking,
         scripts: (overrideData.scripts as Record<string, unknown>)?._mode as OverrideMergeModes["scripts"] ?? DEFAULT_MERGE_MODES.scripts,
         scripts_vars: (overrideData.scripts_vars as Record<string, unknown>)?._mode as OverrideMergeModes["scripts_vars"] ?? DEFAULT_MERGE_MODES.scripts_vars,
@@ -144,7 +91,9 @@ export default function OverrideDetailPage(): React.ReactElement {
           : ((overrideData.ads_txt as unknown as Record<string, unknown>)?._mode as OverrideMergeModes["ads_txt"] ?? DEFAULT_MERGE_MODES.ads_txt),
         theme: (overrideData.theme as Record<string, unknown>)?._mode as OverrideMergeModes["theme"] ?? DEFAULT_MERGE_MODES.theme,
         legal: (overrideData.legal as Record<string, unknown>)?._mode as OverrideMergeModes["legal"] ?? DEFAULT_MERGE_MODES.legal,
-      });
+      };
+      setMergeModes(initialMergeModes);
+      initialSnapshotRef.current = JSON.stringify({ config: overrideData, mergeModes: initialMergeModes });
       if (groupsRes.ok) setAllGroups((await groupsRes.json()) as GroupSummary[]);
       if (sitesRes.ok) setAllSites((await sitesRes.json()) as SiteSummary[]);
     } catch (err) {
@@ -217,6 +166,7 @@ export default function OverrideDetailPage(): React.ReactElement {
         body: JSON.stringify(configToSave),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      initialSnapshotRef.current = JSON.stringify({ config, mergeModes });
       toast("Override saved", "success");
 
       // Affected sites = UNION of old targets + new targets.
@@ -288,6 +238,8 @@ export default function OverrideDetailPage(): React.ReactElement {
 
   if (!config) return <div />;
 
+  const dirty = JSON.stringify({ config, mergeModes }) !== initialSnapshotRef.current;
+
   const targetGroups = config.targets?.groups ?? [];
   const targetSites = config.targets?.sites ?? [];
 
@@ -330,6 +282,56 @@ export default function OverrideDetailPage(): React.ReactElement {
               Higher = applied later = wins conflicts.
             </p>
           </div>
+          <div className="mt-6 space-y-3 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] p-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Activation Condition <span className="font-normal text-[var(--text-muted)]">(optional)</span>
+            </h3>
+            <p className="text-xs text-[var(--text-muted)]">
+              When set, this override only applies when the URL contains the specified query parameter.
+              Leave empty to apply the override to all requests (default behavior).
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Query Parameter Name"
+                placeholder="e.g. tamirtest"
+                value={config.activation?.query_param ?? ""}
+                onChange={(e): void => {
+                  const val = e.target.value.trim();
+                  if (!val) {
+                    // Clear activation entirely
+                    const { activation: _, ...rest } = config;
+                    setConfig(rest as OverrideConfig);
+                  } else {
+                    updateField("activation", {
+                      query_param: val,
+                      query_value: config.activation?.query_value,
+                    });
+                  }
+                }}
+              />
+              <Input
+                label="Query Value"
+                placeholder="e.g. true (leave empty = any value)"
+                value={config.activation?.query_value ?? ""}
+                onChange={(e): void => {
+                  const val = e.target.value.trim();
+                  updateField("activation", {
+                    query_param: config.activation?.query_param ?? "",
+                    ...(val ? { query_value: val } : {}),
+                  });
+                }}
+              />
+            </div>
+            {config.activation?.query_param && targetSites.length > 0 && (
+              <div className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs text-[var(--text-secondary)]">
+                <span className="font-semibold text-emerald-600">Preview URL: </span>
+                <code className="break-all">
+                  https://{targetSites[0]}?{config.activation.query_param}
+                  {config.activation.query_value ? `=${config.activation.query_value}` : ""}
+                </code>
+              </div>
+            )}
+          </div>
         </div>
       ),
     },
@@ -364,10 +366,13 @@ export default function OverrideDetailPage(): React.ReactElement {
               items={allSites.map((s) => ({
                 id: s.domain,
                 label: s.domain,
+                group: s.company ?? undefined,
               }))}
               selected={targetSites}
               onToggle={toggleTargetSite}
               searchPlaceholder="Search sites..."
+              groupFilterLabel="Company"
+              groupOptions={[...COMPANIES]}
             />
           </div>
         </div>
@@ -411,8 +416,17 @@ export default function OverrideDetailPage(): React.ReactElement {
 
       <Tabs tabs={tabs} defaultTab="general" />
 
-      <div className="flex gap-3">
-        <Button onClick={save} loading={saving}>Save</Button>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          {dirty ? (
+            <p className="text-xs text-amber-500">You have unsaved changes — click Save to apply.</p>
+          ) : (
+            <span />
+          )}
+          <Button onClick={save} loading={saving} disabled={!dirty || saving}>
+            Save
+          </Button>
+        </div>
         <Button variant="danger" onClick={handleDelete} loading={deleting}>
           Delete
         </Button>
