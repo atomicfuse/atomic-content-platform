@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Select } from "@/components/ui/Select";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import {
   useVerticals,
-  useCategories,
+  useAllCategories,
   useBundles,
   useTagSearch,
 } from "@/hooks/useReferenceData";
@@ -27,27 +26,21 @@ export function StepNicheTargeting({
 }: StepNicheTargetingProps): React.ReactElement {
   const { bundles, loading: bundlesLoading } = useBundles();
   const { verticals } = useVerticals();
-  const { categories, loading: categoriesLoading } = useCategories(data.verticalId);
+  // useAllCategories returns tier-1s + every subcat across the taxonomy.
+  // Lets the starter form pick categories spanning multiple tier-1s
+  // (e.g. travelingfoodie = Food/Dining-Out + Travel/Day-Trips).
+  const { categories, loading: categoriesLoading } = useAllCategories();
 
-  const [mode, setMode] = useState<"existing" | "new">(data.bundleId ? "existing" : "new");
   const [verticalSearch, setVerticalSearch] = useState("");
   const [verticalOpen, setVerticalOpen] = useState(false);
   const verticalRef = useRef<HTMLDivElement>(null);
   const [categorySearch, setCategorySearch] = useState("");
   const [tagSearch, setTagSearch] = useState("");
   const [creatingTag, setCreatingTag] = useState(false);
-  const [previewCount, setPreviewCount] = useState<number | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [bundleSearch, setBundleSearch] = useState("");
 
-  // Tag search — server-side via API, debounced in the hook (no vertical scoping post-2026-04-29)
-  const { results: tagResults, loading: tagSearchLoading } = useTagSearch(
-    tagSearch,
-  );
-  const filteredTagResults = tagResults.filter(
-    (t) => !data.selectedTags.some((st) => st.id === t.id),
-  );
+  const { results: tagResults, loading: tagSearchLoading } = useTagSearch(tagSearch);
 
-  // Close vertical dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent): void {
       if (verticalRef.current && !verticalRef.current.contains(e.target as Node)) {
@@ -58,66 +51,56 @@ export function StepNicheTargeting({
     return (): void => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Filtered verticals for search
-  const filteredVerticals = verticals.filter((v) =>
-    v.name.toLowerCase().includes(verticalSearch.toLowerCase()),
+  const filteredVerticals = useMemo(
+    () => verticals.filter((v) => v.name.toLowerCase().includes(verticalSearch.toLowerCase())),
+    [verticals, verticalSearch],
   );
 
-  const categoryIds = data.selectedCategories.map((c) => c.id);
-  const tagIds = data.selectedTags.map((t) => t.id);
-  const canProceed =
-    (mode === "existing" && !!data.bundleId) ||
-    (mode === "new" && !!data.verticalId && data.selectedCategories.length >= 1);
-
-  // --- Bundle selection ---
-  // Post-2026-04-29: bundles no longer have vertical_ids. Tier-1 category IDs
-  // are mixed into category_ids. Cross-reference with the verticals list
-  // (tier-1 categories) to resolve the vertical for the UI.
-  function handleBundleSelect(bundleId: string): void {
-    if (!bundleId) {
-      onChange({ bundleId: "" });
-      return;
-    }
-    const bundle = bundles.find((b) => b.id === bundleId);
-    if (!bundle) return;
-    // Find the tier-1 category by matching bundle's category_ids against verticals
-    const verticalIdSet = new Set(verticals.map((v) => v.id));
-    const tier1Id = bundle.rules.category_ids.find((cid) => verticalIdSet.has(cid)) ?? "";
-    const v = verticals.find((vert) => vert.id === tier1Id);
-    onChange({
-      bundleId: bundle.id,
-      verticalId: tier1Id,
-      vertical: v?.name ?? "",
-      iabVerticalCode: v?.iab_code ?? "",
-      selectedCategories: [],
-      selectedTags: [],
+  // Suggested bundles: bundles whose rules.category_ids contain the chosen tier-1.
+  // When no tier-1 is chosen, show all bundles.
+  const suggestedBundles = useMemo(() => {
+    const tier1 = data.verticalId;
+    const filtered = bundles.filter((b) => {
+      if (!tier1) return true;
+      return b.rules.category_ids.includes(tier1);
     });
-  }
+    const q = bundleSearch.trim().toLowerCase();
+    const searched = q ? filtered.filter((b) => b.name.toLowerCase().includes(q)) : filtered;
+    return [...searched].sort(
+      (a, b) => (b.content_count ?? 0) - (a.content_count ?? 0),
+    );
+  }, [bundles, data.verticalId, bundleSearch]);
 
-  // --- Category (tier-1) change (clears selections with confirmation) ---
+  // The starter only needs at least one category; tier-1 (Primary Category) is
+  // no longer required (the lock that blocked cross-category starters is gone).
+  const canCreateStarter =
+    data.starterBundle.enabled
+    && data.selectedCategories.length > 0;
+
+  // If the starter checkbox is on but no categories are picked, the server
+  // action will throw — block Next to surface this before the server call,
+  // even if the user has subscribed bundles. The inline amber warning above
+  // tells them what to do (pick categories or uncheck starter).
+  const starterIncomplete = data.starterBundle.enabled && data.selectedCategories.length === 0;
+  const canProceed = !starterIncomplete && (data.bundleIds.length > 0 || canCreateStarter);
+
   function handleVerticalChange(id: string): void {
-    const hasSelections = data.selectedCategories.length > 0 || data.selectedTags.length > 0;
-    if (hasSelections && id !== data.verticalId) {
-      const confirmed = window.confirm(
-        "Changing the category will clear your subcategory and tag selections. Continue?",
-      );
-      if (!confirmed) return;
-    }
+    // Primary Category now only drives Suggested Bundles filtering — it doesn't
+    // gate the starter's category selection anymore, so no reason to wipe picks.
     const v = verticals.find((vert) => vert.id === id);
     onChange({
       verticalId: id,
       vertical: v?.name ?? "",
       iabVerticalCode: v?.iab_code ?? "",
-      selectedCategories: [],
-      selectedTags: [],
-      bundleId: "",
     });
-    setCategorySearch("");
-    setTagSearch("");
-    setPreviewCount(null);
   }
 
-  // --- Category toggle ---
+  function toggleBundle(id: string): void {
+    const set = new Set(data.bundleIds);
+    if (set.has(id)) set.delete(id); else set.add(id);
+    onChange({ bundleIds: Array.from(set) });
+  }
+
   function toggleCategory(cat: { id: string; name: string; iab_code: string }): void {
     const isSelected = data.selectedCategories.some((c) => c.id === cat.id);
     onChange({
@@ -125,20 +108,16 @@ export function StepNicheTargeting({
         ? data.selectedCategories.filter((c) => c.id !== cat.id)
         : [...data.selectedCategories, { id: cat.id, name: cat.name, iabCode: cat.iab_code }],
     });
-    setPreviewCount(null);
   }
 
-  // --- Tag add/remove ---
   function addTag(tagId: string, tagName: string): void {
     if (data.selectedTags.some((t) => t.id === tagId)) return;
     onChange({ selectedTags: [...data.selectedTags, { id: tagId, name: tagName }] });
     setTagSearch("");
-    setPreviewCount(null);
   }
 
   function removeTag(tagId: string): void {
     onChange({ selectedTags: data.selectedTags.filter((t) => t.id !== tagId) });
-    setPreviewCount(null);
   }
 
   async function createAndAddTag(name: string): Promise<void> {
@@ -152,422 +131,291 @@ export function StepNicheTargeting({
       if (res.status === 201) {
         const created = (await res.json()) as { id: string; name: string };
         onChange({ selectedTags: [...data.selectedTags, { id: created.id, name: created.name }] });
-      } else if (res.status === 409) {
-        // Tag exists after normalization — search results will include it
       }
-    } catch {
-      // Silent fail
-    } finally {
-      setCreatingTag(false);
-      setTagSearch("");
-    }
+    } catch { /* silent */ }
+    finally { setCreatingTag(false); setTagSearch(""); }
   }
 
-  // --- Content preview (on-click, GET) ---
-  async function handlePreview(): Promise<void> {
-    if (!data.verticalId) return;
-    setPreviewLoading(true);
-    try {
-      // Include the tier-1 (vertical) ID in category_ids for the query
-      const allCategoryIds = [data.verticalId, ...categoryIds];
-      const qs = new URLSearchParams();
-      if (allCategoryIds.length) qs.set("category_ids", allCategoryIds.join(","));
-      if (tagIds.length) qs.set("tag_ids", tagIds.join(","));
-      const res = await fetch(`/api/bundles/preview?${qs.toString()}`);
-      if (res.ok) {
-        const result = (await res.json()) as { count: number };
-        setPreviewCount(result.count);
-      }
-    } catch {
-      // Silent fail
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
+  // Lookup: tier-1 id → tier-1 name, for rendering "parent" badges on subcat rows.
+  const tier1NameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of categories) if (c.parent_id === null) m.set(c.id, c.name);
+    return m;
+  }, [categories]);
 
-  // --- Tag search helpers ---
+  // Filter all categories (tier-1s + subcats) by search term.
+  // Sort: tier-1 first within each group, then alphabetical by name.
+  const filteredCategories = useMemo(() => {
+    const q = categorySearch.trim().toLowerCase();
+    const matching = q
+      ? categories.filter((c) => c.name.toLowerCase().includes(q))
+      : categories;
+    // Group by parent: tier-1s sit at the top of their group followed by their subcats.
+    // For simplicity we sort flat by (parent group key, parent_id null first, name).
+    return [...matching].sort((a, b) => {
+      const aGroupKey = a.parent_id === null ? a.id : a.parent_id ?? "";
+      const bGroupKey = b.parent_id === null ? b.id : b.parent_id ?? "";
+      const aGroupName = a.parent_id === null ? a.name : (tier1NameById.get(a.parent_id ?? "") ?? "");
+      const bGroupName = b.parent_id === null ? b.name : (tier1NameById.get(b.parent_id ?? "") ?? "");
+      if (aGroupName !== bGroupName) return aGroupName.localeCompare(bGroupName);
+      if (aGroupKey !== bGroupKey) return aGroupKey.localeCompare(bGroupKey);
+      // Within the same tier-1: tier-1 itself first, then its subcats alphabetically.
+      if (a.parent_id === null && b.parent_id !== null) return -1;
+      if (a.parent_id !== null && b.parent_id === null) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [categories, categorySearch, tier1NameById]);
   const tagSearchNormalized = tagSearch.toLowerCase().trim();
   const tagExistsAlready =
     tagResults.some((t) => t.name.toLowerCase() === tagSearchNormalized) ||
     data.selectedTags.some((t) => t.name.toLowerCase() === tagSearchNormalized);
   const showCreateTag = tagSearch.trim().length > 1 && !tagExistsAlready && !tagSearchLoading;
-
-  // --- Category client-side filter ---
-  const filteredCategories = categories.filter((c) =>
-    c.name.toLowerCase().includes(categorySearch.toLowerCase()),
+  const filteredTagResults = tagResults.filter(
+    (t) => !data.selectedTags.some((st) => st.id === t.id),
   );
-
-  // --- Selected bundle info ---
-  const selectedBundle = mode === "existing" ? bundles.find((b) => b.id === data.bundleId) : null;
 
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Niche Targeting</h2>
       <p className="text-sm text-[var(--text-muted)]">
-        Choose an existing content bundle or create a new one to feed targeted content to your site.
+        Subscribe the site to one or more content bundles. Each bundle is a focused content filter;
+        the site fetches articles from the union of its subscribed bundles.
       </p>
 
-      {/* Mode toggle */}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={(): void => setMode("existing")}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            mode === "existing"
-              ? "bg-cyan/15 text-cyan border border-cyan/30"
-              : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
-          }`}
-        >
-          Use Existing Bundle
-        </button>
-        <button
-          type="button"
-          onClick={(): void => {
-            setMode("new");
-            onChange({ bundleId: "" });
-          }}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-            mode === "new"
-              ? "bg-cyan/15 text-cyan border border-cyan/30"
-              : "bg-[var(--bg-elevated)] text-[var(--text-secondary)] border border-[var(--border-primary)] hover:border-[var(--border-secondary)]"
-          }`}
-        >
-          Create New
-        </button>
-      </div>
-
-      {/* === Existing Bundle Picker === */}
-      {mode === "existing" && (
-        <div className="space-y-3">
-          {bundlesLoading ? (
-            <p className="text-sm text-[var(--text-muted)]">Loading bundles...</p>
-          ) : bundles.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">
-              No bundles found.{" "}
-              <button
-                type="button"
-                onClick={(): void => setMode("new")}
-                className="text-cyan hover:underline"
-              >
-                Create one
-              </button>
-            </p>
-          ) : (
-            <Select
-              label="Content Bundle"
-              options={bundles.map((b) => ({
-                value: b.id,
-                label: `${b.name}${b.content_count != null ? ` (${b.content_count} articles)` : ""}`,
-              }))}
-              placeholder="Select a bundle..."
-              value={data.bundleId}
-              onChange={(e): void => handleBundleSelect(e.target.value)}
-            />
-          )}
-          {selectedBundle && (
-            <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4 space-y-2">
-              <p className="text-sm font-semibold">{selectedBundle.name}</p>
-              {selectedBundle.description && (
-                <p className="text-xs text-[var(--text-muted)]">{selectedBundle.description}</p>
-              )}
-              <div className="flex gap-4 text-xs text-[var(--text-muted)]">
-                {selectedBundle.content_count != null && (
-                  <span>
-                    <span className="font-bold text-cyan">{selectedBundle.content_count}</span> articles
-                  </span>
-                )}
-                <span>{selectedBundle.rules.category_ids.length} categories</span>
-                <span>{selectedBundle.rules.tag_ids.length} tags</span>
-              </div>
-              {data.vertical && (
-                <p className="text-xs text-[var(--text-muted)]">
-                  Category: {data.vertical}
-                  {data.iabVerticalCode ? ` (IAB ${data.iabVerticalCode})` : ""}
-                </p>
-              )}
-            </div>
-          )}
+      {/* Category (tier-1) — anchors both bundle suggestions and starter creation */}
+      <div ref={verticalRef} className="relative">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+          Primary Category
+        </label>
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search categories..."
+            value={verticalOpen ? verticalSearch : (data.vertical || verticalSearch)}
+            onFocus={(): void => { setVerticalOpen(true); setVerticalSearch(""); }}
+            onChange={(e): void => { setVerticalSearch(e.target.value); setVerticalOpen(true); }}
+            className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan/50"
+          />
         </div>
-      )}
-
-      {/* === Create New Bundle === */}
-      {mode === "new" && (
-        <>
-          {/* Category (tier-1) — searchable combobox */}
-          <div ref={verticalRef} className="relative">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-              Category
-            </label>
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search categories..."
-                value={verticalOpen ? verticalSearch : (data.vertical || verticalSearch)}
-                onFocus={(): void => {
-                  setVerticalOpen(true);
-                  setVerticalSearch("");
-                }}
-                onChange={(e): void => {
-                  setVerticalSearch(e.target.value);
-                  setVerticalOpen(true);
-                }}
-                className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors"
-              />
-              {data.verticalId && !verticalOpen && (
+        {verticalOpen && (
+          <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+            {filteredVerticals.length === 0 ? (
+              <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No categories found</p>
+            ) : (
+              filteredVerticals.map((v) => (
                 <button
+                  key={v.id}
                   type="button"
-                  onClick={(): void => {
-                    handleVerticalChange("");
-                    setVerticalSearch("");
-                    setVerticalOpen(true);
-                  }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)] text-sm"
+                  onClick={(): void => { handleVerticalChange(v.id); setVerticalSearch(""); setVerticalOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] flex items-center justify-between ${
+                    v.id === data.verticalId ? "bg-cyan/10 text-cyan" : ""
+                  }`}
                 >
-                  &times;
+                  <span>{v.name}</span>
+                  {v.iab_code && <span className="text-[10px] text-[var(--text-muted)] font-mono">IAB {v.iab_code}</span>}
                 </button>
-              )}
-            </div>
-            {verticalOpen && (
-              <div className="absolute z-10 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
-                {filteredVerticals.length === 0 ? (
-                  <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No categories found</p>
-                ) : (
-                  filteredVerticals.map((v) => (
-                    <button
-                      key={v.id}
-                      type="button"
-                      onClick={(): void => {
-                        handleVerticalChange(v.id);
-                        setVerticalSearch("");
-                        setVerticalOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] flex items-center justify-between ${
-                        v.id === data.verticalId ? "bg-cyan/10 text-cyan" : ""
-                      }`}
-                    >
-                      <span>{v.name}</span>
-                      {v.iab_code && (
-                        <span className="text-[10px] text-[var(--text-muted)] font-mono">
-                          IAB {v.iab_code}
-                        </span>
-                      )}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-            {data.verticalId && data.iabVerticalCode && !verticalOpen && (
-              <p className="text-xs text-[var(--text-muted)] mt-1">
-                IAB {data.iabVerticalCode}: {data.vertical}
-              </p>
+              ))
             )}
           </div>
+        )}
+      </div>
 
-          {/* Subcategories */}
-          {data.verticalId && (
+      {/* === SECTION 1: Suggested bundles (multi-select) === */}
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Suggested Bundles
+            {data.bundleIds.length > 0 && (
+              <span className="ml-1.5 text-cyan font-mono">({data.bundleIds.length} selected)</span>
+            )}
+          </label>
+          <Input
+            placeholder="Filter bundles..."
+            value={bundleSearch}
+            onChange={(e): void => setBundleSearch(e.target.value)}
+            className="max-w-xs"
+          />
+        </div>
+        <div className="max-h-64 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
+          {bundlesLoading ? (
+            <p className="text-sm text-[var(--text-muted)] py-2 text-center">Loading bundles…</p>
+          ) : suggestedBundles.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)] py-2 text-center">
+              {data.verticalId
+                ? "No bundles found for this category. Create a starter below."
+                : "Pick a category above to see suggestions, or filter all bundles by name."}
+            </p>
+          ) : (
+            suggestedBundles.map((b) => (
+              <label
+                key={b.id}
+                className="flex items-start gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-primary)] cursor-pointer text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={data.bundleIds.includes(b.id)}
+                  onChange={(): void => toggleBundle(b.id)}
+                  className="mt-0.5 accent-cyan"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{b.name}</span>
+                    {b.content_count != null && (
+                      <span className="text-[10px] text-[var(--text-muted)] font-mono">
+                        {b.content_count} articles
+                      </span>
+                    )}
+                  </div>
+                  {b.description && (
+                    <p className="text-xs text-[var(--text-muted)] truncate">{b.description}</p>
+                  )}
+                </div>
+              </label>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* === SECTION 2: Create starter bundle (optional) === */}
+      <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-3 space-y-3">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={data.starterBundle.enabled}
+            onChange={(e): void => onChange({ starterBundle: { ...data.starterBundle, enabled: e.target.checked } })}
+            className="accent-cyan"
+          />
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Also create a starter bundle (optional)
+          </span>
+        </label>
+
+        {data.starterBundle.enabled && (
+          <>
+            <Input
+              placeholder={`${data.pagesProjectName || "site"}-starter`}
+              value={data.starterBundle.name}
+              onChange={(e): void => onChange({ starterBundle: { ...data.starterBundle, name: e.target.value } })}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              The starter is created on the aggregator from the categories and tags below,
+              then auto-subscribed to this site. Pick categories across any tier-1s — e.g. a
+              travel-food site combines Food/World-Cuisines + Travel/Day-Trips. Rename it later
+              to make it reusable across sites.
+            </p>
+            {data.selectedCategories.length === 0 && (
+              <p className="text-xs text-amber-400">
+                Pick at least one category below — a bundle without categories matches nothing.
+                Tags alone are not enough.
+              </p>
+            )}
+
+            {/* Categories — flat searchable list spanning all tier-1s */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                Subcategories <span className="text-red-400">*</span>
+                Categories <span className="text-red-400">*</span>
+                {data.selectedCategories.length > 0 && (
+                  <span className="ml-1.5 text-cyan font-mono normal-case">({data.selectedCategories.length})</span>
+                )}
               </label>
               <Input
-                placeholder="Filter subcategories..."
+                placeholder="Filter across all categories (e.g. food, travel)..."
                 value={categorySearch}
                 onChange={(e): void => setCategorySearch(e.target.value)}
               />
-              {categorySearch.trim() && filteredCategories.length > 0 && (() => {
-                const unselectedCount = filteredCategories.filter(
-                  (c) => !data.selectedCategories.some((s) => s.id === c.id),
-                ).length;
-                return unselectedCount > 0 ? (
-                  <button
-                    type="button"
-                    onClick={(): void => {
-                      const newCats = filteredCategories
-                        .filter((c) => !data.selectedCategories.some((s) => s.id === c.id))
-                        .map((c) => ({ id: c.id, name: c.name, iabCode: c.iab_code }));
-                      onChange({ selectedCategories: [...data.selectedCategories, ...newCats] });
-                      setPreviewCount(null);
-                    }}
-                    className="text-xs font-semibold text-cyan hover:text-cyan/80 transition-colors"
-                  >
-                    + Select all filtered ({unselectedCount})
-                  </button>
-                ) : null;
-              })()}
               {data.selectedCategories.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {data.selectedCategories.map((cat) => (
-                    <span
-                      key={cat.id}
-                      className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
-                    >
+                    <span key={cat.id} className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold">
                       {cat.name}
-                      <button
-                        type="button"
-                        onClick={(): void => toggleCategory({ id: cat.id, name: cat.name, iab_code: cat.iabCode ?? "" })}
-                        className="hover:text-red-400 transition-colors"
-                      >
+                      <button type="button" onClick={(): void => toggleCategory({ id: cat.id, name: cat.name, iab_code: cat.iabCode ?? "" })} className="hover:text-red-400">
                         &times;
                       </button>
                     </span>
                   ))}
                 </div>
               )}
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
+              <div className="max-h-56 overflow-y-auto rounded border border-[var(--border-primary)] p-2 space-y-1">
                 {categoriesLoading ? (
-                  <p className="text-sm text-[var(--text-muted)] py-2 text-center">Loading...</p>
+                  <p className="text-sm text-[var(--text-muted)] py-1 text-center">Loading…</p>
                 ) : filteredCategories.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)] py-2 text-center">
-                    No subcategories found
-                  </p>
+                  <p className="text-sm text-[var(--text-muted)] py-1 text-center">No categories found</p>
                 ) : (
-                  filteredCategories.map((cat) => (
-                    <label
-                      key={cat.id}
-                      className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-[var(--bg-primary)] cursor-pointer text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={data.selectedCategories.some((c) => c.id === cat.id)}
-                        onChange={(): void => toggleCategory(cat)}
-                        className="rounded border-[var(--border-primary)]"
-                      />
-                      <span className="flex-1">{cat.name}</span>
-                      {cat.iab_code && (
-                        <span className="text-[10px] text-[var(--text-muted)] font-mono bg-[var(--bg-primary)] px-1.5 py-0.5 rounded">
-                          IAB {cat.iab_code}
-                        </span>
-                      )}
-                    </label>
-                  ))
+                  filteredCategories.map((cat) => {
+                    const isTier1 = cat.parent_id === null;
+                    const parentName = !isTier1 ? tier1NameById.get(cat.parent_id ?? "") : null;
+                    return (
+                      <label key={cat.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-primary)] cursor-pointer text-sm">
+                        <input
+                          type="checkbox"
+                          checked={data.selectedCategories.some((c) => c.id === cat.id)}
+                          onChange={(): void => toggleCategory(cat)}
+                          className="accent-cyan"
+                        />
+                        <span className={`flex-1 ${isTier1 ? "font-semibold" : ""}`}>{cat.name}</span>
+                        {parentName && (
+                          <span className="text-[10px] text-[var(--text-muted)] font-mono">{parentName}</span>
+                        )}
+                        {isTier1 && (
+                          <span className="text-[10px] text-cyan font-mono uppercase">tier-1 (all)</span>
+                        )}
+                      </label>
+                    );
+                  })
                 )}
               </div>
             </div>
-          )}
 
-          {/* Tags — server-side search */}
-          {data.verticalId && (
+            {/* Tags */}
             <div className="space-y-2">
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                Tags{" "}
-                <span className="text-[var(--text-muted)] font-normal normal-case">(optional)</span>
+                Tags <span className="text-[var(--text-muted)] font-normal normal-case">(optional)</span>
               </label>
-              {data.selectedTags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {data.selectedTags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
-                    >
-                      {tag.name}
-                      <button
-                        type="button"
-                        onClick={(): void => removeTag(tag.id)}
-                        className="hover:text-red-400 transition-colors"
-                      >
-                        &times;
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <div className="relative">
-                <Input
-                  placeholder="Type to search tags..."
-                  value={tagSearch}
-                  onChange={(e): void => setTagSearch(e.target.value)}
-                />
-                {tagSearch.trim() && (
-                  <div className="absolute z-10 mt-1 w-full max-h-40 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
-                    {tagSearchLoading ? (
-                      <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Searching...</p>
-                    ) : filteredTagResults.length === 0 && !showCreateTag ? (
-                      <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No tags found</p>
-                    ) : (
-                      filteredTagResults.slice(0, 10).map((tag) => (
-                        <button
-                          key={tag.id}
-                          type="button"
-                          onClick={(): void => addTag(tag.id, tag.name)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] flex items-center justify-between"
-                        >
-                          <span>{tag.name}</span>
-                          {tag.usage_count !== undefined && (
-                            <span className="text-[10px] text-[var(--text-muted)]">
-                              {tag.usage_count} uses
-                            </span>
-                          )}
+                {data.selectedTags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {data.selectedTags.map((tag) => (
+                      <span key={tag.id} className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold">
+                        {tag.name}
+                        <button type="button" onClick={(): void => removeTag(tag.id)} className="hover:text-red-400">
+                          &times;
                         </button>
-                      ))
-                    )}
-                    {showCreateTag && (
-                      <button
-                        type="button"
-                        onClick={(): void => void createAndAddTag(tagSearch.trim())}
-                        disabled={creatingTag}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] text-cyan font-semibold border-t border-[var(--border-secondary)]"
-                      >
-                        + Create &quot;{tagSearch.trim()}&quot;
-                      </button>
-                    )}
+                      </span>
+                    ))}
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* Content Preview — on click only */}
-          {data.verticalId && data.selectedCategories.length > 0 && (
-            <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Content Preview</h3>
-                <Button
-                  variant="ghost"
-                  onClick={(): void => void handlePreview()}
-                  disabled={previewLoading}
-                >
-                  {previewLoading ? "Checking..." : previewCount !== null ? "Refresh" : "Check Match Count"}
-                </Button>
-              </div>
-              {previewCount === null ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  Click to see how many articles match your niche selection.
-                </p>
-              ) : previewCount === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  No matching content yet — articles will match as content is ingested and enriched.
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm">
-                    <span className="text-2xl font-bold text-cyan">{previewCount.toLocaleString()}</span>
-                    {" "}article{previewCount !== 1 ? "s" : ""} currently match this niche
-                  </p>
-                  {previewCount > 500 && (
-                    <p className="text-xs text-amber-400">
-                      High match count — consider narrowing with more specific categories or tags.
-                    </p>
+                <div className="relative">
+                  <Input
+                    placeholder="Type to search tags..."
+                    value={tagSearch}
+                    onChange={(e): void => setTagSearch(e.target.value)}
+                  />
+                  {tagSearch.trim() && (
+                    <div className="absolute z-10 mt-1 w-full max-h-40 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+                      {tagSearchLoading ? (
+                        <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Searching…</p>
+                      ) : (
+                        filteredTagResults.slice(0, 10).map((tag) => (
+                          <button key={tag.id} type="button" onClick={(): void => addTag(tag.id, tag.name)} className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)]">
+                            {tag.name}
+                          </button>
+                        ))
+                      )}
+                      {showCreateTag && (
+                        <button type="button" onClick={(): void => void createAndAddTag(tagSearch.trim())} disabled={creatingTag} className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] text-cyan font-semibold border-t border-[var(--border-secondary)]">
+                          + Create &quot;{tagSearch.trim()}&quot;
+                        </button>
+                      )}
+                    </div>
                   )}
-                  {previewCount < 5 && previewCount > 0 && (
-                    <p className="text-xs text-amber-400">
-                      Low match count — consider broadening with additional categories.
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </>
-      )}
+                </div>
+              </div>
+          </>
+        )}
+      </div>
 
-      {/* Navigation */}
       <div className="flex justify-between pt-4">
-        <Button variant="ghost" onClick={onBack}>
-          &larr; Back
-        </Button>
-        <Button onClick={onNext} disabled={!canProceed}>
-          Next &rarr;
-        </Button>
+        <Button variant="ghost" onClick={onBack}>&larr; Back</Button>
+        <Button onClick={onNext} disabled={!canProceed}>Next &rarr;</Button>
       </div>
     </div>
   );

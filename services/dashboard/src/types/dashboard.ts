@@ -120,8 +120,15 @@ export interface WizardFormData {
   selectedTags: Array<{ id: string; name: string }>;
   /** IAB vertical code (denormalized from vertical object). */
   iabVerticalCode: string;
-  /** Existing bundle ID (set when user picks an existing bundle instead of creating new). */
-  bundleId: string;
+  /** Existing bundle IDs subscribed by this site (multi-select from suggestions). */
+  bundleIds: string[];
+  /** Optional starter bundle to create alongside subscriptions.
+   *  When `enabled` is true and the form has a category + at least one subcategory,
+   *  the wizard creates this bundle and appends its id to bundleIds. */
+  starterBundle: {
+    enabled: boolean;
+    name: string;
+  };
   tone: string;
   topics: string[];
   articlesPerDay: number;

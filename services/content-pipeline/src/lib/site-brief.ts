@@ -40,9 +40,19 @@ export async function readSiteBrief(
     brief.audience = brief.audiences.join(", ");
   }
 
-  // Propagate top-level bundle_id into brief for backward compat
-  if (!brief.bundle_id && (config as Record<string, unknown>).bundle_id) {
-    brief.bundle_id = (config as Record<string, unknown>).bundle_id as string;
+  // Promote legacy singular bundle_id into bundle_ids.
+  // Sources, in order: brief.bundle_id, top-level config.bundle_id.
+  // NOTE: identical shim exists in services/content-pipeline/src/agents/content-generation/agent.ts — keep in sync.
+  const topLevelBundleId = (config as Record<string, unknown>).bundle_id;
+  if (!brief.bundle_ids || brief.bundle_ids.length === 0) {
+    const legacy: string[] = [];
+    if (brief.bundle_id) legacy.push(brief.bundle_id);
+    if (typeof topLevelBundleId === "string" && topLevelBundleId && !legacy.includes(topLevelBundleId)) {
+      legacy.push(topLevelBundleId);
+    }
+    if (legacy.length > 0) {
+      brief.bundle_ids = legacy;
+    }
   }
 
   return {

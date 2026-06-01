@@ -126,7 +126,6 @@ export interface FullSiteConfig {
   author: string;
   groups: string[];
   active: boolean;
-  bundle_id?: string;
   brief: {
     audiences: string[];
     tone: string;
@@ -139,6 +138,7 @@ export interface FullSiteConfig {
     category_ids?: string[];
     tag_ids: string[];
     review_percentage: number;
+    bundle_ids?: string[];
     schedule: {
       articles_per_day: number;
       preferred_days: string[];
@@ -180,7 +180,6 @@ export function buildFullSiteConfig(
     author,
     groups: [],
     active: true,
-    ...(resolved?.bundleId ? { bundle_id: resolved.bundleId } : {}),
     brief: {
       audiences: [`${row.websiteCategory || "General"} enthusiasts`],
       tone: "Engaging, informative, conversational",
@@ -200,6 +199,7 @@ export function buildFullSiteConfig(
         : {}),
       tag_ids: [],
       review_percentage: 5,
+      ...(resolved?.bundleId ? { bundle_ids: [resolved.bundleId] } : {}),
       schedule: {
         articles_per_day: 2,
         preferred_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],

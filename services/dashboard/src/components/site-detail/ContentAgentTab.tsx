@@ -8,12 +8,13 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
-import { useAudiences, useVerticals, useCategories, useTags } from "@/hooks/useReferenceData";
+import { useAudiences, useVerticals, useCategories, useAllCategories, useTags, useTagSearch } from "@/hooks/useReferenceData";
 import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
 import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
 import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
-import { generateLogoPreview, createBundleForSite } from "@/actions/wizard";
+import { generateLogoPreview } from "@/actions/wizard";
+import { BundleSubscriptionsPanel } from "./BundleSubscriptionsPanel";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -228,15 +229,24 @@ export function ContentAgentTab({
   const [tagSearch, setTagSearch] = useState("");
   const [seoKeywords, setSeoKeywords] = useState<string[]>(initSeoKeywords);
   const [seoKeywordInput, setSeoKeywordInput] = useState("");
-  const [bundleId, setBundleId] = useState<string>((siteConfig?.bundle_id as string) ?? "");
-  const [creatingBundle, setCreatingBundle] = useState(false);
+  const initBundleIds = ((siteConfig?.brief as Record<string, unknown> | undefined)?.bundle_ids as string[] | undefined)
+    ?? ((siteConfig?.bundle_id as string | undefined) ? [siteConfig?.bundle_id as string] : []);
+  const [bundleIds, setBundleIds] = useState<string[]>(initBundleIds);
   const [verticalSearch, setVerticalSearch] = useState("");
   const [verticalDropdownOpen, setVerticalDropdownOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
 
   const { verticals } = useVerticals();
+  // `categories` (children of current vertical) drives the picker checklist.
+  // `allCategoriesFlat` (everything across the taxonomy) is used ONLY for pill
+  // name resolution — selectedCategoryIds may span multiple tier-1s after the
+  // 2026-05-31 lock-lift, so name lookup needs the full taxonomy.
   const { categories } = useCategories(verticalId);
-  const { tags: allTags, loading: tagsLoading, refetch: refetchTags } = useTags();
+  const { categories: allCategoriesFlat } = useAllCategories();
+  // Popular tags (used only to resolve names for already-selected tag IDs when
+  // siteConfig is first loaded). Live search via useTagSearch below.
+  const { tags: allTags, refetch: refetchTags } = useTags();
+  const { results: tagSearchResults, loading: tagSearchLoading } = useTagSearch(tagSearch);
   const [creatingTag, setCreatingTag] = useState(false);
 
   function toggleCategory(id: string): void {
@@ -454,7 +464,7 @@ export function ContentAgentTab({
             categoryIds: selectedCategoryIds,
             tagIds: selectedTagIds,
             seoKeywords,
-            bundleId: bundleId || undefined,
+            bundleIds,
           },
         }),
       });
@@ -515,7 +525,8 @@ export function ContentAgentTab({
     verticalId !== initVerticalId ||
     JSON.stringify(selectedCategoryIds) !== JSON.stringify(initCategoryIds) ||
     JSON.stringify(selectedTagIds) !== JSON.stringify(initTagIds) ||
-    JSON.stringify(seoKeywords) !== JSON.stringify(initSeoKeywords);
+    JSON.stringify(seoKeywords) !== JSON.stringify(initSeoKeywords) ||
+    JSON.stringify(bundleIds) !== JSON.stringify(initBundleIds);
 
   const groupsDirty = JSON.stringify(groups) !== JSON.stringify(initGroups);
 
@@ -837,6 +848,20 @@ export function ContentAgentTab({
         <p className="text-xs text-[var(--text-muted)]">
           Controls which content the aggregator returns for article generation.
         </p>
+        {bundleIds.length > 0 && (
+          <div className="rounded-md border border-cyan/30 bg-cyan/10 px-3 py-2 text-xs text-[var(--text-secondary)] space-y-1">
+            <p>
+              <span className="font-semibold text-cyan">Bundles are active.</span>{" "}
+              When this site has subscribed bundles (below in <span className="font-semibold">Content Bundles</span>),
+              the per-bundle rules drive content fetching. The Category / Subcategories / Tags fields
+              below are <span className="font-semibold">not</span> used to filter incoming articles —
+              they remain for AI prompt context and site theming only.
+            </p>
+            <p className="text-[var(--text-muted)]">
+              To change what content this site pulls, edit the subscribed bundles or add new ones.
+            </p>
+          </div>
+        )}
 
         {/* Category (tier-1) */}
         <div className="space-y-1.5">
@@ -935,11 +960,17 @@ export function ContentAgentTab({
                 value={categoryFilter}
                 onChange={(e): void => setCategoryFilter(e.target.value)}
               />
-              {/* Selected subcategory pills */}
+              {/* Selected subcategory pills.
+                  Name lookup goes against allCategoriesFlat (full taxonomy)
+                  rather than `categories` (children of current vertical only),
+                  because selectedCategoryIds may span multiple tier-1s after
+                  the 2026-05-31 lock-lift. */}
               {selectedCategoryIds.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {selectedCategoryIds.map((id) => {
-                    const cat = categories.find((c) => c.id === id);
+                    const cat =
+                      allCategoriesFlat.find((c) => c.id === id) ??
+                      categories.find((c) => c.id === id);
                     return (
                       <span
                         key={id}
@@ -1002,7 +1033,7 @@ export function ContentAgentTab({
           )}
         </div>
 
-        {/* Tags */}
+        {/* Tags — server-side search dropdown, same pattern as wizard */}
         <div className="space-y-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Tags
@@ -1010,127 +1041,88 @@ export function ContentAgentTab({
               <span className="ml-1.5 text-cyan font-mono">({selectedTagIds.length})</span>
             )}
           </label>
-          {!verticalId ? (
-            <p className="text-xs text-[var(--text-muted)] py-2">Select a category to browse tags.</p>
-          ) : (
-            <>
-              <input
-                className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
-                placeholder="Filter or create tags..."
-                value={tagSearch}
-                onChange={(e): void => setTagSearch(e.target.value)}
-              />
-              <div className="max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 space-y-1">
-                {tagsLoading ? (
-                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">Loading tags...</p>
-                ) : filteredTags.length === 0 && !tagSearch.trim() ? (
-                  <p className="text-xs text-[var(--text-muted)] py-1 px-2">No tags found</p>
-                ) : (
-                  <>
-                    {filteredTags.map((tag) => (
-                      <label
-                        key={tag.id}
-                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--bg-surface)] cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedTagIds.includes(tag.id)}
-                          onChange={(): void => {
-                            if (selectedTagIds.includes(tag.id)) {
-                              removeTag(tag.id);
-                            } else {
-                              addTag(tag.id, tag.name);
-                            }
-                          }}
-                          className="accent-cyan"
-                        />
-                        <span className="text-sm text-[var(--text-primary)]">{tag.name}</span>
-                        {tag.usage_count !== undefined && (
-                          <span className="text-[10px] text-[var(--text-muted)] ml-auto">{tag.usage_count} items</span>
-                        )}
-                      </label>
-                    ))}
-                    {tagSearch.trim() && !allTags.some((t) => t.name.toLowerCase() === tagSearch.trim().toLowerCase()) && (
-                      <button
-                        type="button"
-                        onClick={(): void => void createAndAddTag(tagSearch.trim())}
-                        disabled={creatingTag}
-                        className="w-full text-left px-2 py-1.5 text-sm text-cyan hover:bg-[var(--bg-surface)] font-medium rounded"
-                      >
-                        {creatingTag ? "Creating..." : `+ Create "${tagSearch.trim()}"`}
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </>
+          {/* Selected tags — pills */}
+          {selectedTagIds.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedTagIds.map((id) => {
+                const name = selectedTagNames.get(id) ?? allTags.find((t) => t.id === id)?.name ?? id;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                  >
+                    {name}
+                    <button type="button" onClick={(): void => removeTag(id)} className="hover:text-red-400">
+                      &times;
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
           )}
+          <div className="relative">
+            <input
+              className="w-full rounded-md border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+              placeholder="Type to search all tags..."
+              value={tagSearch}
+              onChange={(e): void => setTagSearch(e.target.value)}
+            />
+            {tagSearch.trim() && (() => {
+              const tagSearchNormalized = tagSearch.trim().toLowerCase();
+              const matchedNotSelected = tagSearchResults.filter(
+                (t) => !selectedTagIds.includes(t.id),
+              );
+              const tagExistsAlready =
+                tagSearchResults.some((t) => t.name.toLowerCase() === tagSearchNormalized) ||
+                selectedTagIds.some((id) => (allTags.find((t) => t.id === id)?.name ?? "").toLowerCase() === tagSearchNormalized);
+              const showCreateTag =
+                tagSearch.trim().length > 1 && !tagExistsAlready && !tagSearchLoading;
+              return (
+                <div className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+                  {tagSearchLoading ? (
+                    <p className="px-3 py-2 text-sm text-[var(--text-muted)]">Searching…</p>
+                  ) : matchedNotSelected.length === 0 && !showCreateTag ? (
+                    <p className="px-3 py-2 text-sm text-[var(--text-muted)]">No tags found</p>
+                  ) : (
+                    <>
+                      {matchedNotSelected.slice(0, 20).map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={(): void => addTag(tag.id, tag.name)}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] flex items-center justify-between"
+                        >
+                          <span>{tag.name}</span>
+                          {tag.usage_count !== undefined && (
+                            <span className="text-[10px] text-[var(--text-muted)]">{tag.usage_count} uses</span>
+                          )}
+                        </button>
+                      ))}
+                      {showCreateTag && (
+                        <button
+                          type="button"
+                          onClick={(): void => void createAndAddTag(tagSearch.trim())}
+                          disabled={creatingTag}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)] text-cyan font-semibold border-t border-[var(--border-secondary)]"
+                        >
+                          {creatingTag ? "Creating…" : `+ Create "${tagSearch.trim()}"`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
-        {/* Bundle */}
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Content Bundle
-          </label>
-          {bundleId ? (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-primary)]">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <span className="text-sm text-[var(--text-primary)] font-mono">{bundleId}</span>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-xs text-[var(--text-muted)]">No content bundle assigned.</p>
-              <button
-                type="button"
-                disabled={creatingBundle || !verticalId || selectedCategoryIds.length === 0}
-                onClick={async (): Promise<void> => {
-                  setCreatingBundle(true);
-                  try {
-                    const bundle = await createBundleForSite(
-                      siteName || domain,
-                      verticalId,
-                      selectedCategoryIds,
-                      selectedTagIds,
-                    );
-                    setBundleId(bundle.id);
-                    // Save the bundleId to the site config
-                    await fetch("/api/sites/save", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        domain,
-                        logoBase64: null,
-                        faviconBase64: null,
-                        configUpdates: { bundleId: bundle.id },
-                      }),
-                    });
-                    toast("Content bundle created", "success");
-                  } catch (err) {
-                    toast(err instanceof Error ? err.message : "Failed to create bundle", "error");
-                  } finally {
-                    setCreatingBundle(false);
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan/10 text-cyan border border-cyan/20 hover:bg-cyan/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {creatingBundle ? (
-                  <>
-                    <span className="w-3 h-3 border-2 border-cyan/30 border-t-cyan rounded-full animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  "+ Create Bundle"
-                )}
-              </button>
-              {!verticalId && (
-                <p className="text-xs text-amber-400">Select a category above first.</p>
-              )}
-              {verticalId && selectedCategoryIds.length === 0 && (
-                <p className="text-xs text-amber-400">Select at least one subcategory above.</p>
-              )}
-            </div>
-          )}
-        </div>
+        {/* Bundles */}
+        <BundleSubscriptionsPanel
+          bundleIds={bundleIds}
+          onChange={setBundleIds}
+          siteName={siteName || domain}
+          domain={domain}
+        />
 
         {/* SEO Keywords */}
         <div className="space-y-1.5">

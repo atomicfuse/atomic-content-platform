@@ -217,8 +217,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.categoryIds !== undefined) brief.category_ids = configUpdates.categoryIds;
       if (configUpdates.tagIds !== undefined) brief.tag_ids = configUpdates.tagIds;
       if (configUpdates.seoKeywords !== undefined) brief.seo_keywords_focus = configUpdates.seoKeywords;
-      if (configUpdates.bundleId !== undefined) {
-        (existing as Record<string, unknown>).bundle_id = configUpdates.bundleId || undefined;
+      if (configUpdates.bundleIds !== undefined) {
+        const ids = configUpdates.bundleIds.filter((x): x is string => !!x);
+        if (ids.length > 0) {
+          brief.bundle_ids = ids;
+        } else {
+          delete (brief as Record<string, unknown>).bundle_ids;
+        }
+        // Strip legacy singular fields so saved yaml uses the new shape only.
+        delete (existing as Record<string, unknown>).bundle_id;
+        delete (brief as Record<string, unknown>).bundle_id;
       }
     }
 

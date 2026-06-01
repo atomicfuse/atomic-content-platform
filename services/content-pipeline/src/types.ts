@@ -79,8 +79,10 @@ export interface SiteBrief {
   category_ids?: string[];
   /** Content Aggregator tag IDs — all tags the site targets. */
   tag_ids?: string[];
-  /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+  /** @deprecated Use bundle_ids instead. Read-shim migrates this on load. */
   bundle_id?: string;
+  /** Content Aggregator bundle IDs — articles are fetched from the union of these bundles, deduped. */
+  bundle_ids?: string[];
   audience_type?: string;
   /** Content Aggregator audience type IDs — preferred over name for API queries. */
   audience_type_ids?: string[];

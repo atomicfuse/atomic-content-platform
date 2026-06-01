@@ -12,8 +12,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const { searchParams } = request.nextUrl;
     const search = searchParams.get("search") ?? "";
     const pageSize = searchParams.get("page_size") ?? "20";
+    const page = searchParams.get("page");
     const qs = new URLSearchParams({ page_size: pageSize, include_usage: "true" });
     if (search) qs.set("search", search);
+    if (page) qs.set("page", page);
     const res = await fetch(`${AGGREGATOR_URL}/api/tags?${qs.toString()}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 60 },

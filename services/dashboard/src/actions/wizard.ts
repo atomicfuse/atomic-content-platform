@@ -55,23 +55,22 @@ interface StagingResult {
 }
 
 /** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)".
- *  Post-2026-04-29: vertical_ids removed from bundle rules. Tier-1 category ID
- *  is included in category_ids alongside child IDs. */
+ *  Post-2026-04-29: vertical_ids removed from bundle rules.
+ *  Post-2026-05-31: caller passes `categoryIds` directly (any mix of tier-1s
+ *  and/or child subcats, possibly spanning multiple tier-1s). The previous
+ *  tier-1 + children split was a UI lock that blocked cross-category bundles. */
 async function createBundle(
   name: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
+  categoryIds: string[],
   tagIds: string[],
 ): Promise<{ id: string; name: string } | null> {
-  // Merge tier-1 ID with child category IDs (deduped)
-  const allCategoryIds = [tier1CategoryId, ...childCategoryIds.filter((id) => id !== tier1CategoryId)];
   const payload = {
     name,
     description: `Auto-created content bundle for ${name}`,
     active: true,
     rules: {
-      category_ids: allCategoryIds,
-      tag_ids: tagIds,
+      category_ids: Array.from(new Set(categoryIds.filter(Boolean))),
+      tag_ids: Array.from(new Set(tagIds.filter(Boolean))),
     },
   };
 
@@ -113,22 +112,17 @@ async function createBundle(
 }
 
 /** Create a content bundle for an existing site from the site settings page.
- *  Uses the niche targeting selections (category, subcategories, tags)
- *  already configured in the Content Brief tab. Returns the new bundleId
- *  on success, or throws on failure. */
+ *  Post-2026-05-31: caller passes `categoryIds` directly (any combination of
+ *  tier-1s and/or child subcats, spanning any number of tier-1s). */
 export async function createBundleForSite(
   siteName: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
+  categoryIds: string[],
   tagIds: string[],
 ): Promise<{ id: string; name: string }> {
-  if (!tier1CategoryId) {
-    throw new Error("A category must be selected before creating a bundle.");
+  if (categoryIds.length === 0) {
+    throw new Error("At least one category must be selected before creating a bundle.");
   }
-  if (childCategoryIds.length === 0) {
-    throw new Error("At least one subcategory must be selected before creating a bundle.");
-  }
-  const bundle = await createBundle(siteName, tier1CategoryId, childCategoryIds, tagIds);
+  const bundle = await createBundle(siteName, categoryIds, tagIds);
   if (!bundle) {
     throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
   }
@@ -148,42 +142,54 @@ export async function createSiteAndBuildStaging(
   // can resolve the right config when the hostname matches.
   const siteFolder = projectName;
 
-  // 0. Resolve niche targeting: existing bundle or create new
-  let bundleId: string | undefined = data.bundleId || undefined;
-  let categoryIds: string[] = data.selectedCategories.map((c) => c.id);
-  let tagIds: string[] = data.selectedTags.map((t) => t.id);
-  const iabCategoryCodes = data.selectedCategories
-    .map((c) => c.iabCode)
-    .filter(Boolean);
+  // 0. Resolve niche targeting.
+  //
+  // Post-2026-05-31: do NOT materialize bundle rules into brief.category_ids /
+  // brief.tag_ids. Earlier the wizard fetched each subscribed bundle and merged
+  // their rules into the site's loose fields "for self-description". That
+  // polluted the Content Brief UI (showing checkboxes the user never set) and
+  // created phantom state when the user changed the Primary Category. Bundles
+  // are now the source of truth for content filtering; their rules live on the
+  // aggregator and are referenced by id from brief.bundle_ids.
+  //
+  // brief.category_ids / brief.tag_ids reflect ONLY what the user explicitly
+  // picked in the starter form (and only when no starter bundle is created
+  // from those picks — see below).
+  const subscribedBundleIds: string[] = [...(data.bundleIds ?? [])];
+  const iabCategoryCodes = data.selectedCategories.map((c) => c.iabCode).filter(Boolean);
 
-  if (bundleId) {
-    // Existing bundle — fetch its rules for site.yaml fields
-    try {
-      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`);
-      if (res.ok) {
-        const bundle = (await res.json()) as {
-          rules?: { category_ids?: string[]; tag_ids?: string[] };
-        };
-        categoryIds = bundle.rules?.category_ids ?? categoryIds;
-        tagIds = bundle.rules?.tag_ids ?? tagIds;
-      }
-    } catch {
-      // Best-effort — proceed with what we have
+  // Optionally create a starter bundle from the form's category/tag picks.
+  // Post-2026-05-31: if `starterBundle.enabled` is true the user must have
+  // picked at least one category — throw explicitly rather than silently
+  // skipping (the silent-skip caused confusing UX where the user filled the
+  // starter form but no bundle was created).
+  let starterBundleCreated = false;
+  if (data.starterBundle.enabled) {
+    if (data.selectedCategories.length === 0) {
+      throw new Error(
+        "To create a starter bundle, pick at least one category. " +
+        "Uncheck 'Also create a starter bundle' if you only want to subscribe to existing bundles.",
+      );
     }
-  } else if (data.verticalId && categoryIds.length > 0) {
-    // Create new bundle
-    const bundle = await createBundle(
-      data.siteName,
-      data.verticalId,
-      categoryIds,
-      tagIds,
+    const starterName = data.starterBundle.name.trim() || `${projectName}-starter`;
+    const created = await createBundle(
+      starterName,
+      data.selectedCategories.map((c) => c.id),
+      data.selectedTags.map((t) => t.id),
     );
-    if (bundle) {
-      bundleId = bundle.id;
-    } else {
-      throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
+    if (!created) {
+      throw new Error("Failed to create starter bundle. Check the Content Aggregator service and try again.");
     }
+    subscribedBundleIds.push(created.id);
+    starterBundleCreated = true;
   }
+
+  // If a starter bundle was created from the user's category/tag picks, those
+  // picks now live IN the bundle — don't duplicate them as loose site-level
+  // fields. If no starter was created (user only subscribed to existing
+  // bundles), keep the form picks as informational metadata.
+  const categoryIds = starterBundleCreated ? [] : data.selectedCategories.map((c) => c.id);
+  const tagIds = starterBundleCreated ? [] : data.selectedTags.map((t) => t.id);
 
   // 1. Build site.yaml content. `domain` is the site folder identifier
   // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
@@ -194,7 +200,6 @@ export async function createSiteAndBuildStaging(
     author: generateAuthorName(),
     groups: data.groups.length > 0 ? data.groups : [],
     active: true,
-    bundle_id: bundleId || undefined,
     iab_vertical_code: data.iabVerticalCode || undefined,
     iab_category_codes:
       iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
@@ -221,7 +226,7 @@ export async function createSiteAndBuildStaging(
       vertical_id: data.verticalId || undefined,
       category_ids: categoryIds.length > 0 ? categoryIds : undefined,
       tag_ids: tagIds.length > 0 ? tagIds : undefined,
-      bundle_id: bundleId || undefined,
+      bundle_ids: subscribedBundleIds.length > 0 ? subscribedBundleIds : undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,
@@ -1076,8 +1081,8 @@ export interface StagingSiteConfig {
   tagIds?: string[];
   /** SEO keywords focus list. */
   seoKeywords?: string[];
-  /** Content bundle ID. */
-  bundleId?: string;
+  /** Content Aggregator bundle IDs subscribed by this site. */
+  bundleIds?: string[];
   // Phase 1 config fields
   groups?: string[];
   tracking?: Record<string, unknown>;

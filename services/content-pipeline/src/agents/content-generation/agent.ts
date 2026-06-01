@@ -406,9 +406,19 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     throw new Error(`Site ${siteDomain} has no content brief defined`);
   }
 
-  // Propagate top-level bundle_id into brief for backward compat
-  if (!siteConfig.brief.bundle_id && (siteConfig as Record<string, unknown>).bundle_id) {
-    siteConfig.brief.bundle_id = (siteConfig as Record<string, unknown>).bundle_id as string;
+  // Promote legacy singular bundle_id into bundle_ids.
+  // Sources, in order: brief.bundle_id, top-level config.bundle_id.
+  // NOTE: identical shim exists in services/content-pipeline/src/lib/site-brief.ts — keep in sync.
+  const topLevelBundleId = (siteConfig as Record<string, unknown>).bundle_id;
+  if (!siteConfig.brief.bundle_ids || siteConfig.brief.bundle_ids.length === 0) {
+    const legacy: string[] = [];
+    if (siteConfig.brief.bundle_id) legacy.push(siteConfig.brief.bundle_id);
+    if (typeof topLevelBundleId === "string" && topLevelBundleId && !legacy.includes(topLevelBundleId)) {
+      legacy.push(topLevelBundleId);
+    }
+    if (legacy.length > 0) {
+      siteConfig.brief.bundle_ids = legacy;
+    }
   }
 
   return {
@@ -675,6 +685,178 @@ async function processItem(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Bundle fan-out helpers (module-level, exported for testing)
+// ---------------------------------------------------------------------------
+
+/** Dependencies injected into the bundle fan-out helpers. */
+export interface FetchUnionDeps {
+  targetCount: number;
+  existing: { urls: Set<string>; titles: Set<string> };
+  bundleIds: (string | undefined)[];
+  mergedCategoryIds: string[];
+  language: string;
+  /** Optional rotation seed for the bundle iteration order. Production omits
+   *  this and the fan-out rotates by hour-of-day. Tests pass a fixed integer
+   *  (e.g. 0) for deterministic ordering. */
+  bundleOrderSeed?: number;
+  /** `ids` is intentionally absent: pre-published items are indexed by url+title only.
+   *  The union-level dedupe additionally tracks `item.id` to catch the same article
+   *  appearing in multiple bundle queries. */
+}
+
+/** Pagination tunables for the fan-out fetch. Production uses defaults; tests
+ *  may override `maxPages: 1` to avoid pagination loops. */
+export interface FetchPagination {
+  pageSize?: number;
+  maxPages?: number;
+}
+
+/** Rotate an array left by `n` positions (mod len). Pure, no allocation past one slice. */
+function rotateArray<T>(arr: readonly T[], n: number): T[] {
+  if (arr.length === 0) return [];
+  const offset = ((n % arr.length) + arr.length) % arr.length;
+  return [...arr.slice(offset), ...arr.slice(0, offset)];
+}
+
+/**
+ * Fetch new (non-duplicate) items for a single bundle from the aggregator,
+ * paginating until `deps.targetCount` unique items are found or pages run out.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function fetchNewItemsForBundle(
+  bundleId: string | undefined,
+  useTagIds: string[] | undefined,
+  label: string,
+  deps: FetchUnionDeps,
+  pagination: FetchPagination = {},
+): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+  const PAGE_SIZE = pagination.pageSize ?? 20;
+  const MAX_PAGES = pagination.maxPages ?? 5;
+  const newItems: ContentItem[] = [];
+  let totalFetched = 0;
+  let duplicateCount = 0;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    console.log(
+      `[agent] [${label}] bundle=${bundleId ?? "(none)"} ` +
+      `Fetching page ${page} (${PAGE_SIZE}) — target ${deps.targetCount}`,
+    );
+
+    // When a bundle is set, suppress site-level category/tag filters.
+    // The aggregator AND's all dimensions; sending bundle + site categories
+    // intersects them and wipes results when the bundle's rules don't overlap
+    // the site's primary vertical (e.g. site=Travel, bundle=Food/Wine).
+    // The bundle's own rules (set when the bundle was created) are the
+    // intended filter — the site-level fields are only a fallback for the
+    // no-bundle path.
+    const response = await getContent({
+      limit: PAGE_SIZE,
+      page,
+      language: deps.language,
+      bundle_id: bundleId,
+      category_ids: bundleId
+        ? undefined
+        : (deps.mergedCategoryIds.length > 0 ? deps.mergedCategoryIds : undefined),
+      tag_ids: bundleId ? undefined : useTagIds,
+    });
+
+    const pageItems = response.items;
+    totalFetched += pageItems.length;
+    if (pageItems.length === 0) break;
+
+    for (const item of pageItems) {
+      if (deps.existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
+      if (deps.existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
+      newItems.push(item);
+    }
+
+    const totalPages = response.total_pages ?? 1;
+    if (newItems.length >= deps.targetCount || page >= totalPages) break;
+
+    console.log(
+      `[agent] [${label}] bundle=${bundleId ?? "(none)"} Page ${page}: ` +
+      `found ${newItems.length} new so far (${duplicateCount} dupes), ` +
+      `need ${deps.targetCount - newItems.length} more — fetching next page`,
+    );
+  }
+
+  return { newItems, totalFetched, duplicateCount };
+}
+
+/**
+ * Fan out over all bundles in `deps.bundleIds`, merge results, and dedupe
+ * across the union by item id, normalized URL, and normalized title.
+ *
+ * Important: ALL bundles are queried regardless of `deps.targetCount`. The
+ * previous early-stop ("break when targetCount reached") meant that when a
+ * site had `articles_per_day=1` and N subscribed bundles, only bundle 1 was
+ * ever queried — content rotation across bundles was impossible.
+ *
+ * After collecting items from every bundle, we **round-robin merge** them
+ * (item 0 from each bundle, then item 1 from each, …) so coverage is balanced
+ * across bundles even when targetCount is smaller than the bundle count.
+ *
+ * To rotate WHICH bundle wins the first slot across runs (e.g. with
+ * targetCount=1 and 3 bundles, you want a different bundle on the front each
+ * run), the bundle order is shuffled by a stable hour-of-day rotation. Over
+ * a day the rotation visits every bundle position; over many runs each
+ * bundle gets fair representation in the first slot.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function fetchNewItemsUnion(
+  useTagIds: string[] | undefined,
+  label: string,
+  deps: FetchUnionDeps,
+  pagination: FetchPagination = {},
+): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+  // Rotate bundle order by hour-of-day so the "first slot" wins fairly over
+  // time when targetCount < bundleCount. Deterministic per hour for the same
+  // run, which makes tests stable when overridden via deps.bundleOrderSeed.
+  const rotation = deps.bundleOrderSeed ?? new Date().getUTCHours();
+  const orderedBundles = rotateArray(deps.bundleIds, rotation);
+
+  // Query EVERY bundle. No early-stop on the outer loop.
+  const perBundleResults: ContentItem[][] = [];
+  let totalFetched = 0;
+  let duplicateCount = 0;
+  for (const bid of orderedBundles) {
+    const result = await fetchNewItemsForBundle(bid, useTagIds, label, deps, pagination);
+    totalFetched += result.totalFetched;
+    duplicateCount += result.duplicateCount;
+    perBundleResults.push(result.newItems);
+  }
+
+  // Round-robin merge: item 0 from bundle 0, item 0 from bundle 1, …, item 1
+  // from bundle 0, item 1 from bundle 1, … Stops once targetCount is reached.
+  const merged: ContentItem[] = [];
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+  const maxLen = perBundleResults.reduce((m, b) => Math.max(m, b.length), 0);
+  outer: for (let i = 0; i < maxLen; i++) {
+    for (let b = 0; b < perBundleResults.length; b++) {
+      const item = perBundleResults[b]?.[i];
+      if (!item) continue;
+      const urlKey = normalizeUrl(item.url);
+      const titleKey = normalizeTitleKey(item.title);
+      if (seenIds.has(item.id) || seenUrls.has(urlKey) || seenTitles.has(titleKey)) {
+        duplicateCount++;
+        continue;
+      }
+      seenIds.add(item.id);
+      seenUrls.add(urlKey);
+      seenTitles.add(titleKey);
+      merged.push(item);
+      if (merged.length >= deps.targetCount) break outer;
+    }
+  }
+
+  return { newItems: merged, totalFetched, duplicateCount };
+}
+
+// ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
@@ -710,9 +892,6 @@ export async function runContentGeneration(
     }
 
     // Step 4: Fetch enriched items with pagination — skip past duplicates
-    const PAGE_SIZE = 20;
-    const MAX_PAGES = 5;
-
     const settings = await getSettings();
 
     // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
@@ -722,72 +901,37 @@ export async function runContentGeneration(
       ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
       : categoryIds;
 
-    // Helper: paginated fetch + dedup against existing articles
-    async function fetchNewItems(
-      useTagIds: string[] | undefined,
-      label: string,
-    ): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
-      const newItems: ContentItem[] = [];
-      let totalFetched = 0;
-      let duplicateCount = 0;
+    // bundle_ids is the new multi-bundle model. We fan out per bundle and
+    // dedupe across the union. An empty/missing bundle_ids array falls back
+    // to a single category-only query (the no-bundle path).
+    const bundleIds: (string | undefined)[] =
+      brief.bundle_ids && brief.bundle_ids.length > 0
+        ? brief.bundle_ids
+        : [undefined];
 
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        console.log(`[agent] [${label}] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
+    const fetchDeps: FetchUnionDeps = {
+      targetCount,
+      existing,
+      bundleIds,
+      mergedCategoryIds,
+      language: brief.language ?? "EN",
+    };
 
-        const response = await getContent({
-          limit: PAGE_SIZE,
-          page,
-          language: brief.language ?? "EN",
-          bundle_id: brief.bundle_id,
-          category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
-          tag_ids: useTagIds,
-        });
+    // Narrow search: each bundle with tags applied.
+    let { newItems, totalFetched, duplicateCount } = await fetchNewItemsUnion(tagIds, "narrow", fetchDeps);
 
-        const pageItems = response.items;
-        totalFetched += pageItems.length;
-
-        if (pageItems.length === 0) break;
-
-        for (const item of pageItems) {
-          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
-          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
-          newItems.push(item);
-        }
-
-        const totalPages = response.total_pages ?? 1;
-        if (newItems.length >= targetCount || page >= totalPages) break;
-
-        console.log(
-          `[agent] [${label}] Page ${page}: found ${newItems.length} new so far ` +
-          `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
-        );
-      }
-
-      return { newItems, totalFetched, duplicateCount };
-    }
-
-    // Narrow search: categories + tags
-    let { newItems, totalFetched, duplicateCount } = await fetchNewItems(tagIds, "narrow");
-
-    // Fallback: if narrow search yielded no usable items (either 0 results
-    // from the API or all duplicates), retry with a broader search
-    // (categories only, drop tags) to find fresh content.
+    // Broader fallback: drop tags if narrow returned nothing usable.
     if (newItems.length === 0 && tagIds && tagIds.length > 0) {
       const reason = totalFetched === 0
         ? "returned 0 items"
         : `returned ${totalFetched} items but all ${duplicateCount} were duplicates`;
       console.log(
-        `[agent] Narrow search (categories + tags) ${reason}. ` +
-        `Retrying with broader search (categories only, no tags)…`,
+        `[agent] Narrow search ${reason} — falling back to broad (no tag filter)`,
       );
-      const broad = await fetchNewItems(undefined, "broad");
+      const broad = await fetchNewItemsUnion(undefined, "broad", fetchDeps);
       newItems = broad.newItems;
       totalFetched += broad.totalFetched;
       duplicateCount += broad.duplicateCount;
-
-      if (newItems.length > 0) {
-        console.log(`[agent] Broad search found ${newItems.length} new item(s) — proceeding`);
-      }
     }
 
     if (totalFetched === 0) {
