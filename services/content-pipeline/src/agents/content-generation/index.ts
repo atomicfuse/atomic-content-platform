@@ -93,10 +93,18 @@ async function handleRequest(
     const parsed = new URL(req.url, "http://localhost");
     const force = parsed.searchParams.get("force") === "true";
     console.log(`[server] Scheduled publish triggered${force ? " (forced)" : ""}`);
+
+    const { resetApiStats, formatApiStats } = await import("../../lib/github-stats.js");
+    resetApiStats();
+
     try {
       const result = await runScheduledPublish(config, force, queueInstances);
+      const stats = resetApiStats();
+      console.log(formatApiStats(stats));
       sendJson(res, 200, result as unknown as Record<string, unknown>);
     } catch (err) {
+      const stats = resetApiStats();
+      console.log(formatApiStats(stats));
       const message = err instanceof Error ? err.message : String(err);
       console.error("[server] Scheduled publish error:", message);
       sendJson(res, 500, { status: "error", message });
