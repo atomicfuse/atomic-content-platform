@@ -74,6 +74,8 @@ export interface ActiveSiteEntry {
   domain: string;
   /** Branch where the site's config lives. Falls back to `staging/<domain>`. */
   branch: string;
+  /** Site status from dashboard-index.yaml (lowercased). */
+  status: string;
 }
 
 interface DashboardIndexFile {
@@ -99,6 +101,7 @@ export async function listActiveSites(
     .map((s) => ({
       domain: s.domain as string,
       branch: s.staging_branch || `staging/${s.domain}`,
+      status: (s.status ?? "").toLowerCase(),
     }));
 }
 
