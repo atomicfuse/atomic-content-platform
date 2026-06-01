@@ -108,8 +108,16 @@ export async function getTreeCached(
   return tree.tree;
 }
 
-export function clearTreeCache(): void {
-  treeCache.clear();
+export function clearTreeCache(branch?: string): void {
+  if (branch) {
+    for (const key of treeCache.keys()) {
+      if (key.endsWith(`:${branch}`)) {
+        treeCache.delete(key);
+      }
+    }
+  } else {
+    treeCache.clear();
+  }
 }
 
 export function clearBlobCache(): void {
@@ -317,7 +325,7 @@ export async function commitBatch(
     sha: newCommit.sha,
   });
 
-  clearTreeCache();
+  clearTreeCache(branch ?? "main");
 
   console.log(`[github] Batch commit ${newCommit.sha.slice(0, 7)}: ${files.length} text + ${binaryFiles.length} binary files`);
   return newCommit.sha;

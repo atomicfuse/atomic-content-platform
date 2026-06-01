@@ -164,3 +164,51 @@ describe("blob cache in readFile", () => {
     clearBlobCache();
   });
 });
+
+describe("selective tree cache invalidation", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+  });
+
+  function setupBlob(content: string): void {
+    mockGetBlob.mockResolvedValue({
+      data: { content: Buffer.from(content).toString("base64") },
+    });
+  }
+
+  it("clearTreeCache(branch) only evicts that branch", async () => {
+    const { readFile, createOctokit, clearTreeCache } =
+      await import("../lib/github.js");
+
+    // Set up two different branches with different trees
+    const mainTree = [{ path: "file.yaml", type: "blob", sha: "main-sha" }];
+    const stagingTree = [{ path: "sites/s1/site.yaml", type: "blob", sha: "staging-sha" }];
+
+    mockGetRef.mockResolvedValue({ data: { object: { sha: "ref" } } });
+    mockGetTree.mockResolvedValueOnce({
+      data: { truncated: false, tree: mainTree },
+    });
+    setupBlob("main content");
+    const octokit = createOctokit("ghp_test");
+
+    // Fetch main tree
+    await readFile(octokit, "owner/repo", "file.yaml", "main");
+    expect(mockGetTree).toHaveBeenCalledTimes(1);
+
+    // Fetch staging tree
+    mockGetTree.mockResolvedValueOnce({
+      data: { truncated: false, tree: stagingTree },
+    });
+    setupBlob("staging content");
+    await readFile(octokit, "owner/repo", "sites/s1/site.yaml", "staging/s1");
+    expect(mockGetTree).toHaveBeenCalledTimes(2);
+
+    // Clear only staging — main should still be cached
+    clearTreeCache("staging/s1");
+
+    // Reading from main should NOT trigger a new getTree
+    await readFile(octokit, "owner/repo", "file.yaml", "main");
+    expect(mockGetTree).toHaveBeenCalledTimes(2); // unchanged
+  });
+});

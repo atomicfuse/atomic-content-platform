@@ -7,7 +7,7 @@ import type { ExistingArticles } from "../agents/content-generation/agent.js";
 import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex } from "../agents/content-generation/agent.js";
 import { GENERATE_QUEUE } from "./types.js";
 import type { GenerateJobData } from "./types.js";
-import { createOctokit, clearTreeCache } from "../lib/github.js";
+import { createOctokit } from "../lib/github.js";
 import type { BatchFileEntry } from "../lib/github.js";
 import { readSiteBriefWithFallback } from "../lib/site-brief.js";
 import { runContentGeneration } from "../agents/content-generation/agent.js";
@@ -44,8 +44,6 @@ export async function processGenerateJob(
   redis: Redis,
 ): Promise<BatchContentGenerationResult> {
   const { siteDomain, branch, count } = job.data;
-
-  clearTreeCache();
 
   // Pre-flight: verify site exists and has a schedule
   const octokit = createOctokit(config.github);
