@@ -160,7 +160,7 @@ export async function processSchedulerRun(
 
   // Build history entry
   const entry = {
-    timestamp: runId,
+    timestamp: new Date().toISOString(),
     timezone,
     forced,
     sites,
