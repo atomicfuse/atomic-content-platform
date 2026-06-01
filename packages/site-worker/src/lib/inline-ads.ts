@@ -17,6 +17,7 @@ interface InlinePlacement {
   };
   page_types?: string[];
   exclude_pages?: string[];
+  code?: string;
 }
 
 /**
@@ -32,8 +33,9 @@ interface InlinePlacement {
  *
  * Returns the input unchanged when no inline placements match.
  */
-export function injectInlineAds(html: string, placements: readonly InlinePlacement[]): string {
-  const inline: Array<{ id: string; position: string; afterIndex: number; sizesDesktop: number[][]; sizesMobile: number[][] }> = [];
+export function injectInlineAds(html: string, placements: readonly InlinePlacement[], options?: { staging?: boolean }): string {
+  const staging = options?.staging ?? false;
+  const inline: Array<{ id: string; position: string; afterIndex: number; sizesDesktop: number[][]; sizesMobile: number[][]; code: string }> = [];
   for (const p of placements) {
     // Inline ads are only injected on article pages — skip placements that
     // don't target articles via page_types or explicitly exclude them.
@@ -51,6 +53,7 @@ export function injectInlineAds(html: string, placements: readonly InlinePlaceme
       afterIndex: n,
       sizesDesktop: p.sizes?.desktop ?? [],
       sizesMobile: p.sizes?.mobile ?? [],
+      code: staging ? '' : (p.code ?? ''),
     });
   }
   if (inline.length === 0) return html;
@@ -66,7 +69,7 @@ export function injectInlineAds(html: string, placements: readonly InlinePlaceme
       pSeen += 1;
       const matches = inline.filter((p) => p.afterIndex === pSeen);
       for (const p of matches) {
-        out.push(renderInlineSlot(p.id, p.position, p.sizesDesktop, p.sizesMobile));
+        out.push(renderInlineSlot(p.id, p.position, p.sizesDesktop, p.sizesMobile, p.code));
       }
     }
   }
@@ -78,16 +81,21 @@ function renderInlineSlot(
   position: string,
   sizesDesktop: number[][],
   sizesMobile: number[][],
+  code: string,
 ): string {
   // Same shape AdSlot.astro emits server-side, so mock-ad-fill.js picks
   // these up identically — including the size attributes which the
   // mock script needs to render the correct dimensions.
+  // Widget code is injected as raw HTML inside the div (matching
+  // AdSlot.astro's `Fragment set:html={widgetCode}` pattern).
   return (
     `<div data-ad-id="${escapeAttr(id)}"`
     + ` data-ad-position="${escapeAttr(position)}"`
     + ` data-sizes-desktop="${escapeAttr(JSON.stringify(sizesDesktop))}"`
     + ` data-sizes-mobile="${escapeAttr(JSON.stringify(sizesMobile))}"`
-    + ` class="atl-ad-slot atl-ad-${escapeAttr(position)}"></div>`
+    + ` class="atl-ad-slot atl-ad-${escapeAttr(position)}">`
+    + code
+    + `</div>`
   );
 }
 

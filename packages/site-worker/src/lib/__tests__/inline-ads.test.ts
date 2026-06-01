@@ -14,7 +14,8 @@ describe('injectInlineAds', () => {
       '<p>One.</p><p>Two.</p><p>Three.</p>'
       + '<div data-ad-id="in-content-3" data-ad-position="after-paragraph-3"'
       + ' data-sizes-desktop="[]" data-sizes-mobile="[]"'
-      + ' class="atl-ad-slot atl-ad-after-paragraph-3"></div>'
+      + ' class="atl-ad-slot atl-ad-after-paragraph-3">'
+      + '</div>'
       + '<p>Four.</p><p>Five.</p>';
     expect(out).toBe(expected);
   });
@@ -158,5 +159,38 @@ describe('injectInlineAds', () => {
       { id: 'default', position: 'after-paragraph-1' },
     ]);
     expect(out).toContain('data-ad-id="default"');
+  });
+
+  it('renders widget code inside the ad slot div', () => {
+    const widgetCode = '<div id="widget"></div><script>loadWidget()</script>';
+    const out = injectInlineAds(html, [
+      { id: 'search-ads', position: 'after-paragraph-1', code: widgetCode },
+    ]);
+    expect(out).toContain(
+      'class="atl-ad-slot atl-ad-after-paragraph-1">'
+      + widgetCode
+      + '</div>',
+    );
+  });
+
+  it('suppresses widget code when staging is true', () => {
+    const widgetCode = '<div id="widget"></div><script>loadWidget()</script>';
+    const out = injectInlineAds(
+      html,
+      [{ id: 'search-ads', position: 'after-paragraph-1', code: widgetCode }],
+      { staging: true },
+    );
+    expect(out).not.toContain(widgetCode);
+    expect(out).toContain('data-ad-id="search-ads"');
+  });
+
+  it('renders widget code when staging is false', () => {
+    const widgetCode = '<script>ad()</script>';
+    const out = injectInlineAds(
+      html,
+      [{ id: 'ad1', position: 'after-paragraph-2', code: widgetCode }],
+      { staging: false },
+    );
+    expect(out).toContain(widgetCode);
   });
 });

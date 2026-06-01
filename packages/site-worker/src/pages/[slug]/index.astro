@@ -51,7 +51,8 @@ if (!shared && (!article || (!preview && !isVisibleArticle(article.frontmatter.s
 const articleBodyWithInlineAds = article
   ? injectInlineAds(
       article.body,
-      (config.ads_config?.ad_placements as Array<{ id?: string; position?: string }> | undefined) ?? [],
+      (config.ads_config?.ad_placements ?? []) as Array<{ id?: string; position?: string; code?: string; sizes?: { desktop?: number[][]; mobile?: number[][] }; page_types?: string[]; exclude_pages?: string[] }>,
+      { staging },
     )
   : '';
 
