@@ -44,6 +44,40 @@ import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
 
 // ---------------------------------------------------------------------------
+// Body validation — rejects empty/garbage content before quality scoring
+// ---------------------------------------------------------------------------
+
+const BODY_PLACEHOLDER_PATTERNS = [
+  /no article content was available/i,
+  /system prompt artifact/i,
+  /please provide the original article/i,
+  /content for cleanup/i,
+  /unable to generate.*article/i,
+];
+
+const MIN_BODY_WORDS = 50;
+
+export function validateArticleBody(
+  body: string,
+): { valid: true } | { valid: false; reason: string } {
+  const trimmed = body.trim();
+  if (!trimmed) return { valid: false, reason: "empty body" };
+
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (wordCount < MIN_BODY_WORDS) {
+    return { valid: false, reason: `too short (${wordCount} words, minimum ${MIN_BODY_WORDS})` };
+  }
+
+  for (const pattern of BODY_PLACEHOLDER_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      return { valid: false, reason: "detected placeholder/failure content" };
+    }
+  }
+
+  return { valid: true };
+}
+
+// ---------------------------------------------------------------------------
 // Public interfaces (preserved for backward compat with index.ts)
 // ---------------------------------------------------------------------------
 
@@ -566,6 +600,13 @@ async function processItem(
       }
     }
 
+    // Step 2b: Validate generated body
+    const bodyCheck = validateArticleBody(generated.body);
+    if (!bodyCheck.valid) {
+      console.warn(`[agent] Article body validation failed for "${item.title}": ${bodyCheck.reason}`);
+      return { status: "error", message: `Body validation failed: ${bodyCheck.reason}` };
+    }
+
     // Step 3: Generate slug (from SEO module, then deduplicate)
     const baseSlug = generated.slug || generateSlug(generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
@@ -621,8 +662,10 @@ async function processItem(
       );
     } catch (scoreErr) {
       const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
-      console.warn(`[agent] Quality scoring failed, defaulting to published: ${errMsg}`);
+      console.warn(`[agent] Quality scoring failed, defaulting to review: ${errMsg}`);
       qualityNote = `Quality scoring failed: ${errMsg}`;
+      qualityScore = 0;
+      articleStatus = "review";
     }
 
     // Step 9: Build frontmatter
