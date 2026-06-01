@@ -88,6 +88,8 @@ const hasMore = hasMoreOnAfter(
       description={config.site_tagline ?? `${config.site_name} — latest articles`}
       canonicalUrl={`https://${getCanonicalDomain(Astro)}`}
       siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
+      image={config.theme?.logo}
     />
   </Fragment>
 

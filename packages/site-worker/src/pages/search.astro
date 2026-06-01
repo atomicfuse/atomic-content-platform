@@ -22,6 +22,7 @@ const staging = isStagingEnv(Astro);
       description={`Search articles on ${config.site_name}`}
       canonicalUrl={`https://${getCanonicalDomain(Astro)}/search`}
       siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
       noindex
     />
   </Fragment>
