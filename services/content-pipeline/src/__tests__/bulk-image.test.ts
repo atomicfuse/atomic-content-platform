@@ -125,7 +125,7 @@ describe("scanArticlesForGeneralImages", () => {
   beforeEach(() => {
     vi.mocked(createOctokit).mockReturnValue({ _mock: "octokit" } as never);
     vi.mocked(listActiveSites).mockResolvedValue([
-      { domain: "travelswire", branch: "staging/travelswire" },
+      { domain: "travelswire", branch: "staging/travelswire", status: "live" },
     ]);
     vi.mocked(listFiles).mockResolvedValue([
       "best-travel-gear-2026.md",
@@ -184,8 +184,8 @@ describe("scanArticlesForGeneralImages", () => {
 
   it("scans all sites when scope is all", async () => {
     vi.mocked(listActiveSites).mockResolvedValue([
-      { domain: "travelswire", branch: "staging/travelswire" },
-      { domain: "wineoceans", branch: "staging/wineoceans" },
+      { domain: "travelswire", branch: "staging/travelswire", status: "live" },
+      { domain: "wineoceans", branch: "staging/wineoceans", status: "live" },
     ]);
     vi.mocked(listFiles).mockResolvedValue(["best-travel-gear-2026.md"]);
     vi.mocked(readFile).mockResolvedValue(articleWithGeneralImage);

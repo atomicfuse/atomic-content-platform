@@ -8,6 +8,7 @@
 import { Octokit } from "@octokit/rest";
 import { retry } from "@octokit/plugin-retry";
 import { throttling } from "@octokit/plugin-throttling";
+import { recordApiCall, recordCacheHit } from "./github-stats.js";
 
 export interface GitHubConfig {
   token: string;
@@ -74,6 +75,8 @@ type TreeEntry = {
 };
 
 const treeCache = new Map<string, TreeEntry[]>();
+const blobCache = new Map<string, string>();
+const BLOB_CACHE_MAX = 200;
 
 export async function getTreeCached(
   octokit: Octokit,
@@ -82,7 +85,10 @@ export async function getTreeCached(
 ): Promise<TreeEntry[]> {
   const ref = branch ?? "main";
   const cacheKey = `${repo}:${ref}`;
-  if (treeCache.has(cacheKey)) return treeCache.get(cacheKey)!;
+  if (treeCache.has(cacheKey)) {
+    recordCacheHit("tree");
+    return treeCache.get(cacheKey)!;
+  }
 
   const { owner, repo: repoName } = parseRepo(repo);
   const { data: refData } = await octokit.git.getRef({
@@ -90,12 +96,14 @@ export async function getTreeCached(
     repo: repoName,
     ref: `heads/${ref}`,
   });
+  recordApiCall("getRef");
   const { data: tree } = await octokit.git.getTree({
     owner,
     repo: repoName,
     tree_sha: refData.object.sha,
     recursive: "true",
   });
+  recordApiCall("getTree");
 
   if (tree.truncated) {
     console.warn(`[github] Tree for ${ref} is truncated — falling back to per-directory fetches`);
@@ -106,8 +114,20 @@ export async function getTreeCached(
   return tree.tree;
 }
 
-export function clearTreeCache(): void {
-  treeCache.clear();
+export function clearTreeCache(branch?: string): void {
+  if (branch) {
+    for (const key of treeCache.keys()) {
+      if (key.endsWith(`:${branch}`)) {
+        treeCache.delete(key);
+      }
+    }
+  } else {
+    treeCache.clear();
+  }
+}
+
+export function clearBlobCache(): void {
+  blobCache.clear();
 }
 
 async function listFilesNonRecursive(
@@ -180,12 +200,27 @@ export async function readFile(
 
   if (!entry?.sha) throw new Error(`Expected file at ${path}, got nothing`);
 
+  const cached = blobCache.get(entry.sha);
+  if (cached !== undefined) {
+    recordCacheHit("blob");
+    return cached;
+  }
+
   const { data } = await octokit.git.getBlob({
     owner,
     repo: repoName,
     file_sha: entry.sha,
   });
-  return Buffer.from(data.content, "base64").toString("utf-8");
+  recordApiCall("getBlob");
+  const content = Buffer.from(data.content, "base64").toString("utf-8");
+
+  if (blobCache.size >= BLOB_CACHE_MAX) {
+    const oldest = blobCache.keys().next().value!;
+    blobCache.delete(oldest);
+  }
+  blobCache.set(entry.sha, content);
+
+  return content;
 }
 
 /**
@@ -245,10 +280,12 @@ export async function commitBatch(
 
   // 1. Get the current commit SHA for the branch
   const { data: refData } = await octokit.git.getRef({ owner, repo: repoName, ref });
+  recordApiCall("getRef");
   const baseSha = refData.object.sha;
 
   // 2. Get the tree SHA of that commit
   const { data: commitData } = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: baseSha });
+  recordApiCall("getCommit");
   const baseTreeSha = commitData.tree.sha;
 
   // 3. Create blobs for binary files (text files can be inlined)
@@ -284,6 +321,7 @@ export async function commitBatch(
     base_tree: baseTreeSha,
     tree: treeEntries,
   });
+  recordApiCall("createTree");
 
   // 6. Create commit
   const { data: newCommit } = await octokit.git.createCommit({
@@ -292,6 +330,7 @@ export async function commitBatch(
     tree: newTree.sha,
     parents: [baseSha],
   });
+  recordApiCall("createCommit");
 
   // 7. Update branch ref
   await octokit.git.updateRef({
@@ -299,8 +338,9 @@ export async function commitBatch(
     ref,
     sha: newCommit.sha,
   });
+  recordApiCall("updateRef");
 
-  clearTreeCache();
+  clearTreeCache(branch ?? "main");
 
   console.log(`[github] Batch commit ${newCommit.sha.slice(0, 7)}: ${files.length} text + ${binaryFiles.length} binary files`);
   return newCommit.sha;
@@ -336,4 +376,21 @@ export async function listFiles(
     }
     throw err;
   }
+}
+
+/**
+ * List all files under a directory path recursively (using the tree cache).
+ * Returns full paths relative to repo root.
+ */
+export async function listFilesRecursive(
+  octokit: Octokit,
+  repo: string,
+  dirPath: string,
+  branch?: string,
+): Promise<string[]> {
+  const tree = await getTreeCached(octokit, repo, branch);
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  return tree
+    .filter((f) => f.path?.startsWith(prefix) && f.type === "blob")
+    .map((f) => f.path!);
 }

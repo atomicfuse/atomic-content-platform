@@ -1,9 +1,11 @@
 import { FlowProducer, Worker } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
-import { createOctokit, readFile, commitFile } from "../lib/github.js";
+import { createOctokit, readFile, commitFile, listFilesRecursive, commitBatch, clearTreeCache, parseRepo } from "../lib/github.js";
+import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "../lib/config.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
+import { listActiveSites } from "../lib/site-brief.js";
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
 import {
   GENERATE_QUEUE,
@@ -33,6 +35,7 @@ export interface SchedulerSite {
   domain: string;
   branch: string;
   count: number;
+  briefJson?: string;
 }
 
 /**
@@ -59,6 +62,7 @@ export async function createSchedulerFlow(
       branch: site.branch,
       runId,
       triggeredBy: (forced ? "scheduled-forced" : "scheduled") as GenerateJobData["triggeredBy"],
+      briefJson: site.briefJson,
     },
     opts: DEFAULT_JOB_OPTIONS,
   }));
@@ -80,6 +84,79 @@ export async function createSchedulerFlow(
   });
 
   return { runId, enqueued: sites.length };
+}
+
+// ---------------------------------------------------------------------------
+// Auto-publish helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine if a site's staging should auto-publish to main after a scheduler run.
+ * Conditions: site is Live AND at least one article was created successfully.
+ */
+export function shouldAutoPublish(
+  result: SiteRunResult,
+  siteStatus: string,
+): boolean {
+  if (siteStatus !== "live") return false;
+  if (result.articlesCreated === 0) return false;
+  if (result.status === "error") return false;
+  return true;
+}
+
+/**
+ * Copy sites/<domain>/ from staging branch to main, then reset staging branch.
+ * This is the content-pipeline equivalent of the dashboard's publishStagingToProduction.
+ */
+async function autoPublishSite(
+  octokit: Octokit,
+  repo: string,
+  domain: string,
+  stagingBranch: string,
+): Promise<void> {
+  const siteDir = `sites/${domain}`;
+  const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
+
+  if (filePaths.length === 0) {
+    console.warn(`[auto-publish] No files found in ${siteDir} on ${stagingBranch}`);
+    return;
+  }
+
+  const files: Array<{ path: string; content: string }> = [];
+  for (const filePath of filePaths) {
+    const content = await readFile(octokit, repo, filePath, stagingBranch);
+    files.push({ path: filePath, content });
+  }
+
+  await commitBatch(
+    octokit,
+    repo,
+    files,
+    [],
+    `scheduler: auto-publish ${domain} (${files.length} files)`,
+    "main",
+  );
+
+  // Reset staging branch to main HEAD
+  const { owner, repo: repoName } = parseRepo(repo);
+  const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
+  const mainSha = mainRef.data.object.sha;
+
+  try {
+    await octokit.rest.git.deleteRef({ owner, repo: repoName, ref: `heads/${stagingBranch}` });
+  } catch {
+    // Branch may already be gone
+  }
+  await octokit.rest.git.createRef({
+    owner,
+    repo: repoName,
+    ref: `refs/heads/${stagingBranch}`,
+    sha: mainSha,
+  });
+
+  clearTreeCache(stagingBranch);
+  clearTreeCache("main");
+  console.log(`[auto-publish] Published ${domain}: ${files.length} files → main, staging reset`);
 }
 
 // ---------------------------------------------------------------------------
@@ -158,7 +235,7 @@ export async function processSchedulerRun(
 
   // Build history entry
   const entry = {
-    timestamp: runId,
+    timestamp: new Date().toISOString(),
     timezone,
     forced,
     sites,
@@ -188,6 +265,32 @@ export async function processSchedulerRun(
   console.log(
     `[scheduler-run] History written: ${sites.length} site(s), ${skipped.length} skipped`,
   );
+
+  // Auto-publish: merge staging → main for Live sites with new articles
+  const activeSites = await listActiveSites(octokit, config.networkRepo);
+  const siteStatusMap = new Map(activeSites.map((s) => [s.domain, s.status]));
+  const siteBranchMap = new Map(activeSites.map((s) => [s.domain, s.branch]));
+
+  const autoPublished: string[] = [];
+  for (const siteResult of sites) {
+    const status = siteStatusMap.get(siteResult.domain) ?? "";
+    if (!shouldAutoPublish(siteResult, status)) continue;
+
+    const branch = siteBranchMap.get(siteResult.domain);
+    if (!branch) continue;
+
+    try {
+      await autoPublishSite(octokit, config.networkRepo, siteResult.domain, branch);
+      autoPublished.push(siteResult.domain);
+    } catch (pubErr) {
+      const msg = pubErr instanceof Error ? pubErr.message : String(pubErr);
+      console.error(`[auto-publish] Failed for ${siteResult.domain}: ${msg}`);
+    }
+  }
+
+  if (autoPublished.length > 0) {
+    console.log(`[scheduler-run] Auto-published ${autoPublished.length} site(s): ${autoPublished.join(", ")}`);
+  }
 
   // Notify if any sites errored or produced zero articles
   const errorSites = sites

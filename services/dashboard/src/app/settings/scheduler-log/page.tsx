@@ -32,6 +32,8 @@ function formatTimestamp(iso: string, timezone: string): string {
       MDT: "America/Denver",
     };
     const resolved = TIMEZONE_MAP[timezone.toUpperCase()] ?? timezone;
+    // Handle truncated runId timestamps like "2026-06-01T14" (old format)
+    const normalized = iso.length <= 13 ? `${iso}:00:00Z` : iso;
     return new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
@@ -40,9 +42,9 @@ function formatTimestamp(iso: string, timezone: string): string {
       minute: "2-digit",
       timeZone: resolved,
       timeZoneName: "short",
-    }).format(new Date(iso));
+    }).format(new Date(normalized));
   } catch {
-    return new Date(iso).toLocaleString();
+    return iso;
   }
 }
 

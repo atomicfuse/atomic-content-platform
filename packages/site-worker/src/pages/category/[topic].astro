@@ -59,6 +59,7 @@ const canonicalUrl = `https://${getCanonicalDomain(Astro)}/category/${topicSlug}
       description={pageDesc}
       canonicalUrl={page > 1 ? `${canonicalUrl}?page=${page}` : canonicalUrl}
       siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
     />
     {page > 1 && (
       <link rel="prev" href={page === 2 ? canonicalUrl : `${canonicalUrl}?page=${page - 1}`} />

@@ -45,7 +45,9 @@ function ColumnHeader({ label, tooltip }: { label: string; tooltip: string }): R
 function formatRelativeDate(dateStr: string): string {
   if (!dateStr) return "—";
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  const normalized = dateStr.length <= 13 ? `${dateStr}:00:00Z` : dateStr;
+  const then = new Date(normalized).getTime();
+  if (isNaN(then)) return "—";
   const diff = now - then;
   const days = Math.floor(diff / 86400000);
   const months = Math.floor(days / 30);
@@ -68,11 +70,14 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [pageSize, setPageSize] = useState(25);
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
+  const [lastArticlesSort, setLastArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
   const [articleCounts, setArticleCounts] = useState<Record<string, number>>({});
   const [countsLoaded, setCountsLoaded] = useState(false);
+  const [latestArticles, setLatestArticles] = useState<Record<string, string>>({});
+  const [latestLoaded, setLatestLoaded] = useState(false);
   const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
 
@@ -84,6 +89,13 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         setCountsLoaded(true);
       })
       .catch(() => setCountsLoaded(true));
+    fetch("/api/sites/latest-articles")
+      .then((r) => r.json())
+      .then((data: Record<string, string>) => {
+        setLatestArticles(data);
+        setLatestLoaded(true);
+      })
+      .catch(() => setLatestLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -159,8 +171,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         return articlesSort === "asc" ? aCount - bCount : bCount - aCount;
       });
     }
+    if (lastArticlesSort && latestLoaded) {
+      filtered.sort((a, b) => {
+        const aRaw = latestArticles[a.domain] ?? "";
+        const bRaw = latestArticles[b.domain] ?? "";
+        const aNorm = aRaw.length <= 13 ? `${aRaw}:00:00Z` : aRaw;
+        const bNorm = bRaw.length <= 13 ? `${bRaw}:00:00Z` : bRaw;
+        const aTime = aRaw ? new Date(aNorm).getTime() : 0;
+        const bTime = bRaw ? new Date(bNorm).getTime() : 0;
+        return lastArticlesSort === "asc" ? aTime - bTime : bTime - aTime;
+      });
+    }
     return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded]);
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -216,7 +239,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Website
@@ -244,12 +267,28 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setWebsiteSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
                   >
                     Articles
                     <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       {articlesSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Last Articles
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${lastArticlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {lastArticlesSort === "desc" ? (
                         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                       ) : (
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
@@ -272,7 +311,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -329,6 +368,12 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     {countsLoaded
                       ? (articleCounts[site.domain] ?? "—")
                       : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
+                    {latestLoaded
+                      ? (latestArticles[site.domain] ? formatRelativeDate(latestArticles[site.domain]) : "—")
+                      : <span className="inline-block w-12 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
                     }
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">

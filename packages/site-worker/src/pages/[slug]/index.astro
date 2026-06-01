@@ -114,7 +114,10 @@ if (article) {
         canonicalUrl={`https://${getCanonicalDomain(Astro)}/${slug}`}
         image={article.frontmatter.featuredImage}
         siteName={config.site_name}
+        siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
         publishDate={article.frontmatter.publishDate}
+        author={article.frontmatter.author}
+        tags={article.frontmatter.tags}
       />
     </Fragment>
     {articleHeadScripts && <Fragment slot="head" set:html={articleHeadScripts} />}
