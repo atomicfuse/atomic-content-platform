@@ -177,7 +177,7 @@ export function ArticleUploadPanel({
         <div>
           <h3 className="text-lg font-bold">Upload Article</h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Upload a markdown file directly as an article with optional featured image
+            Upload a markdown file with a featured image as an article
           </p>
         </div>
         {(mdFile || result) && (
@@ -239,7 +239,7 @@ export function ArticleUploadPanel({
         {/* Image file picker */}
         <div>
           <label className="block text-sm font-medium mb-1.5">
-            Featured Image <span className="text-[var(--text-muted)] font-normal">(optional)</span>
+            Featured Image <span className="text-red-400 font-normal">*</span>
           </label>
           <input
             ref={imgInputRef}
@@ -260,7 +260,7 @@ export function ArticleUploadPanel({
         <div className="flex items-center gap-3 pt-2">
           <Button
             onClick={handleUpload}
-            disabled={!mdFile || !preview || uploadState === "uploading"}
+            disabled={!mdFile || !preview || !imageFile || uploadState === "uploading"}
           >
             {uploadState === "uploading" ? (
               <>
