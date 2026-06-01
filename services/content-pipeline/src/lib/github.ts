@@ -74,6 +74,8 @@ type TreeEntry = {
 };
 
 const treeCache = new Map<string, TreeEntry[]>();
+const blobCache = new Map<string, string>();
+const BLOB_CACHE_MAX = 200;
 
 export async function getTreeCached(
   octokit: Octokit,
@@ -108,6 +110,10 @@ export async function getTreeCached(
 
 export function clearTreeCache(): void {
   treeCache.clear();
+}
+
+export function clearBlobCache(): void {
+  blobCache.clear();
 }
 
 async function listFilesNonRecursive(
@@ -180,12 +186,23 @@ export async function readFile(
 
   if (!entry?.sha) throw new Error(`Expected file at ${path}, got nothing`);
 
+  const cached = blobCache.get(entry.sha);
+  if (cached !== undefined) return cached;
+
   const { data } = await octokit.git.getBlob({
     owner,
     repo: repoName,
     file_sha: entry.sha,
   });
-  return Buffer.from(data.content, "base64").toString("utf-8");
+  const content = Buffer.from(data.content, "base64").toString("utf-8");
+
+  if (blobCache.size >= BLOB_CACHE_MAX) {
+    const oldest = blobCache.keys().next().value!;
+    blobCache.delete(oldest);
+  }
+  blobCache.set(entry.sha, content);
+
+  return content;
 }
 
 /**
