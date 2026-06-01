@@ -45,7 +45,9 @@ function ColumnHeader({ label, tooltip }: { label: string; tooltip: string }): R
 function formatRelativeDate(dateStr: string): string {
   if (!dateStr) return "—";
   const now = Date.now();
-  const then = new Date(dateStr).getTime();
+  const normalized = dateStr.length <= 13 ? `${dateStr}:00:00Z` : dateStr;
+  const then = new Date(normalized).getTime();
+  if (isNaN(then)) return "—";
   const diff = now - then;
   const days = Math.floor(diff / 86400000);
   const months = Math.floor(days / 30);
@@ -73,6 +75,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
   const [articleCounts, setArticleCounts] = useState<Record<string, number>>({});
   const [countsLoaded, setCountsLoaded] = useState(false);
+  const [latestArticles, setLatestArticles] = useState<Record<string, string>>({});
+  const [latestLoaded, setLatestLoaded] = useState(false);
   const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
 
@@ -84,6 +88,13 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         setCountsLoaded(true);
       })
       .catch(() => setCountsLoaded(true));
+    fetch("/api/sites/latest-articles")
+      .then((r) => r.json())
+      .then((data: Record<string, string>) => {
+        setLatestArticles(data);
+        setLatestLoaded(true);
+      })
+      .catch(() => setLatestLoaded(true));
   }, []);
 
   useEffect(() => {
@@ -258,6 +269,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </button>
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <ColumnHeader label="Last Articles" tooltip="When articles were last added to this site by the scheduler." />
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -272,7 +286,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={10}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -329,6 +343,12 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     {countsLoaded
                       ? (articleCounts[site.domain] ?? "—")
                       : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
+                    {latestLoaded
+                      ? (latestArticles[site.domain] ? formatRelativeDate(latestArticles[site.domain]) : "—")
+                      : <span className="inline-block w-12 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
                     }
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
