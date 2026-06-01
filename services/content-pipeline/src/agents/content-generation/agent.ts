@@ -54,6 +54,13 @@ export interface ContentGenerationParams {
   count?: number;
   /** BullMQ job ID — passed to n8n for image callback tracking. */
   jobId?: string;
+  /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
+  preloadedBrief?: {
+    siteName: string;
+    author?: string;
+    group: string;
+    brief: SiteBrief;
+  };
 }
 
 export interface ContentGenerationResult {
@@ -420,7 +427,27 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
   };
 }
 
-async function getSiteBrief(config: AgentConfig, siteDomain: string, branch?: string) {
+async function getSiteBrief(
+  config: AgentConfig,
+  siteDomain: string,
+  branch?: string,
+  preloaded?: ContentGenerationParams["preloadedBrief"],
+) {
+  if (preloaded) {
+    if (!preloaded.brief.vertical) {
+      try {
+        const vertical = await resolveVerticalFromIndex(config, siteDomain);
+        if (vertical) {
+          preloaded.brief.vertical = vertical;
+          console.log(`[agent] Resolved vertical from dashboard index: ${vertical}`);
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+    return preloaded;
+  }
+
   let result;
   if (config.localNetworkPath && !branch) {
     const local = await readLocalSiteBrief(config.localNetworkPath, siteDomain);
@@ -692,8 +719,10 @@ export async function runContentGeneration(
   const targetCount = count ?? 3;
 
   try {
-    // Step 1: Read site brief
-    const { siteName, author: siteAuthor, brief } = await getSiteBrief(config, siteDomain, branch);
+    // Step 1: Read site brief (skip GitHub read if preloaded from scheduler)
+    const { siteName, author: siteAuthor, brief } = await getSiteBrief(
+      config, siteDomain, branch, params.preloadedBrief,
+    );
 
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);

@@ -6,6 +6,7 @@ export interface GenerateJobData {
   branch: string;
   runId?: string;
   triggeredBy: "manual" | "scheduled" | "scheduled-forced";
+  briefJson?: string;
 }
 
 export interface SchedulerRunData {

@@ -354,7 +354,7 @@ describe("runScheduledPublish", () => {
     const result = await runScheduledPublish(makeConfig(), false);
     expect(result.triggered).toContain("test.com");
     expect(mockRunContentGeneration).toHaveBeenCalledWith(
-      { siteDomain: "test.com", count: 2, branch: "staging/test.com" },
+      expect.objectContaining({ siteDomain: "test.com", count: 2, branch: "staging/test.com" }),
       expect.anything(),
     );
   });
@@ -484,11 +484,11 @@ describe("runScheduledPublish — multi-site integration", () => {
     expect(result.triggered).toEqual(["alpha.com", "beta.com"]);
     expect(mockRunContentGeneration).toHaveBeenCalledTimes(2);
     expect(mockRunContentGeneration).toHaveBeenCalledWith(
-      { siteDomain: "alpha.com", count: 3, branch: "staging/alpha.com" },
+      expect.objectContaining({ siteDomain: "alpha.com", count: 3, branch: "staging/alpha.com" }),
       expect.anything(),
     );
     expect(mockRunContentGeneration).toHaveBeenCalledWith(
-      { siteDomain: "beta.com", count: 1, branch: "staging/beta.com" },
+      expect.objectContaining({ siteDomain: "beta.com", count: 1, branch: "staging/beta.com" }),
       expect.anything(),
     );
   });
@@ -680,7 +680,7 @@ describe("runScheduledPublish — multi-site integration", () => {
 
     expect(result.triggered).toEqual(["custom.com"]);
     expect(mockRunContentGeneration).toHaveBeenCalledWith(
-      { siteDomain: "custom.com", count: 4, branch: "main" },
+      expect.objectContaining({ siteDomain: "custom.com", count: 4, branch: "main" }),
       expect.anything(),
     );
   });
@@ -886,7 +886,7 @@ describe("runScheduledPublish — multi-site integration", () => {
 
     expect(result.triggered).toEqual(["custom-branch.com"]);
     expect(mockRunContentGeneration).toHaveBeenCalledWith(
-      { siteDomain: "custom-branch.com", count: 1, branch: "feature/custom-branch.com" },
+      expect.objectContaining({ siteDomain: "custom-branch.com", count: 1, branch: "feature/custom-branch.com" }),
       expect.anything(),
     );
   });

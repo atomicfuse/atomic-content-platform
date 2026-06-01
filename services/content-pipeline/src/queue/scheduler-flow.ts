@@ -33,6 +33,7 @@ export interface SchedulerSite {
   domain: string;
   branch: string;
   count: number;
+  briefJson?: string;
 }
 
 /**
@@ -59,6 +60,7 @@ export async function createSchedulerFlow(
       branch: site.branch,
       runId,
       triggeredBy: (forced ? "scheduled-forced" : "scheduled") as GenerateJobData["triggeredBy"],
+      briefJson: site.briefJson,
     },
     opts: DEFAULT_JOB_OPTIONS,
   }));
