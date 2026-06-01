@@ -377,3 +377,20 @@ export async function listFiles(
     throw err;
   }
 }
+
+/**
+ * List all files under a directory path recursively (using the tree cache).
+ * Returns full paths relative to repo root.
+ */
+export async function listFilesRecursive(
+  octokit: Octokit,
+  repo: string,
+  dirPath: string,
+  branch?: string,
+): Promise<string[]> {
+  const tree = await getTreeCached(octokit, repo, branch);
+  const prefix = dirPath.endsWith("/") ? dirPath : dirPath + "/";
+  return tree
+    .filter((f) => f.path?.startsWith(prefix) && f.type === "blob")
+    .map((f) => f.path!);
+}
