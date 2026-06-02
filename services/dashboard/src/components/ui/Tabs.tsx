@@ -11,11 +11,12 @@ interface Tab {
 interface TabsProps {
   tabs: Tab[];
   defaultTab?: string;
+  /** When true, render all tab panels and hide inactive ones with CSS (preserves state). Default: false (lazy — only active tab is mounted). */
+  keepMounted?: boolean;
 }
 
-export function Tabs({ tabs, defaultTab }: TabsProps): React.ReactElement {
+export function Tabs({ tabs, defaultTab, keepMounted = false }: TabsProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState(defaultTab ?? tabs[0]?.id ?? "");
-  const activeContent = tabs.find((t) => t.id === activeTab)?.content;
 
   return (
     <div>
@@ -37,7 +38,15 @@ export function Tabs({ tabs, defaultTab }: TabsProps): React.ReactElement {
           </button>
         ))}
       </div>
-      <div className="pt-4">{activeContent}</div>
+      {keepMounted ? (
+        tabs.map((tab) => (
+          <div key={tab.id} className="pt-4" style={{ display: activeTab === tab.id ? undefined : "none" }}>
+            {tab.content}
+          </div>
+        ))
+      ) : (
+        <div className="pt-4">{tabs.find((t) => t.id === activeTab)?.content}</div>
+      )}
     </div>
   );
 }

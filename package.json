@@ -20,6 +20,9 @@
     "node": ">=20.0.0"
   },
   "pnpm": {
+    "overrides": {
+      "vite": "^7.3.2"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "@rollup/rollup-darwin-arm64",

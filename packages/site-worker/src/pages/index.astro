@@ -12,7 +12,7 @@ import MustReads from '../themes/modern/components/MustReads.astro';
 import MoreOnSection from '../themes/modern/components/MoreOnSection.astro';
 import AdSlot from '../components/AdSlot.astro';
 import { env } from 'cloudflare:workers';
-import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../lib/config';
 import { articleIndexKey, type ArticleIndexEntry } from '../lib/kv-schema';
 import { isVisibleArticle } from '../utils/article-status';
 import { selectFeatured } from '../lib/featured';
@@ -21,6 +21,7 @@ import { sliceMoreOn, hasMoreOnAfter } from '../lib/articles-pagination';
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
 const preview = isPreviewMode(Astro);
+const staging = isStagingEnv(Astro);
 
 const allArticles =
   (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
@@ -87,6 +88,8 @@ const hasMore = hasMoreOnAfter(
       description={config.site_tagline ?? `${config.site_name} — latest articles`}
       canonicalUrl={`https://${getCanonicalDomain(Astro)}`}
       siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
+      image={config.theme?.logo}
     />
   </Fragment>
 
@@ -114,7 +117,7 @@ const hasMore = hasMoreOnAfter(
     )}
   </main>
 
-  <Footer config={config} />
+  <Footer config={config} staging={staging} />
   <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
 </BaseLayout>
 

@@ -1,10 +1,8 @@
 import { notFound } from "next/navigation";
 import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
+import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
-import { ContentTab } from "@/components/site-detail/ContentTab";
-import { ContentAgentTab } from "@/components/site-detail/ContentAgentTab";
-import { StagingTab } from "@/components/site-detail/StagingTab";
 import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
@@ -29,7 +27,7 @@ export default async function SiteDetailPage({
 
   const [siteConfig, articles] = await Promise.all([
     readSiteConfig(decodedDomain, branch),
-    readArticles(decodedDomain, branch),
+    readArticlesWithKVFallback(decodedDomain, branch, readArticles),
   ]);
 
   const brief = siteConfig?.brief as {
@@ -93,45 +91,33 @@ export default async function SiteDetailPage({
       )}
       <SiteDetailTabs
         domain={decodedDomain}
-        stagingTab={
-          site.staging_branch || site.pages_project ? (
-            <StagingTab
-              domain={decodedDomain}
-              stagingBranch={site.staging_branch}
-              previewUrl={site.preview_url}
-              savedPreviews={site.saved_previews}
-              siteStatus={site.status}
-              customDomain={site.custom_domain}
-              currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
-              currentFaviconPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null}
-            />
-          ) : null
+        stagingTabProps={
+          site.staging_branch || site.pages_project ? {
+            stagingBranch: site.staging_branch,
+            previewUrl: site.preview_url,
+            savedPreviews: site.saved_previews,
+            siteStatus: site.status,
+            customDomain: site.custom_domain,
+            currentLogoPath: ((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null,
+            currentFaviconPath: ((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null,
+          } : null
         }
-        contentTab={
-          <ContentTab
-            articles={articles}
-            domain={decodedDomain}
-            stagingBranch={site.staging_branch}
-            // Worker origin only — ContentTab appends `/<slug>?_atl_site=<domain>`
-            // per article via workerPreviewUrl(). Pass-through for any future
-            // override scenario; defaults to WORKER_STAGING_URL otherwise.
-            previewUrl={WORKER_STAGING_URL}
-          />
-        }
-        identityTab={
-          <ContentAgentTab
-            domain={decodedDomain}
-            brief={normalizedBrief}
-            siteConfig={siteConfig}
-            stagingBranch={site.staging_branch}
-            pagesProject={site.pages_project}
-            pagesSubdomain={site.pages_subdomain}
-            customDomain={site.custom_domain}
-            currentLogoPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null}
-            currentFaviconPath={((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null}
-            previewUrl={site.preview_url ?? null}
-          />
-        }
+        contentTabProps={{
+          articles,
+          stagingBranch: site.staging_branch,
+          previewUrl: WORKER_STAGING_URL,
+        }}
+        identityTabProps={{
+          brief: normalizedBrief as Record<string, unknown> | null,
+          siteConfig,
+          stagingBranch: site.staging_branch,
+          pagesProject: site.pages_project ?? null,
+          pagesSubdomain: site.pages_subdomain ?? null,
+          customDomain: site.custom_domain,
+          currentLogoPath: ((siteConfig?.theme as Record<string, unknown> | undefined)?.logo as string) ?? null,
+          currentFaviconPath: ((siteConfig?.theme as Record<string, unknown> | undefined)?.favicon as string) ?? null,
+          previewUrl: site.preview_url ?? null,
+        }}
       />
     </div>
   );

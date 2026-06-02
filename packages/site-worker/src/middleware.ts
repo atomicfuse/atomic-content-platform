@@ -1,8 +1,9 @@
 import { defineMiddleware } from 'astro:middleware';
 import { env } from 'cloudflare:workers';
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
-import { siteLookupKey, siteConfigKey, type SiteLookup } from './lib/kv-schema';
-import { resolvePreview, generatePreviewScript } from './lib/preview-override';
+import { siteLookupKey, siteConfigKey, conditionalOverridesKey, type SiteLookup, type ConditionalOverrideEntry } from './lib/kv-schema';
+import { resolvePreview, generatePreviewScript, generateParamPropagationScript } from './lib/preview-override';
+import { deepMerge } from './lib/deep-merge';
 
 /**
  * Multi-tenant site resolution.
@@ -111,7 +112,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     siteId = lookup.siteId;
   }
 
-  const config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(siteId), 'json');
+  let config = await env.CONFIG_KV.get<ResolvedConfig>(siteConfigKey(siteId), 'json');
   if (!config) {
     return new Response(
       `siteId "${siteId}" has no config in KV.`,
@@ -121,6 +122,61 @@ export const onRequest = defineMiddleware(async (context, next) => {
       },
     );
   }
+
+  // --- Conditional overrides (query-param-activated) ---
+  // Only triggered when the URL contains a matching query param.
+  // If no conditional overrides exist for this site, the KV read returns
+  // null and we skip — zero impact on the config.
+  let matchedActivationParams: Array<[string, string]> = [];
+  if (context.url.searchParams.toString()) {
+    const condOverrides = await env.CONFIG_KV.get<ConditionalOverrideEntry[]>(
+      conditionalOverridesKey(siteId),
+      'json',
+    );
+    if (condOverrides && condOverrides.length > 0) {
+      for (const co of condOverrides) {
+        const paramValue = context.url.searchParams.get(co.activation.query_param);
+        if (paramValue === null) continue;
+        if (co.activation.query_value && paramValue !== co.activation.query_value) continue;
+        // Match — merge this override's config on top.
+        config = deepMerge(config, co.config) as ResolvedConfig;
+        matchedActivationParams.push([co.activation.query_param, paramValue]);
+      }
+    }
+  }
+  const hasConditionalOverride = matchedActivationParams.length > 0;
+
+  // --- Template variable resolution in widget code ---
+  // Ad placement `code` fields can contain `${paramName}` placeholders
+  // that get resolved from URL query params at request-time. This works
+  // on ALL requests (not just conditional overrides) so UTM params and
+  // ad-network tracking values flow into widget code automatically.
+  //
+  // Example: code `<div id="widget-${giladqp}">` with URL
+  // `?giladqp=test` → `<div id="widget-test">`.
+  //
+  // Values are sanitised to alphanumeric + safe punctuation to prevent
+  // HTML injection via crafted URLs.
+  const templateParams: Array<[string, string]> = [];
+  if (context.url.searchParams.toString()) {
+    const placements = config.ads_config?.ad_placements;
+    if (placements) {
+      for (const p of placements) {
+        if (p.code && p.code.includes('${')) {
+          p.code = p.code.replace(/\$\{([a-zA-Z0-9_]+)\}/g, (_: string, name: string) => {
+            const val = context.url.searchParams.get(name) ?? '';
+            if (val) {
+              const sanitised = val.replace(/[^a-zA-Z0-9_\-.:]/g, '');
+              templateParams.push([name, sanitised]);
+              return sanitised;
+            }
+            return '';
+          });
+        }
+      }
+    }
+  }
+  const hasTemplateVars = templateParams.length > 0;
 
   const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
   context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
@@ -143,6 +199,27 @@ export const onRequest = defineMiddleware(async (context, next) => {
         headers: new Headers(response.headers),
       });
     }
+    finalResponse.headers.set('cache-control', 'private, no-store');
+  }
+
+  // Propagate activation params + template variable params across
+  // navigation. Combines both sets so clicking an internal link
+  // carries e.g. `?stickytest=true&giladqp=test&utm_campaign=summer`.
+  const allPropagatedParams = [...matchedActivationParams, ...templateParams];
+  if (allPropagatedParams.length > 0) {
+    const contentType = finalResponse.headers.get('content-type') || '';
+    if (contentType.includes('text/html')) {
+      const html = await finalResponse.text();
+      const script = generateParamPropagationScript(allPropagatedParams);
+      const modifiedHtml = html.replace('</head>', `${script}\n</head>`);
+      finalResponse = new Response(modifiedHtml, {
+        status: finalResponse.status,
+        statusText: finalResponse.statusText,
+        headers: new Headers(finalResponse.headers),
+      });
+    }
+    // Conditional overrides and template-var responses must not be
+    // edge-cached — the content varies per URL query params.
     finalResponse.headers.set('cache-control', 'private, no-store');
   }
 
@@ -212,7 +289,8 @@ function applyCacheHeaders(pathname: string, response: Response): void {
   // gets no explicit Cache-Control; CF defaults apply.
 }
 
-/** Strip the port and lowercase — KV keys are case-sensitive. */
+/** Strip port, lowercase, and drop www. prefix — KV keys use bare domains. */
 function normaliseHostname(raw: string): string {
-  return raw.toLowerCase().split(':')[0] ?? raw.toLowerCase();
+  const host = raw.toLowerCase().split(':')[0] ?? raw.toLowerCase();
+  return host.startsWith('www.') ? host.slice(4) : host;
 }

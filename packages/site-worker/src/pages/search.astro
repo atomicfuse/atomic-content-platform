@@ -5,9 +5,10 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import SEOHead from '../components/SEOHead.astro';
 import Header from '../themes/modern/components/Header.astro';
 import Footer from '../themes/modern/components/Footer.astro';
-import { getConfig, getCanonicalDomain } from '../lib/config';
+import { getConfig, getCanonicalDomain, isStagingEnv } from '../lib/config';
 
 const config = getConfig(Astro);
+const staging = isStagingEnv(Astro);
 ---
 
 <BaseLayout
@@ -21,6 +22,7 @@ const config = getConfig(Astro);
       description={`Search articles on ${config.site_name}`}
       canonicalUrl={`https://${getCanonicalDomain(Astro)}/search`}
       siteName={config.site_name}
+      siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
       noindex
     />
   </Fragment>
@@ -52,7 +54,7 @@ const config = getConfig(Astro);
     </div>
   </main>
 
-  <Footer config={config} />
+  <Footer config={config} staging={staging} />
 </BaseLayout>
 
 <script is:inline>

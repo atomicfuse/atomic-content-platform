@@ -4,7 +4,7 @@
   "private": true,
   "description": "Atomic Network Dashboard — central control panel for managing all domains",
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-http-header-size=65536' next dev",
+    "dev": "NODE_OPTIONS='--max-http-header-size=65536 --max-old-space-size=4096' next dev",
     "build": "next build",
     "start": "NODE_OPTIONS='--max-http-header-size=65536' next start",
     "typecheck": "tsc --noEmit",

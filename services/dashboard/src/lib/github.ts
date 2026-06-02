@@ -2,6 +2,7 @@ import { Octokit } from "@octokit/rest";
 import { retry } from "@octokit/plugin-retry";
 import { throttling } from "@octokit/plugin-throttling";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { invalidateKVArticleCache } from "@/lib/kv-api";
 import type {
   DashboardIndex,
   DashboardSiteEntry,
@@ -99,7 +100,7 @@ function getOctokit(): Octokit {
   return _octokit;
 }
 
-const dashboardIndexCache = createTtlCache<DashboardIndex>(5 * 60_000); // 5 min
+const dashboardIndexCache = createTtlCache<DashboardIndex>(Infinity);
 
 // ---------------------------------------------------------------------------
 // Tree cache — single recursive tree fetch, shared across read helpers
@@ -112,7 +113,7 @@ interface TreeEntry {
   size?: number;
 }
 
-const TREE_CACHE_TTL = 60_000;
+const TREE_CACHE_TTL = Infinity;
 const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
 
 async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
@@ -592,16 +593,26 @@ export async function readFileBase64(
   }
 }
 
-/** Read a site's config YAML from the network repo. */
+/** Read a site's config YAML from the network repo. 5-minute cache. */
+const siteConfigCache = new Map<string, { data: Record<string, unknown> | null; expiresAt: number }>();
+const SITE_CONFIG_CACHE_TTL = Infinity;
+
 export async function readSiteConfig(
   domain: string,
   branch?: string
 ): Promise<Record<string, unknown> | null> {
+  const cacheKey = `${domain}@${branch ?? "main"}`;
+  const cached = siteConfigCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
   try {
     const tree = await getTreeCached(branch);
     const path = `sites/${domain}/site.yaml`;
     const entry = tree.find((f) => f.path === path && f.type === "blob");
-    if (!entry?.sha) return null;
+    if (!entry?.sha) {
+      siteConfigCache.set(cacheKey, { data: null, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+      return null;
+    }
 
     const octokit = getOctokit();
     const { data } = await octokit.git.getBlob({
@@ -610,7 +621,9 @@ export async function readSiteConfig(
       file_sha: entry.sha,
     });
     const content = Buffer.from(data.content, "base64").toString("utf-8");
-    return parseYaml(content) as Record<string, unknown>;
+    const parsed = parseYaml(content) as Record<string, unknown>;
+    siteConfigCache.set(cacheKey, { data: parsed, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
+    return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
@@ -619,7 +632,7 @@ export async function readSiteConfig(
 
 /** Count articles for a site — lightweight: 1 API call (directory listing only). */
 const articleCountCache = new Map<string, { count: number; expiresAt: number }>();
-const ARTICLE_COUNT_CACHE_TTL = 15 * 60_000; // 15 min (matches readArticles cache)
+const ARTICLE_COUNT_CACHE_TTL = Infinity;
 
 export async function countArticles(domain: string, branch?: string): Promise<number> {
   const key = `${domain}@${branch ?? "main"}`;
@@ -669,7 +682,7 @@ export async function countArticlesForSites(
 // readArticles makes 1 + N API calls (directory listing + 1 per article),
 // so caching here is the single biggest rate-limit saver.
 const articlesCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
-const ARTICLES_CACHE_TTL = 15 * 60_000; // 15 min
+const ARTICLES_CACHE_TTL = Infinity;
 
 function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | null {
   const key = `${domain}@${branch ?? "main"}`;
@@ -689,6 +702,22 @@ export function clearArticlesCache(): void {
   articlesCache.clear();
 }
 
+/**
+ * Invalidate caches for a specific site after a mutation (article delete,
+ * config save, etc.). Clears: tree cache for the branch, article cache for
+ * the domain, and site config cache for the domain.
+ */
+export function invalidateSiteCaches(domain: string, branch?: string): void {
+  const ref = branch ?? "main";
+  treeCacheStore.delete(ref);
+  const artKey = `${domain}@${ref}`;
+  articlesCache.delete(artKey);
+  articleCountCache.delete(artKey);
+  siteConfigCache.delete(artKey);
+  dashboardIndexCache.invalidate();
+  invalidateKVArticleCache(domain);
+}
+
 // ---------------------------------------------------------------------------
 // Periodic cache eviction — sweep ALL caches every 5 min to prevent OOM.
 // Module-level Maps (treeCacheStore, articlesCache, articleCountCache) only
@@ -706,6 +735,9 @@ function sweepExpiredEntries(): void {
   }
   for (const [key, entry] of articleCountCache) {
     if (now >= entry.expiresAt) { articleCountCache.delete(key); swept++; }
+  }
+  for (const [key, entry] of siteConfigCache) {
+    if (now >= entry.expiresAt) { siteConfigCache.delete(key); swept++; }
   }
   if (swept > 0) {
     console.log(`[github] Cache sweep: evicted ${swept} expired entries (tree=${treeCacheStore.size}, articles=${articlesCache.size}, counts=${articleCountCache.size})`);

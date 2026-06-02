@@ -2,14 +2,15 @@ import { Queue, Worker, QueueEvents, UnrecoverableError } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
 import matter from "gray-matter";
-import type { BatchContentGenerationResult, ContentGenerationResult } from "../agents/content-generation/agent.js";
+import type { BatchContentGenerationResult, ContentGenerationResult, ContentGenerationParams } from "../agents/content-generation/agent.js";
 import type { ExistingArticles } from "../agents/content-generation/agent.js";
 import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex } from "../agents/content-generation/agent.js";
 import { GENERATE_QUEUE } from "./types.js";
 import type { GenerateJobData } from "./types.js";
-import { createOctokit, clearTreeCache } from "../lib/github.js";
+import { createOctokit } from "../lib/github.js";
 import type { BatchFileEntry } from "../lib/github.js";
 import { readSiteBriefWithFallback } from "../lib/site-brief.js";
+import type { SiteBriefData } from "../lib/site-brief.js";
 import { runContentGeneration } from "../agents/content-generation/agent.js";
 import { writeArticleBatch } from "../lib/writer.js";
 import type { PendingArticle } from "../lib/writer.js";
@@ -43,30 +44,46 @@ export async function processGenerateJob(
   config: AgentConfig,
   redis: Redis,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count } = job.data;
+  const { siteDomain, branch, count, briefJson } = job.data;
 
-  clearTreeCache();
-
-  // Pre-flight: verify site exists and has a schedule
-  const octokit = createOctokit(config.github);
-  let briefData;
-  try {
-    briefData = await readSiteBriefWithFallback(
-      octokit,
-      config.networkRepo,
-      siteDomain,
-      branch,
-    );
-  } catch {
-    throw new UnrecoverableError(
-      `Site "${siteDomain}" not found — no brief in staging or main`,
-    );
+  // Deserialize preloaded brief from job data (avoids redundant GitHub read)
+  let preloadedBrief: ContentGenerationParams["preloadedBrief"] | undefined;
+  if (briefJson) {
+    try {
+      const parsed = JSON.parse(briefJson) as SiteBriefData;
+      preloadedBrief = {
+        siteName: parsed.siteName,
+        author: parsed.author,
+        group: parsed.group,
+        brief: parsed.brief,
+      };
+    } catch {
+      // Fall through to fresh read
+    }
   }
 
-  if (!briefData.data.brief?.schedule) {
-    throw new UnrecoverableError(
-      `No publishing schedule for ${siteDomain}`,
-    );
+  // Pre-flight: verify site exists and has a schedule (skip if we have preloaded data)
+  if (!preloadedBrief) {
+    const octokit = createOctokit(config.github);
+    let briefData;
+    try {
+      briefData = await readSiteBriefWithFallback(
+        octokit,
+        config.networkRepo,
+        siteDomain,
+        branch,
+      );
+    } catch {
+      throw new UnrecoverableError(
+        `Site "${siteDomain}" not found — no brief in staging or main`,
+      );
+    }
+
+    if (!briefData.data.brief?.schedule) {
+      throw new UnrecoverableError(
+        `No publishing schedule for ${siteDomain}`,
+      );
+    }
   }
 
   // --- Phase 1: LLM generation (skip on retry if cached) ---
@@ -81,7 +98,7 @@ export async function processGenerateJob(
     );
   } else {
     result = await runContentGeneration(
-      { siteDomain, branch, count, jobId: job.id },
+      { siteDomain, branch, count, jobId: job.id, preloadedBrief },
       config,
     );
     await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);

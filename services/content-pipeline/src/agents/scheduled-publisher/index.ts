@@ -17,6 +17,7 @@
 import { parse as parseYaml } from "yaml";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
+import type { SiteBriefData } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -156,7 +157,7 @@ export function resolveArticlesPerDay(schedule: PublishSchedule): number {
 // ---------------------------------------------------------------------------
 
 type EligibilityResult =
-  | { kind: "eligible"; branch: string; count: number }
+  | { kind: "eligible"; branch: string; count: number; briefData: SiteBriefData }
   | { kind: "skipped"; reason: string };
 
 async function checkSiteEligibility(
@@ -185,7 +186,7 @@ async function checkSiteEligibility(
       };
     }
 
-    return { kind: "eligible", branch: foundBranch, count };
+    return { kind: "eligible", branch: foundBranch, count, briefData: data };
   } catch {
     return { kind: "skipped", reason: "no brief configured" };
   }
@@ -210,7 +211,7 @@ async function processSingleSite(
   let articlesPerDay = 0;
 
   try {
-    let brief;
+    let briefData: SiteBriefData;
     let writeBranch: string;
     try {
       const { data, branch: foundBranch } = await readSiteBriefWithFallback(
@@ -219,12 +220,13 @@ async function processSingleSite(
         domain,
         preferredBranch,
       );
-      brief = data.brief;
+      briefData = data;
       writeBranch = foundBranch;
     } catch {
       return { kind: "skipped", domain, reason: "no brief configured" };
     }
 
+    const brief = briefData.brief;
     const schedule = brief.schedule;
     if (!schedule) {
       return { kind: "skipped", domain, reason: "no publishing schedule" };
@@ -248,7 +250,17 @@ async function processSingleSite(
       `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
     );
     const genResult = await runContentGeneration(
-      { siteDomain: domain, count: articlesPerDay, branch: writeBranch },
+      {
+        siteDomain: domain,
+        count: articlesPerDay,
+        branch: writeBranch,
+        preloadedBrief: {
+          siteName: briefData.siteName,
+          author: briefData.author,
+          group: briefData.group,
+          brief,
+        },
+      },
       config,
     );
 
@@ -370,6 +382,7 @@ export async function runScheduledPublish(
           domain: siteEntry.domain,
           branch: outcome.branch,
           count: outcome.count,
+          briefJson: JSON.stringify(outcome.briefData),
         });
       } else {
         skippedSites.push({ domain: siteEntry.domain, reason: outcome.reason });

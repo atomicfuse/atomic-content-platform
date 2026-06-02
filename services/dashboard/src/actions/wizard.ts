@@ -9,7 +9,6 @@ import {
   updateSiteInIndex,
   addSitesToIndex,
   createBranch,
-  mergeBranchToMain,
   deleteBranch,
   branchExists,
   triggerWorkflowViaPush,
@@ -17,6 +16,7 @@ import {
   listNetworkDirectory,
   readFileContent,
   commitNetworkFiles,
+  invalidateSiteCaches,
 } from "@/lib/github";
 import {
   listZones,
@@ -509,18 +509,6 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   return { stagingUrl: previewUrl, siteFolder };
 }
 
-/**
- * Check if an error is a GitHub 409 merge conflict.
- */
-function isMergeConflictError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "status" in err &&
-    (err as { status: number }).status === 409
-  );
-}
-
 /** Binary file extensions that must be read as base64, not UTF-8. */
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
@@ -552,49 +540,44 @@ async function readFilePreservingBinary(
 }
 
 /**
- * Merge staging to main, falling back to a direct file copy if there's
- * a merge conflict (409). In the conflict case, staging always wins —
- * the user explicitly edited these files.
+ * Publish a single site's files from staging to main.
+ *
+ * Instead of merging the entire staging branch (which drags in stale
+ * copies of OTHER sites' files), we read only sites/{domain}/ from
+ * the staging branch and commit those files directly to main.
  */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
 ): Promise<void> {
-  try {
-    await mergeBranchToMain(stagingBranch, commitMessage);
-  } catch (err: unknown) {
-    if (!isMergeConflictError(err)) throw err;
+  const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
+  const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
 
-    // Conflict: read all site files from staging and commit to main directly
-    const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
-    const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
-
-    for (const entry of topLevel) {
-      if (entry.type === "file") {
-        const file = await readFilePreservingBinary(entry.path, stagingBranch);
-        if (file) siteFiles.push(file);
-      } else if (entry.type === "dir") {
-        const children = await listNetworkDirectory(entry.path, stagingBranch);
-        for (const child of children) {
-          if (child.type === "file") {
-            const file = await readFilePreservingBinary(child.path, stagingBranch);
-            if (file) siteFiles.push(file);
-          }
+  for (const entry of topLevel) {
+    if (entry.type === "file") {
+      const file = await readFilePreservingBinary(entry.path, stagingBranch);
+      if (file) siteFiles.push(file);
+    } else if (entry.type === "dir") {
+      const children = await listNetworkDirectory(entry.path, stagingBranch);
+      for (const child of children) {
+        if (child.type === "file") {
+          const file = await readFilePreservingBinary(child.path, stagingBranch);
+          if (file) siteFiles.push(file);
         }
       }
     }
-
-    if (siteFiles.length === 0) {
-      throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
-    }
-
-    await commitNetworkFiles(
-      siteFiles,
-      `${commitMessage} (conflict resolved)`,
-      "main",
-    );
   }
+
+  if (siteFiles.length === 0) {
+    throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
+  }
+
+  await commitNetworkFiles(
+    siteFiles,
+    commitMessage,
+    "main",
+  );
 }
 
 /**
@@ -627,6 +610,8 @@ export async function goLive(domain: string): Promise<void> {
     status: "Ready",
   });
 
+  invalidateSiteCaches(domain, stagingBranch);
+  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -656,6 +641,8 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
   await deleteBranch(stagingBranch);
   await createBranch(stagingBranch, "main");
 
+  invalidateSiteCaches(domain, stagingBranch);
+  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -1215,6 +1202,7 @@ export async function updateStagingSite(
   await commitSiteFiles(domain, files, "update site config", site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -1408,6 +1396,7 @@ export async function uploadStagingLogo(
   await commitSiteFiles(domain, files, "upload custom logo", site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 

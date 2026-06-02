@@ -3,7 +3,7 @@ import matter from "gray-matter";
 import type { AgentConfig } from "../../lib/config.js";
 import { createOctokit, readFile, listFiles } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
-import { triggerN8nImage } from "./n8n-image.js";
+import { triggerN8nImage, registerBulkRun, removeBulkExpected, scheduleBulkFlush } from "./n8n-image.js";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -260,6 +260,7 @@ export function startBulkImageGeneration(
     config.imageCallbackUrl ??
     "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
 
+  registerBulkRun(articles, config.github);
   setBulkJobActive(articles.length);
 
   const queue = [...articles];
@@ -346,9 +347,11 @@ async function processBatches(
             triggered++;
           } else {
             failed++;
+            removeBulkExpected(article.domain, article.slug);
           }
         } catch (err) {
           failed++;
+          removeBulkExpected(article.domain, article.slug);
           console.error(
             `[bulk-image] Error triggering image for ${article.domain}/${article.slug}:`,
             err instanceof Error ? err.message : err,
@@ -372,6 +375,7 @@ async function processBatches(
       `[bulk-image] Complete: ${triggered} triggered, ${failed} failed`,
     );
     clearBulkJob();
+    scheduleBulkFlush();
   }
 }
 

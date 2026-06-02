@@ -150,8 +150,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!fm.type) fm.type = "standard";
     fm.slug = slug;
 
-    // Inject uploaded image path into frontmatter if provided and not already set
-    if (imagePath && !fm.featuredImage) {
+    // Inject uploaded image path into frontmatter — always overwrite when user
+    // explicitly uploads an image, even if the markdown already had a
+    // featuredImage field (it may reference a stale/different name).
+    if (imagePath) {
       fm.featuredImage = imagePath;
     }
 

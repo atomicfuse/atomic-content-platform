@@ -1,5 +1,6 @@
 import { getKvNamespaces } from "@/lib/constants";
 import { getCredentials } from "@/lib/cloudflare";
+import type { ArticleEntry } from "@/types/dashboard";
 
 /**
  * Minimal article metadata stored in KV at `article-index:<siteId>`.
@@ -16,6 +17,20 @@ export interface KVArticleIndexEntry {
   type: "listicle" | "how-to" | "review" | "standard";
   status: "draft" | "review" | "published";
   featured?: ("hero" | "must-read")[];
+}
+
+// ---------------------------------------------------------------------------
+// In-memory cache for KV article index — avoids ~700ms CF REST API call on
+// every page load. Keyed by "domain@namespace". Cleared by
+// invalidateSiteCaches() in github.ts via invalidateKVArticleCache().
+// ---------------------------------------------------------------------------
+const KV_CACHE_TTL = Infinity;
+const kvArticleCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
+
+export function invalidateKVArticleCache(domain: string): void {
+  for (const key of kvArticleCache.keys()) {
+    if (key.startsWith(`${domain}@`)) kvArticleCache.delete(key);
+  }
 }
 
 /**
@@ -61,4 +76,58 @@ export async function readArticleIndexFromKV(
   } catch {
     return null;
   }
+}
+
+/**
+ * Convert KV article-index entries to the dashboard's ArticleEntry format.
+ *
+ * KV has all metadata the list views need (slug, title, status, type, date,
+ * featuredImage). Score fields (score, scoreBreakdown, qualityNote,
+ * reviewerNotes) are NOT in KV — they're only in article frontmatter.
+ * The article detail page still reads from Git to get those.
+ */
+export function kvEntriesToArticles(entries: KVArticleIndexEntry[]): ArticleEntry[] {
+  return entries.map((e) => ({
+    slug: e.slug,
+    title: e.title,
+    type: e.type ?? "standard",
+    status: e.status ?? "draft",
+    publishDate: e.publishDate ?? "",
+    featuredImage: e.featuredImage,
+    score: undefined,
+    scoreBreakdown: undefined,
+    qualityNote: undefined,
+    reviewerNotes: undefined,
+  }));
+}
+
+/**
+ * Read articles for a site: in-memory cache first, then KV (1 REST call),
+ * then Git fallback (N+1 calls).
+ *
+ * The in-memory cache (15min TTL) eliminates the ~700ms CF REST API latency
+ * on repeat visits. Cleared by invalidateSiteCaches() after mutations.
+ */
+export async function readArticlesWithKVFallback(
+  domain: string,
+  branch?: string,
+  readArticlesGit?: (domain: string, branch?: string) => Promise<ArticleEntry[]>,
+): Promise<ArticleEntry[]> {
+  const cacheKey = `${domain}@staging`;
+  const cached = kvArticleCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
+  const kvEntries = await readArticleIndexFromKV(domain, "staging");
+  if (kvEntries) {
+    const articles = kvEntriesToArticles(kvEntries);
+    kvArticleCache.set(cacheKey, { data: articles, expiresAt: Date.now() + KV_CACHE_TTL });
+    return articles;
+  }
+
+  // KV unavailable — fall back to Git (expensive)
+  if (readArticlesGit) {
+    console.warn(`[kv-api] KV miss for "${domain}" — falling back to Git`);
+    return readArticlesGit(domain, branch);
+  }
+  return [];
 }

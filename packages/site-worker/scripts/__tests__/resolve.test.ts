@@ -8,6 +8,7 @@ import {
   rewriteAssetUrls,
   rewriteFrontmatterUrl,
   selectMatchingOverrides,
+  selectConditionalOverrides,
   stripModeKeys,
   stripOverrideMetaFields,
   type OverrideConfig,
@@ -295,6 +296,61 @@ describe('selectMatchingOverrides', () => {
     const result = selectMatchingOverrides(messy, 'x', ['y']);
     expect(result).toHaveLength(0);
   });
+
+  it('excludes overrides that have activation (conditional overrides)', () => {
+    const withActivation: OverrideConfig[] = [
+      { override_id: 'normal', priority: 10, targets: { sites: ['coolnews-atl'] } },
+      { override_id: 'conditional', priority: 20, targets: { sites: ['coolnews-atl'] }, activation: { query_param: 'test' } },
+    ];
+    const result = selectMatchingOverrides(withActivation, 'coolnews-atl', []);
+    expect(result.map((o) => o.override_id)).toEqual(['normal']);
+  });
+});
+
+describe('selectConditionalOverrides', () => {
+  const overrides: OverrideConfig[] = [
+    {
+      override_id: 'always-on',
+      priority: 10,
+      targets: { sites: ['travelswire'] },
+      ads_config: { ad_placements: [{ id: 'a1', position: 'above-content' }] },
+    },
+    {
+      override_id: 'conditional-tamir',
+      priority: 20,
+      targets: { sites: ['travelswire'] },
+      activation: { query_param: 'tamirtest', query_value: 'true' },
+      ads_config: { ad_placements: [{ id: 'a2', position: 'below_content' }] },
+    },
+    {
+      override_id: 'conditional-param-only',
+      priority: 30,
+      targets: { sites: ['travelswire'] },
+      activation: { query_param: 'debug' },
+      tracking: { ga4: 'G-DEBUG' },
+    },
+  ];
+
+  it('returns only overrides that have activation field', () => {
+    const result = selectConditionalOverrides(overrides, 'travelswire', []);
+    expect(result.map((o) => o.override_id)).toEqual(['conditional-tamir', 'conditional-param-only']);
+  });
+
+  it('does not return overrides without activation', () => {
+    const result = selectConditionalOverrides(overrides, 'travelswire', []);
+    expect(result.map((o) => o.override_id)).not.toContain('always-on');
+  });
+
+  it('respects site targeting', () => {
+    const result = selectConditionalOverrides(overrides, 'otherdomain', []);
+    expect(result).toHaveLength(0);
+  });
+
+  it('sorts by priority ascending', () => {
+    const result = selectConditionalOverrides(overrides, 'travelswire', []);
+    const ps = result.map((o) => o.priority ?? 0);
+    expect(ps).toEqual([...ps].sort((a, b) => a - b));
+  });
 });
 
 describe('stripModeKeys', () => {
@@ -406,7 +462,7 @@ describe('mergeScriptLayers', () => {
 
   it('returns empty arrays when no layers have scripts', () => {
     const result = mergeScriptLayers([{ tracking: {} }, { ads_config: {} }]);
-    expect(result).toEqual({ head: [], body_start: [], body_end: [] });
+    expect(result).toEqual({ head: [], body_start: [], body_end: [], before_footer: [] });
   });
 
   it('handles org → group → override → site (4-layer chain)', () => {
@@ -419,6 +475,13 @@ describe('mergeScriptLayers', () => {
     expect(result.head[0]).toEqual({ id: 'analytics', inline: 'override()' }); // override replaced org
     expect(result.head[1]).toEqual({ id: 'group-tag', inline: 'grp()' });
     expect(result.head[2]).toEqual({ id: 'bg-test', inline: 'bg()' });
+  });
+
+  it('merges before_footer entries by id', () => {
+    const org = { scripts: { before_footer: [{ id: 'feed', src: 'https://example.com/feed.js' }] } };
+    const site = { scripts: { before_footer: [{ id: 'feed', src: 'https://new.com/feed.js' }] } };
+    const result = mergeScriptLayers([org, site]);
+    expect(result.before_footer).toEqual([{ id: 'feed', src: 'https://new.com/feed.js' }]);
   });
 
   it('replace mode: last layer with merge_modes.scripts="replace" discards inherited', () => {

@@ -12,6 +12,7 @@ import {
   deleteFileFromBranch,
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
+  invalidateSiteCaches,
 } from "@/lib/github";
 import {
   deletePagesProject,
@@ -33,6 +34,7 @@ export async function updateSiteEntry(
   updates: Partial<DashboardSiteEntry>
 ): Promise<void> {
   await updateSiteInIndex(domain, updates);
+  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -285,6 +287,7 @@ export async function deleteArticleFromStaging(
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, [slug]);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -307,6 +310,7 @@ export async function deleteArticlesFromStaging(
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, slugs);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -340,4 +344,9 @@ export async function permanentlyDeleteSite(domain: string): Promise<void> {
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
+}
+
+export async function refreshSiteCache(domain: string, branch?: string): Promise<void> {
+  invalidateSiteCaches(domain, branch);
+  revalidatePath(`/sites/${domain}`);
 }

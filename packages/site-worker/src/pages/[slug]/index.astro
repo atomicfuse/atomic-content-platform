@@ -12,7 +12,7 @@ import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import AdSlot from '../../components/AdSlot.astro';
-import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { injectInlineAds } from '../../lib/inline-ads';
@@ -30,6 +30,7 @@ if (!slug) {
 const config = getConfig(Astro);
 const siteId = getSiteId(Astro);
 const preview = isPreviewMode(Astro);
+const staging = isStagingEnv(Astro);
 
 // Shared pages live at top-level slugs (`/about`, `/privacy`, ...) and
 // take precedence over the article namespace.
@@ -50,7 +51,8 @@ if (!shared && (!article || (!preview && !isVisibleArticle(article.frontmatter.s
 const articleBodyWithInlineAds = article
   ? injectInlineAds(
       article.body,
-      (config.ads_config?.ad_placements as Array<{ id?: string; position?: string }> | undefined) ?? [],
+      (config.ads_config?.ad_placements ?? []) as Array<{ id?: string; position?: string; code?: string; sizes?: { desktop?: number[][]; mobile?: number[][] }; page_types?: string[]; exclude_pages?: string[] }>,
+      { staging },
     )
   : '';
 
@@ -113,7 +115,10 @@ if (article) {
         canonicalUrl={`https://${getCanonicalDomain(Astro)}/${slug}`}
         image={article.frontmatter.featuredImage}
         siteName={config.site_name}
+        siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
         publishDate={article.frontmatter.publishDate}
+        author={article.frontmatter.author}
+        tags={article.frontmatter.tags}
       />
     </Fragment>
     {articleHeadScripts && <Fragment slot="head" set:html={articleHeadScripts} />}
@@ -136,7 +141,7 @@ if (article) {
       <RelatedPosts articles={related} />
     </main>
 
-    <Footer config={config} />
+    <Footer config={config} staging={staging} />
     <AdSlot position="sticky-bottom" pageType="article" server:defer />
   </BaseLayout>
 )}

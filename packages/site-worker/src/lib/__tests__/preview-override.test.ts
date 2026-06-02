@@ -4,6 +4,7 @@ import {
   parseCookie,
   resolvePreview,
   generatePreviewScript,
+  generateParamPropagationScript,
 } from '../preview-override';
 
 describe('isPreviewableHost', () => {
@@ -155,5 +156,18 @@ describe('generatePreviewScript', () => {
     // islands, /api/*, and any future internal endpoint are all covered.
     expect(script).toContain('u.origin===location.origin');
     expect(script).toContain('_atl_site');
+  });
+});
+
+describe('generateParamPropagationScript', () => {
+  it('returns a script tag with the params embedded', () => {
+    const script = generateParamPropagationScript([['tamirtest', 'true']]);
+    expect(script).toContain('<script data-atl-param-propagation>');
+    expect(script).toContain('tamirtest');
+    expect(script).toContain('true');
+  });
+
+  it('returns empty string for empty params', () => {
+    expect(generateParamPropagationScript([])).toBe('');
   });
 });

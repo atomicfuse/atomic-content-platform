@@ -8,13 +8,24 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
+import dynamic from "next/dynamic";
 import { useAudiences, useVerticals, useCategories, useAllCategories, useTags, useTagSearch } from "@/hooks/useReferenceData";
-import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
-import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
-import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
-import { generateLogoPreview } from "@/actions/wizard";
 import { BundleSubscriptionsPanel } from "./BundleSubscriptionsPanel";
+
+const SiteConfigTab = dynamic(
+  () => import("@/components/site-detail/SiteConfigTab").then((m) => m.SiteConfigTab),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+const SiteThemeTab = dynamic(
+  () => import("@/components/site-detail/SiteThemeTab").then((m) => m.SiteThemeTab),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+const ContentGenerationPanel = dynamic(
+  () => import("@/components/site-detail/ContentGenerationPanel").then((m) => m.ContentGenerationPanel),
+  { loading: () => <div className="h-32 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+import { generateLogoPreview } from "@/actions/wizard";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -194,7 +205,7 @@ export function ContentAgentTab({
   const initImageGuidelines = Array.isArray(brief?.image_guidelines)
     ? brief.image_guidelines.join("\n")
     : (brief?.image_guidelines ?? "");
-  const initQualityThreshold = brief?.quality_threshold ?? 75;
+  const initQualityThreshold = brief?.quality_threshold ?? 40;
   const initQualityWeights = {
     seo_quality: brief?.quality_weights?.seo_quality ?? 20,
     tone_match: brief?.quality_weights?.tone_match ?? 20,

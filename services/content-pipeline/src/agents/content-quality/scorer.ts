@@ -43,7 +43,7 @@ export const DEFAULT_QUALITY_WEIGHTS: Required<QualityWeights> = {
   keyword_relevance: 20,
 };
 
-const DEFAULT_THRESHOLD = 75;
+const DEFAULT_THRESHOLD = 40;
 
 // ---------------------------------------------------------------------------
 // Prompt builders

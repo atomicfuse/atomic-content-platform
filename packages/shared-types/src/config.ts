@@ -420,6 +420,9 @@ export interface ScriptsConfig {
 
   /** Scripts injected just before the closing `</body>` tag. */
   body_end: ScriptEntry[];
+
+  /** Scripts injected immediately before the `<footer>` element. */
+  before_footer: ScriptEntry[];
 }
 
 // ---------------------------------------------------------------------------

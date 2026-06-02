@@ -65,9 +65,10 @@ interface ScriptsLike {
   head?: ScriptEntryLike[];
   body_start?: ScriptEntryLike[];
   body_end?: ScriptEntryLike[];
+  before_footer?: ScriptEntryLike[];
 }
 
-const SCRIPT_POSITIONS = ['head', 'body_start', 'body_end'] as const;
+const SCRIPT_POSITIONS = ['head', 'body_start', 'body_end', 'before_footer'] as const;
 
 /**
  * Merges `scripts` across config layers using merge-by-id semantics:
@@ -84,7 +85,7 @@ const SCRIPT_POSITIONS = ['head', 'body_start', 'body_end'] as const;
  */
 export function mergeScriptLayers(
   layers: ReadonlyArray<Record<string, unknown>>,
-): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] } {
+): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[]; before_footer: ScriptEntryLike[] } {
   // Check if the final layer wants "replace" mode.
   const last = layers[layers.length - 1];
   const lastModes = last?.merge_modes as MergeModes | undefined;
@@ -94,6 +95,7 @@ export function mergeScriptLayers(
       head: Array.isArray(scripts?.head) ? scripts.head : [],
       body_start: Array.isArray(scripts?.body_start) ? scripts.body_start : [],
       body_end: Array.isArray(scripts?.body_end) ? scripts.body_end : [],
+      before_footer: Array.isArray(scripts?.before_footer) ? scripts.before_footer : [],
     };
   }
 
@@ -101,6 +103,7 @@ export function mergeScriptLayers(
     head: [],
     body_start: [],
     body_end: [],
+    before_footer: [],
   };
   for (const layer of layers) {
     const scripts = layer.scripts as ScriptsLike | undefined;
@@ -119,7 +122,7 @@ export function mergeScriptLayers(
       }
     }
   }
-  return result as { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] };
+  return result as { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[]; before_footer: ScriptEntryLike[] };
 }
 
 // ---------- Ads config merge ----------
@@ -244,6 +247,10 @@ export interface OverrideConfig extends Record<string, unknown> {
   /** Lowest priority is applied FIRST; highest LAST (so it wins). */
   priority?: number;
   targets?: { groups?: string[]; sites?: string[] };
+  /** When present, this override is NOT merged at seed-time. Instead it's
+   *  stored separately and applied at request-time only when the specified
+   *  query parameter is present in the URL. */
+  activation?: { query_param: string; query_value?: string };
 }
 
 /**
@@ -259,6 +266,29 @@ export function selectMatchingOverrides(
   siteGroups: readonly string[],
 ): OverrideConfig[] {
   const matching = overrides.filter((o) => {
+    // Skip conditional overrides — they're handled at request-time, not seed-time.
+    if (o.activation) return false;
+    const t = o.targets ?? {};
+    const sites = Array.isArray(t.sites) ? t.sites : [];
+    const groups = Array.isArray(t.groups) ? t.groups : [];
+    if (sites.includes(siteId)) return true;
+    if (groups.some((g) => siteGroups.includes(g))) return true;
+    return false;
+  });
+  return [...matching].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+}
+
+/**
+ * Filters overrides that have an `activation` condition AND target the given
+ * site. These are stored separately in KV and evaluated at request-time.
+ */
+export function selectConditionalOverrides(
+  overrides: OverrideConfig[],
+  siteId: string,
+  siteGroups: readonly string[],
+): OverrideConfig[] {
+  const matching = overrides.filter((o) => {
+    if (!o.activation?.query_param) return false;
     const t = o.targets ?? {};
     const sites = Array.isArray(t.sites) ? t.sites : [];
     const groups = Array.isArray(t.groups) ? t.groups : [];
@@ -301,9 +331,9 @@ export function stripModeKeys(value: unknown): unknown {
  * tokens resolved in all scripts; unresolved tokens throw."
  */
 export function resolveScriptVars(
-  scripts: { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] },
+  scripts: { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[]; before_footer: ScriptEntryLike[] },
   vars: Record<string, string>,
-): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[] } {
+): { head: ScriptEntryLike[]; body_start: ScriptEntryLike[]; body_end: ScriptEntryLike[]; before_footer: ScriptEntryLike[] } {
   function substituteEntry(entry: ScriptEntryLike): ScriptEntryLike {
     if (typeof entry.inline !== 'string') return entry;
     let resolved = entry.inline;
@@ -325,6 +355,7 @@ export function resolveScriptVars(
     head: scripts.head.map(substituteEntry),
     body_start: scripts.body_start.map(substituteEntry),
     body_end: scripts.body_end.map(substituteEntry),
+    before_footer: scripts.before_footer.map(substituteEntry),
   };
 }
 
@@ -354,9 +385,9 @@ export function resolveSharedPageVars(
  * `targets`) that the merged site-config shouldn't keep. Strip them.
  */
 export function stripOverrideMetaFields(config: Record<string, unknown>): Record<string, unknown> {
-  const { override_id, name, priority, targets, ...rest } = config;
+  const { override_id, name, priority, targets, activation, ...rest } = config;
   // Reference the destructured names so the lint rule for unused vars
   // doesn't fire — we genuinely want them dropped.
-  void override_id; void name; void priority; void targets;
+  void override_id; void name; void priority; void targets; void activation;
   return rest;
 }
