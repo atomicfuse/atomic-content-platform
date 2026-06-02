@@ -19,6 +19,20 @@ export interface KVArticleIndexEntry {
   featured?: ("hero" | "must-read")[];
 }
 
+// ---------------------------------------------------------------------------
+// In-memory cache for KV article index — avoids ~700ms CF REST API call on
+// every page load. Keyed by "domain@namespace". Cleared by
+// invalidateSiteCaches() in github.ts via invalidateKVArticleCache().
+// ---------------------------------------------------------------------------
+const KV_CACHE_TTL = Infinity;
+const kvArticleCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
+
+export function invalidateKVArticleCache(domain: string): void {
+  for (const key of kvArticleCache.keys()) {
+    if (key.startsWith(`${domain}@`)) kvArticleCache.delete(key);
+  }
+}
+
 /**
  * Read the `article-index:<domain>` key from Cloudflare KV via REST API.
  *
@@ -80,7 +94,6 @@ export function kvEntriesToArticles(entries: KVArticleIndexEntry[]): ArticleEntr
     status: e.status ?? "draft",
     publishDate: e.publishDate ?? "",
     featuredImage: e.featuredImage,
-    // Score fields not available from KV — shown on article detail page
     score: undefined,
     scoreBreakdown: undefined,
     qualityNote: undefined,
@@ -89,18 +102,27 @@ export function kvEntriesToArticles(entries: KVArticleIndexEntry[]): ArticleEntr
 }
 
 /**
- * Read articles for a site: KV first (1 REST call), Git fallback (N+1 calls).
+ * Read articles for a site: in-memory cache first, then KV (1 REST call),
+ * then Git fallback (N+1 calls).
  *
- * Returns ArticleEntry[] from KV article-index. If KV is unavailable or
- * returns null, falls back to readArticles() from GitHub.
+ * The in-memory cache (15min TTL) eliminates the ~700ms CF REST API latency
+ * on repeat visits. Cleared by invalidateSiteCaches() after mutations.
  */
 export async function readArticlesWithKVFallback(
   domain: string,
   branch?: string,
   readArticlesGit?: (domain: string, branch?: string) => Promise<ArticleEntry[]>,
 ): Promise<ArticleEntry[]> {
+  const cacheKey = `${domain}@staging`;
+  const cached = kvArticleCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) return cached.data;
+
   const kvEntries = await readArticleIndexFromKV(domain, "staging");
-  if (kvEntries) return kvEntriesToArticles(kvEntries);
+  if (kvEntries) {
+    const articles = kvEntriesToArticles(kvEntries);
+    kvArticleCache.set(cacheKey, { data: articles, expiresAt: Date.now() + KV_CACHE_TTL });
+    return articles;
+  }
 
   // KV unavailable — fall back to Git (expensive)
   if (readArticlesGit) {
