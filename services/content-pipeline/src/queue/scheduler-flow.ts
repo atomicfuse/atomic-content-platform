@@ -17,10 +17,29 @@ import { notifyError, notifySummary } from "../lib/notifications.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
+const DASHBOARD_URL = process.env.DASHBOARD_URL ?? "http://dashboard-app";
+const CACHE_INVALIDATE_SECRET = process.env.CACHE_INVALIDATE_SECRET;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function invalidateDashboardCache(domain: string, branch?: string): Promise<void> {
+  if (!CACHE_INVALIDATE_SECRET) return;
+  try {
+    await fetch(`${DASHBOARD_URL}/api/cache/invalidate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${CACHE_INVALIDATE_SECRET}`,
+      },
+      body: JSON.stringify({ domain, branch }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (err) {
+    console.warn(`[scheduler] Failed to invalidate dashboard cache for ${domain}:`, err);
+  }
+}
 
 /** Deterministic run ID — hourly granularity. */
 export function buildRunId(): string {
@@ -156,6 +175,8 @@ async function autoPublishSite(
 
   clearTreeCache(stagingBranch);
   clearTreeCache("main");
+  await invalidateDashboardCache(domain, stagingBranch);
+  await invalidateDashboardCache(domain, "main");
   console.log(`[auto-publish] Published ${domain}: ${files.length} files → main, staging reset`);
 }
 
@@ -290,6 +311,16 @@ export async function processSchedulerRun(
 
   if (autoPublished.length > 0) {
     console.log(`[scheduler-run] Auto-published ${autoPublished.length} site(s): ${autoPublished.join(", ")}`);
+  }
+
+  // Invalidate dashboard caches for sites that had new content (non-published
+  // sites — autoPublishSite already invalidates for published ones)
+  const autoPublishedSet = new Set(autoPublished);
+  for (const siteResult of sites) {
+    if (siteResult.articlesCreated > 0 && !autoPublishedSet.has(siteResult.domain)) {
+      const branch = siteBranchMap.get(siteResult.domain);
+      if (branch) void invalidateDashboardCache(siteResult.domain, branch);
+    }
   }
 
   // Notify if any sites errored or produced zero articles

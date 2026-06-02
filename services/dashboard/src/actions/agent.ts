@@ -1,6 +1,6 @@
 "use server";
 
-import { readDashboardIndex, readFileContent, commitSiteFiles } from "@/lib/github";
+import { readDashboardIndex, readFileContent, commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 
@@ -56,5 +56,6 @@ export async function updateSiteBrief(
     branch ?? "main",
   );
 
+  invalidateSiteCaches(domain, branch);
   revalidatePath(`/sites/${domain}`);
 }

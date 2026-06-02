@@ -16,6 +16,7 @@ import {
   listNetworkDirectory,
   readFileContent,
   commitNetworkFiles,
+  invalidateSiteCaches,
 } from "@/lib/github";
 import {
   listZones,
@@ -604,6 +605,8 @@ export async function goLive(domain: string): Promise<void> {
     status: "Ready",
   });
 
+  invalidateSiteCaches(domain, stagingBranch);
+  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -633,6 +636,8 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
   await deleteBranch(stagingBranch);
   await createBranch(stagingBranch, "main");
 
+  invalidateSiteCaches(domain, stagingBranch);
+  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -1192,6 +1197,7 @@ export async function updateStagingSite(
   await commitSiteFiles(domain, files, "update site config", site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -1385,6 +1391,7 @@ export async function uploadStagingLogo(
   await commitSiteFiles(domain, files, "upload custom logo", site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
+  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 

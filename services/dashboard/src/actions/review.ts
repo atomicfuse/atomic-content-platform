@@ -10,6 +10,7 @@ import {
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
   listNetworkDirectory,
+  invalidateSiteCaches,
 } from "@/lib/github";
 import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import { WORKER_STAGING_URL } from "@/lib/constants";
@@ -149,6 +150,7 @@ export async function applyReviewDecisions(decisions: {
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     summaryParts.push(`${domain}: ${parts.join(", ")}`);
 
+    invalidateSiteCaches(domain, branch);
     revalidatePath(`/sites/${domain}`);
   }
 

@@ -1,6 +1,7 @@
 import { StatusBadge } from "@/components/ui/Badge";
 import { workerPreviewUrl } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
+import { RefreshCacheButton } from "./RefreshCacheButton";
 
 interface SiteDetailHeaderProps {
   site: DashboardSiteEntry;
@@ -58,6 +59,7 @@ export function SiteDetailHeader({
         </div>
       </div>
       <div className="flex items-center gap-2">
+        <RefreshCacheButton domain={site.domain} branch={site.staging_branch} />
         {workerUrl && (
           <a
             href={workerUrl}
