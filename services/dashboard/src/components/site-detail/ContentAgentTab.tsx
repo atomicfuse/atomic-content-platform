@@ -8,11 +8,22 @@ import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
+import dynamic from "next/dynamic";
 import { useAudiences, useVerticals, useCategories, useTags } from "@/hooks/useReferenceData";
-import { SiteConfigTab } from "@/components/site-detail/SiteConfigTab";
-import { SiteThemeTab } from "@/components/site-detail/SiteThemeTab";
-import { ContentGenerationPanel } from "@/components/site-detail/ContentGenerationPanel";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
+
+const SiteConfigTab = dynamic(
+  () => import("@/components/site-detail/SiteConfigTab").then((m) => m.SiteConfigTab),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+const SiteThemeTab = dynamic(
+  () => import("@/components/site-detail/SiteThemeTab").then((m) => m.SiteThemeTab),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+const ContentGenerationPanel = dynamic(
+  () => import("@/components/site-detail/ContentGenerationPanel").then((m) => m.ContentGenerationPanel),
+  { loading: () => <div className="h-32 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
 import { generateLogoPreview, createBundleForSite } from "@/actions/wizard";
 import Link from "next/link";
 
