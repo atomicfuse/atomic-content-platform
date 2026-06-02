@@ -126,10 +126,24 @@ Save validates: topic name non-empty AND unique within the site (case-insensitiv
 
 Gains a single new control near the bottom: **"Migrate to per-topic filters"** toggle.
 
-- Off by default for all existing sites.
+- Off by default for all existing legacy sites.
 - When toggled on: if `brief.theme` is empty, prompts for the theme inline before continuing. Then opens the migration review screen (§5).
 - Off → on is a deliberate user action that triggers an explicit review step. Never silent.
 - The toggle disappears on already-migrated sites (replaced by a static "✓ Per-topic filters active" indicator with no toggle-back affordance; reverting is a git operation).
+- The toggle does not appear on sites created post-rollout — those are already per-topic from day one (see §2.4).
+
+#### 2.4. Wizard — new sites are per-topic from day one
+
+The wizard's "Niche Targeting" step (today's StepNicheTargeting.tsx) is replaced with a new **"Topic Filters"** step. Net zero change in step count — one step is swapped for another. The flow:
+
+1. Earlier wizard steps collect site name, theme (free-text textarea, 1–2 lines, required), audiences, tone, topics (menu items), primary category, etc. — as today, with the new addition that the **Site Theme** field is added to one of the existing steps (the Identity step is the natural home, since it already collects free-text site description fields).
+2. The "Topic Filters" step appears after the user has finished defining topics. On entry, the dashboard fires N parallel AI proposal calls (one per topic) using the just-entered theme + each topic name. The screen renders the same UI as the migration review screen (§5.2): a list of topics with their proposed filters inline, each editable on the spot.
+3. User reviews and adjusts. Hits Next.
+4. Site is created with `brief.topics_v2` populated and `brief.bundle_ids` absent. The legacy shape is never written for new sites going forward.
+
+The migration review screen (§5.2) and the wizard's Topic Filters step share the same React component (`PerTopicReviewScreen` or similar) with two host contexts: migration-of-existing-site vs new-site-creation. The component's surface is identical; only the parent's save action differs (migration runs §5.3's server action; the wizard's existing `createSiteAndBuildStaging` is updated to write the new shape).
+
+Sites created with `brief.topics_v2` from day one never need migration — they are already in the new model. The migration toggle (§2.3) only ever appears on legacy sites.
 
 ### 3. AI proposal mechanics
 
@@ -260,9 +274,9 @@ Same as all current dashboard saves: writes to the staging branch. Once verified
 
 **Modify (server-side):**
 - `services/dashboard/src/app/api/sites/save/route.ts` — save handler accepts and persists `theme`, `topics_v2` shape; clears `bundle_ids`/`category_ids`/`tag_ids` when `topics_v2` is being written.
-- `services/dashboard/src/actions/wizard.ts` — wizard's `createSiteAndBuildStaging` gains an opt-in path: if the wizard sets a per-topic-flag, write `topics_v2` directly instead of `bundle_ids`. (Wizard UI updates are a separate sub-task; for now, the wizard continues to produce legacy sites and migration is done after creation. See §7 deferred.)
+- `services/dashboard/src/actions/wizard.ts` — `createSiteAndBuildStaging` rewritten to always produce per-topic sites: writes `brief.theme` and `brief.topics_v2` (from the wizard's new Topic Filters step), never writes `brief.bundle_ids` for new sites. `WizardFormData` gains `theme: string` and `topics_v2: TopicV2Draft[]` fields (the draft holds the per-topic filter+schedule the user reviewed in the wizard). The legacy `bundleIds` / `starterBundle` / `selectedCategories` / `selectedTags` form fields are removed.
 - `services/dashboard/src/actions/per-topic-migration.ts` (new) — server action `migrateSiteToPerTopic(domain, theme, topics, deleteOrphanBundles)` that performs the steps in §5.3.
-- `services/dashboard/src/app/api/ai/propose-filter/route.ts` (new) — POST endpoint that takes site theme + topic name + description + taxonomy and calls Claude, returns validated `{category_ids, tag_ids, rationale}`.
+- `services/dashboard/src/app/api/ai/propose-filter/route.ts` (new) — POST endpoint that takes site theme + topic name + description + taxonomy and calls Claude, returns validated `{category_ids, tag_ids, rationale}`. Used by both the topic-edit modal and the batched proposals in the wizard's Topic Filters step + migration screen.
 
 **Modify (content pipeline):**
 - `services/content-pipeline/src/agents/content-generation/agent.ts` — dispatcher checks for `brief.topics_v2`; if present, runs new per-topic fan-out; otherwise falls back to existing bundle fan-out. New function `fetchPerTopic(brief, deps)` mirroring today's `fetchNewItemsUnion` but iterating topics with their own filter sources and schedules. Cross-topic membership evaluation lives in a new helper `evaluateAllTopics(item, topics)` returning the topic-name array.
@@ -271,12 +285,14 @@ Same as all current dashboard saves: writes to the staging branch. Once verified
 **Modify (UI — new):**
 - `services/dashboard/src/components/site-detail/TopicsListPanel.tsx` (new) — the topics list view inside Content Brief.
 - `services/dashboard/src/components/site-detail/TopicEditModal.tsx` (new) — the topic-edit modal.
-- `services/dashboard/src/components/site-detail/PerTopicMigrationScreen.tsx` (new) — the migration review screen.
+- `services/dashboard/src/components/topic-review/PerTopicReviewScreen.tsx` (new) — the topic-by-topic AI proposal review UI. Hosted in two contexts via a `mode: "migrate" | "wizard"` prop: (a) the migration review screen invoked from Site Settings → Identity, (b) the wizard's Topic Filters step. The component itself doesn't care about which parent invokes it; the parent owns the save action.
 - `services/dashboard/src/components/site-detail/ContentAgentTab.tsx` — conditionally renders TopicsListPanel when `brief.topics_v2` exists, otherwise renders today's existing Niche Targeting + BundleSubscriptionsPanel sections.
-- `services/dashboard/src/components/site-detail/AttachDomainPanel.tsx` (or wherever the Identity tab lives) — adds the "Migrate to per-topic filters" toggle.
+- `services/dashboard/src/components/site-detail/IdentityPanel.tsx` (or wherever the Identity tab lives) — adds the "Migrate to per-topic filters" toggle, only on legacy sites.
 
-**Modify (UI — minor):**
-- `services/dashboard/src/components/wizard/StepNicheTargeting.tsx` — unchanged for legacy creation. (Wizard's new-model path deferred to §7.)
+**Modify (UI — wizard rewrite):**
+- `services/dashboard/src/components/wizard/StepIdentity.tsx` (or equivalent existing step that collects site description fields) — gains a "Site Theme" textarea (required, 1–2 lines).
+- `services/dashboard/src/components/wizard/StepNicheTargeting.tsx` — **replaced** with `StepTopicFilters.tsx` which hosts the shared `PerTopicReviewScreen` in `mode="wizard"`. The legacy NicheTargeting is deleted; no fallback path for creating legacy sites from the wizard. The wizard's step list is updated to swap the old step for the new one.
+- `services/dashboard/src/app/wizard/page.tsx` — DEFAULT_FORM updated for the new `WizardFormData` shape (drops `bundleIds`/`starterBundle`/`selectedCategories`/`selectedTags`, adds `theme` and `topics_v2`).
 
 **Modify (site-worker rendering):**
 - `packages/site-worker/src/pages/topics/[slug].astro` (or equivalent topic page) — read both `frontmatter.topic` (legacy) and `frontmatter.topics` (array) when filtering articles for the topic page.
@@ -299,7 +315,6 @@ Same as all current dashboard saves: writes to the staging branch. Once verified
 
 These are out of scope for this design. Each is independent and can ship later:
 
-- **Wizard new-model path.** The wizard continues to produce legacy `bundle_ids` sites. Migration is the path to the new model for now. A wizard rewrite that creates topics_v2 directly is a separate design.
 - **Cross-site bundle housekeeping page.** A standalone admin tool listing all aggregator bundles with subscriber counts and bulk-delete affordances. Useful but not on the critical path.
 - **Manual IAB code override.** When a site's content genuinely spans tier-1s and the Primary Category's IAB code doesn't fit, a separate override field. Defer until a real site hits the gap.
 - **Per-topic article count overrides per run.** "This topic should target 3 articles this run regardless of weekly budget" — config flag for forced runs. Today's quota math is sufficient.
