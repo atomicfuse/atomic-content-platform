@@ -18,7 +18,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       redirect: "manual",
-      cache: "no-store",
+      next: { revalidate: 300 },
     });
     if (!res.ok) {
       console.error(`[categories] ${res.status} from ${url}`);

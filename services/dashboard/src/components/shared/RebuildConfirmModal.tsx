@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { InfoTooltip } from "@/components/ui/Tooltip";
@@ -23,7 +23,7 @@ const REBUILD_NOW_TOOLTIP = (
   <span className="block space-y-1">
     <span className="block">This will trigger a KV sync for all affected sites.</span>
     <span className="block">Each site syncs independently and takes about 1 minute.</span>
-    <span className="block">Once complete, your changes will be live on the Worker.</span>
+    <span className="block">Check &quot;Also sync to production&quot; to push changes to live sites immediately.</span>
   </span>
 );
 
@@ -46,8 +46,28 @@ export function RebuildConfirmModal({
   changeLabel,
 }: RebuildConfirmModalProps): React.ReactElement {
   const [rebuilding, setRebuilding] = useState(false);
+  const [syncProduction, setSyncProduction] = useState(true);
+  const [liveDomains, setLiveDomains] = useState<string[]>([]);
   const { toast } = useToast();
   const count = affectedSites.length;
+
+  // Determine which affected sites are Live (eligible for production sync)
+  useEffect(() => {
+    if (!open || affectedSites.length === 0) {
+      setLiveDomains([]);
+      return;
+    }
+    const affectedSet = new Set(affectedSites.map((s) => s.domain));
+    fetch("/api/sites/list")
+      .then((res) => res.json())
+      .then((sites: Array<{ domain: string; status: string }>) => {
+        const live = sites
+          .filter((s) => affectedSet.has(s.domain) && (s.status === "Live" || s.status === "WordPress"))
+          .map((s) => s.domain);
+        setLiveDomains(live);
+      })
+      .catch(() => setLiveDomains([]));
+  }, [open, affectedSites]);
 
   async function handleRebuild(): Promise<void> {
     if (count === 0) {
@@ -57,6 +77,7 @@ export function RebuildConfirmModal({
     }
     setRebuilding(true);
     try {
+      // Stage 1: staging KV sync (existing behavior)
       const res = await fetch("/api/sites/rebuild", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -65,11 +86,36 @@ export function RebuildConfirmModal({
           reason: changeLabel,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast(
-        `Syncing ${count} site(s) — changes will be live in ~1 minute`,
-        "success",
-      );
+      if (!res.ok) throw new Error(`Staging sync failed: HTTP ${res.status}`);
+
+      // Stage 2: production KV sync (if checkbox checked and Live sites exist)
+      if (syncProduction && liveDomains.length > 0) {
+        const prodRes = await fetch("/api/sites/rebuild-production", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            domains: liveDomains,
+            reason: changeLabel,
+          }),
+        });
+        if (!prodRes.ok) {
+          toast(
+            `Staging synced (${count} sites). Production sync failed — try again from the site detail page.`,
+            "error",
+          );
+          onClose();
+          return;
+        }
+        toast(
+          `Syncing ${count} site(s) to staging + ${liveDomains.length} to production — changes will be live in ~1 minute`,
+          "success",
+        );
+      } else {
+        toast(
+          `Syncing ${count} site(s) — changes will be live in ~1 minute`,
+          "success",
+        );
+      }
       onClose();
     } catch {
       toast("Failed to trigger rebuilds", "error");
@@ -104,6 +150,18 @@ export function RebuildConfirmModal({
         <p className="text-sm text-[var(--text-primary)] font-medium">
           {sitesLabel}
         </p>
+
+        {liveDomains.length > 0 && (
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={syncProduction}
+              onChange={(e): void => setSyncProduction(e.target.checked)}
+              className="rounded border-[var(--border)] accent-[var(--color-primary)]"
+            />
+            Also sync to production ({liveDomains.length} Live site{liveDomains.length !== 1 ? "s" : ""})
+          </label>
+        )}
 
         <div className="flex flex-col gap-3 pt-2">
           <div className="flex items-center gap-2">
