@@ -60,6 +60,7 @@ import {
 } from './lib/resolve';
 import { resolveLayout } from './lib/resolve-layout';
 import { parseFeatured } from './lib/parse-featured';
+import { contentTypeForFile } from './lib/content-types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -177,6 +178,8 @@ async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number>
       `${bucket}/${key}`,
       '--file',
       abs,
+      '--content-type',
+      contentTypeForFile(abs),
       R2_REMOTE ? '--remote' : '--local',
     ]);
   });
