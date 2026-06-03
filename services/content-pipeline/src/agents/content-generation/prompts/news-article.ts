@@ -19,7 +19,15 @@ export function buildNewsSystemPrompt(siteName: string, brief: SiteBrief): strin
 
   const wc = parseWordCountFromGuidelines(brief.content_guidelines, 600, 900);
 
-  return `You are a factual journalist writing for ${siteName}, a publication covering ${brief.topics.join(", ")} for ${brief.audience}.
+  // When the site is on the per-topic model, `brief.theme` carries the
+  // editorial angle (free-text). Surface it prominently so the model frames
+  // the article through the right lens (e.g. "travel and food tourism", not
+  // generic food).
+  const themeLine = brief.theme && brief.theme.trim()
+    ? `\n\n## Editorial Angle\n${brief.theme.trim()}`
+    : "";
+
+  return `You are a factual journalist writing for ${siteName}, a publication covering ${brief.topics.join(", ")} for ${brief.audience}.${themeLine}
 
 ## CRITICAL RULES
 - NEVER invent facts, statistics, quotes, or attributions

@@ -27,6 +27,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     siteDomain: string;
     branch?: string | null;
     count?: number | null;
+    /** Per-topic override for per-topic sites. Defaults `count` to 1 if unset. */
+    topicName?: string | null;
   };
 
   if (!body.siteDomain) {
@@ -35,6 +37,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  const topicName =
+    typeof body.topicName === "string" && body.topicName.trim().length > 0
+      ? body.topicName
+      : undefined;
+  // For per-topic on-demand generation, default to 1 article unless caller
+  // overrode `count`. For legacy/scheduled paths, keep the existing default of 3.
+  const defaultCount = topicName ? 1 : 3;
 
   // ---------- Queue path ----------
   if (REDIS_URL) {
@@ -47,9 +57,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       const job = await queue.add("generate", {
         siteDomain: body.siteDomain,
-        count: body.count ?? 3,
+        count: body.count ?? defaultCount,
         branch: body.branch ?? `staging/${body.siteDomain}`,
         triggeredBy: "manual",
+        ...(topicName ? { topicName } : {}),
       });
 
       try {
@@ -96,7 +107,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: JSON.stringify({
         siteDomain: body.siteDomain,
         ...(body.branch ? { branch: body.branch } : {}),
-        ...(body.count ? { count: body.count } : {}),
+        ...(body.count ? { count: body.count } : topicName ? { count: defaultCount } : {}),
+        ...(topicName ? { topicName } : {}),
       }),
     });
     const result = (await agentResponse.json()) as Record<string, unknown>;

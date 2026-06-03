@@ -9,6 +9,7 @@ export interface AgentConfig {
   networkRepo: string;
   localNetworkPath: string | undefined;
   geminiApiKey: string | undefined;
+  anthropicApiKey?: string;
   contentAggregatorUrl: string;
   port: number;
   redisUrl?: string;
@@ -42,6 +43,7 @@ export function loadConfig(): AgentConfig {
     networkRepo: networkRepo ?? "",
     localNetworkPath,
     geminiApiKey: process.env.GEMINI_API_KEY,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     contentAggregatorUrl: process.env.CONTENT_AGGREGATOR_URL ?? "https://content-aggregator-v2-34cd.atomic.cloudgrid.io",
     port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
     redisUrl: process.env.REDIS_URL,

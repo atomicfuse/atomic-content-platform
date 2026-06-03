@@ -27,6 +27,10 @@ export interface ContentItem {
   source: { name: string };
   published_at: string;
   language: string;
+  /** Aggregator category IDs attached to this item (present on enriched responses). */
+  category_ids?: string[];
+  /** Aggregator tag IDs attached to this item (present on enriched responses). */
+  tag_ids?: string[];
 }
 
 /** Response shape from GET /api/content. */

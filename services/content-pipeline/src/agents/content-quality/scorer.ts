@@ -59,12 +59,19 @@ export function buildQualityScoringPrompt(
   const tooShort = Math.round(wc.min * 0.5);
   const tooLong = Math.round(wc.max * 1.5);
 
+  // On per-topic sites the editorial angle lives in `brief.theme` (free-text).
+  // Include it in the scorer's context so tone_match + keyword_relevance score
+  // against the actual editorial intent, not just the topics list.
+  const themeLine = brief.theme && brief.theme.trim()
+    ? `\n- Editorial Angle: ${brief.theme.trim()}`
+    : "";
+
   const systemPrompt = `You are a content quality evaluator for ${siteName}. Your job is to score articles on a 0-100 scale across five criteria.
 
 ## Site Context
 - Audience: ${brief.audience}
 - Tone: ${brief.tone}
-- Topics: ${brief.topics.join(", ")}
+- Topics: ${brief.topics.join(", ")}${themeLine}
 - SEO Keywords: ${brief.seo_keywords_focus.join(", ")}
 - Content Guidelines: ${Array.isArray(brief.content_guidelines) ? brief.content_guidelines.join("; ") : brief.content_guidelines}
 

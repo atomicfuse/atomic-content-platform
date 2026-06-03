@@ -37,6 +37,9 @@ export interface ArticleIndexEntry {
   featured?: ('hero' | 'must-read')[];
   scripts?: ArticleScript[];
   videos?: ArticleVideo[];
+  /** Per-topic-filter model: explicit topic membership.
+   *  Absent on legacy-site articles; renderer falls back to tag matching. */
+  topics?: string[];
 }
 
 /** Article stored body (markdown, already parsed-out frontmatter).

@@ -98,6 +98,18 @@ export interface SiteBrief {
   /** Content Aggregator bundle IDs — articles are fetched from the union of these bundles, deduped. */
   bundle_ids?: string[];
 
+  /** Free-text site theme (1–2 lines). Drives AI proposals in the per-topic model.
+   *  Required on sites that have `topics_v2` set. */
+  theme?: string;
+
+  /** Per-topic filters — the new editorial model. Presence of this field
+   *  switches the site to the per-topic path everywhere (UI, content fetch).
+   *  Absence means the site uses the legacy `bundle_ids` model.
+   *  Migration is opt-in per site; the two shapes never need to coexist on the
+   *  same site (a `topics_v2` save strips `bundle_ids` and the legacy niche
+   *  fields). */
+  topics_v2?: TopicV2[];
+
   /** Target audience type for aggregator API queries. */
   audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
 
@@ -112,6 +124,36 @@ export interface SiteBrief {
 
   /** Per-criterion weight overrides for quality scoring. Must sum to 100. */
   quality_weights?: QualityWeights;
+}
+
+/** One topic (menu section) in the per-topic model.
+ *  Carries its own filter (where to source content from) and its own schedule
+ *  (when + how much to publish). */
+export interface TopicV2 {
+  /** Display name of the topic. Also used as the menu item label on the site
+   *  and as a membership key in article frontmatter. Unique per site (case-insensitive). */
+  name: string;
+  /** Optional 1-line description that helps the AI propose better filters.
+   *  Not shown anywhere on the live site. */
+  description?: string;
+  /** Where this topic pulls its content from. */
+  source: TopicV2Source;
+  /** Publishing cadence for this topic. */
+  schedule: TopicV2Schedule;
+}
+
+/** A topic's filter source — either raw categories+tags (default) or a pointer
+ *  to a shared aggregator bundle (power-user path). */
+export type TopicV2Source =
+  | { type: "filter"; category_ids: string[]; tag_ids: string[] }
+  | { type: "bundle"; bundle_id: string };
+
+export interface TopicV2Schedule {
+  /** Target articles per calendar week. */
+  articles_per_week: number;
+  /** Days of the week (full names: "Monday"..."Sunday") on which this topic
+   *  is eligible to publish. Empty array = never publish. */
+  preferred_days: string[];
 }
 
 // ---------------------------------------------------------------------------

@@ -22,6 +22,10 @@ export interface ScannedArticle {
   description: string;
   summary: string;
   branch: string;
+  /** Primary topic from the article's frontmatter `topics[]` array (per-topic-
+   *  filter model). Used as the image-generation style cue when present;
+   *  otherwise the worker falls back to the site brief's `vertical`. */
+  primaryTopic?: string;
 }
 
 interface SkippedArticle {
@@ -214,6 +218,11 @@ export async function scanArticlesForGeneralImages(
 
       const description = (parsed.data.description as string) ?? title;
       const summary = parsed.content.slice(0, 500);
+      const topicsArr = parsed.data.topics;
+      const primaryTopic =
+        Array.isArray(topicsArr) && topicsArr.length > 0 && typeof topicsArr[0] === "string"
+          ? (topicsArr[0] as string)
+          : undefined;
 
       articles.push({
         domain: site.domain,
@@ -222,6 +231,7 @@ export async function scanArticlesForGeneralImages(
         description,
         summary,
         branch,
+        primaryTopic,
       });
     }
   }
@@ -321,10 +331,15 @@ async function processBatches(
 
       for (const article of batch) {
         try {
-          const { vertical, imageGuidelines } = await getSiteBrief(
+          const { vertical: briefVertical, imageGuidelines } = await getSiteBrief(
             article.domain,
             article.branch,
           );
+
+          // Style cue for image generation. Prefer the article's primary topic
+          // (per-topic-filter model); fall back to the site brief's vertical
+          // for legacy articles or articles without a topics frontmatter.
+          const styleVertical = article.primaryTopic ?? briefVertical;
 
           const accepted = await triggerN8nImage(webhookUrl, {
             request_id: randomUUID(),
@@ -337,7 +352,7 @@ async function processBatches(
               title: article.title,
               description: article.description,
               summary: article.summary,
-              vertical,
+              vertical: styleVertical,
               source_thumbnail_url: null,
               image_guidelines: imageGuidelines ?? null,
             },

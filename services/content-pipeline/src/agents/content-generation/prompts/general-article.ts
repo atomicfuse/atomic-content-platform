@@ -19,7 +19,14 @@ export function buildGeneralSystemPrompt(siteName: string, brief: SiteBrief): st
 
   const wc = parseWordCountFromGuidelines(brief.content_guidelines, 800, 1200);
 
-  return `You are a content writer for ${siteName}, creating engaging articles on ${brief.topics.join(", ")} for ${brief.audience}.
+  // When the site is on the per-topic model, `brief.theme` carries the
+  // editorial angle (free-text). Surface it prominently so the model frames
+  // the article through the right lens.
+  const themeLine = brief.theme && brief.theme.trim()
+    ? `\n\n## Editorial Angle\n${brief.theme.trim()}`
+    : "";
+
+  return `You are a content writer for ${siteName}, creating engaging articles on ${brief.topics.join(", ")} for ${brief.audience}.${themeLine}
 
 ## Style
 - Conversational, engaging tone

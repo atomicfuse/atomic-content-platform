@@ -212,6 +212,7 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
       featured: parseFeatured(front.featured),
       scripts: Array.isArray(front.scripts) ? (front.scripts as ArticleScript[]) : undefined,
       videos: Array.isArray(front.videos) ? (front.videos as ArticleVideo[]) : undefined,
+      topics: Array.isArray(front.topics) ? front.topics.map(String) : undefined,
     };
     const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });

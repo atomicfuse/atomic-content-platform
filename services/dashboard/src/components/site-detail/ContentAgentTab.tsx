@@ -12,6 +12,9 @@ import dynamic from "next/dynamic";
 import { useAudiences, useVerticals, useCategories, useAllCategories, useTags, useTagSearch } from "@/hooks/useReferenceData";
 import { AttachDomainPanel } from "@/components/site-detail/AttachDomainPanel";
 import { BundleSubscriptionsPanel } from "./BundleSubscriptionsPanel";
+import { MigrateToPerTopicToggle } from "./MigrateToPerTopicToggle";
+import { TopicsListPanel } from "./TopicsListPanel";
+import type { TopicV2 } from "@/types/dashboard";
 
 const SiteConfigTab = dynamic(
   () => import("@/components/site-detail/SiteConfigTab").then((m) => m.SiteConfigTab),
@@ -85,6 +88,8 @@ export function ContentAgentTab({
   const initSiteName = (siteConfig?.site_name as string) ?? "";
   const initSiteTagline = (siteConfig?.site_tagline as string) ?? "";
   const briefRaw = siteConfig?.brief as Record<string, unknown> | undefined;
+  const isPerTopic =
+    Array.isArray(briefRaw?.topics_v2) && (briefRaw?.topics_v2 as unknown[]).length > 0;
   const initAudienceIds = (() => {
     const raw = briefRaw?.audience_type_ids;
     if (Array.isArray(raw)) return raw as string[];
@@ -827,6 +832,13 @@ export function ContentAgentTab({
         domain={domain}
         customDomain={customDomain ?? null}
       />
+      <MigrateToPerTopicToggle
+        domain={domain}
+        isPerTopic={
+          Array.isArray((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2) &&
+          ((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2 as unknown[]).length > 0
+        }
+      />
       <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
         {identityDirty ? (
           <p className="text-xs text-amber-500">You have unsaved changes — click Save Identity to apply.</p>
@@ -853,7 +865,20 @@ export function ContentAgentTab({
 
   const contentBriefContent = (
     <div className="space-y-6">
-      {/* Niche Targeting */}
+      {/* Per-topic mode — shown when brief.topics_v2 is populated */}
+      {isPerTopic && (
+        <PerTopicContentBriefSection
+          domain={domain}
+          initialTheme={(briefRaw?.theme as string | undefined) ?? ""}
+          initialTopics={(briefRaw?.topics_v2 as TopicV2[] | undefined) ?? []}
+        />
+      )}
+
+      {/* Legacy niche-targeting (category / subcategories / tags / bundles /
+          SEO keywords) — hidden when per-topic is active. Shared editorial
+          fields (guidelines, generation, quality, save) render below for
+          both modes. */}
+      {!isPerTopic && (
       <div className="space-y-4">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Niche Targeting</h3>
         <p className="text-xs text-[var(--text-muted)]">
@@ -1163,73 +1188,80 @@ export function ContentAgentTab({
           </div>
         </div>
       </div>
+      )}
 
-      {/* Topics, schedule, guidelines */}
+      {/* Topics, schedule, guidelines. Topics + per-site schedule are legacy
+          fields; in per-topic mode each topic carries its own schedule, so we
+          only show the shared editorial guidelines below. */}
       <div className="border-t border-[var(--border-primary)] pt-4 space-y-4">
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Topics
-          </label>
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors">
-            {topics.map((tag) => (
-              <span
-                key={tag}
-                className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
-              >
-                {tag}
-                <button
-                  type="button"
-                  onClick={(): void => removeTopic(tag)}
-                  className="hover:text-red-400 transition-colors"
-                >
-                  &times;
-                </button>
-              </span>
-            ))}
-            <input
-              className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
-              placeholder={topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
-              value={topicInput}
-              onChange={(e): void => setTopicInput(e.target.value)}
-              onKeyDown={handleTopicKeyDown}
-              onBlur={(): void => { if (topicInput.trim()) addTopic(topicInput); }}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Articles Per Day"
-            type="number"
-            min={1}
-            max={10}
-            value={articlesPerDay}
-            onChange={(e): void => setArticlesPerDay(parseInt(e.target.value, 10) || 1)}
-          />
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-              Preferred Days
-            </label>
-            <div className="flex gap-2">
-              {DAYS.map((day) => {
-                const fullDay = DAY_MAP[day]!;
-                const isSelected = preferredDays.includes(fullDay);
-                return (
-                  <button
-                    key={day}
-                    onClick={(): void => toggleDay(day)}
-                    className={`w-9 h-9 rounded-md text-xs font-semibold transition-colors ${
-                      isSelected
-                        ? "bg-cyan text-white"
-                        : "bg-[var(--bg-surface)] text-[var(--text-muted)]"
-                    }`}
+        {!isPerTopic && (
+          <>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                Topics
+              </label>
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors">
+                {topics.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
                   >
-                    {day}
-                  </button>
-                );
-              })}
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={(): void => removeTopic(tag)}
+                      className="hover:text-red-400 transition-colors"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none"
+                  placeholder={topics.length === 0 ? "Type a topic and press Enter or comma..." : "Add more..."}
+                  value={topicInput}
+                  onChange={(e): void => setTopicInput(e.target.value)}
+                  onKeyDown={handleTopicKeyDown}
+                  onBlur={(): void => { if (topicInput.trim()) addTopic(topicInput); }}
+                />
+              </div>
             </div>
-          </div>
-        </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Articles Per Day"
+                type="number"
+                min={1}
+                max={10}
+                value={articlesPerDay}
+                onChange={(e): void => setArticlesPerDay(parseInt(e.target.value, 10) || 1)}
+              />
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                  Preferred Days
+                </label>
+                <div className="flex gap-2">
+                  {DAYS.map((day) => {
+                    const fullDay = DAY_MAP[day]!;
+                    const isSelected = preferredDays.includes(fullDay);
+                    return (
+                      <button
+                        key={day}
+                        onClick={(): void => toggleDay(day)}
+                        className={`w-9 h-9 rounded-md text-xs font-semibold transition-colors ${
+                          isSelected
+                            ? "bg-cyan text-white"
+                            : "bg-[var(--bg-surface)] text-[var(--text-muted)]"
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         <Textarea
           label="Content Guidelines"
           rows={4}
@@ -1458,4 +1490,88 @@ export function ContentAgentTab({
   ];
 
   return <Tabs tabs={tabs} defaultTab="identity" />;
+}
+
+// ---------------------------------------------------------------------------
+// Per-topic mode section — rendered inside the Content Brief sub-tab when
+// brief.topics_v2 is non-empty (i.e. the site has been migrated to per-topic).
+// ---------------------------------------------------------------------------
+
+function PerTopicContentBriefSection({
+  domain,
+  initialTheme,
+  initialTopics,
+}: {
+  domain: string;
+  initialTheme: string;
+  initialTopics: TopicV2[];
+}): React.ReactElement {
+  const [theme, setTheme] = useState(initialTheme);
+  const [topics, setTopics] = useState<TopicV2[]>(initialTopics);
+  // Names of topics already persisted to site.yaml. The Generate button on
+  // each row is gated on this — generating against an unsaved topic would
+  // fail with "topic not found" on the agent side.
+  const [savedTopicNames, setSavedTopicNames] = useState<Set<string>>(
+    () => new Set(initialTopics.map((t) => t.name)),
+  );
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  async function save(): Promise<void> {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/sites/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          logoBase64: null,
+          faviconBase64: null,
+          configUpdates: { theme, topics_v2: topics },
+        }),
+      });
+      const data = (await res.json()) as { status: string; message?: string };
+      if (data.status === "ok") {
+        toast("Saved", "success");
+        setSavedTopicNames(new Set(topics.map((t) => t.name)));
+      } else {
+        toast(data.message ?? "Save failed", "error");
+      }
+    } catch {
+      toast("Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+          Site Theme
+        </h3>
+        <p className="text-xs text-[var(--text-muted)] mb-2">
+          1–2 lines describing the editorial angle. Used by AI to propose filters for new topics.
+        </p>
+        <textarea
+          value={theme}
+          onChange={(e): void => setTheme(e.target.value)}
+          className="w-full min-h-[64px] rounded border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50"
+          placeholder="e.g. A travel site focused on wine regions and culinary destinations worldwide."
+        />
+      </div>
+      <TopicsListPanel
+        domain={domain}
+        topics={topics}
+        siteTheme={theme}
+        onChange={setTopics}
+        savedTopicNames={savedTopicNames}
+      />
+      <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
+        <Button onClick={(): void => void save()} disabled={saving} loading={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </div>
+  );
 }

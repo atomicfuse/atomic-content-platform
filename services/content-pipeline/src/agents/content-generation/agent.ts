@@ -41,7 +41,7 @@ import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
+import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Body validation — rejects empty/garbage content before quality scoring
@@ -88,6 +88,10 @@ export interface ContentGenerationParams {
   count?: number;
   /** BullMQ job ID — passed to n8n for image callback tracking. */
   jobId?: string;
+  /** Per-topic override: when set on a per-topic site, runs that single topic
+   *  and bypasses the date-based eligibility check (`isTopicEligibleToday`).
+   *  Ignored for legacy (non-per-topic) sites. */
+  topicName?: string;
   /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
   preloadedBrief?: {
     siteName: string;
@@ -567,6 +571,7 @@ async function processItem(
   brief: SiteBrief,
   branch?: string,
   author?: string,
+  topicsArray?: string[],
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -713,6 +718,13 @@ async function processItem(
       console.log(`[agent] Video content detected — embedding ${item.url} after paragraph 1`);
     }
 
+    // Per-topic membership — set only when the per-topic path provides a list.
+    // Legacy path never passes topicsArray, so this field is never written for
+    // legacy sites (no behaviour change on the existing path).
+    if (topicsArray && topicsArray.length > 0) {
+      frontmatter.topics = topicsArray;
+    }
+
     // Strip leading H1 from body — the title is in frontmatter and rendered
     // by the layout. Models sometimes include it despite prompt instructions.
     const cleanBody = generated.body.replace(/^\s*#\s+[^\n]+\n*/, "");
@@ -735,7 +747,13 @@ async function processItem(
         articleTitle: generated.title,
         articleDescription: generated.description,
         articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
+        // Style cue for image generation. On per-topic sites the article's
+        // primary topic (topics[0]) is the most precise editorial label;
+        // fall back to the source item's aggregator vertical for legacy
+        // articles or when topics aren't set.
+        vertical: (topicsArray && topicsArray.length > 0 ? topicsArray[0] : undefined)
+          ?? item.vertical?.name
+          ?? "General",
         sourceThumbnailUrl: item.thumbnail?.url,
         imageGuidelines: brief.image_guidelines ?? null,
       },
@@ -963,6 +981,28 @@ export async function runContentGeneration(
       }
     }
 
+    // Per-topic dispatcher. When brief.topics_v2 is present, take the new path
+    // and skip the legacy flat-bundle fan-out entirely. Legacy sites (no topics_v2)
+    // continue through the existing fan-out below unchanged.
+    {
+      const { isPerTopicSite } = await import("./per-topic-fetch.js");
+      if (isPerTopicSite(brief)) {
+        return await runPerTopicGeneration({
+          siteDomain,
+          siteName,
+          author: siteAuthor,
+          brief,
+          branch,
+          count,
+          jobId,
+          config,
+          existing,
+          tagIds,
+          topicName: params.topicName,
+        });
+      }
+    }
+
     // Step 4: Fetch enriched items with pagination — skip past duplicates
     const settings = await getSettings();
 
@@ -1076,4 +1116,216 @@ export async function runContentGeneration(
       results: [{ status: "error", message }],
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-topic generation path
+// ---------------------------------------------------------------------------
+
+/** Per-topic generation path. Iterates brief.topics_v2, fetches per topic,
+ *  computes cross-topic membership, writes articles with `topics: []` frontmatter. */
+async function runPerTopicGeneration(args: {
+  siteDomain: string;
+  siteName: string;
+  author?: string;
+  brief: SiteBrief;
+  branch?: string;
+  count?: number;
+  jobId?: string;
+  config: AgentConfig;
+  existing: { urls: Set<string>; titles: Set<string> };
+  tagIds: string[] | undefined;
+  /** When set, runs only this topic and bypasses date-based eligibility.
+   *  Used by the dashboard "Generate" button on individual topic rows. */
+  topicName?: string;
+}): Promise<BatchContentGenerationResult> {
+  const { brief, siteDomain, config, existing } = args;
+  const topics = brief.topics_v2 ?? [];
+
+  const {
+    isTopicEligibleToday,
+    computePerRunTarget,
+    resolveArticleTopics,
+  } = await import("./per-topic-fetch.js");
+
+  const settings = await getSettings();
+
+  // Decide which topics run this tick. If a specific topicName was passed in,
+  // restrict to that one topic and bypass `isTopicEligibleToday` — that's a
+  // manual on-demand trigger from the dashboard, the user wants it now
+  // regardless of `preferred_days`.
+  let eligibleTopics: TopicV2[];
+  if (args.topicName) {
+    const target = topics.find((t) => t.name === args.topicName);
+    if (!target) {
+      return {
+        siteDomain,
+        requested: args.count ?? 1,
+        totalSourced: 0,
+        duplicateCount: 0,
+        availableNew: 0,
+        n8nImagesTriggered: 0,
+        results: [{
+          status: "skipped",
+          reason: `topic "${args.topicName}" not found on this site`,
+        }],
+      };
+    }
+    eligibleTopics = [target];
+  } else {
+    eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule));
+  }
+
+  // Aggregate counters for the batch result.
+  let totalSourced = 0;
+  let duplicateCount = 0;
+  const allResults: ContentGenerationResult[] = [];
+
+  // Per-run dedupe sets shared across topics so the same item doesn't go to
+  // two topics' primary slots.
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  for (const topic of eligibleTopics) {
+    // When the caller passed an explicit topicName, the user picked the count
+    // (default 1). Otherwise fall back to the topic's scheduled per-run target.
+    const perRunTarget = args.topicName
+      ? Math.max(1, args.count ?? 1)
+      : computePerRunTarget(topic.schedule);
+    if (perRunTarget === 0) continue;
+
+    // Fetch per the topic's source.
+    const perTopicItems: ContentItem[] = [];
+    let fetchedFromBundleId: string | undefined;
+
+    const PAGE_SIZE = 20;
+    const MAX_PAGES = 5;
+
+    if (topic.source.type === "filter") {
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const response = await getContent({
+          limit: PAGE_SIZE,
+          page,
+          language: brief.language ?? "EN",
+          category_ids:
+            topic.source.category_ids.length > 0
+              ? topic.source.category_ids
+              : undefined,
+          tag_ids:
+            topic.source.tag_ids.length > 0 ? topic.source.tag_ids : undefined,
+        });
+        totalSourced += response.items.length;
+        if (response.items.length === 0) break;
+        for (const item of response.items) {
+          if (existing.urls.has(normalizeUrl(item.url))) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.titles.has(normalizeTitleKey(item.title))) {
+            duplicateCount++;
+            continue;
+          }
+          if (
+            seenIds.has(item.id) ||
+            seenUrls.has(normalizeUrl(item.url)) ||
+            seenTitles.has(normalizeTitleKey(item.title))
+          ) {
+            duplicateCount++;
+            continue;
+          }
+          seenIds.add(item.id);
+          seenUrls.add(normalizeUrl(item.url));
+          seenTitles.add(normalizeTitleKey(item.title));
+          perTopicItems.push(item);
+          if (perTopicItems.length >= perRunTarget) break;
+        }
+        if (perTopicItems.length >= perRunTarget) break;
+        if (page >= (response.total_pages ?? 1)) break;
+      }
+    } else {
+      // bundle source
+      fetchedFromBundleId = topic.source.bundle_id;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const response = await getContent({
+          limit: PAGE_SIZE,
+          page,
+          language: brief.language ?? "EN",
+          bundle_id: topic.source.bundle_id,
+        });
+        totalSourced += response.items.length;
+        if (response.items.length === 0) break;
+        for (const item of response.items) {
+          if (existing.urls.has(normalizeUrl(item.url))) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.titles.has(normalizeTitleKey(item.title))) {
+            duplicateCount++;
+            continue;
+          }
+          if (
+            seenIds.has(item.id) ||
+            seenUrls.has(normalizeUrl(item.url)) ||
+            seenTitles.has(normalizeTitleKey(item.title))
+          ) {
+            duplicateCount++;
+            continue;
+          }
+          seenIds.add(item.id);
+          seenUrls.add(normalizeUrl(item.url));
+          seenTitles.add(normalizeTitleKey(item.title));
+          perTopicItems.push(item);
+          if (perTopicItems.length >= perRunTarget) break;
+        }
+        if (perTopicItems.length >= perRunTarget) break;
+        if (page >= (response.total_pages ?? 1)) break;
+      }
+    }
+
+    if (perTopicItems.length === 0) {
+      console.log(
+        `[agent] [per-topic] topic="${topic.name}" — no new items this run`,
+      );
+      continue;
+    }
+
+    // Generate articles for each item; tag with cross-topic membership.
+    // For manual "Generate for this topic" clicks (args.topicName set), we
+    // scope tags to just the chosen topic so the article appears only under
+    // it — cross-topic auto-tagging surprises users who explicitly picked
+    // one topic. The scheduled cron path (no topicName) keeps cross-topic
+    // membership as designed for efficient fan-out.
+    for (const item of perTopicItems) {
+      const topicNames = args.topicName
+        ? [topic.name]
+        : resolveArticleTopics(item, topic, topics, fetchedFromBundleId);
+      const result = await processItem(
+        item,
+        settings,
+        config,
+        siteDomain,
+        args.siteName,
+        brief,
+        args.branch,
+        args.author,
+        topicNames,
+      );
+      allResults.push(result);
+    }
+  }
+
+  const requestedCount =
+    args.count ??
+    eligibleTopics.reduce((s, t) => s + computePerRunTarget(t.schedule), 0);
+
+  return {
+    siteDomain,
+    requested: requestedCount,
+    totalSourced,
+    duplicateCount,
+    availableNew: allResults.length,
+    n8nImagesTriggered: 0,
+    results: allResults,
+  };
 }

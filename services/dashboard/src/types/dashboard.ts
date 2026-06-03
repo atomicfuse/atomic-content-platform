@@ -1,4 +1,33 @@
 export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live" | "WordPress";
+
+// ---------------------------------------------------------------------------
+// Per-topic model types (mirrors @atomic-platform/shared-types TopicV2)
+// ---------------------------------------------------------------------------
+
+/** A topic's filter source — either raw categories+tags or a pointer to a bundle. */
+export type TopicV2Source =
+  | { type: "filter"; category_ids: string[]; tag_ids: string[] }
+  | { type: "bundle"; bundle_id: string };
+
+export interface TopicV2Schedule {
+  /** Target articles per calendar week. */
+  articles_per_week: number;
+  /** Days of the week (full names: "Monday"..."Sunday") on which this topic
+   *  is eligible to publish. Empty array = never publish. */
+  preferred_days: string[];
+}
+
+/** One topic in the per-topic model. Carries its own filter and schedule. */
+export interface TopicV2 {
+  /** Display name of the topic. Unique per site (case-insensitive). */
+  name: string;
+  /** Optional 1-line description for AI proposals. */
+  description?: string;
+  /** Where this topic pulls its content from. */
+  source: TopicV2Source;
+  /** Publishing cadence for this topic. */
+  schedule: TopicV2Schedule;
+}
 export type Company = "ATL" | "NGC" | "";
 export type Vertical = string;
 
@@ -114,21 +143,12 @@ export interface WizardFormData {
   audiences: string[];
   /** Audience type IDs from the Content Aggregator API. */
   audienceIds: string[];
-  /** Selected categories from Niche Targeting step: { id, name, iabCode }. */
-  selectedCategories: Array<{ id: string; name: string; iabCode: string }>;
-  /** Selected tags from Niche Targeting step: { id, name }. */
-  selectedTags: Array<{ id: string; name: string }>;
   /** IAB vertical code (denormalized from vertical object). */
   iabVerticalCode: string;
-  /** Existing bundle IDs subscribed by this site (multi-select from suggestions). */
-  bundleIds: string[];
-  /** Optional starter bundle to create alongside subscriptions.
-   *  When `enabled` is true and the form has a category + at least one subcategory,
-   *  the wizard creates this bundle and appends its id to bundleIds. */
-  starterBundle: {
-    enabled: boolean;
-    name: string;
-  };
+  /** Free-text site theme — drives AI proposals in the Topic Filters step. */
+  theme: string;
+  /** Topic filters built up in the Topic Filters step. */
+  topics_v2: TopicV2[];
   tone: string;
   topics: string[];
   articlesPerDay: number;

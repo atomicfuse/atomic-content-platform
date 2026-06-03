@@ -32,6 +32,7 @@ const GUIDE_PAGES = [
   { slug: "19-bulk-image-api", title: "Bulk Image Generation API" },
   { slug: "20-bundles", title: "Content Bundles & Subscriptions" },
   { slug: "20-query-param-overrides", title: "Query-Param Overrides & Template Vars" },
+  { slug: "21-per-topic-filters", title: "Per-Topic Filters" },
 ];
 
 export default function GuidePage(): React.ReactElement {
