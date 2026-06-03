@@ -117,23 +117,61 @@ export async function getCategories(parentId: string): Promise<CategoryItem[]> {
   const data = (await res.json()) as { items?: unknown[] };
   if (!Array.isArray(data.items)) return [];
   return data.items
-    .map((d: unknown) => {
-      const obj = d as { id?: string; name?: string; iab_code?: string; parent_id?: string | null };
-      if (obj.id && obj.name) {
-        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", parent_id: obj.parent_id ?? null };
-      }
-      return null;
-    })
+    .map(parseCategoryItem)
     .filter((x): x is CategoryItem => x !== null);
 }
 
-/** Fetch popular tags. Includes usage_count. No vertical scoping (dropped 2026-04-29). */
-export async function getTags(): Promise<TagItem[]> {
-  const res = await fetch("/api/tags");
+/** Fetch ALL categories (tier-1s + every subcategory across the taxonomy).
+ *  Used by bundle-creation UIs that allow picking subcats across multiple tier-1s. */
+export async function getAllCategories(): Promise<CategoryItem[]> {
+  const res = await fetch("/api/categories");
   if (!res.ok) return [];
   const data = (await res.json()) as { items?: unknown[] };
   if (!Array.isArray(data.items)) return [];
-  return extractTags(data.items);
+  return data.items
+    .map(parseCategoryItem)
+    .filter((x): x is CategoryItem => x !== null);
+}
+
+function parseCategoryItem(d: unknown): CategoryItem | null {
+  const obj = d as { id?: string; name?: string; iab_code?: string; parent_id?: string | null };
+  if (obj.id && obj.name) {
+    return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", parent_id: obj.parent_id ?? null };
+  }
+  return null;
+}
+
+/** Fetch the entire tag library by paginating until empty.
+ *  Used to populate name-by-id lookups for tag pills (so a site's selected
+ *  tag_ids display as names, not raw IDs). The aggregator caps `page_size`
+ *  (~100 in practice), so a single fetch isn't enough for large taxonomies;
+ *  we walk pages until exhaustion or a safety ceiling.
+ *  No vertical scoping (dropped 2026-04-29). */
+export async function getTags(): Promise<TagItem[]> {
+  const PAGE_SIZE = 100;
+  const MAX_PAGES = 20; // safety ceiling — 2000 tags is well past today's taxonomy
+  const all: TagItem[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetch(`/api/tags?page_size=${PAGE_SIZE}&page=${page}`);
+    if (!res.ok) break;
+    const data = (await res.json()) as { items?: unknown[] };
+    if (!Array.isArray(data.items) || data.items.length === 0) break;
+    const batch = extractTags(data.items);
+    let addedThisPage = 0;
+    for (const t of batch) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        all.push(t);
+        addedThisPage++;
+      }
+    }
+    // If the aggregator returned fewer than a full page OR all items were dups
+    // we've seen before, we're done.
+    if (data.items.length < PAGE_SIZE || addedThisPage === 0) break;
+  }
+  return all;
 }
 
 /** Search tags by name via API. Debounce in the caller. No vertical scoping (dropped 2026-04-29). */

@@ -13,9 +13,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const qs = new URLSearchParams({ active: "true", page_size: "100" });
     const search = searchParams.get("search");
     if (search) qs.set("search", search);
+    // Short revalidate window so freshly-created bundles appear in the list
+    // soon after a POST. The dashboard also renders optimistic bundle data
+    // client-side to mask the gap during the cache window.
     const res = await fetch(`${AGGREGATOR_URL}/api/bundles?${qs.toString()}`, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 300 },
+      next: { revalidate: 15 },
     });
     if (!res.ok) return NextResponse.json({ items: [] }, { status: res.status });
     const data: unknown = await res.json();

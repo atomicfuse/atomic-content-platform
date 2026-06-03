@@ -77,6 +77,64 @@ function readBody(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<st
   });
 }
 
+async function handleProposeFilter(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  config: ReturnType<typeof loadConfig>,
+): Promise<void> {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { status: "error", message: "Method not allowed" });
+    return;
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await readBody(req);
+  } catch {
+    sendJson(res, 413, { status: "error", message: "Payload too large" });
+    return;
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+    return;
+  }
+
+  const p = payload as Record<string, unknown>;
+  if (typeof p.siteTheme !== "string" || typeof p.topicName !== "string") {
+    sendJson(res, 400, { status: "error", message: "siteTheme and topicName are required strings" });
+    return;
+  }
+
+  const apiKey = config.anthropicApiKey;
+  if (!apiKey) {
+    sendJson(res, 500, { status: "error", message: "ANTHROPIC_API_KEY not configured" });
+    return;
+  }
+
+  try {
+    const { proposeFilter } = await import("./propose-filter.js");
+    const result = await proposeFilter(
+      {
+        siteTheme: p.siteTheme,
+        topicName: p.topicName,
+        topicDescription: typeof p.topicDescription === "string" ? p.topicDescription : undefined,
+        categories: Array.isArray(p.categories) ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"]) : [],
+        tags: Array.isArray(p.tags) ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"]) : [],
+      },
+      apiKey,
+    );
+    sendJson(res, 200, result as unknown as Record<string, unknown>);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[propose-filter] Error:", message);
+    sendJson(res, 502, { status: "error", message });
+  }
+}
+
 async function handleRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -449,9 +507,16 @@ async function handleRequest(
       description = (parsed.data.description as string) ?? articleTitle;
       summary = parsed.content.slice(0, 500);
 
-      // Try to get vertical from site brief
-      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, branch);
-      vertical = briefData?.brief?.vertical ?? "";
+      // Style cue for image generation. Prefer the article's primary topic
+      // (per-topic sites carry `topics: string[]` in frontmatter); fall back
+      // to the site brief's vertical for legacy articles.
+      const articleTopics = parsed.data.topics;
+      if (Array.isArray(articleTopics) && articleTopics.length > 0 && typeof articleTopics[0] === "string") {
+        vertical = articleTopics[0];
+      } else {
+        const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, branch);
+        vertical = briefData?.brief?.vertical ?? "";
+      }
     } catch {
       // Use defaults if article or brief can't be read
     }
@@ -625,6 +690,11 @@ async function handleRequest(
     return;
   }
 
+  if (req.url === "/propose-filter") {
+    await handleProposeFilter(req, res, config);
+    return;
+  }
+
   if (req.method !== "POST" || req.url !== "/content-generate") {
     sendJson(res, 404, { status: "error", message: "Not found. Use POST /content-generate" });
     return;
@@ -639,7 +709,12 @@ async function handleRequest(
     return;
   }
 
-  let payload: { siteDomain?: unknown; branch?: unknown; count?: unknown };
+  let payload: {
+    siteDomain?: unknown;
+    branch?: unknown;
+    count?: unknown;
+    topicName?: unknown;
+  };
   try {
     payload = JSON.parse(rawBody) as typeof payload;
   } catch {
@@ -648,7 +723,7 @@ async function handleRequest(
   }
 
   // Validate
-  const { siteDomain, branch, count } = payload;
+  const { siteDomain, branch, count, topicName } = payload;
   if (!siteDomain || typeof siteDomain !== "string") {
     sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
     return;
@@ -656,16 +731,20 @@ async function handleRequest(
 
   const branchStr = typeof branch === "string" ? branch : undefined;
   const countNum = typeof count === "number" && count > 0 ? Math.min(count, 50) : undefined;
+  const topicNameStr = typeof topicName === "string" && topicName.trim().length > 0
+    ? topicName
+    : undefined;
 
   console.log(
     `[server] POST /content-generate — site: ${siteDomain}` +
     `${countNum ? `, count: ${countNum}` : ""}` +
-    `${branchStr ? `, branch: ${branchStr}` : ""}`,
+    `${branchStr ? `, branch: ${branchStr}` : ""}` +
+    `${topicNameStr ? `, topic: ${topicNameStr}` : ""}`,
   );
 
   try {
     const result = await runContentGeneration(
-      { siteDomain, branch: branchStr, count: countNum },
+      { siteDomain, branch: branchStr, count: countNum, topicName: topicNameStr },
       config,
     );
 

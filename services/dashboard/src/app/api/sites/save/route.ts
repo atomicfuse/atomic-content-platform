@@ -217,8 +217,42 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.categoryIds !== undefined) brief.category_ids = configUpdates.categoryIds;
       if (configUpdates.tagIds !== undefined) brief.tag_ids = configUpdates.tagIds;
       if (configUpdates.seoKeywords !== undefined) brief.seo_keywords_focus = configUpdates.seoKeywords;
-      if (configUpdates.bundleId !== undefined) {
-        (existing as Record<string, unknown>).bundle_id = configUpdates.bundleId || undefined;
+      if (configUpdates.bundleIds !== undefined) {
+        const ids = configUpdates.bundleIds.filter((x): x is string => !!x);
+        if (ids.length > 0) {
+          brief.bundle_ids = ids;
+        } else {
+          delete (brief as Record<string, unknown>).bundle_ids;
+        }
+        // Strip legacy singular fields so saved yaml uses the new shape only.
+        delete (existing as Record<string, unknown>).bundle_id;
+        delete (brief as Record<string, unknown>).bundle_id;
+      }
+
+      // Per-topic-filter model. When topics_v2 is provided (non-empty array),
+      // this site is on the new model — write `brief.theme` and `brief.topics_v2`
+      // and strip every legacy niche-targeting field (bundle_ids, category_ids,
+      // tag_ids, plus the singular legacy bundle_id at top level and brief level).
+      if (configUpdates.topics_v2 !== undefined) {
+        if (configUpdates.topics_v2.length > 0) {
+          brief.topics_v2 = configUpdates.topics_v2;
+        } else {
+          delete (brief as Record<string, unknown>).topics_v2;
+        }
+        // Legacy fields are out on per-topic sites.
+        delete (brief as Record<string, unknown>).bundle_ids;
+        delete (brief as Record<string, unknown>).bundle_id;
+        delete (brief as Record<string, unknown>).category_ids;
+        delete (brief as Record<string, unknown>).tag_ids;
+        delete (existing as Record<string, unknown>).bundle_id;
+      }
+
+      if (configUpdates.theme !== undefined) {
+        if (configUpdates.theme.trim().length > 0) {
+          brief.theme = configUpdates.theme;
+        } else {
+          delete (brief as Record<string, unknown>).theme;
+        }
       }
     }
 

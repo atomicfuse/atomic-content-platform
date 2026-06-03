@@ -48,6 +48,7 @@ export function StepContentBrief({
             siteName: data.siteName,
             siteTagline: data.siteTagline || undefined,
             vertical: data.vertical,
+            theme: data.theme || undefined,
             company: data.company || undefined,
             audience: data.audiences.join(", ") || undefined,
             tone: data.tone || undefined,

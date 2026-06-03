@@ -29,7 +29,7 @@ import {
   bulkPutKV,
 } from "@/lib/cloudflare";
 import { workerPreviewUrl, getKvNamespaces } from "@/lib/constants";
-import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
+import type { WizardFormData, DashboardSiteEntry, TopicV2 } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
@@ -40,99 +40,10 @@ import {
 import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 
-// CONTENT_API_BASE_URL first: CloudGrid auto-injects CONTENT_AGGREGATOR_URL
-// as a platform read-only env pointing to a stale entity URL.
-const RAW_AGGREGATOR_URL =
-  process.env.CONTENT_API_BASE_URL ??
-  process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
-const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
-
 interface StagingResult {
   stagingUrl: string;
   /** The network-repo folder name and dashboard-index `domain` for the new site. */
   siteFolder: string;
-}
-
-/** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)".
- *  Post-2026-04-29: vertical_ids removed from bundle rules. Tier-1 category ID
- *  is included in category_ids alongside child IDs. */
-async function createBundle(
-  name: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
-  tagIds: string[],
-): Promise<{ id: string; name: string } | null> {
-  // Merge tier-1 ID with child category IDs (deduped)
-  const allCategoryIds = [tier1CategoryId, ...childCategoryIds.filter((id) => id !== tier1CategoryId)];
-  const payload = {
-    name,
-    description: `Auto-created content bundle for ${name}`,
-    active: true,
-    rules: {
-      category_ids: allCategoryIds,
-      tag_ids: tagIds,
-    },
-  };
-
-  try {
-    const url = `${AGGREGATOR_URL}/api/bundles`;
-    console.log("[wizard] POST", url, JSON.stringify(payload, null, 2));
-
-    let res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    console.log("[wizard] Bundle creation response:", res.status, res.statusText);
-
-    // Handle 409 (duplicate name) — retry with " (2)" suffix
-    if (res.status === 409) {
-      payload.name = `${name} (2)`;
-      console.log("[wizard] 409 duplicate — retrying POST", url, JSON.stringify(payload, null, 2));
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      console.log("[wizard] Retry response:", res.status, res.statusText);
-    }
-
-    // Accept both 200 and 201 as success — aggregators vary
-    if (res.ok) {
-      return (await res.json()) as { id: string; name: string };
-    }
-    const errorBody = await res.text().catch(() => "");
-    console.error("[wizard] Bundle creation failed:", res.status, errorBody);
-    return null;
-  } catch (err) {
-    console.error("[wizard] Bundle creation error:", err);
-    return null;
-  }
-}
-
-/** Create a content bundle for an existing site from the site settings page.
- *  Uses the niche targeting selections (category, subcategories, tags)
- *  already configured in the Content Brief tab. Returns the new bundleId
- *  on success, or throws on failure. */
-export async function createBundleForSite(
-  siteName: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
-  tagIds: string[],
-): Promise<{ id: string; name: string }> {
-  if (!tier1CategoryId) {
-    throw new Error("A category must be selected before creating a bundle.");
-  }
-  if (childCategoryIds.length === 0) {
-    throw new Error("At least one subcategory must be selected before creating a bundle.");
-  }
-  const bundle = await createBundle(siteName, tier1CategoryId, childCategoryIds, tagIds);
-  if (!bundle) {
-    throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
-  }
-  return bundle;
 }
 
 /** Create site files in a staging branch and trigger sync-kv to seed
@@ -148,42 +59,9 @@ export async function createSiteAndBuildStaging(
   // can resolve the right config when the hostname matches.
   const siteFolder = projectName;
 
-  // 0. Resolve niche targeting: existing bundle or create new
-  let bundleId: string | undefined = data.bundleId || undefined;
-  let categoryIds: string[] = data.selectedCategories.map((c) => c.id);
-  let tagIds: string[] = data.selectedTags.map((t) => t.id);
-  const iabCategoryCodes = data.selectedCategories
-    .map((c) => c.iabCode)
-    .filter(Boolean);
-
-  if (bundleId) {
-    // Existing bundle — fetch its rules for site.yaml fields
-    try {
-      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`);
-      if (res.ok) {
-        const bundle = (await res.json()) as {
-          rules?: { category_ids?: string[]; tag_ids?: string[] };
-        };
-        categoryIds = bundle.rules?.category_ids ?? categoryIds;
-        tagIds = bundle.rules?.tag_ids ?? tagIds;
-      }
-    } catch {
-      // Best-effort — proceed with what we have
-    }
-  } else if (data.verticalId && categoryIds.length > 0) {
-    // Create new bundle
-    const bundle = await createBundle(
-      data.siteName,
-      data.verticalId,
-      categoryIds,
-      tagIds,
-    );
-    if (bundle) {
-      bundleId = bundle.id;
-    } else {
-      throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
-    }
-  }
+  // 0. Per-topic model — the wizard writes brief.topics_v2 directly.
+  // No bundle is created from the wizard anymore; topics carry raw filters.
+  const topics_v2 = data.topics_v2;
 
   // 1. Build site.yaml content. `domain` is the site folder identifier
   // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
@@ -194,10 +72,7 @@ export async function createSiteAndBuildStaging(
     author: generateAuthorName(),
     groups: data.groups.length > 0 ? data.groups : [],
     active: true,
-    bundle_id: bundleId || undefined,
     iab_vertical_code: data.iabVerticalCode || undefined,
-    iab_category_codes:
-      iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
       audiences: data.audiences,
@@ -210,6 +85,8 @@ export async function createSiteAndBuildStaging(
         review: 10,
       },
       topics: data.topics,
+      theme: data.theme || undefined,
+      topics_v2: topics_v2.length > 0 ? topics_v2 : undefined,
       seo_keywords_focus: [],
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
@@ -219,9 +96,6 @@ export async function createSiteAndBuildStaging(
         : undefined,
       vertical: data.vertical || undefined,
       vertical_id: data.verticalId || undefined,
-      category_ids: categoryIds.length > 0 ? categoryIds : undefined,
-      tag_ids: tagIds.length > 0 ? tagIds : undefined,
-      bundle_id: bundleId || undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,
@@ -1063,8 +937,8 @@ export interface StagingSiteConfig {
   tagIds?: string[];
   /** SEO keywords focus list. */
   seoKeywords?: string[];
-  /** Content bundle ID. */
-  bundleId?: string;
+  /** Content Aggregator bundle IDs subscribed by this site. */
+  bundleIds?: string[];
   // Phase 1 config fields
   groups?: string[];
   tracking?: Record<string, unknown>;
@@ -1080,6 +954,12 @@ export interface StagingSiteConfig {
   /** `null` clears the field (auto-derive). `undefined` leaves it untouched. */
   theme_logo_height_footer?: number | null;
   layout?: Record<string, unknown>;
+  /** Free-text site theme (per-topic model — drives AI proposals). */
+  theme?: string;
+  /** Per-topic filters list. When provided on save, the site config is
+   *  rewritten to the new per-topic shape and legacy bundle_ids/category_ids/
+   *  tag_ids are stripped. */
+  topics_v2?: TopicV2[];
 }
 
 /** Read the current site config from the staging branch. */
@@ -1411,6 +1291,9 @@ interface TopicSuggestionContext {
   siteName: string;
   siteTagline?: string;
   vertical: string;
+  /** Free-text site theme — the per-topic model uses this as the primary signal
+   *  (replaces vertical as the editorial-angle input). */
+  theme?: string;
   company?: string;
   audience?: string;
   tone?: string;
@@ -1427,14 +1310,19 @@ export async function suggestTopics(
 ): Promise<string[]> {
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) {
-    return getFallbackTopics(context.siteName, context.vertical);
+    return getFallbackTopics(context.siteName, context.vertical, context.theme);
   }
 
-  // Build rich context from ALL available fields
+  // Build rich context from ALL available fields. The site theme (free-text
+  // editorial angle) is the strongest signal when present — it captures intent
+  // more precisely than category dropdowns ever did.
   const contextParts = [
     `Website name: "${context.siteName}"`,
   ];
   if (context.siteTagline) contextParts.push(`Tagline: "${context.siteTagline}"`);
+  if (context.theme && context.theme.trim()) {
+    contextParts.push(`Site theme / editorial angle: ${context.theme.trim()}`);
+  }
   if (context.vertical && context.vertical !== "Other") {
     contextParts.push(`Category: ${context.vertical}`);
   }
@@ -1442,19 +1330,27 @@ export async function suggestTopics(
   if (context.tone) contextParts.push(`Tone: ${context.tone}`);
   if (context.contentGuidelines) contextParts.push(`Content guidelines: ${context.contentGuidelines}`);
 
+  // Use theme as the primary anchor when present; fall back to category framing.
+  const anchorPhrase = context.theme && context.theme.trim()
+    ? `Based on the site theme above`
+    : (context.vertical && context.vertical !== "Other"
+        ? `Based on the website name and its "${context.vertical}" category`
+        : `Based on the website name`);
+
   const prompt = `You are a content strategist helping launch a new content website.
 
 Website info:
 ${contextParts.join("\n")}
 
-Based on the website name${context.vertical !== "Other" ? ` and its "${context.vertical}" category` : ""}, suggest exactly 4 specific content topics that this site should cover. Topics should be:
-- Specific to THIS site (not generic like "How-To Guides" or "Trending Topics")
+${anchorPhrase}, suggest exactly 4 specific content topics that this site should cover. Topics should be:
+- Specific to THIS site (not generic like "How-To Guides" or "Trending Topics" or "Expert Guides")
+- Tightly aligned with the site theme / editorial angle when one is provided
 - Short (2-4 words each)
 - Suitable as article categories / content pillars
 - Diverse — cover different angles of the site's niche
 
 Reply with ONLY a JSON array of exactly 4 strings. No markdown, no explanation.
-Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Health Guide", "Pet Nutrition", "Breed Spotlights"]`;
+Example for a site themed "Travel and eating while traveling": ["Destinations", "Food Around the World", "Wine & Beer Tours", "Travel Guides"]`;
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_TEXT_MODEL}:generateContent?key=${geminiKey}`;
@@ -1469,7 +1365,7 @@ Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Healt
 
     if (!response.ok) {
       console.warn(`[wizard] Topic suggestion failed: ${response.status}`);
-      return getFallbackTopics(context.siteName, context.vertical);
+      return getFallbackTopics(context.siteName, context.vertical, context.theme);
     }
 
     const data = (await response.json()) as {
@@ -1503,7 +1399,7 @@ Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Healt
  * Smart fallback topics — uses vertical-specific defaults
  * but also incorporates the site name for "Other" vertical.
  */
-function getFallbackTopics(siteName: string, vertical: string): string[] {
+function getFallbackTopics(siteName: string, vertical: string, theme?: string): string[] {
   const topicMap: Record<string, string[]> = {
     Lifestyle: ["Health & Wellness", "Home & Living", "Personal Growth", "Style & Fashion"],
     Travel: ["Destination Guides", "Travel Tips", "Local Culture", "Adventure Activities"],
@@ -1517,8 +1413,31 @@ function getFallbackTopics(siteName: string, vertical: string): string[] {
 
   if (topicMap[vertical]) return topicMap[vertical]!;
 
-  // For "Other" vertical, derive topics from the site name
-  // This is better than generic "Trending Topics" etc.
+  // Match against theme + name keywords combined. Theme is the stronger signal
+  // when present (the per-topic model's primary editorial input).
+  const haystack = `${theme ?? ""} ${siteName}`.toLowerCase();
+
+  // Theme-keyword routing first — broader coverage than name-only matching.
+  if (/\balien|\bufo|\bconspirac|\bpyramid|\bunexplain|\bparanormal|\bsupernatur|\bmyster/.test(haystack)) {
+    return ["Unexplained Events", "Ancient Mysteries", "Conspiracy Theories", "Strange Phenomena"];
+  }
+  if (/\bscience|\bspace|\bcosmos|\bphysics|\biolog|\bchemistry|\bresearch/.test(haystack)) {
+    return ["New Discoveries", "Space & Cosmos", "Health Science", "Environment & Climate"];
+  }
+  if (/\btravel|\bdestination|\btourism|\bvacation/.test(haystack)) {
+    return ["Destinations", "Travel Tips", "Local Culture", "Adventure Activities"];
+  }
+  if (/\bfood|\bwine|\beer|\bculinary|\brestaurant|\brecipe/.test(haystack)) {
+    return ["Recipes & Cooking", "Restaurant Reviews", "Food Culture", "Drinks & Pairings"];
+  }
+  if (/\bpet|\bdog|\bcat|\banimal|\bwildlif/.test(haystack)) {
+    return ["Pet Care & Health", "Animal Behavior", "Breed Guides", "Wildlife Stories"];
+  }
+  if (/\bmovie|\bfilm|\bcelebri|\bmusic|\bstream|\btv\b|\bentertain/.test(haystack)) {
+    return ["Movie Reviews", "TV & Streaming", "Music Spotlight", "Celebrity Culture"];
+  }
+
+  // Fall through to legacy site-name keyword routing
   const name = siteName.toLowerCase();
   if (name.includes("tech") || name.includes("digital") || name.includes("cyber")) {
     return ["Tech Reviews", "Industry News", "How-To Tutorials", "Future Trends"];

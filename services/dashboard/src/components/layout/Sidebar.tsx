@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 
 interface NavItem {
   label: string;
@@ -118,9 +119,16 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
 
 export function Sidebar(): React.ReactElement {
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
 
-  const isDark = theme === "dark";
+  // next-themes hydration guard: the server doesn't know which theme the
+  // client will resolve to (it's read from localStorage on the client). Until
+  // the component mounts, we render a stable placeholder for the theme-
+  // toggle button to avoid the SSR/CSR text + SVG path mismatch that triggers
+  // React's "Hydration failed" error and its downstream `parentNode` crash.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const isDark = mounted ? resolvedTheme === "dark" : true;
 
   const renderNavItem = (item: NavItem): React.ReactElement => {
     const isActive =
