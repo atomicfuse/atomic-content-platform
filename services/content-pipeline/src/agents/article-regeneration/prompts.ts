@@ -20,12 +20,18 @@ export function buildRevisionSystemPrompt(params: {
 
   const wc = parseWordCountFromGuidelines(brief.content_guidelines, 600, 1000);
 
+  // Per-topic sites carry the editorial angle in `brief.theme`. The revision
+  // editor should preserve that framing — surface it alongside Site Voice.
+  const themeLine = brief.theme && brief.theme.trim()
+    ? `\n- Editorial Angle: ${brief.theme.trim()}`
+    : "";
+
   return `You are a content editor for ${siteName}. Your task is to revise an article based on reviewer feedback.
 
 ## Site Voice
 - Tone: ${brief.tone}
 - Audience: ${brief.audience}
-- Topics: ${brief.topics.join(", ")}
+- Topics: ${brief.topics.join(", ")}${themeLine}
 - SEO focus keywords: ${brief.seo_keywords_focus.join(", ")}
 
 ## Editorial Guidelines

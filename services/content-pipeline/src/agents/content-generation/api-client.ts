@@ -93,7 +93,16 @@ export async function getContent(params: GetContentParams): Promise<ContentApiRe
 
   url.searchParams.set("enriched", String(params.enriched ?? true));
   url.searchParams.set("status", params.status ?? "active");
-  url.searchParams.set("content_type", params.content_type ?? "article");
+  // content_type is NO LONGER auto-restricted to "article". The aggregator
+  // returns multiple types (article, video, …) and the pipeline knows how
+  // to ingest each (e.g. videos get embedded into article frontmatter per
+  // CLAUDE.md landmine #39). Silently filtering to articles only caused
+  // "no items at source" failures on bundles whose matching content was
+  // mostly video. Caller can still pass `content_type` explicitly if they
+  // want to restrict (e.g. "article" or comma-separated "article,video").
+  if (params.content_type) {
+    url.searchParams.set("content_type", params.content_type);
+  }
   url.searchParams.set("page_size", String(params.limit));
   url.searchParams.set("page", String(params.page ?? 1));
 

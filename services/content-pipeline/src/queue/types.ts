@@ -7,6 +7,8 @@ export interface GenerateJobData {
   runId?: string;
   triggeredBy: "manual" | "scheduled" | "scheduled-forced";
   briefJson?: string;
+  /** Per-topic override for per-topic sites (manual dashboard trigger). */
+  topicName?: string;
 }
 
 export interface SchedulerRunData {

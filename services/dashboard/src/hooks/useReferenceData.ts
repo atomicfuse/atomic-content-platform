@@ -5,6 +5,7 @@ import {
   getAudiences,
   getVerticals,
   getCategories,
+  getAllCategories,
   getTags,
   searchTags,
   getBundles,
@@ -60,6 +61,23 @@ export function useCategories(parentId: string): { categories: CategoryItem[]; l
       .catch(() => setCategories([]))
       .finally(() => setLoading(false));
   }, [parentId]);
+
+  return { categories, loading };
+}
+
+/** Fetch ALL categories across the taxonomy once.
+ *  Returns both tier-1s (parent_id=null) and subcategories. Used by bundle-creation
+ *  UIs that compose rules spanning multiple tier-1s. */
+export function useAllCategories(): { categories: CategoryItem[]; loading: boolean } {
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAllCategories()
+      .then(setCategories)
+      .catch(() => setCategories([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   return { categories, loading };
 }

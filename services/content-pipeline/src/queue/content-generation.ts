@@ -44,7 +44,7 @@ export async function processGenerateJob(
   config: AgentConfig,
   redis: Redis,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count, briefJson } = job.data;
+  const { siteDomain, branch, count, briefJson, topicName } = job.data;
 
   // Deserialize preloaded brief from job data (avoids redundant GitHub read)
   let preloadedBrief: ContentGenerationParams["preloadedBrief"] | undefined;
@@ -98,7 +98,7 @@ export async function processGenerateJob(
     );
   } else {
     result = await runContentGeneration(
-      { siteDomain, branch, count, jobId: job.id, preloadedBrief },
+      { siteDomain, branch, count, jobId: job.id, preloadedBrief, topicName },
       config,
     );
     await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);

@@ -42,7 +42,10 @@ export function StepIdentity({
     .filter((a) => a.name.toLowerCase().includes(audienceSearch.toLowerCase()));
 
   // EC-16: Trim whitespace before checking — "   " is truthy but blank.
-  const canProceed = data.pagesProjectName?.trim() && data.siteName?.trim();
+  const canProceed =
+    data.pagesProjectName?.trim() &&
+    data.siteName?.trim() &&
+    data.theme.trim().length > 0;
 
   function handleProjectNameChange(value: string): void {
     // EC-14: Enforce max length of 63 (DNS label limit / GitHub branch best practice).
@@ -173,6 +176,17 @@ export function StepIdentity({
           onChange({ company: e.target.value as WizardFormData["company"] })
         }
       />
+
+      <div className="space-y-1.5">
+        <label className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Site theme *</label>
+        <p className="text-xs text-[var(--text-muted)]">1–2 lines describing the editorial angle. AI uses this to propose filters for each topic.</p>
+        <textarea
+          value={data.theme}
+          onChange={(e): void => onChange({ theme: e.target.value })}
+          placeholder="Travel and eating while traveling — destinations, food tourism, wine routes."
+          className="w-full min-h-[64px] rounded border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 text-sm"
+        />
+      </div>
 
       <div className="flex justify-between pt-4">
         <Button variant="ghost" onClick={onCancel}>

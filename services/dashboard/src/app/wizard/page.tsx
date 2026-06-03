@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/wizard/WizardShell";
 import { StepIdentity } from "@/components/wizard/StepIdentity";
-import { StepNicheTargeting } from "@/components/wizard/StepNicheTargeting";
+import { StepTopicFilters } from "@/components/wizard/StepTopicFilters";
 import { StepGroups } from "@/components/wizard/StepGroups";
 import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
@@ -40,10 +40,9 @@ const DEFAULT_FORM: WizardFormData = {
   },
   audiences: [],
   audienceIds: [],
-  selectedCategories: [],
-  selectedTags: [],
   iabVerticalCode: "",
-  bundleId: "",
+  theme: "",
+  topics_v2: [],
   tone: "",
   topics: [],
   articlesPerDay: 1,
@@ -90,7 +89,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 1:
             return (
-              <StepNicheTargeting
+              <StepContentBrief
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -99,7 +98,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 2:
             return (
-              <StepGroups
+              <StepTopicFilters
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -108,7 +107,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 3:
             return (
-              <StepTheme
+              <StepGroups
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
@@ -117,7 +116,7 @@ export default function WizardPage(): React.ReactElement {
             );
           case 4:
             return (
-              <StepContentBrief
+              <StepTheme
                 data={formData}
                 onChange={updateForm}
                 onNext={goNext}
