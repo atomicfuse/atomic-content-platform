@@ -1,7 +1,8 @@
 import { FlowProducer, Worker } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
-import { createOctokit, readFile, commitFile, listFilesRecursive, commitBatch, clearTreeCache, parseRepo } from "../lib/github.js";
+import { createOctokit, readFile, readFileBase64, commitFile, listFilesRecursive, commitBatch, clearTreeCache, parseRepo } from "../lib/github.js";
+import type { BatchFileEntry, BatchBinaryEntry } from "../lib/github.js";
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "../lib/config.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
@@ -123,6 +124,44 @@ export function shouldAutoPublish(
   return true;
 }
 
+/** File extensions whose bytes must be preserved as base64, never decoded
+ *  as UTF-8. Decoding binary as text corrupts it (~1.8x inflation) — this is
+ *  what mangled every site logo during auto-publish. Mirrors the dashboard's
+ *  BINARY_EXTENSIONS in actions/wizard.ts. */
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
+  ".woff", ".woff2", ".ttf", ".eot", ".otf",
+  ".pdf", ".zip",
+]);
+
+export function isBinaryPath(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return false;
+  return BINARY_EXTENSIONS.has(path.slice(dot).toLowerCase());
+}
+
+/**
+ * Partition site files into text (UTF-8) and binary (base64) sets for commit,
+ * reading each via the appropriate binary-safe primitive. Pure aside from the
+ * injected readers, so it's unit-testable without a live Octokit.
+ */
+export async function collectFilesForPublish(
+  filePaths: string[],
+  readText: (path: string) => Promise<string>,
+  readBinaryBase64: (path: string) => Promise<string>,
+): Promise<{ files: BatchFileEntry[]; binaryFiles: BatchBinaryEntry[] }> {
+  const files: BatchFileEntry[] = [];
+  const binaryFiles: BatchBinaryEntry[] = [];
+  for (const filePath of filePaths) {
+    if (isBinaryPath(filePath)) {
+      binaryFiles.push({ path: filePath, base64: await readBinaryBase64(filePath) });
+    } else {
+      files.push({ path: filePath, content: await readText(filePath) });
+    }
+  }
+  return { files, binaryFiles };
+}
+
 /**
  * Copy sites/<domain>/ from staging branch to main, then reset staging branch.
  * This is the content-pipeline equivalent of the dashboard's publishStagingToProduction.
@@ -141,18 +180,21 @@ async function autoPublishSite(
     return;
   }
 
-  const files: Array<{ path: string; content: string }> = [];
-  for (const filePath of filePaths) {
-    const content = await readFile(octokit, repo, filePath, stagingBranch);
-    files.push({ path: filePath, content });
-  }
+  // Binary assets (logos, favicons, images) MUST be read as base64 and
+  // committed as base64 blobs — reading them as UTF-8 corrupts the bytes.
+  const { files, binaryFiles } = await collectFilesForPublish(
+    filePaths,
+    (p) => readFile(octokit, repo, p, stagingBranch),
+    (p) => readFileBase64(octokit, repo, p, stagingBranch),
+  );
+  const totalFiles = files.length + binaryFiles.length;
 
   await commitBatch(
     octokit,
     repo,
     files,
-    [],
-    `scheduler: auto-publish ${domain} (${files.length} files)`,
+    binaryFiles,
+    `scheduler: auto-publish ${domain} (${totalFiles} files)`,
     "main",
   );
 
@@ -177,7 +219,7 @@ async function autoPublishSite(
   clearTreeCache("main");
   await invalidateDashboardCache(domain, stagingBranch);
   await invalidateDashboardCache(domain, "main");
-  console.log(`[auto-publish] Published ${domain}: ${files.length} files → main, staging reset`);
+  console.log(`[auto-publish] Published ${domain}: ${totalFiles} files → main, staging reset`);
 }
 
 // ---------------------------------------------------------------------------
