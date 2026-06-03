@@ -172,17 +172,14 @@ async function listFilesNonRecursive(
   return dirTree.tree;
 }
 
-/**
- * Read a file from the network repo.
- */
-export async function readFile(
+/** Resolve the blob SHA for a repo path on a branch, with a fallback for
+ *  truncated trees. */
+async function resolveBlobSha(
   octokit: Octokit,
   repo: string,
   path: string,
   branch?: string,
 ): Promise<string> {
-  const { owner, repo: repoName } = parseRepo(repo);
-
   let entry: TreeEntry | undefined;
   try {
     const tree = await getTreeCached(octokit, repo, branch);
@@ -199,28 +196,69 @@ export async function readFile(
   }
 
   if (!entry?.sha) throw new Error(`Expected file at ${path}, got nothing`);
+  return entry.sha;
+}
 
-  const cached = blobCache.get(entry.sha);
+/** Fetch a blob's content as normalized base64 (no line breaks), cached by
+ *  SHA. This is the binary-safe primitive: text callers decode it as UTF-8;
+ *  callers committing binary assets pass it straight through as base64. */
+async function fetchBlobBase64(
+  octokit: Octokit,
+  owner: string,
+  repoName: string,
+  sha: string,
+): Promise<string> {
+  const cached = blobCache.get(sha);
   if (cached !== undefined) {
     recordCacheHit("blob");
     return cached;
   }
 
-  const { data } = await octokit.git.getBlob({
-    owner,
-    repo: repoName,
-    file_sha: entry.sha,
-  });
+  const { data } = await octokit.git.getBlob({ owner, repo: repoName, file_sha: sha });
   recordApiCall("getBlob");
-  const content = Buffer.from(data.content, "base64").toString("utf-8");
+  const base64 = data.content.replace(/\n/g, "");
 
   if (blobCache.size >= BLOB_CACHE_MAX) {
     const oldest = blobCache.keys().next().value!;
     blobCache.delete(oldest);
   }
-  blobCache.set(entry.sha, content);
+  blobCache.set(sha, base64);
 
-  return content;
+  return base64;
+}
+
+/**
+ * Read a text file from the network repo (decoded as UTF-8).
+ * Do NOT use for binary assets (images, fonts) — UTF-8 decoding corrupts
+ * the bytes. Use readFileBase64 for those.
+ */
+export async function readFile(
+  octokit: Octokit,
+  repo: string,
+  path: string,
+  branch?: string,
+): Promise<string> {
+  const { owner, repo: repoName } = parseRepo(repo);
+  const sha = await resolveBlobSha(octokit, repo, path, branch);
+  const base64 = await fetchBlobBase64(octokit, owner, repoName, sha);
+  return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+/**
+ * Read a binary file from the network repo as base64 — preserves exact bytes.
+ * Required when copying binary assets (logos, favicons, images) between
+ * branches: reading them via readFile (UTF-8) mangles the bytes, which is what
+ * corrupted every site logo during scheduler auto-publish.
+ */
+export async function readFileBase64(
+  octokit: Octokit,
+  repo: string,
+  path: string,
+  branch?: string,
+): Promise<string> {
+  const { owner, repo: repoName } = parseRepo(repo);
+  const sha = await resolveBlobSha(octokit, repo, path, branch);
+  return fetchBlobBase64(octokit, owner, repoName, sha);
 }
 
 /**
