@@ -177,6 +177,12 @@ async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number>
     // footer logos) — these are R2-native and must not be synced from Git.
     if (rel.startsWith('images/') || rel.startsWith('images\\')) return;
     if (IMAGE_ASSET_RE.test(rel)) return;
+    // Skip git placeholders / dotfiles (.gitkeep, .DS_Store). Uploading them
+    // is meaningless and, with logos now R2-native, .gitkeep is often the only
+    // file left in assets/ — attempting its upload is what fails the sync when
+    // a (stale) workflow points R2_BUCKET at a non-existent bucket.
+    const base = rel.split(/[\\/]/).pop() ?? rel;
+    if (base.startsWith('.')) return;
     const key = `${siteId}/assets/${rel}`;
     runWrangler([
       'r2',
