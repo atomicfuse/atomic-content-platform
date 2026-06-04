@@ -44,7 +44,11 @@ export async function processGenerateJob(
   config: AgentConfig,
   redis: Redis,
 ): Promise<BatchContentGenerationResult> {
-  const { siteDomain, branch, count, briefJson, topicName } = job.data;
+  const { siteDomain, branch, count, briefJson, topicName, bypassSchedule, triggeredBy } = job.data;
+  // Manual dashboard triggers always bypass per-topic date eligibility. The
+  // job payload's `bypassSchedule` (set by the dashboard) is authoritative;
+  // we also default-on for triggeredBy="manual" so older callers work.
+  const effectiveBypass = bypassSchedule ?? triggeredBy === "manual";
 
   // Deserialize preloaded brief from job data (avoids redundant GitHub read)
   let preloadedBrief: ContentGenerationParams["preloadedBrief"] | undefined;
@@ -98,7 +102,15 @@ export async function processGenerateJob(
     );
   } else {
     result = await runContentGeneration(
-      { siteDomain, branch, count, jobId: job.id, preloadedBrief, topicName },
+      {
+        siteDomain,
+        branch,
+        count,
+        jobId: job.id,
+        preloadedBrief,
+        topicName,
+        bypassSchedule: effectiveBypass,
+      },
       config,
     );
     await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);

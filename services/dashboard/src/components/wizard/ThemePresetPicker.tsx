@@ -69,7 +69,7 @@ export function ThemePresetPicker({ value, onChange }: ThemePresetPickerProps): 
               <span className="text-[10px] text-[var(--text-muted)]">· {presets.length}</span>
               <div className="ml-1 h-px flex-1 bg-[var(--border-secondary)]" />
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 lg:grid-cols-6">
               {presets.map(({ id, preset }) => (
                 <PresetCard
                   key={id}
@@ -126,8 +126,8 @@ const PresetCard = forwardRef<HTMLButtonElement, PresetCardProps>(function Prese
       }`}
     >
       <PresetPreviewBand preset={preset} />
-      <div className="flex items-center justify-between gap-1.5 px-2 py-1.5">
-        <span className="truncate text-xs font-semibold text-[var(--text-primary)]">
+      <div className="flex items-center justify-between gap-1 px-1.5 py-1">
+        <span className="truncate text-[11px] font-semibold text-[var(--text-primary)]">
           {preset.name}
         </span>
         {selected && <CheckBadge />}
@@ -158,34 +158,34 @@ function PresetPreviewBand({ preset }: { preset: PresetDefinition }): React.Reac
   if (isGradient && (headerGradient || footerGradient || heroGradient)) {
     return (
       <div
-        className="h-9 w-full"
+        className="h-7 w-full"
         style={{ background: headerGradient ?? footerGradient ?? heroGradient }}
         aria-hidden="true"
       />
     );
   }
 
-  // Solid presets: layered preview. Top = page bg, then primary (header) stripe,
-  // accent stripe, footer band — reads like a tiny scrolled page section.
+  // Solid presets: layered preview. Top = primary (header) stripe, accent
+  // stripe over page bg, footer band — reads like a tiny scrolled page section.
   return (
     <div
-      className="relative h-9 w-full overflow-hidden"
+      className="relative h-7 w-full overflow-hidden"
       style={{ background: bg }}
       aria-hidden="true"
     >
-      {/* Primary (header) band — top 4px */}
+      {/* Primary (header) band — top 3px */}
       <div
-        className="absolute left-0 top-0 h-1 w-full"
+        className="absolute left-0 top-0 h-[3px] w-full"
         style={{ background: primary }}
       />
-      {/* Accent stripe — 3px above footer band */}
+      {/* Accent stripe — 2px above footer band */}
       <div
-        className="absolute bottom-2 left-0 h-[3px] w-full"
+        className="absolute bottom-1.5 left-0 h-[2px] w-full"
         style={{ background: accent }}
       />
-      {/* Footer band — bottom 8px */}
+      {/* Footer band — bottom 6px */}
       <div
-        className="absolute bottom-0 left-0 h-2 w-full"
+        className="absolute bottom-0 left-0 h-1.5 w-full"
         style={{ background: footerBg }}
       />
     </div>
@@ -198,8 +198,8 @@ function PresetPreviewBand({ preset }: { preset: PresetDefinition }): React.Reac
 
 function CheckBadge(): React.ReactElement {
   return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-cyan text-white">
-      <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
+    <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-cyan text-white">
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-2.5 w-2.5">
         <path
           fillRule="evenodd"
           d="M16.704 5.296a1 1 0 010 1.414l-7.5 7.5a1 1 0 01-1.414 0l-3.5-3.5a1 1 0 011.414-1.414L8.5 12.086l6.79-6.79a1 1 0 011.414 0z"
