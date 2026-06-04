@@ -714,6 +714,7 @@ async function handleRequest(
     branch?: unknown;
     count?: unknown;
     topicName?: unknown;
+    bypassSchedule?: unknown;
   };
   try {
     payload = JSON.parse(rawBody) as typeof payload;
@@ -723,7 +724,7 @@ async function handleRequest(
   }
 
   // Validate
-  const { siteDomain, branch, count, topicName } = payload;
+  const { siteDomain, branch, count, topicName, bypassSchedule } = payload;
   if (!siteDomain || typeof siteDomain !== "string") {
     sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
     return;
@@ -734,6 +735,7 @@ async function handleRequest(
   const topicNameStr = typeof topicName === "string" && topicName.trim().length > 0
     ? topicName
     : undefined;
+  const bypassScheduleBool = bypassSchedule === true;
 
   console.log(
     `[server] POST /content-generate — site: ${siteDomain}` +
@@ -744,7 +746,13 @@ async function handleRequest(
 
   try {
     const result = await runContentGeneration(
-      { siteDomain, branch: branchStr, count: countNum, topicName: topicNameStr },
+      {
+        siteDomain,
+        branch: branchStr,
+        count: countNum,
+        topicName: topicNameStr,
+        bypassSchedule: bypassScheduleBool,
+      },
       config,
     );
 

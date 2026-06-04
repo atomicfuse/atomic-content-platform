@@ -9,6 +9,8 @@ export interface GenerateJobData {
   briefJson?: string;
   /** Per-topic override for per-topic sites (manual dashboard trigger). */
   topicName?: string;
+  /** Skip date-based per-topic eligibility (manual dashboard trigger). */
+  bypassSchedule?: boolean;
 }
 
 export interface SchedulerRunData {

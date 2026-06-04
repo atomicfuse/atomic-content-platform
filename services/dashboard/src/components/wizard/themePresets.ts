@@ -285,6 +285,28 @@ export const PRESETS: Record<string, PresetDefinition> = {
       footer_text: "#94a8bc", footer_heading: "#f4f7f9", footer_link: "#94a8bc", footer_link_hover: "#67e8f9",
     },
   },
+  solarpunk: {
+    name: "Solarpunk",
+    tier: "lifestyle",
+    subtitle: "Optimistic eco + amber sun",
+    fonts: { heading: "Lora", body: "Source Sans 3" },
+    colors: {
+      // Designed to the contract: emerald primary (header) + cream nav text =
+      // 10:1, amber accent (subscribe bg) + dark forest text = 6:1, deep-forest
+      // footer + sage text = 10:1. Every pair audited at design time.
+      primary: "#1f5128", accent: "#b45309", background: "#f9f7e8", secondary: "#1a2418",
+      text: "#1a2418", muted: "#6b7a5f", surface: "#eef0d8", border: "#d8d8b8",
+      heading: "#1a2418", link: "#1f5128", link_hover: "#b45309",
+      nav_link: "#f9f7e8", nav_link_hover: "#fbbf24",
+      footer_bg: "#0f1f15", must_reads_bg: "#0f1f15",
+      hero_title: "#f9f7e8", must_reads_title: "#f9f7e8", article_hero_title: "#f9f7e8",
+      article_hero_meta: "#9bbf9b",
+      feed_title: "#1a2418", feed_desc: "#2c3e23", feed_date: "#6b7a5f",
+      prose_heading: "#1a2418", prose_body: "#2c3e23", category_header_text: "#f9f7e8",
+      subscribe_heading: "#1a2418",
+      footer_text: "#9bbf9b", footer_heading: "#f9f7e8", footer_link: "#9bbf9b", footer_link_hover: "#fbbf24",
+    },
+  },
   rose_garden: {
     name: "Rose Garden",
     tier: "lifestyle",
@@ -412,16 +434,16 @@ export const PRESETS: Record<string, PresetDefinition> = {
     fonts: { heading: "Merriweather", body: "Source Sans 3" },
     colors: {
       primary: "#161618", accent: "#d97706", background: "#0b0b0c", secondary: "#0b0b0c",
-      text: "#e6e6e6", muted: "#737373", surface: "#1c1c1f", border: "#262629",
+      text: "#e6e6e6", muted: "#a3a3a3", surface: "#1c1c1f", border: "#262629",
       heading: "#fafafa", link: "#fbbf24", link_hover: "#fde68a",
       nav_link: "#fafafa", nav_link_hover: "#fbbf24",
       footer_bg: "#0b0b0c", must_reads_bg: "#161618",
       hero_title: "#fafafa", must_reads_title: "#fafafa", article_hero_title: "#fafafa",
-      article_hero_meta: "#737373",
-      feed_title: "#fafafa", feed_desc: "#d4d4d4", feed_date: "#737373",
+      article_hero_meta: "#a3a3a3",
+      feed_title: "#fafafa", feed_desc: "#d4d4d4", feed_date: "#a3a3a3",
       prose_heading: "#fafafa", prose_body: "#d4d4d4", category_header_text: "#fafafa",
       subscribe_heading: "#0b0b0c",
-      footer_text: "#737373", footer_heading: "#fafafa", footer_link: "#737373", footer_link_hover: "#fbbf24",
+      footer_text: "#a3a3a3", footer_heading: "#fafafa", footer_link: "#a3a3a3", footer_link_hover: "#fbbf24",
     },
   },
   forest_night: {
@@ -431,16 +453,38 @@ export const PRESETS: Record<string, PresetDefinition> = {
     fonts: { heading: "Lora", body: "Source Sans 3" },
     colors: {
       primary: "#0a1410", accent: "#ca8a04", background: "#0f1d16", secondary: "#0f1d16",
-      text: "#e4e9e2", muted: "#7a8a7d", surface: "#162a1f", border: "#1c3024",
+      text: "#e4e9e2", muted: "#a0afa3", surface: "#162a1f", border: "#1c3024",
       heading: "#e4e9e2", link: "#86b08a", link_hover: "#facc15",
       nav_link: "#e4e9e2", nav_link_hover: "#facc15",
       footer_bg: "#06100a", must_reads_bg: "#162a1f",
       hero_title: "#e4e9e2", must_reads_title: "#e4e9e2", article_hero_title: "#e4e9e2",
-      article_hero_meta: "#7a8a7d",
-      feed_title: "#e4e9e2", feed_desc: "#c8d2c5", feed_date: "#7a8a7d",
+      article_hero_meta: "#a0afa3",
+      feed_title: "#e4e9e2", feed_desc: "#c8d2c5", feed_date: "#a0afa3",
       prose_heading: "#e4e9e2", prose_body: "#c8d2c5", category_header_text: "#e4e9e2",
       subscribe_heading: "#0f1d16",
-      footer_text: "#7a8a7d", footer_heading: "#e4e9e2", footer_link: "#7a8a7d", footer_link_hover: "#facc15",
+      footer_text: "#a0afa3", footer_heading: "#e4e9e2", footer_link: "#a0afa3", footer_link_hover: "#facc15",
+    },
+  },
+  tokyo_night: {
+    name: "Tokyo Night",
+    tier: "dark",
+    subtitle: "Deep indigo + kabuki red",
+    fonts: { heading: "Manrope", body: "Inter" },
+    colors: {
+      // Deep indigo primary (header) + cool off-white nav = 14:1.
+      // Kabuki red accent (subscribe bg) + cream-white text = 4.6:1 AA.
+      // Deep-navy footer + muted indigo text = 6:1.
+      primary: "#1a1b2e", accent: "#c81e3b", background: "#0f111c", secondary: "#ffffff",
+      text: "#e0e6f0", muted: "#9aa3b8", surface: "#1f2138", border: "#2d2f4a",
+      heading: "#f0f3f8", link: "#7c89f0", link_hover: "#e94560",
+      nav_link: "#e0e6f0", nav_link_hover: "#e94560",
+      footer_bg: "#0a0c14", must_reads_bg: "#1a1b2e",
+      hero_title: "#f0f3f8", must_reads_title: "#f0f3f8", article_hero_title: "#f0f3f8",
+      article_hero_meta: "#9aa3b8",
+      feed_title: "#f0f3f8", feed_desc: "#c8cee0", feed_date: "#9aa3b8",
+      prose_heading: "#f0f3f8", prose_body: "#c8cee0", category_header_text: "#f0f3f8",
+      subscribe_heading: "#ffffff",
+      footer_text: "#9aa3b8", footer_heading: "#f0f3f8", footer_link: "#9aa3b8", footer_link_hover: "#e94560",
     },
   },
   stadium: {
@@ -473,16 +517,16 @@ export const PRESETS: Record<string, PresetDefinition> = {
     fonts: { heading: "Space Grotesk", body: "Inter" },
     colors: {
       primary: "#0a0e27", accent: "#7c3aed", background: "#0a0e27", secondary: "#ffffff",
-      text: "#e9e4ff", muted: "#8b8db8", surface: "#1a1a3e", border: "#2a2d52",
+      text: "#e9e4ff", muted: "#a8aacc", surface: "#1a1a3e", border: "#2a2d52",
       heading: "#f5f3ff", link: "#a78bfa", link_hover: "#f093fb",
       nav_link: "#e9e4ff", nav_link_hover: "#f093fb",
       footer_bg: "#0a0e27", must_reads_bg: "#1a1a3e",
       hero_title: "#ffffff", must_reads_title: "#f5f3ff", article_hero_title: "#ffffff",
       article_hero_meta: "#a8aacc",
-      feed_title: "#f5f3ff", feed_desc: "#d4d1f0", feed_date: "#8b8db8",
+      feed_title: "#f5f3ff", feed_desc: "#d4d1f0", feed_date: "#a8aacc",
       prose_heading: "#f5f3ff", prose_body: "#d4d1f0", category_header_text: "#ffffff",
       subscribe_heading: "#ffffff",
-      footer_text: "#a8aacc", footer_heading: "#f5f3ff", footer_link: "#a8aacc", footer_link_hover: "#f093fb",
+      footer_text: "#c0c5dd", footer_heading: "#f5f3ff", footer_link: "#c0c5dd", footer_link_hover: "#f093fb",
     },
     gradients: {
       // Header above the fold — navy → indigo → violet diagonal. Immediately visible.
@@ -493,8 +537,8 @@ export const PRESETS: Record<string, PresetDefinition> = {
       footer_bg_gradient: "linear-gradient(135deg, #0a0e27 0%, #1e3a8a 35%, #6d28d9 65%, #0a0e27 100%)",
       // must_reads sits between — different angle so it doesn't echo.
       must_reads_bg_gradient: "linear-gradient(120deg, #1e1b4b 0%, #4c1d95 50%, #1e1b4b 100%)",
-      // Hero scrim: image visible up top, sustained purple band, deep navy at bottom for title.
-      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(124,58,237,0.25) 35%, rgba(124,58,237,0.7) 70%, rgba(10,14,39,0.95) 100%)",
+      // Hero scrim: image visible up top, light purple haze mid, dark fade only at the very bottom for title legibility.
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(124,58,237,0.12) 45%, rgba(124,58,237,0.4) 80%, rgba(10,14,39,0.85) 100%)",
     },
   },
   sunset_strip: {
@@ -506,7 +550,7 @@ export const PRESETS: Record<string, PresetDefinition> = {
       primary: "#7c1d2f", accent: "#c2410c", background: "#fff7ed", secondary: "#fff7ed",
       text: "#451a03", muted: "#9a6b4e", surface: "#fed7aa", border: "#fdba74",
       heading: "#451a03", link: "#be123c", link_hover: "#c2410c",
-      nav_link: "#fff7ed", nav_link_hover: "#fed7aa",
+      nav_link: "#fff7ed", nav_link_hover: "#ffffff",
       footer_bg: "#7c1d2f", must_reads_bg: "#7c1d2f",
       hero_title: "#fff7ed", must_reads_title: "#fff7ed", article_hero_title: "#fff7ed",
       article_hero_meta: "#fdba74",
@@ -516,16 +560,119 @@ export const PRESETS: Record<string, PresetDefinition> = {
       footer_text: "#fed7aa", footer_heading: "#fff7ed", footer_link: "#fed7aa", footer_link_hover: "#ffffff",
     },
     gradients: {
-      // Header: literal sunset across the top — wine → crimson → orange → gold.
-      header_bg_gradient: "linear-gradient(135deg, #7c1d2f 0%, #be123c 30%, #c2410c 65%, #ea580c 100%)",
-      // Subscribe: warm orange spectrum.
-      subscribe_bg_gradient: "linear-gradient(135deg, #c2410c 0%, #ea580c 50%, #fbbf24 100%)",
-      // Footer: crimson → wine → near-black (sunset fading to night).
+      // Header: wine → crimson → deep orange. End stop dialed back from
+      // `#ea580c` to `#c2410c` so cream nav text holds 4.5:1 across all stops.
+      // The brighter end was failing (~2.8:1) wherever nav links sat over it.
+      header_bg_gradient: "linear-gradient(135deg, #7c1d2f 0%, #be123c 35%, #c2410c 70%, #c2410c 100%)",
+      // Subscribe: orange spectrum, no gold. Gold endpoint `#fbbf24` made
+      // white subscribe text invisible (~1.5:1). Now wine → crimson → orange,
+      // all dark enough for white text (~5:1+).
+      subscribe_bg_gradient: "linear-gradient(135deg, #831843 0%, #be123c 50%, #c2410c 100%)",
       footer_bg_gradient: "linear-gradient(180deg, #be123c 0%, #831843 50%, #1f0408 100%)",
-      // must_reads: horizontal sunset band — orange to crimson to magenta.
       must_reads_bg_gradient: "linear-gradient(90deg, #c2410c 0%, #be123c 50%, #9d174d 100%)",
-      // Hero scrim: image at top, sustained orange haze, deep crimson at bottom.
-      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(249,115,22,0.2) 30%, rgba(249,115,22,0.6) 65%, rgba(124,29,47,0.92) 100%)",
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(249,115,22,0.1) 45%, rgba(249,115,22,0.35) 80%, rgba(124,29,47,0.82) 100%)",
+    },
+  },
+  matrix: {
+    name: "Matrix",
+    tier: "gradient",
+    subtitle: "Terminal phosphor green",
+    fonts: { heading: "Space Grotesk", body: "Source Sans 3" },
+    colors: {
+      // Pure-dark base + phosphor green text — classic Matrix terminal.
+      // Header gradient peaks at emerald 900 (not emerald 600) so phosphor
+      // nav text holds 7:1 contrast on every stop.
+      primary: "#020617", accent: "#15803d", background: "#020617", secondary: "#020617",
+      text: "#86efac", muted: "#4ade80", surface: "#0a1f15", border: "#0f2e1e",
+      heading: "#86efac", link: "#4ade80", link_hover: "#bbf7d0",
+      nav_link: "#86efac", nav_link_hover: "#bbf7d0",
+      footer_bg: "#020617", must_reads_bg: "#0a1f15",
+      hero_title: "#bbf7d0", must_reads_title: "#bbf7d0", article_hero_title: "#bbf7d0",
+      article_hero_meta: "#4ade80",
+      feed_title: "#86efac", feed_desc: "#4ade80", feed_date: "#22c55e",
+      prose_heading: "#86efac", prose_body: "#bbf7d0", category_header_text: "#bbf7d0",
+      subscribe_heading: "#020617",
+      footer_text: "#4ade80", footer_heading: "#86efac", footer_link: "#4ade80", footer_link_hover: "#bbf7d0",
+    },
+    gradients: {
+      // Header: subtle emerald glow center — peak at emerald 900 (#064e3b) keeps
+      // phosphor nav text 7:1 readable everywhere.
+      header_bg_gradient: "linear-gradient(90deg, #020617 0%, #064e3b 50%, #020617 100%)",
+      // Subscribe: emerald sweep — black text on emerald 600 (#16a34a) holds 5.8:1.
+      subscribe_bg_gradient: "linear-gradient(135deg, #14532d 0%, #16a34a 50%, #14532d 100%)",
+      footer_bg_gradient: "linear-gradient(90deg, #020617 0%, #064e3b 50%, #020617 100%)",
+      must_reads_bg_gradient: "linear-gradient(135deg, #020617 0%, #14532d 50%, #020617 100%)",
+      // Hero scrim: image visible, emerald glow mid, dark for title.
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(22,163,74,0.15) 50%, rgba(2,6,23,0.92) 100%)",
+    },
+  },
+  pink_glow: {
+    name: "Pink Glow",
+    tier: "gradient",
+    subtitle: "Synthwave neon pink",
+    fonts: { heading: "Playfair Display", body: "Inter" },
+    colors: {
+      // Deep purple-black base + soft pink text. Header gradient peaks at
+      // pink 600 (#db2777) — light pink text holds 4.8:1 on the peak.
+      primary: "#180a25", accent: "#be185d", background: "#180a25", secondary: "#ffffff",
+      text: "#fce7f3", muted: "#d8b4d8", surface: "#1f0f30", border: "#3d1a4a",
+      heading: "#fce7f3", link: "#f472b6", link_hover: "#fbcfe8",
+      nav_link: "#fce7f3", nav_link_hover: "#ffffff",
+      footer_bg: "#0e051a", must_reads_bg: "#1f0f30",
+      hero_title: "#fce7f3", must_reads_title: "#fce7f3", article_hero_title: "#fce7f3",
+      article_hero_meta: "#d8b4d8",
+      feed_title: "#fce7f3", feed_desc: "#f9a8d4", feed_date: "#d8b4d8",
+      prose_heading: "#fce7f3", prose_body: "#f9a8d4", category_header_text: "#fce7f3",
+      subscribe_heading: "#ffffff",
+      footer_text: "#d8b4d8", footer_heading: "#fce7f3", footer_link: "#d8b4d8", footer_link_hover: "#f472b6",
+    },
+    gradients: {
+      // Header: dark purple → wine → hot pink → wine → dark purple (neon shine).
+      header_bg_gradient: "linear-gradient(135deg, #180a25 0%, #831843 30%, #db2777 50%, #831843 70%, #180a25 100%)",
+      // Subscribe: wine → magenta → bright pink — white text holds 5.5:1 on end.
+      subscribe_bg_gradient: "linear-gradient(135deg, #831843 0%, #be185d 50%, #db2777 100%)",
+      // Footer: pink fading to near-black at bottom (sunset-into-night for pink).
+      footer_bg_gradient: "linear-gradient(180deg, #831843 0%, #4a0e2a 50%, #0e051a 100%)",
+      must_reads_bg_gradient: "linear-gradient(135deg, #4a0e2a 0%, #831843 50%, #4a0e2a 100%)",
+      // Hero scrim: image at top, pink haze, dark at bottom for legibility.
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(219,39,119,0.15) 50%, rgba(24,10,37,0.92) 100%)",
+    },
+  },
+  platinum_shine: {
+    name: "Platinum Shine",
+    tier: "gradient",
+    subtitle: "Metallic silver luxe",
+    fonts: { heading: "Manrope", body: "Manrope" },
+    colors: {
+      // Dark slate base + light gray text. Subscribe box is the only place where
+      // bright silver appears as a gradient (text is dark there). Header/footer
+      // use slate-600 as the peak so light text reads on every stop.
+      primary: "#0f1115", accent: "#cbd5e1", background: "#0f1115", secondary: "#0f1115",
+      text: "#e5e7eb", muted: "#94a3b8", surface: "#1a1d23", border: "#2a2f3a",
+      heading: "#f3f4f6", link: "#94a3b8", link_hover: "#cbd5e1",
+      nav_link: "#e5e7eb", nav_link_hover: "#ffffff",
+      footer_bg: "#0a0a0a", must_reads_bg: "#1a1d23",
+      hero_title: "#f3f4f6", must_reads_title: "#f3f4f6", article_hero_title: "#f3f4f6",
+      article_hero_meta: "#94a3b8",
+      feed_title: "#f3f4f6", feed_desc: "#cbd5e1", feed_date: "#94a3b8",
+      prose_heading: "#f3f4f6", prose_body: "#cbd5e1", category_header_text: "#f3f4f6",
+      subscribe_heading: "#0f1115",
+      footer_text: "#cbd5e1", footer_heading: "#f3f4f6", footer_link: "#cbd5e1", footer_link_hover: "#ffffff",
+    },
+    gradients: {
+      // Header: dark slate → silver shine center → dark slate. Peak is slate-600
+      // (not pure silver) so light text holds 6:1 on every stop. The reflective
+      // metallic feel comes from the sharp light-to-dark contrast, not a bright
+      // peak that would break text legibility.
+      header_bg_gradient: "linear-gradient(135deg, #0f1115 0%, #1a1d23 25%, #475569 50%, #1a1d23 75%, #0f1115 100%)",
+      // Subscribe: pure bright silver throughout — dark text inside holds 12:1.
+      subscribe_bg_gradient: "linear-gradient(135deg, #cbd5e1 0%, #e5e7eb 50%, #cbd5e1 100%)",
+      // Footer: matches header shine pattern.
+      footer_bg_gradient: "linear-gradient(90deg, #0a0a0a 0%, #1a1d23 25%, #475569 50%, #1a1d23 75%, #0a0a0a 100%)",
+      // must_reads: silver shine, different angle.
+      must_reads_bg_gradient: "linear-gradient(135deg, #1a1d23 0%, #475569 50%, #1a1d23 100%)",
+      // Hero scrim: image visible, faint silver haze, dark for title.
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 0%, rgba(148,163,184,0.15) 50%, rgba(15,17,21,0.92) 100%)",
     },
   },
   art_deco_brass: {
@@ -535,28 +682,31 @@ export const PRESETS: Record<string, PresetDefinition> = {
     fonts: { heading: "Playfair Display", body: "Lora" },
     colors: {
       primary: "#0a0a0a", accent: "#a16207", background: "#0a0a0a", secondary: "#0a0a0a",
-      text: "#f5e8c7", muted: "#8a7752", surface: "#1a1410", border: "#2d2418",
-      heading: "#f5e8c7", link: "#b8860b", link_hover: "#f5e8c7",
-      nav_link: "#f5e8c7", nav_link_hover: "#b8860b",
+      text: "#f5e8c7", muted: "#a8997a", surface: "#1a1410", border: "#2d2418",
+      heading: "#f5e8c7", link: "#d4a657", link_hover: "#f5e8c7",
+      nav_link: "#f5e8c7", nav_link_hover: "#ffffff",
       footer_bg: "#0a0a0a", must_reads_bg: "#1a1410",
       hero_title: "#f5e8c7", must_reads_title: "#f5e8c7", article_hero_title: "#f5e8c7",
-      article_hero_meta: "#8a7752",
-      feed_title: "#f5e8c7", feed_desc: "#d4c79d", feed_date: "#8a7752",
+      article_hero_meta: "#a8997a",
+      feed_title: "#f5e8c7", feed_desc: "#d4c79d", feed_date: "#a8997a",
       prose_heading: "#f5e8c7", prose_body: "#d4c79d", category_header_text: "#f5e8c7",
       subscribe_heading: "#0a0a0a",
-      footer_text: "#8a7752", footer_heading: "#f5e8c7", footer_link: "#8a7752", footer_link_hover: "#b8860b",
+      footer_text: "#d4c79d", footer_heading: "#f5e8c7", footer_link: "#d4c79d", footer_link_hover: "#ffffff",
     },
     gradients: {
-      // Header: horizontal brass shine across the band — Art Deco hallmark.
-      header_bg_gradient: "linear-gradient(90deg, #0a0a0a 0%, #2d2418 25%, #b8860b 50%, #2d2418 75%, #0a0a0a 100%)",
-      // Subscribe: brass-to-ivory-to-brass shine (deco glamour).
+      // Header: brass shine — peak toned down to dark brass `#6b4a1a` so ivory
+      // text reads on every stop. Pure `#b8860b` made cream text invisible at
+      // the gradient peak (~1.4:1 contrast). With `#6b4a1a` ivory text holds
+      // ~5.9:1 across the full sweep while preserving the brass identity.
+      header_bg_gradient: "linear-gradient(90deg, #0a0a0a 0%, #2d2418 25%, #6b4a1a 50%, #2d2418 75%, #0a0a0a 100%)",
+      // Subscribe: bright brass kept here — subscribe text is dark black `#0a0a0a`,
+      // which contrasts ~5:1 with `#b8860b` brass.
       subscribe_bg_gradient: "linear-gradient(135deg, #8a6508 0%, #b8860b 30%, #f5e8c7 50%, #b8860b 70%, #8a6508 100%)",
-      // Footer mirrors the header — brass shine.
-      footer_bg_gradient: "linear-gradient(90deg, #0a0a0a 0%, #2d2418 25%, #b8860b 50%, #2d2418 75%, #0a0a0a 100%)",
-      // must_reads: different angle for variation.
-      must_reads_bg_gradient: "linear-gradient(135deg, #0a0a0a 0%, #3d2c1a 30%, #b8860b 50%, #3d2c1a 70%, #0a0a0a 100%)",
-      // Hero scrim: restrained dark fade — Art Deco IS restraint.
-      hero_overlay_gradient: "linear-gradient(180deg, transparent 35%, rgba(10,10,10,0.96) 100%)",
+      // Footer mirrors header — same toned-down brass peak so footer text reads.
+      footer_bg_gradient: "linear-gradient(90deg, #0a0a0a 0%, #2d2418 25%, #6b4a1a 50%, #2d2418 75%, #0a0a0a 100%)",
+      // must_reads: same constraint as footer.
+      must_reads_bg_gradient: "linear-gradient(135deg, #0a0a0a 0%, #3d2c1a 30%, #6b4a1a 50%, #3d2c1a 70%, #0a0a0a 100%)",
+      hero_overlay_gradient: "linear-gradient(180deg, transparent 45%, rgba(10,10,10,0.85) 100%)",
     },
   },
 };

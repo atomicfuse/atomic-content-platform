@@ -92,6 +92,10 @@ export interface ContentGenerationParams {
    *  and bypasses the date-based eligibility check (`isTopicEligibleToday`).
    *  Ignored for legacy (non-per-topic) sites. */
   topicName?: string;
+  /** When true on a per-topic site, skip the `isTopicEligibleToday` filter so
+   *  manual on-demand triggers (dashboard "Generate" buttons) work any day.
+   *  The scheduled cron sets this to false so it still respects preferred_days. */
+  bypassSchedule?: boolean;
   /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
   preloadedBrief?: {
     siteName: string;
@@ -999,6 +1003,7 @@ export async function runContentGeneration(
           existing,
           tagIds,
           topicName: params.topicName,
+          bypassSchedule: params.bypassSchedule ?? false,
         });
       }
     }
@@ -1138,6 +1143,10 @@ async function runPerTopicGeneration(args: {
   /** When set, runs only this topic and bypasses date-based eligibility.
    *  Used by the dashboard "Generate" button on individual topic rows. */
   topicName?: string;
+  /** When true, skip the date eligibility check for ALL topics. Used by the
+   *  dashboard's general "Generate N Articles" button so users can fire it
+   *  any day; the cron sets this to false so it still honors preferred_days. */
+  bypassSchedule?: boolean;
 }): Promise<BatchContentGenerationResult> {
   const { brief, siteDomain, config, existing } = args;
   const topics = brief.topics_v2 ?? [];
@@ -1184,6 +1193,14 @@ async function runPerTopicGeneration(args: {
       ` (count=${args.count ?? 1}, bypassing schedule)`,
     );
     eligibleTopics = [target];
+  } else if (args.bypassSchedule) {
+    // Manual dashboard trigger without a specific topic: run ALL topics
+    // regardless of today's date.
+    console.log(
+      `[agent] [per-topic] manual gen (all topics) on ${siteDomain}` +
+      ` — bypassing schedule, ${topics.length} topic(s)`,
+    );
+    eligibleTopics = topics;
   } else {
     eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule));
   }
@@ -1199,12 +1216,25 @@ async function runPerTopicGeneration(args: {
   const seenUrls = new Set<string>();
   const seenTitles = new Set<string>();
 
+  // Total-articles cap. When the caller specified `count` (manual dashboard
+  // trigger), don't exceed it across all topics combined — otherwise
+  // "Generate 1 Article" on a 4-topic site would produce 4. Cron passes no
+  // `count` and gets the unbounded per-topic scheduled targets as before.
+  let remainingTotal = args.count != null ? args.count : Infinity;
+
   for (const topic of eligibleTopics) {
+    if (remainingTotal <= 0) break;
     // When the caller passed an explicit topicName, the user picked the count
     // (default 1). Otherwise fall back to the topic's scheduled per-run target.
-    const perRunTarget = args.topicName
+    const scheduledPerRun = args.topicName
       ? Math.max(1, args.count ?? 1)
       : computePerRunTarget(topic.schedule);
+    // When schedule says 0 (e.g. articles_per_week=0) and we're in bypass mode,
+    // still allow 1 article so the manual trigger isn't blocked by an unset
+    // schedule.
+    const baseTarget =
+      scheduledPerRun === 0 && args.bypassSchedule ? 1 : scheduledPerRun;
+    const perRunTarget = Math.min(baseTarget, remainingTotal);
     if (perRunTarget === 0) continue;
 
     // Fetch per the topic's source.
@@ -1330,6 +1360,10 @@ async function runPerTopicGeneration(args: {
         topicNames,
       );
       allResults.push(result);
+      if (result.status === "created") {
+        remainingTotal--;
+        if (remainingTotal <= 0) break;
+      }
     }
   }
 
