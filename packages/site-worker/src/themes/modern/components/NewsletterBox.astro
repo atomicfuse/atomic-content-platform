@@ -12,7 +12,8 @@ const { domain } = Astro.props;
 
 <style>
   .newsletter-box {
-    background: var(--color-accent, #f4c542);
+    /* Optional gradient override; falls back to solid accent. See Footer.astro. */
+    background: var(--color-subscribe_bg_gradient, var(--color-accent, #f4c542));
     padding: 1.5rem;
     border-radius: var(--radius-md, 8px);
     color: var(--color-secondary, #1a1a2e);

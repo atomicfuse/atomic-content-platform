@@ -25,7 +25,8 @@ const thumbs = rest.slice(0, 4);
 
 <style>
   .must-reads {
-    background: var(--color-must_reads_bg, var(--color-secondary, #1a1a2e));
+    /* Optional gradient override; falls back to the solid color. See Footer.astro. */
+    background: var(--color-must_reads_bg_gradient, var(--color-must_reads_bg, var(--color-secondary, #1a1a2e)));
     color: #fff;
     padding: 3rem 0;
   }

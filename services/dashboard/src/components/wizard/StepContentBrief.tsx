@@ -107,6 +107,10 @@ export function StepContentBrief({
           siteName: data.siteName,
           siteTagline: data.siteTagline || undefined,
           vertical: data.vertical,
+          // Pass theme so AI Suggest stays anchored to the editorial angle on
+          // regenerate (the auto-suggest on mount passes it; this was missing
+          // here so clicking AI Suggest gave generic results).
+          theme: data.theme || undefined,
           company: data.company || undefined,
           audience: data.audiences.join(", ") || undefined,
           tone: data.tone || undefined,

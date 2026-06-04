@@ -1156,8 +1156,16 @@ async function runPerTopicGeneration(args: {
   // regardless of `preferred_days`.
   let eligibleTopics: TopicV2[];
   if (args.topicName) {
-    const target = topics.find((t) => t.name === args.topicName);
+    const wantName = args.topicName.trim().toLowerCase();
+    const target =
+      topics.find((t) => t.name === args.topicName) ??
+      topics.find((t) => t.name.trim().toLowerCase() === wantName);
     if (!target) {
+      const available = topics.map((t) => t.name).join(", ");
+      console.warn(
+        `[agent] [per-topic] manual gen: topic "${args.topicName}" not found.` +
+        ` Site ${siteDomain} has topics: [${available}]`,
+      );
       return {
         siteDomain,
         requested: args.count ?? 1,
@@ -1167,10 +1175,14 @@ async function runPerTopicGeneration(args: {
         n8nImagesTriggered: 0,
         results: [{
           status: "skipped",
-          reason: `topic "${args.topicName}" not found on this site`,
+          reason: `topic "${args.topicName}" not found on this site (available: ${available || "none"})`,
         }],
       };
     }
+    console.log(
+      `[agent] [per-topic] manual gen for topic "${target.name}" on ${siteDomain}` +
+      ` (count=${args.count ?? 1}, bypassing schedule)`,
+    );
     eligibleTopics = [target];
   } else {
     eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule));
@@ -1287,6 +1299,12 @@ async function runPerTopicGeneration(args: {
       console.log(
         `[agent] [per-topic] topic="${topic.name}" — no new items this run`,
       );
+      allResults.push({
+        status: "skipped",
+        reason:
+          `topic "${topic.name}": aggregator returned no new items matching the filter` +
+          ` (or all candidates already exist on this site)`,
+      });
       continue;
     }
 
@@ -1318,6 +1336,19 @@ async function runPerTopicGeneration(args: {
   const requestedCount =
     args.count ??
     eligibleTopics.reduce((s, t) => s + computePerRunTarget(t.schedule), 0);
+
+  // Ensure the caller always gets at least one explicit result so the UI can
+  // distinguish "ran but found nothing" from "didn't run at all".
+  if (allResults.length === 0) {
+    allResults.push({
+      status: "skipped",
+      reason: args.topicName
+        ? `topic "${args.topicName}": no new items from aggregator`
+        : eligibleTopics.length === 0
+          ? "no topics eligible to run today (check preferred_days)"
+          : "no new items from aggregator for any eligible topic",
+    });
+  }
 
   return {
     siteDomain,

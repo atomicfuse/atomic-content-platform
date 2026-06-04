@@ -80,7 +80,7 @@ export default function MigratePerTopicPage(): React.ReactElement {
     <PerTopicReviewScreen
       siteTheme={theme}
       initialTopicNames={summary.topics}
-      defaultSchedule={{ articles_per_week: Math.max(1, Math.ceil(7 / Math.max(1, summary.topics.length))), preferred_days: ["Monday", "Wednesday", "Friday"] }}
+      defaultSchedule={{ articles_per_week: 1, preferred_days: ["Monday"] }}
       onSave={handleSave}
       saveLabel="Confirm migration"
       onCancel={(): void => router.push(`/sites/${domain}`)}

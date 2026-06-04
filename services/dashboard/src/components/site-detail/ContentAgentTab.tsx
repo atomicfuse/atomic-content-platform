@@ -434,7 +434,16 @@ export function ContentAgentTab({
           faviconBase64: effectiveFavicon ?? null,
           clearLogo: clearLogo || undefined,
           clearFooterLogo: clearFooterLogo || undefined,
-          configUpdates: { siteName, siteTagline, author, audiences, audienceIds, tone },
+          configUpdates: {
+            siteName,
+            siteTagline,
+            author,
+            audiences,
+            audienceIds,
+            tone,
+            verticalId,
+            vertical: verticals.find((v) => v.id === verticalId)?.name ?? "",
+          },
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
@@ -597,6 +606,19 @@ export function ContentAgentTab({
           />
         </div>
         <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
+        {/* Category — display label for the Sites grid and brief context.
+            For per-topic sites this is purely organizational; aggregator
+            filtering is driven by topics_v2. For legacy sites it also
+            scopes the Niche Targeting subcategory checklist below. */}
+        <Select
+          label="Category (optional)"
+          options={[
+            { value: "", label: "— None —" },
+            ...verticals.map((v) => ({ value: v.id, label: v.name })),
+          ]}
+          value={verticalId}
+          onChange={(e): void => setVerticalId(e.target.value)}
+        />
       </div>
       {/* Assets (Logo & Favicon) */}
       <div className="space-y-3">

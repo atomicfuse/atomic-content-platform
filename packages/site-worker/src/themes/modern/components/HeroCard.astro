@@ -34,7 +34,10 @@ const href = `/${article.slug}`;
   .hero-card:hover .hero-card-image { transform: scale(1.08); }
   .hero-card-overlay {
     position: absolute; inset: 0;
-    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%);
+    /* Themeable scrim. Gradient-tier presets override this via
+       --color-hero_overlay_gradient; everything else gets the default dark
+       fade for hero image legibility. */
+    background: var(--color-hero_overlay_gradient, linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%));
   }
   .hero-card-title {
     position: absolute; left: 1.25rem; right: 1.25rem; bottom: 1.25rem;
