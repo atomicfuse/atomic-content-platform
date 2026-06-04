@@ -31,7 +31,8 @@ const href = `/${article.slug}`;
   .thumb-card:hover .thumb-card-image { transform: scale(1.08); }
   .thumb-card-overlay {
     position: absolute; inset: 0;
-    background: linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%);
+    /* Same themeable scrim pattern as HeroCard. */
+    background: var(--color-hero_overlay_gradient, linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.75) 100%));
   }
   .thumb-card-title {
     position: absolute; left: 0.875rem; right: 0.875rem; bottom: 0.875rem;

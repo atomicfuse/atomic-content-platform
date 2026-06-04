@@ -5,6 +5,7 @@ import {
   readDashboardIndex,
   readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
+  updateSiteInIndex,
 } from "@/lib/github";
 import { upsertDnsTxtRecord, deleteDnsTxtRecord } from "@/lib/cloudflare";
 import type { StagingSiteConfig } from "@/actions/wizard";
@@ -355,6 +356,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
+
+    // Propagate vertical (category label) to dashboard-index so the Sites grid
+    // reflects category changes immediately. Compare against `site.vertical`
+    // (the value we read at the start) so we only write when it actually
+    // changed.
+    if (
+      configUpdates?.vertical !== undefined &&
+      configUpdates.vertical !== site.vertical
+    ) {
+      try {
+        await updateSiteInIndex(domain, { vertical: configUpdates.vertical });
+      } catch (err) {
+        console.warn(
+          `[sites/save] Failed to update dashboard-index.vertical for ${domain}:`,
+          err instanceof Error ? err.message : err,
+        );
+        // Don't fail the save — site.yaml has the new vertical; the index can be
+        // backfilled later.
+      }
+    }
 
     // Auto-upsert Facebook domain verification DNS TXT record when the
     // tracking field is set and the site has a Cloudflare zone.

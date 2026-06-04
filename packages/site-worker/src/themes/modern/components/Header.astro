@@ -108,7 +108,10 @@ function topicHref(topic: string): string {
     left: 0;
     right: 0;
     z-index: 100;
-    background: var(--color-primary, #1a1a2e);
+    /* --color-header_bg_gradient is an optional CSS background value shipped
+       by gradient-tier presets; falls back to the solid primary color when
+       missing. See Footer.astro for the same pattern. */
+    background: var(--color-header_bg_gradient, var(--color-primary, #1a1a2e));
     color: var(--color-nav_link, #fff);
   }
 

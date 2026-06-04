@@ -35,8 +35,12 @@ export function StepTopicFilters({ data, onChange, onNext, onBack }: Props): Rea
       siteTheme={data.theme}
       initialTopicNames={topicNames}
       defaultSchedule={{
-        articles_per_week: Math.max(1, Math.ceil(7 / Math.max(1, topicNames.length))),
-        preferred_days: data.preferredDays?.length ? data.preferredDays : ["Monday", "Wednesday", "Friday"],
+        // articles_per_week defaults to 1; users tune up per-topic.
+        // preferred_days inherits the user's site-level Content Brief choice
+        // so the wizard stays consistent — pick "Mon, Wed, Fri" once and each
+        // topic starts on the same days.
+        articles_per_week: 1,
+        preferred_days: data.preferredDays?.length ? data.preferredDays : ["Monday"],
       }}
       onSave={async (topics): Promise<void> => handleSave(topics)}
       saveLabel="Next →"

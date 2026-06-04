@@ -145,7 +145,7 @@ function SortableTopicRow({
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [genStatus, setGenStatus] = useState<
     | { kind: "idle" }
-    | { kind: "success"; created: number; skipped: number }
+    | { kind: "success"; created: number; skipped: number; skippedReason?: string }
     | { kind: "accepted" }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
@@ -181,10 +181,23 @@ function SortableTopicRow({
         setGenStatus({ kind: "error", message: msg });
         return;
       }
-      const results = Array.isArray(data.results) ? (data.results as Array<{ status?: string }>) : [];
+      const results = Array.isArray(data.results)
+        ? (data.results as Array<{ status?: string; reason?: string; message?: string }>)
+        : [];
       const created = results.filter((r) => r.status === "created").length;
       const skipped = results.filter((r) => r.status === "skipped").length;
-      setGenStatus({ kind: "success", created, skipped });
+      const errored = results.filter((r) => r.status === "error");
+      // If anything errored and nothing was created, surface the first error.
+      if (created === 0 && errored.length > 0) {
+        const first = errored[0];
+        setGenStatus({
+          kind: "error",
+          message: first?.message ?? first?.reason ?? "Generation failed",
+        });
+        return;
+      }
+      const skippedReason = results.find((r) => r.status === "skipped")?.reason;
+      setGenStatus({ kind: "success", created, skipped, skippedReason });
     } catch (err) {
       setGenStatus({
         kind: "error",
@@ -295,13 +308,18 @@ function SortableTopicRow({
           </span>
         )}
         {!generating && genStatus.kind === "success" && (
-          <span className="text-[10px] text-emerald-400">
-            {genStatus.created > 0
-              ? `Created ${genStatus.created} article${genStatus.created > 1 ? "s" : ""} in ${elapsedSec}s`
-              : genStatus.skipped > 0
-                ? "Skipped — no new items from aggregator"
-                : "Done"}
-          </span>
+          genStatus.created > 0 ? (
+            <span className="text-[10px] text-emerald-400">
+              Created {genStatus.created} article{genStatus.created > 1 ? "s" : ""} in {elapsedSec}s
+            </span>
+          ) : (
+            <span
+              className="text-[10px] text-amber-400 max-w-[20rem] text-right"
+              title={genStatus.skippedReason ?? undefined}
+            >
+              No article created — {genStatus.skippedReason ?? "no new items from aggregator"}
+            </span>
+          )
         )}
         {!generating && genStatus.kind === "accepted" && (
           <span className="text-[10px] text-cyan">
