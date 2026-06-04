@@ -60,6 +60,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         count: body.count ?? defaultCount,
         branch: body.branch ?? `staging/${body.siteDomain}`,
         triggeredBy: "manual",
+        // Manual dashboard trigger: skip the per-topic date eligibility check
+        // so users can fire it any day, regardless of preferred_days.
+        bypassSchedule: true,
         ...(topicName ? { topicName } : {}),
       });
 
@@ -109,6 +112,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(body.branch ? { branch: body.branch } : {}),
         ...(body.count ? { count: body.count } : topicName ? { count: defaultCount } : {}),
         ...(topicName ? { topicName } : {}),
+        bypassSchedule: true,
       }),
     });
     const result = (await agentResponse.json()) as Record<string, unknown>;
