@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileBase64, readDashboardIndex } from "@/lib/github";
+import { readDashboardIndex } from "@/lib/github";
+import { readFromR2 } from "@/lib/r2-upload";
 
 const MIME_TYPES: Record<string, string> = {
   png: "image/png",
@@ -29,19 +30,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "site not found" }, { status: 404 });
   }
 
-  const branch = site.staging_branch ?? undefined;
-  const path = `sites/${domain}/${file}`;
-  const base64 = await readFileBase64(path, branch);
+  // Assets are R2-native (logos/favicons live in R2, not git). The Worker
+  // serves them at /<siteId>/assets/<file>; the R2 key is <domain>/<file>.
+  const buffer = await readFromR2(`${domain}/${file}`, domain);
 
-  if (!base64) {
+  if (!buffer) {
     return NextResponse.json({ error: "file not found" }, { status: 404 });
   }
 
   const ext = file.split(".").pop()?.toLowerCase() ?? "png";
   const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-  const buffer = Buffer.from(base64, "base64");
 
-  return new NextResponse(buffer, {
+  return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": contentType,
       "Cache-Control": "private, no-cache",
