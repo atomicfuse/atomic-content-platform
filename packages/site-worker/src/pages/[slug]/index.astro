@@ -173,6 +173,17 @@ if (article) {
   .article-prose {
     line-height: 1.8;
     font-size: 1.0625rem;
+    /*
+     * Confine publisher-injected scripts (article `scripts` render here) to
+     * their own stacking context. Third-party widgets can set near-max
+     * z-index values (e.g. 2147483647) on fixed-position buttons/overlays,
+     * which would otherwise paint over the site header (z-index 100) and
+     * interstitial (z-index 9999). `isolation` scopes only stacking — it does
+     * not establish a containing block, so a widget's `position: fixed`
+     * elements still size/position to the viewport; they just can no longer
+     * stack above the site chrome.
+     */
+    isolation: isolate;
   }
   .article-prose :global(h2) { margin: 2rem 0 1rem; font-size: var(--text-2xl, 1.5rem); }
   .article-prose :global(h3) { margin: 1.5rem 0 0.75rem; font-size: var(--text-xl, 1.25rem); }
