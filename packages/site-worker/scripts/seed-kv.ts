@@ -535,6 +535,25 @@ async function main(): Promise<void> {
   const index: ArticleIndexEntry[] = articles.map((a) => a.frontmatter);
   console.log(`[seed-kv] articles: ${articles.length}`);
 
+  // Guard: every article is written to a single KV key (article:<siteId>:<slug>).
+  // Two .md files resolving to the same slug would silently overwrite each other
+  // in the bulk put — one article's body lost on a live site — while the article
+  // index still counts both, so the CI count-check passes and no alarm fires.
+  // Fail hard (same posture as the missing-site.yaml guard) so a human renames
+  // the colliding slug instead of shipping a corrupted, alarm-free sync.
+  const slugCounts = new Map<string, number>();
+  for (const entry of index) slugCounts.set(entry.slug, (slugCounts.get(entry.slug) ?? 0) + 1);
+  const dupSlugs = [...slugCounts.entries()].filter(([, c]) => c > 1).map(([slug]) => slug);
+  if (dupSlugs.length > 0) {
+    throw new Error(
+      `[seed-kv] Duplicate article slug(s) for ${siteId}: ${dupSlugs.join(', ')}.\n` +
+      `  Each slug maps to one KV key (article:${siteId}:<slug>); duplicates overwrite\n` +
+      `  each other, silently losing an article while the index still counts both.\n` +
+      `  Rename the slug (frontmatter 'slug:' or the filename) in one of the colliding\n` +
+      `  sites/${siteId}/articles/*.md files and re-run.`,
+    );
+  }
+
   // 3. Shared pages — load templates, then substitute {{variable}} tokens
   //    using values from the resolved config (site_name, domain, etc.).
   const sharedPageVars = buildSharedPageVars(config);
