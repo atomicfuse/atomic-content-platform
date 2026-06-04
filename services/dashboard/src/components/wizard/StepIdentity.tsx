@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { COMPANIES } from "@/lib/constants";
-import { useAudiences } from "@/hooks/useReferenceData";
+import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface StepIdentityProps {
@@ -22,6 +22,7 @@ export function StepIdentity({
   onCancel,
 }: StepIdentityProps): React.ReactElement {
   const { audiences } = useAudiences();
+  const { verticals } = useVerticals();
   const [audienceSearch, setAudienceSearch] = useState("");
   const [audienceOpen, setAudienceOpen] = useState(false);
   const audienceRef = useRef<HTMLDivElement>(null);
@@ -175,6 +176,22 @@ export function StepIdentity({
         onChange={(e): void =>
           onChange({ company: e.target.value as WizardFormData["company"] })
         }
+      />
+
+      {/* Category — display/organization label only. Sites grid groups by
+          this; aggregator filtering is driven by topics_v2, not by category. */}
+      <Select
+        label="Category (optional)"
+        options={[
+          { value: "", label: "— None —" },
+          ...verticals.map((v) => ({ value: v.id, label: v.name })),
+        ]}
+        value={data.verticalId}
+        onChange={(e): void => {
+          const id = e.target.value;
+          const name = verticals.find((v) => v.id === id)?.name ?? "";
+          onChange({ verticalId: id, vertical: name });
+        }}
       />
 
       <div className="space-y-1.5">

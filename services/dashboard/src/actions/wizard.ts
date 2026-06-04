@@ -64,6 +64,17 @@ export async function createSiteAndBuildStaging(
   // No bundle is created from the wizard anymore; topics carry raw filters.
   const topics_v2 = data.topics_v2;
 
+  // For the dashboard Sites grid (Category column) and the per-site brief,
+  // derive a display-only label when the wizard didn't pick a category.
+  // Order of preference: explicit `data.vertical` → first topic_v2 name →
+  // first plain topic → undefined. This is for organization/sort only; it
+  // does not affect aggregator filtering, which lives entirely in topics_v2.
+  const displayVertical: string | undefined =
+    data.vertical ||
+    topics_v2[0]?.name ||
+    data.topics[0] ||
+    undefined;
+
   // 1. Build site.yaml content. `domain` is the site folder identifier
   // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
   const siteConfig = {
@@ -95,7 +106,7 @@ export async function createSiteAndBuildStaging(
       image_guidelines: data.imageGuidelines
         ? data.imageGuidelines.split("\n").filter(Boolean)
         : undefined,
-      vertical: data.vertical || undefined,
+      vertical: displayVertical,
       vertical_id: data.verticalId || undefined,
       review_percentage: 5,
       schedule: {
@@ -316,7 +327,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
     company: data.company || null,
-    vertical: data.vertical,
+    vertical: displayVertical ?? "",
     status: "Staging",
     site_id: `${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
     exclusivity: null,
@@ -346,7 +357,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
         await updateSiteInIndex(siteFolder, {
           status: "Staging",
           company: data.company || null,
-          vertical: data.vertical,
+          vertical: displayVertical,
           staging_branch: stagingBranch,
           preview_url: previewUrl,
         });
@@ -1302,8 +1313,14 @@ export async function suggestTopics(
   context: TopicSuggestionContext
 ): Promise<string[]> {
   const geminiKey = process.env.GEMINI_API_KEY;
+  console.log(
+    `[wizard:suggestTopics] siteName="${context.siteName}" vertical="${context.vertical}"` +
+    ` theme="${(context.theme ?? "").slice(0, 80)}" gemini=${geminiKey ? "yes" : "no"}`,
+  );
   if (!geminiKey) {
-    return getFallbackTopics(context.siteName, context.vertical, context.theme);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] no GEMINI_API_KEY — fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   }
 
   // Build rich context from ALL available fields. The site theme (free-text
@@ -1335,15 +1352,20 @@ export async function suggestTopics(
 Website info:
 ${contextParts.join("\n")}
 
-${anchorPhrase}, suggest exactly 4 specific content topics that this site should cover. Topics should be:
-- Specific to THIS site (not generic like "How-To Guides" or "Trending Topics" or "Expert Guides")
-- Tightly aligned with the site theme / editorial angle when one is provided
-- Short (2-4 words each)
-- Suitable as article categories / content pillars
-- Diverse — cover different angles of the site's niche
+${anchorPhrase}, suggest exactly 4 specific content topics for this site. The site theme is the PRIMARY signal — topics must clearly reflect the subject matter described in the theme. Ignore the website name if it conflicts with the theme.
+
+Topics must be:
+- Tightly tied to the theme's subject matter (a "funny memes" site MUST get meme/humor topics, NOT generic content categories)
+- Short (2–4 words each)
+- Diverse across different angles of the niche
+- Specific, not generic. NEVER output any of these: "Expert Guides", "Latest News", "Tips & Advice", "In-Depth Reviews", "How-To Guides", "Trending Topics", "Industry Insights"
 
 Reply with ONLY a JSON array of exactly 4 strings. No markdown, no explanation.
-Example for a site themed "Travel and eating while traveling": ["Destinations", "Food Around the World", "Wine & Beer Tours", "Travel Guides"]`;
+
+Examples:
+- Theme "Travel and eating while traveling" → ["Destinations", "Food Around the World", "Wine & Beer Tours", "Travel Guides"]
+- Theme "Funny meme website, showing memes and funny videos" → ["Trending Memes", "Viral Videos", "Reaction Clips", "Meme Culture"]
+- Theme "Personal finance for millennials" → ["Budgeting Hacks", "Crypto & Investing", "Side Hustles", "Debt-Free Living"]`;
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_TEXT_MODEL}:generateContent?key=${geminiKey}`;
@@ -1377,14 +1399,37 @@ Example for a site themed "Travel and eating while traveling": ["Destinations", 
         const clean = topics
           .map((t) => String(t).trim())
           .filter((t) => t.length > 0 && t !== "undefined" && t !== "null");
-        if (clean.length >= 2) return clean.slice(0, 4);
+        // Reject the exact known-bad generic list — Gemini sometimes ignores the
+        // prompt's negative instructions and returns these verbatim. Treat as
+        // a parse failure and use the smarter theme-aware fallback instead.
+        const BAD_GENERIC = new Set([
+          "expert guides",
+          "latest news",
+          "tips & advice",
+          "in-depth reviews",
+          "how-to guides",
+          "trending topics",
+        ]);
+        const allGeneric =
+          clean.length === 4 && clean.every((t) => BAD_GENERIC.has(t.toLowerCase()));
+        if (clean.length >= 2 && !allGeneric) {
+          console.log(`[wizard:suggestTopics] gemini returned: ${JSON.stringify(clean.slice(0, 4))}`);
+          return clean.slice(0, 4);
+        }
+        if (allGeneric) {
+          console.warn("[wizard:suggestTopics] gemini returned generic list — falling back");
+        }
       }
     }
 
-    return getFallbackTopics(context.siteName, context.vertical);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] gemini parse failed — fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   } catch (err) {
-    console.warn("[wizard] Topic suggestion error:", err);
-    return getFallbackTopics(context.siteName, context.vertical);
+    console.warn("[wizard:suggestTopics] error:", err);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] error fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   }
 }
 
@@ -1428,6 +1473,12 @@ function getFallbackTopics(siteName: string, vertical: string, theme?: string): 
   }
   if (/\bmovie|\bfilm|\bcelebri|\bmusic|\bstream|\btv\b|\bentertain/.test(haystack)) {
     return ["Movie Reviews", "TV & Streaming", "Music Spotlight", "Celebrity Culture"];
+  }
+  if (/\bfunny|\bfail|\bviral|\bmeme|\bcompilation|\bblooper|\bprank/.test(haystack)) {
+    return ["Funny Fails", "Viral Clips", "Compilations", "Pranks & Reactions"];
+  }
+  if (/\bvideo|\byoutube|\btiktok|\bshorts|\breels/.test(haystack)) {
+    return ["Trending Clips", "Creator Spotlights", "Channel Picks", "Behind the Scenes"];
   }
 
   // Fall through to legacy site-name keyword routing

@@ -91,7 +91,11 @@ const quickLinks = [
 
 <style>
   .site-footer {
-    background: var(--color-footer_bg, var(--color-secondary, #1a1a2e));
+    /* --color-footer_bg_gradient is an optional CSS background value shipped
+       by gradient-tier presets; falls back to the solid color from the same
+       preset (or org default) when missing. Stale KV configs degrade
+       gracefully — they never had the gradient key set. */
+    background: var(--color-footer_bg_gradient, var(--color-footer_bg, var(--color-secondary, #1a1a2e)));
     color: var(--color-footer_text, #d1d5db);
     margin-top: 4rem;
   }

@@ -35,6 +35,12 @@ export interface ArticleFrontmatter {
     author: string;
     /** Taxonomy tags for categorisation and filtering. */
     tags: string[];
+    /** Topic-membership list (per-topic-filter model). The first entry is the
+     *  primary topic (the one the article was fetched against); subsequent
+     *  entries are secondary topics whose filters also matched this article.
+     *  Absent on legacy-site articles, which are filtered to topic pages via
+     *  the `tags` field instead. */
+    topics?: string[];
     /** URL or path to the hero / featured image. */
     featuredImage?: string;
     /** Notes left by a human or AI reviewer. */
