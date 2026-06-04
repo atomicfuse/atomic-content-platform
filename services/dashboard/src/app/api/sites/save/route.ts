@@ -10,6 +10,7 @@ import { upsertDnsTxtRecord, deleteDnsTxtRecord } from "@/lib/cloudflare";
 import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
+import { uploadToR2 } from "@/lib/r2-upload";
 
 interface SaveRequestBody {
   domain: string;
@@ -328,23 +329,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     ];
 
+    // Logos/favicons are R2-native: upload bytes directly to R2 (binary-safe),
+    // never commit them to git. Only site.yaml (theme refs) goes to git below.
     if (processedLogoBase64) {
-      files.push({
-        path: `sites/${domain}/assets/logo.png`,
-        content: Buffer.from(processedLogoBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/logo.png`, Buffer.from(processedLogoBase64, "base64"), "image/png");
     }
     if (processedFooterLogoBase64) {
-      files.push({
-        path: `sites/${domain}/assets/logo-footer.png`,
-        content: Buffer.from(processedFooterLogoBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/logo-footer.png`, Buffer.from(processedFooterLogoBase64, "base64"), "image/png");
     }
     if (effectiveFaviconBase64) {
-      files.push({
-        path: `sites/${domain}/assets/favicon.png`,
-        content: Buffer.from(effectiveFaviconBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/favicon.png`, Buffer.from(effectiveFaviconBase64, "base64"), "image/png");
     }
 
     const hasAssets = processedLogoBase64 || effectiveFaviconBase64;

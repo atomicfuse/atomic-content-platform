@@ -156,9 +156,16 @@ async function removeStalePublicAssetsDir(siteId: string): Promise<void> {
   }
 }
 
-/** Uploads `<NETWORK>/sites/<siteId>/assets/**` to R2 under
- *  `<siteId>/assets/<rel>` keys. Replaces the previous public-bundle
- *  approach; new images now flow live without a Worker redeploy. */
+/** Image assets are R2-native — uploaded directly to R2 by the dashboard /
+ *  content pipeline (logos, favicons, footer logos, article images), never
+ *  synced from Git. Git is no longer a source of binary image bytes; reading
+ *  binary through Git commit paths is what corrupted every logo. seed-kv must
+ *  not re-upload images from Git (it would clobber the R2-native copies). */
+const IMAGE_ASSET_RE = /\.(png|jpe?g|gif|webp|svg|ico|avif|bmp)$/i;
+
+/** Uploads non-image `<NETWORK>/sites/<siteId>/assets/**` to R2 under
+ *  `<siteId>/assets/<rel>` keys. Images are skipped — they live in R2
+ *  directly (see IMAGE_ASSET_RE). */
 async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number> {
   const src = join(NETWORK_DATA_PATH, 'sites', siteId, 'assets');
   if (!(await pathExists(src))) {
@@ -166,10 +173,10 @@ async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number>
     return 0;
   }
   return walkFiles(src, async (abs, rel) => {
-    // Skip images/ — article images are uploaded directly to R2 by the
-    // content pipeline. Only logos, favicons, and other non-image assets
-    // are synced from Git.
+    // Skip images/ (article images) AND all image files (logos, favicons,
+    // footer logos) — these are R2-native and must not be synced from Git.
     if (rel.startsWith('images/') || rel.startsWith('images\\')) return;
+    if (IMAGE_ASSET_RE.test(rel)) return;
     const key = `${siteId}/assets/${rel}`;
     runWrangler([
       'r2',

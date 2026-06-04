@@ -39,6 +39,7 @@ import {
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
+import { uploadToR2 } from "@/lib/r2-upload";
 
 interface StagingResult {
   stagingUrl: string;
@@ -202,12 +203,12 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     },
   ];
 
-  // Add logo if generated/uploaded and update site config to reference it
+  // Logos/favicons are R2-native: upload bytes directly to R2 (binary-safe),
+  // never commit them to git. The Worker serves them at
+  // /<siteId>/assets/<file> straight from R2. theme.* config refs still point
+  // at /assets/<file> (seed-kv rewrites them to the per-site R2 path).
   if (logoBuffer) {
-    files.push({
-      path: `sites/${siteFolder}/assets/logo.png`,
-      content: logoBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/logo.png`, logoBuffer, "image/png");
     siteConfig.theme.logo = "/assets/logo.png";
     // Default favicon to logo unless a separate favicon was uploaded
     if (!faviconBuffer) {
@@ -223,19 +224,13 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     } catch {
       footerLogoBuffer = Buffer.from(data.footerLogoBase64, "base64");
     }
-    files.push({
-      path: `sites/${siteFolder}/assets/logo-footer.png`,
-      content: footerLogoBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/logo-footer.png`, footerLogoBuffer, "image/png");
     siteConfig.theme.footer_logo = "/assets/logo-footer.png";
   }
 
   // Add separate favicon if uploaded
   if (faviconBuffer) {
-    files.push({
-      path: `sites/${siteFolder}/assets/favicon.png`,
-      content: faviconBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/favicon.png`, faviconBuffer, "image/png");
     siteConfig.theme.favicon = "/assets/favicon.png";
   }
 
@@ -1210,10 +1205,8 @@ export async function saveAllStagingEdits(
       console.warn("[wizard] removeBackground failed, using original image:", bgErr);
       processed = raw;
     }
-    files.push({
-      path: `sites/${domain}/assets/logo.png`,
-      content: processed,
-    });
+    // R2-native: upload logo bytes to R2, never commit to git.
+    await uploadToR2(`${domain}/assets/logo.png`, processed, "image/png");
   }
 
   const commitMsg = logoBase64 && configUpdates
@@ -1222,8 +1215,12 @@ export async function saveAllStagingEdits(
       ? "update logo"
       : "update site config";
 
-  await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
+  // files now only ever contains site.yaml (logo went to R2). Skip the commit
+  // entirely if there's nothing textual to write.
+  if (files.length > 0) {
+    await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
+    await triggerWorkflowViaPush(site.staging_branch, domain);
+  }
 }
 
 /** Upload a custom logo to the staging branch. Expects base64-encoded image data. */
@@ -1245,15 +1242,11 @@ export async function uploadStagingLogo(
     logoBuffer = raw;
   }
 
-  // Read existing config to update theme references
-  const config = await readSiteConfigFromGit(domain, site.staging_branch);
+  // R2-native: upload logo bytes straight to R2 (binary-safe), never git.
+  await uploadToR2(`${domain}/assets/logo.png`, logoBuffer, "image/png");
 
-  const files: Array<{ path: string; content: string | Buffer }> = [
-    {
-      path: `sites/${domain}/assets/logo.png`,
-      content: logoBuffer,
-    },
-  ];
+  // Read existing config to update theme references (committed to git).
+  const config = await readSiteConfigFromGit(domain, site.staging_branch);
 
   if (config) {
     const theme = (config.theme ?? {}) as Record<string, unknown>;
@@ -1262,14 +1255,14 @@ export async function uploadStagingLogo(
       theme.favicon = "/assets/logo.png";
     }
     config.theme = theme;
-    files.push({
-      path: `sites/${domain}/site.yaml`,
-      content: stringifyYaml(config, { lineWidth: 0 }),
-    });
+    await commitSiteFiles(
+      domain,
+      [{ path: `sites/${domain}/site.yaml`, content: stringifyYaml(config, { lineWidth: 0 }) }],
+      "upload custom logo",
+      site.staging_branch,
+    );
+    await triggerWorkflowViaPush(site.staging_branch, domain);
   }
-
-  await commitSiteFiles(domain, files, "upload custom logo", site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
 
   invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);

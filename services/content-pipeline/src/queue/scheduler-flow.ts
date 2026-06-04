@@ -140,6 +140,14 @@ export function isBinaryPath(path: string): boolean {
   return BINARY_EXTENSIONS.has(path.slice(dot).toLowerCase());
 }
 
+/** Image assets (logos, favicons, footer logos, article images) are
+ *  R2-native — they live in R2 directly and must NEVER be committed to git.
+ *  auto-publish skips them so it can't carry (or corrupt) image bytes. */
+const IMAGE_ASSET_RE = /\.(png|jpe?g|gif|webp|svg|ico|avif|bmp)$/i;
+export function isImageAsset(path: string): boolean {
+  return IMAGE_ASSET_RE.test(path);
+}
+
 /**
  * Partition site files into text (UTF-8) and binary (base64) sets for commit,
  * reading each via the appropriate binary-safe primitive. Pure aside from the
@@ -153,6 +161,8 @@ export async function collectFilesForPublish(
   const files: BatchFileEntry[] = [];
   const binaryFiles: BatchBinaryEntry[] = [];
   for (const filePath of filePaths) {
+    // Image assets are R2-native — never copy them into a git commit.
+    if (isImageAsset(filePath)) continue;
     if (isBinaryPath(filePath)) {
       binaryFiles.push({ path: filePath, base64: await readBinaryBase64(filePath) });
     } else {
