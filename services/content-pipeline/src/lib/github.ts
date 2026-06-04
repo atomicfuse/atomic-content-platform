@@ -74,7 +74,24 @@ type TreeEntry = {
   size?: number;
 };
 
-const treeCache = new Map<string, TreeEntry[]>();
+/** Tree cache entry. Carries a timestamp so we can expire stale trees written
+ *  by external processes (notably: the dashboard committing site.yaml edits
+ *  while content-pipeline keeps running with its old tree in memory).
+ *  Blob content is content-addressed by SHA so it can't go stale — only the
+ *  branch→tree mapping can. */
+interface TreeCacheEntry {
+  tree: TreeEntry[];
+  filledAt: number;
+}
+
+/** Max age before a cached branch tree is refetched. 30s is long enough to
+ *  dedupe back-to-back reads inside a single generation run (which spans
+ *  seconds), but short enough that a dashboard-side migration is picked up
+ *  by the next manual Generate click within at most ~30s — no more restart-
+ *  every-time. See landmine note in CLAUDE.md. */
+const TREE_CACHE_TTL_MS = 30_000;
+
+const treeCache = new Map<string, TreeCacheEntry>();
 const blobCache = new Map<string, string>();
 const BLOB_CACHE_MAX = 200;
 
@@ -85,10 +102,14 @@ export async function getTreeCached(
 ): Promise<TreeEntry[]> {
   const ref = branch ?? "main";
   const cacheKey = `${repo}:${ref}`;
-  if (treeCache.has(cacheKey)) {
+  const cached = treeCache.get(cacheKey);
+  if (cached && Date.now() - cached.filledAt < TREE_CACHE_TTL_MS) {
     recordCacheHit("tree");
-    return treeCache.get(cacheKey)!;
+    return cached.tree;
   }
+  // Stale entry — drop it so a write between this check and the refetch
+  // doesn't accidentally serve old data on a parallel read.
+  if (cached) treeCache.delete(cacheKey);
 
   const { owner, repo: repoName } = parseRepo(repo);
   const { data: refData } = await octokit.git.getRef({
@@ -110,7 +131,7 @@ export async function getTreeCached(
     throw new TreeTruncatedError(ref);
   }
 
-  treeCache.set(cacheKey, tree.tree);
+  treeCache.set(cacheKey, { tree: tree.tree, filledAt: Date.now() });
   return tree.tree;
 }
 
