@@ -51,6 +51,47 @@ export const createGitHubClient = (config: GitHubConfig): Octokit => createOctok
 /** @deprecated Use {@link createOctokit} instead. Will be removed once all callers are migrated. */
 export const createResilientOctokit = (token: string): Octokit => createOctokit(token);
 
+// ---------------------------------------------------------------------------
+// Per-branch commit serialization + non-fast-forward retry
+// ---------------------------------------------------------------------------
+
+/**
+ * In-process serialization of writes per branch. `commitBatch` is a non-atomic
+ * read-modify-write (getRef → createTree → createCommit → updateRef); if two
+ * commits to the same branch interleave, the second `updateRef` is rejected
+ * with HTTP 422 "Update is not a fast forward". Chaining all commits for a
+ * branch through one promise eliminates that race within this process.
+ *
+ * Different branches commit concurrently (the map is keyed by ref). Cross-process
+ * / cross-replica contention is handled by the optimistic-concurrency retry in
+ * `commitBatch` itself, since this queue is per-process only.
+ */
+const branchCommitQueues: Map<string, Promise<unknown>> = new Map();
+
+function enqueueForBranch<T>(branch: string, fn: () => Promise<T>): Promise<T> {
+  const prev = branchCommitQueues.get(branch) ?? Promise.resolve();
+  const result = prev.then(fn, fn);
+  // Keep the chain alive regardless of this commit's success/failure.
+  branchCommitQueues.set(branch, result.then(() => {}, () => {}));
+  return result;
+}
+
+/** Max attempts for the optimistic-concurrency retry on non-fast-forward. */
+const COMMIT_MAX_ATTEMPTS = 5;
+
+/**
+ * GitHub rejects a ref update that isn't a fast-forward with HTTP 422 and a
+ * message containing "not a fast forward". This happens when the branch head
+ * moved between our `getRef` and `updateRef` — i.e. another writer committed
+ * first. Such a conflict is safe to retry by re-reading the head and rebuilding
+ * the commit on the new base.
+ */
+function isNonFastForwardError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  const message = err instanceof Error ? err.message : String(err);
+  return /fast.?forward/i.test(message) || status === 422;
+}
+
 export function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, name] = repo.split("/");
   if (!owner || !name) {
@@ -314,19 +355,12 @@ export async function commitBatch(
   }
 
   const { owner, repo: repoName } = parseRepo(repo);
-  const ref = `heads/${branch ?? "main"}`;
+  const branchName = branch ?? "main";
+  const ref = `heads/${branchName}`;
 
-  // 1. Get the current commit SHA for the branch
-  const { data: refData } = await octokit.git.getRef({ owner, repo: repoName, ref });
-  recordApiCall("getRef");
-  const baseSha = refData.object.sha;
-
-  // 2. Get the tree SHA of that commit
-  const { data: commitData } = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: baseSha });
-  recordApiCall("getCommit");
-  const baseTreeSha = commitData.tree.sha;
-
-  // 3. Create blobs for binary files (text files can be inlined)
+  // Blobs for binary files depend only on their content, not the branch head,
+  // so create them once up front and reuse across retries. Text files are
+  // inlined into the tree directly.
   const blobShas: Map<string, string> = new Map();
   for (const bf of binaryFiles) {
     const { data: blob } = await octokit.git.createBlob({
@@ -337,7 +371,6 @@ export async function commitBatch(
     blobShas.set(bf.path, blob.sha);
   }
 
-  // 4. Build the tree entries
   const treeEntries: Array<{
     path: string;
     mode: "100644";
@@ -345,7 +378,6 @@ export async function commitBatch(
     content?: string;
     sha?: string;
   }> = [];
-
   for (const f of files) {
     treeEntries.push({ path: f.path, mode: "100644", type: "blob", content: f.content });
   }
@@ -353,35 +385,70 @@ export async function commitBatch(
     treeEntries.push({ path: bf.path, mode: "100644", type: "blob", sha: blobShas.get(bf.path) });
   }
 
-  // 5. Create new tree
-  const { data: newTree } = await octokit.git.createTree({
-    owner, repo: repoName,
-    base_tree: baseTreeSha,
-    tree: treeEntries,
+  // The read-modify-write below (read head → build tree → commit → update ref)
+  // must be atomic per branch. Serialize it in-process and retry on a
+  // non-fast-forward conflict by re-reading the head and rebuilding on the new
+  // base — this self-heals against concurrent writers (image callbacks, other
+  // replicas, dashboard publishes).
+  return enqueueForBranch(branchName, async () => {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= COMMIT_MAX_ATTEMPTS; attempt++) {
+      // 1. Current head SHA for the branch (re-read on every attempt).
+      const { data: refData } = await octokit.git.getRef({ owner, repo: repoName, ref });
+      recordApiCall("getRef");
+      const baseSha = refData.object.sha;
+
+      // 2. Tree SHA of that commit.
+      const { data: commitData } = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: baseSha });
+      recordApiCall("getCommit");
+      const baseTreeSha = commitData.tree.sha;
+
+      // 3. New tree on top of the current base.
+      const { data: newTree } = await octokit.git.createTree({
+        owner, repo: repoName,
+        base_tree: baseTreeSha,
+        tree: treeEntries,
+      });
+      recordApiCall("createTree");
+
+      // 4. New commit parented on the current head.
+      const { data: newCommit } = await octokit.git.createCommit({
+        owner, repo: repoName,
+        message,
+        tree: newTree.sha,
+        parents: [baseSha],
+      });
+      recordApiCall("createCommit");
+
+      // 5. Fast-forward the branch ref.
+      try {
+        await octokit.git.updateRef({ owner, repo: repoName, ref, sha: newCommit.sha });
+        recordApiCall("updateRef");
+      } catch (err) {
+        if (isNonFastForwardError(err) && attempt < COMMIT_MAX_ATTEMPTS) {
+          lastErr = err;
+          // Another writer advanced the branch between our read and write. The
+          // tree cache for this branch is now stale — drop it and retry on the
+          // fresh head after a short jittered backoff.
+          clearTreeCache(branchName);
+          const delayMs = attempt * 200 + Math.floor(Math.random() * 200);
+          console.warn(
+            `[github] Non-fast-forward on ${ref} (attempt ${attempt}/${COMMIT_MAX_ATTEMPTS}), ` +
+            `re-reading head and retrying in ${delayMs}ms`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        throw err;
+      }
+
+      clearTreeCache(branchName);
+      console.log(`[github] Batch commit ${newCommit.sha.slice(0, 7)}: ${files.length} text + ${binaryFiles.length} binary files`);
+      return newCommit.sha;
+    }
+    // Loop only exits without returning when every attempt hit a conflict.
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   });
-  recordApiCall("createTree");
-
-  // 6. Create commit
-  const { data: newCommit } = await octokit.git.createCommit({
-    owner, repo: repoName,
-    message,
-    tree: newTree.sha,
-    parents: [baseSha],
-  });
-  recordApiCall("createCommit");
-
-  // 7. Update branch ref
-  await octokit.git.updateRef({
-    owner, repo: repoName,
-    ref,
-    sha: newCommit.sha,
-  });
-  recordApiCall("updateRef");
-
-  clearTreeCache(branch ?? "main");
-
-  console.log(`[github] Batch commit ${newCommit.sha.slice(0, 7)}: ${files.length} text + ${binaryFiles.length} binary files`);
-  return newCommit.sha;
 }
 
 /**
