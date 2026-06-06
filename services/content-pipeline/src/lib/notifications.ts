@@ -10,6 +10,32 @@ export interface NotificationConfig {
 }
 
 /**
+ * Alert severity. `critical` is for site-down / serving-broken conditions
+ * (e.g. a KV sync failure); `not_critical` is for content shortfalls that
+ * leave the live site unaffected (no/partial articles, default images,
+ * generation job errors). Rendered as a prefix on every Slack/Telegram message.
+ */
+export type Severity = "critical" | "not_critical";
+
+const SEVERITY_PREFIX: Record<Severity, string> = {
+  critical: "🔴 CRITICAL — ",
+  not_critical: "🟡 NOT CRITICAL — ",
+};
+
+/** Prepend the severity label to a message body. */
+function withSeverity(severity: Severity, message: string): string {
+  return SEVERITY_PREFIX[severity] + message;
+}
+
+/** Dispatch a message to all configured channels (Telegram + Slack). */
+async function dispatch(config: NotificationConfig, text: string): Promise<void> {
+  await Promise.allSettled([
+    config.telegramBotToken ? sendTelegram(config, text) : Promise.resolve(),
+    config.slackWebhookUrl ? sendSlack(config, text) : Promise.resolve(),
+  ]);
+}
+
+/**
  * Send a notification about an article needing review.
  */
 export async function notifyReviewNeeded(
@@ -24,12 +50,7 @@ export async function notifyReviewNeeded(
     params.dashboardUrl ? `\n${params.dashboardUrl}` : ""
   }`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 /**
@@ -41,16 +62,15 @@ export async function notifyError(
     agent: string;
     error: string;
     site?: string;
+    /** Flag a site-down / serving-broken condition as 🔴 CRITICAL. Pipeline
+     *  job/generation errors leave the live site up, so they default to
+     *  🟡 NOT CRITICAL. */
+    critical?: boolean;
   },
 ): Promise<void> {
   const message = `Pipeline error in ${params.agent}${params.site ? ` (${params.site})` : ""}: ${params.error}`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity(params.critical ? "critical" : "not_critical", message));
 }
 
 /**
@@ -88,10 +108,7 @@ export async function notifySummary(
 
   const message = lines.join("\n");
 
-  await Promise.allSettled([
-    config.telegramBotToken ? sendTelegram(config, message) : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 export async function notifyImageDefaultFallback(
@@ -110,12 +127,7 @@ export async function notifyImageDefaultFallback(
     `Reason: ${params.reason}\n` +
     `The article is using the default site image.`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 async function sendTelegram(
