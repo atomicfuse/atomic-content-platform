@@ -100,7 +100,7 @@ function getOctokit(): Octokit {
   return _octokit;
 }
 
-const dashboardIndexCache = createTtlCache<DashboardIndex>(30_000);
+const dashboardIndexCache = createTtlCache<DashboardIndex>(Infinity);
 
 // ---------------------------------------------------------------------------
 // Tree cache — single recursive tree fetch, shared across read helpers
@@ -113,7 +113,7 @@ interface TreeEntry {
   size?: number;
 }
 
-const TREE_CACHE_TTL = 60_000;
+const TREE_CACHE_TTL = Infinity;
 const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
 
 async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
