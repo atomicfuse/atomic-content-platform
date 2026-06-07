@@ -67,6 +67,7 @@ This design adds the platform's first MongoDB store (CloudGrid Mongo).
   "topicName":  null,             // string for per-topic runs, else null
   "requested":  3,                // articlesRequested
   "created":    2,                // articlesCreated
+  "failed":     1,                // count of results[] with an error outcome (article-level)
   "status":     "success" | "partial" | "error" | "no_content",
   "message":    null,             // optional error/summary message
   "startedAt":  "2026-06-07T14:00:03Z",
@@ -232,8 +233,113 @@ A script (run once as a CloudGrid one-off job or locally) reads `scheduler/histo
   - `mongodb-memory-server` write→read round-trip across both collections.
   - Assert a thrown Mongo error inside the recorder does **not** propagate out of the generation path.
 
-## Out of scope
+## Out of scope (this spec)
 
-- Alerting / notifications on failures or under-delivery (the API exposes the data; consumers decide).
 - A finished dashboard UI page (this design covers the API + data layer; the UI is a follow-up).
-- Per-article failure tracking (#5 is run-level "full failure"; per-run `failed`/`status` are stored for future use).
+- Site health checks (uptime/sync/SSL/tracking) — see the **Site Checks** spec.
+- Cost / token tracking — see the **Cost Tracking** spec.
+- Slack alerting + reminders — see the **Slack Alerts & Reminders** spec. (Note: image-gen failures
+  already fire a Slack notice today via `notifyImageDefaultFallback`, landmine #34 — the alerts spec
+  formalizes/owns that.)
+
+---
+
+# 2026-06-07 Expansion — ops-console fields
+
+This subsystem is the first of four (Stats → Checks → Costs → Alerts) that together back a per-site
+"ops console". This section extends the Stats API with the remaining generation-domain fields the console
+needs. The sibling subsystems live in their own specs and share the same content-pipeline-owned Mongo +
+dashboard-proxy pattern.
+
+## New requirement: failed-article counts (7d / 30d)
+
+`generation_events` now carries `failed` (count of `results[]` with an error outcome). The API exposes:
+
+```
+"failedArticles": { "last7d": 4, "last30d": 11 }
+```
+
+Computed on read by summing `failed` over `generation_events` in each window. (Distinct from `lastFailedAt`,
+which is the run-level "full failure" timestamp.)
+
+## New requirement: image-generation failures (7d / 30d)
+
+Image generation is **async via n8n** and completes on a **separate path** — the callback handler
+`handleImageCallback` (`content-pipeline/.../n8n-image.ts`), reached via the dashboard proxy
+`/api/agent/image-callback`. A failure is observable there when `payload.status !== "ok"` or `data_base64`
+is missing; the payload carries `site_domain`, `slug`, and `error`.
+
+**New collection `image_gen_events`** — one doc per image callback outcome:
+
+```jsonc
+{
+  "siteDomain": "travelswire",
+  "slug":       "best-thriller-movies-2026",
+  "ok":         false,
+  "provider":   "gemini",          // payload.meta.provider
+  "error":      "…",               // payload.error, when failed
+  "at":         "2026-06-07T14:05:00Z"
+}
+```
+
+Index: `{ siteDomain: 1, at: -1 }`. The recorder hook lives in `handleImageCallback` (same failure-isolation
+rule — never break the callback). API exposes:
+
+```
+"imageGenFailed": { "last7d": 1, "last30d": 3 }
+```
+
+(Both `ok` and failed outcomes are stored so a future success-rate metric is possible; only failures are surfaced now.)
+
+> Note: the bulk-image path (`bulk-image.ts`) uses the **same** n8n callback, so it is covered automatically.
+
+## New requirement: "next run" in the schedule block
+
+`schedule` gains `nextRun` — the next datetime the scheduler would generate for this site, computed from the
+global gate (`scheduler/config.yaml`: `run_at_hours`, `timezone`) intersected with the site's `preferredDays`.
+Computed on read (no storage). If the scheduler is globally disabled, `nextRun: null`.
+
+```
+"schedule": { "articlesPerDay": 3, "preferredDays": ["Monday","Wednesday"], "weeklyTarget": 6, "nextRun": "2026-06-09T14:00:00-04:00" }
+```
+
+## New requirement: recent articles (title · score · status)
+
+A per-site list of the most recent N articles (default 5), surfaced for the console's "Recent articles" panel.
+
+- **Source:** reuse the dashboard's existing `readArticlesWithKVFallback(domain, branch, readArticles)` path
+  (the same one the review queue uses) — articles are **not** in Mongo. Sort by `publishDate` desc, take N.
+- **Fields:** `title`, `quality_score` (frontmatter), `status` (`published` | `review`), `slug`, `publishDate`.
+- **Where:** this enrichment runs in the **dashboard** `/api/site-stats` layer (it owns article reading and the
+  KV/GitHub fallback), not in content-pipeline. Keeps Mongo scoped to generation/image events.
+
+```
+"recentArticles": [
+  { "title": "Best Thriller Movies 2026", "score": 87, "status": "published", "slug": "best-thriller-movies-2026", "publishDate": "2026-06-07" }
+]
+```
+
+## Consolidated per-site response (Stats subsystem)
+
+```jsonc
+{
+  "siteDomain": "travelswire",
+  "schedule":       { "articlesPerDay": 3, "preferredDays": ["Monday","Wednesday"], "weeklyTarget": 6, "nextRun": "…" },
+  "lastAdded":      { "at": "…", "source": "scheduler", "count": 2 },
+  "lastFailedAt":   null,
+  "thisWeek":       { "created": 4, "expected": 6 },
+  "failedArticles": { "last7d": 4, "last30d": 11 },
+  "imageGenFailed": { "last7d": 1, "last30d": 3 },
+  "recentArticles": [ /* … */ ]
+}
+```
+
+The Checks / Costs / Alerts subsystems each add their own block (`checks`, `costs`, `attention`) to the same
+per-site aggregate over time; consumers can request the Stats block alone or the full aggregate.
+
+## Expansion — additions to testing
+
+- `failed`-count summation over 7d/30d windows.
+- `image_gen_events` recorder maps a failed n8n callback correctly and never throws out of `handleImageCallback`.
+- `nextRun` computation across timezone + `preferred_days` (incl. globally-disabled → null; DST boundary).
+- Recent-articles sort/limit and `published`/`review` status mapping.
