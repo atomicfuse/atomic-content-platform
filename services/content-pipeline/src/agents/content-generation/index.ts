@@ -37,6 +37,9 @@ import {
 } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
+import { parseSiteStatsPath } from "../../stats/route-path.js";
+import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
+import { ensureStatsIndexes } from "../../lib/mongo.js";
 import {
   type BulkImageRequest,
   scanArticlesForGeneralImages,
@@ -691,6 +694,27 @@ async function handleRequest(
     return;
   }
 
+  // Site stats — GET /site-stats (all) or GET /site-stats/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET") {
+      const ss = parseSiteStatsPath(pathname);
+      if (ss) {
+        try {
+          if (ss.kind === "all") {
+            sendJson(res, 200, { status: "ok", sites: await getAllSiteStats(new Date()) });
+          } else {
+            sendJson(res, 200, { status: "ok", site: await getSiteStats(ss.domain, new Date()) });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          sendJson(res, 503, { status: "error", message });
+        }
+        return;
+      }
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
@@ -832,6 +856,7 @@ server.listen(config.port, () => {
   const effectiveAggregatorUrl = process.env.CONTENT_API_BASE_URL ?? config.contentAggregatorUrl;
   console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
+  ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
 });
 
 async function shutdown(signal: string): Promise<void> {
