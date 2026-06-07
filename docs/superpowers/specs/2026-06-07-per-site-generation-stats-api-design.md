@@ -62,7 +62,7 @@ This design adds the platform's first MongoDB store (CloudGrid Mongo).
 ```jsonc
 {
   "siteDomain": "travelswire",
-  "source":     "scheduler" | "dashboard",
+  "source":     "scheduler" | "dashboard" | "wp-import",
   "forced":     false,            // scheduler force / dashboard bypassSchedule
   "topicName":  null,             // string for per-topic runs, else null
   "requested":  3,                // articlesRequested
@@ -90,7 +90,7 @@ Indexes: `{ siteDomain: 1, finishedAt: -1 }`, `{ finishedAt: -1 }`.
   "schedule": {                             // SNAPSHOT, stamped at generation time
     "articlesPerDay": 3,                    //                                       → #3
     "preferredDays":  ["Monday", "Wednesday"], //                                    → #4
-    "weeklyTarget":   6                     // articlesPerDay * preferredDays.length (or articles_per_week)
+    "weeklyTarget":   6                     // see weeklyTarget derivation below
   },
   "updatedAt":      "2026-06-07T14:02:11Z"
 }
@@ -99,19 +99,74 @@ Indexes: `{ siteDomain: 1, finishedAt: -1 }`, `{ finishedAt: -1 }`.
 `thisWeek.created` (#6) is **computed on read** by aggregating `generation_events` for the current week
 (it is not stored in the rollup, so it stays correct as the week rolls over without a write).
 
+**`weeklyTarget` derivation (matches the scheduler's existing fallback / landmine #6):** the brief may carry
+`articles_per_day` *or* only the legacy `articles_per_week`. Compute the snapshot as:
+`articlesPerDay = brief.schedule.articles_per_day ?? ceil(articles_per_week / preferred_days.length)`, and
+`weeklyTarget = articlesPerDay * preferredDays.length` (equivalently `articles_per_week` when only that is set).
+Reuse the scheduler's existing resolution logic rather than re-deriving it.
+
 ## Write path
 
-A thin **recorder** runs immediately after `runContentGeneration()` returns, on **both** call paths
-(the BullMQ worker and the direct-execution fallback), so scheduler and dashboard runs are both captured.
+A thin **recorder** runs immediately after `runContentGeneration()` returns and records one event.
+The non-trivial part is that the fields the recorder needs are **not** all present on the result object,
+and the three callers of `runContentGeneration` each derive outcome differently today. This section is
+deliberately explicit so the planner doesn't build against a shape that doesn't exist.
 
-1. Map `BatchContentGenerationResult` → one `generation_events` insert.
+### What `runContentGeneration` actually returns
+
+`BatchContentGenerationResult` (`agent.ts`) carries: `siteDomain`, `requested`, `totalSourced`,
+`duplicateCount`, `availableNew`, `n8nImagesTriggered`, and `results: ContentGenerationResult[]`.
+It does **not** carry `created`, `status`, `forced`, `topicName`, `message`, `startedAt`, or `finishedAt`.
+Those are **derived** or **call-site context**:
+
+- `created` = count of `results` with a "created" outcome (derive from `results[]`).
+- `status` (`success` | `partial` | `error` | `no_content`) — this four-state derivation currently lives
+  **only** in the scheduler (`scheduled-publisher/index.ts`, producing a `SiteRunResult`). The dashboard
+  HTTP handler (`content-generation/index.ts`) and the BullMQ worker (`queue/content-generation.ts`) each
+  compute their own *different* created/error notions and never produce a `status` or `message`.
+- `forced`, `topicName`, `startedAt`, `finishedAt`, `source` — **call-site context**, not on the result.
+
+### Required refactor: one shared mapper
+
+Extract the scheduler's status-derivation into a **single shared function**
+`buildGenerationEvent(result, ctx)` where `ctx = { source, forced, topicName, startedAt, finishedAt }`,
+returning the `generation_events` doc (and the `SiteRunResult` the scheduler already needs, so the
+scheduler is refactored to call it rather than duplicating logic). This guarantees all three callers
+produce identical `created`/`status`/`message` semantics.
+
+### Wire the recorder into all THREE call sites
+
+There are three distinct callers, and the dashboard path is the whole reason this project exists
+(manual gens are currently unrecorded). The recorder must fire on **all three**, with `source` set correctly:
+
+1. **Scheduler direct-execution fallback** (`scheduled-publisher/index.ts`) — `source: "scheduler"`.
+2. **BullMQ Flow worker** (`queue/content-generation.ts`) — shared infra used by *both* scheduler and dashboard,
+   so `source` must come from the **job payload**, not be inferred from the worker.
+3. **Dashboard HTTP handler** (`content-generation/index.ts`, `/content-generate`) — `source: "dashboard"`.
+
+`source` is therefore threaded as an explicit field set at the **originating entrypoint** (scheduler enqueue/direct
+→ `"scheduler"`; dashboard request → `"dashboard"`) and carried through the job payload when the BullMQ path is used.
+
+**Reuse the existing `triggeredBy`, don't add a parallel concept.** `GenerateJobData` already carries
+`triggeredBy: "manual" | "scheduled" | "scheduled-forced" | "wp-import"` (`queue/types.ts`), which already
+encodes origin through the job payload. Derive `source` from it rather than introducing a second origin field
+that can drift:
+- `"manual"` → `source: "dashboard"`
+- `"scheduled"` / `"scheduled-forced"` → `source: "scheduler"`
+- `"wp-import"` → `source: "wp-import"` (**add this third enum value** to `generation_events.source` and the API;
+  do not silently fold it into `dashboard`, or WP-import-triggered generations become an unmapped case).
+
+Likewise derive `forced` from existing signals: `triggeredBy === "scheduled-forced"` (scheduler) or the
+dashboard's `bypassSchedule` flag — not a new field.
+
+### Steps (per completed run)
+
+1. `event = buildGenerationEvent(result, ctx)` → insert into `generation_events`.
 2. Upsert `site_stats`:
-   - always set `lastRunAt`, `updatedAt`, increment `totalCreated` by `created`;
-   - set `lastAddedAt` / `lastAddedSource` / `lastAddedCount` **only when `created > 0`**;
-   - set `lastFailedAt` **only when `status === "error"` and `created === 0`**;
-   - overwrite the `schedule` snapshot from the brief loaded for this run.
-3. `source` is a **new parameter** to the generation entrypoint: scheduler passes `"scheduler"`,
-   the `/content-generate` HTTP handler passes `"dashboard"`.
+   - always set `lastRunAt`, `updatedAt`, increment `totalCreated` by `event.created`;
+   - set `lastAddedAt` / `lastAddedSource` / `lastAddedCount` **only when `event.created > 0`**;
+   - set `lastFailedAt` **only when `event.status === "error"` and `event.created === 0`**;
+   - overwrite the `schedule` snapshot from the brief loaded for this run (see weeklyTarget note below).
 
 **Failure isolation (critical):** every Mongo operation is wrapped in try/catch and logged.
 A DB error must **never** break or fail generation — same principle already enforced in `history.ts`
