@@ -1,7 +1,7 @@
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
 import { getMongoDb } from "../lib/mongo.js";
 import { COLLECTIONS, type ScheduleSnapshot } from "./types.js";
-import type { GenerationEvent, GenerationSource, RunStatus } from "./types.js";
+import type { GenerationEvent, GenerationSource, ImageGenEvent, RunStatus } from "./types.js";
 
 export interface EventContext {
   source: GenerationSource;
@@ -136,5 +136,21 @@ export async function recordGeneration(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[stats] recordGeneration failed (non-fatal): ${msg}`);
+  }
+}
+
+/**
+ * Persists an image generation callback outcome to MongoDB.
+ *
+ * Failure-isolated — any Mongo error is caught and logged; the caller
+ * never sees an exception from this function.
+ */
+export async function recordImageGenEvent(event: ImageGenEvent): Promise<void> {
+  try {
+    const db = await getMongoDb();
+    await db.collection(COLLECTIONS.imageGenEvents).insertOne(event as any);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[stats] recordImageGenEvent failed (non-fatal): ${msg}`);
   }
 }
