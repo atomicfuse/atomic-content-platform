@@ -351,4 +351,4 @@ per-site aggregate over time; consumers can request the Stats block alone or the
 - `failed`-count summation over 7d/30d windows.
 - `image_gen_events` recorder maps a failed n8n callback correctly and never throws out of `handleImageCallback`.
 - `nextRun` computation across timezone + `preferred_days` (incl. globally-disabled → null; DST boundary).
-- Recent-articles sort/limit and `published`/`review` status mapping.
+- Recent-articles sort/limit; status mapping covers all three (`published`/`review`/`draft`); `score` null when unscored.
