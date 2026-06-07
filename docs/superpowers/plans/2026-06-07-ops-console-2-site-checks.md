@@ -139,10 +139,10 @@ git commit -m "feat(content-pipeline): tracking presence check from resolved con
 
 - [ ] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement `repo.ts`** (it obtains an Octokit via `createOctokit(config.github)` + `config.networkRepo` from `loadConfig()` so it can call `listActiveSites`). Then add routes in `handleRequest`. Parse the pathname (the existing `/scheduled-publish` route uses `new URL(...)` — do the same so a query string doesn't break the exact match):
+- [ ] **Step 3: Implement `repo.ts`.** `getAllAtlChecks(config)` builds its **own** Octokit internally via `createOctokit(config.github)` + uses `config.networkRepo` (there is no `octokit` in scope at the route call site — each handler in `index.ts` makes its own, e.g. index.ts:503). Then add routes in `handleRequest`. Parse the pathname (the existing `/scheduled-publish` route uses `new URL(...)` — do the same so a query string doesn't break the exact match):
 ```typescript
 const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-if (req.method === "GET" && pathname === "/site-checks") { sendJson(res, 200, { status:"ok", sites: await getAllAtlChecks(octokit, config.networkRepo) }); return; }
+if (req.method === "GET" && pathname === "/site-checks") { sendJson(res, 200, { status:"ok", sites: await getAllAtlChecks(config) }); return; }
 if (req.method === "GET" && pathname.startsWith("/site-checks/")) {
   const d = decodeURIComponent(pathname.slice("/site-checks/".length));
   sendJson(res, 200, { status:"ok", site: await getAtlChecks(d) }); return;
