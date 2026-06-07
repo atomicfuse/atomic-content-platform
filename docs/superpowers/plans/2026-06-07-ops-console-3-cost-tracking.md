@@ -131,8 +131,10 @@ git commit -m "feat(content-pipeline): cost recorder (text + image), failure-iso
 - [ ] **Step 1:** Change `generateContent` to return `{ text: string; usage: { inputTokens: number; outputTokens: number; estimated: boolean } }`:
   - Gateway branch: `usage = { inputTokens: estimateTokens(systemPrompt+userPrompt), outputTokens: estimateTokens(text), estimated: true }`.
   - Anthropic SDK branch: `usage = { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, estimated: false }`.
-  - Update **all** callers to use `.text` (find with `grep -rn "generateContent(" src`): the Claude generator, `scorer.ts`, `propose-filter.ts`, `article-cleanup.ts`. Where the caller can attribute to a site, also pass the usage up (Task 5); where it can't (e.g. propose-filter has no per-article site cost), just use `.text`.
-- [ ] **Step 2:** OpenAI generator: capture `response.usage` and return it on the `GeneratedArticle` (add optional `usage?: {inputTokens,outputTokens,estimated:false}` to the `GeneratedArticle` type) — map `prompt_tokens`/`completion_tokens`.
+  - **Update all callers to use `.text`.** The real `generateContent` callers (verified — find with `grep -rn "generateContent(" src`) are exactly three: `generators/claude-generator.ts` (1 call), `content-quality/scorer.ts` (2 calls), and `agents/article-regeneration/index.ts` (1 call). NOTE: `propose-filter.ts` and `migration/article-cleanup.ts` do **not** call `generateContent` — they each construct their own `Anthropic` client; they are out of scope for this plan (see Notes). Don't waste time editing them.
+- [ ] **Step 2:** Add an optional `usage?: { inputTokens: number; outputTokens: number; estimated: boolean }` to the `GeneratedArticle` type and surface it from **both** generators:
+  - **OpenAI generator:** capture `response.usage` → `{ inputTokens: prompt_tokens, outputTokens: completion_tokens, estimated: false }`.
+  - **Claude generator** (`claude-generator.ts`): `generateContent` now returns `{ text, usage }` — capture `usage` and attach it to the returned `GeneratedArticle` (after `parseGeneratedArticle(text)`; the parser only needs the text). Without this, the **dominant Claude path emits no usage** and cost tracking under-reports.
 
 - [ ] **Step 3:** Adjust/extend existing ai/generator unit tests for the new return shape; `pnpm typecheck && pnpm test` → PASS.
 
@@ -148,10 +150,10 @@ git commit -m "feat(content-pipeline): surface LLM token usage (exact + estimate
 
 **Files:** Modify `agent.ts` (`ContentGenerationParams`, `runContentGeneration`, `processItem`), `scorer.ts` return.
 
-- [ ] **Step 1:** Add `source?: GenerationSource` to `ContentGenerationParams`; pass it from the 3 callers (Plan 1 Task 8 already computes `source` for stats — reuse the same value). Thread `source` into `processItem` (new param, default `"dashboard"` if absent).
+- [ ] **Step 1:** Add `source?: GenerationSource` to `ContentGenerationParams`; pass it from the 3 `runContentGeneration` callers (Plan 1 Task 8 already computes `source` for stats — reuse the same value). Thread `source` into `processItem` — note there are **two** `processItem` call sites in `agent.ts` (≈line 1089 and ≈line 1351); both must pass the new arg. `processItem` currently has a 9-arg positional signature — add `source` as a trailing param with a default (`source: GenerationSource = "dashboard"`) to avoid reordering existing args, and update both call sites.
 - [ ] **Step 2:** In `processItem`, after the generator call and after `scoreArticle`, record cost (failure-isolated, `void`):
-  - text generation: `void recordTextUsage({ siteDomain, source, model: <generator model id>, ...generatorUsage })` — the generator result now carries `usage`; the model id is the generator's model (`gpt-4o-mini` for OpenAI; for Claude use the model passed to `generateContent`, default `claude-sonnet-4-20250514`).
-  - quality scoring: have `scoreArticle` return its `usage` (it calls `generateContent`); `void recordTextUsage({ siteDomain, source, model: "claude-sonnet-4-20250514", ...scorerUsage })`.
+  - text generation: `void recordTextUsage({ siteDomain, source, model: normalizeModelId(<generator model id>), ...generatorResult.usage })` — the generator result now carries `usage` (Task 4 Step 2). Model id: `gpt-4o-mini` for OpenAI; for Claude the prod gateway alias is `claude-sonnet` while local SDK uses `claude-sonnet-4-20250514` — **normalize** both to one key (e.g. `claude-sonnet-4-6`) via a small `normalizeModelId()` so prod/dev don't split the rollup. Guard against `usage` being undefined.
+  - quality scoring: have `scoreArticle` return its `usage` (it calls `generateContent` twice — sum or record both); `void recordTextUsage({ siteDomain, source, model: "claude-sonnet-4-6", ...scorerUsage })`.
 - [ ] **Step 3:** `pnpm typecheck && pnpm test` → PASS (existing generation tests still green; cost recording is fire-and-forget).
 - [ ] **Step 4: Commit**
 ```bash
@@ -165,8 +167,9 @@ git commit -m "feat(content-pipeline): record text-gen + scoring cost per site/m
 
 **Files:** Modify `src/agents/content-generation/n8n-image.ts`.
 
-- [ ] **Step 1:** In `handleImageCallback`, on the **success** branch (after the guard + after `processN8nImageResult`), `void recordImageUsage({ siteDomain: site_domain, source: "scheduler", model: payload.meta?.provider === "openai" ? "<openai-image-model>" : "gemini-2.5-flash-image", images: 1 })`.
-  - `source` isn't on the callback payload; default to `"scheduler"` (most images come from scheduled/dashboard generation). Acceptable approximation — note it. (Migration-path direct Gemini calls in `migration/orchestrator.ts` may also record `recordImageUsage` with the in-scope `siteDomain` if image cost there matters — optional, flagged.)
+- [ ] **Step 1:** In `handleImageCallback`, on the **success** branch (after the guard + after `processN8nImageResult`), `void recordImageUsage({ siteDomain: site_domain, source: "scheduler", model: "gemini-2.5-flash-image", images: 1 })`.
+  - The only image provider in the codebase is Gemini (`gemini-2.5-flash-image`); hardcode it. (If an OpenAI image model is ever added, branch on `payload.meta?.provider` then — not now.)
+  - `source` isn't on the callback payload; default to `"scheduler"` (most images come from scheduled/dashboard generation). Acceptable approximation — note it. (Migration-path direct Gemini calls in `migration/orchestrator.ts` may also record `recordImageUsage` with the in-scope `siteDomain` — optional, flagged.)
 - [ ] **Step 2:** `pnpm typecheck && pnpm test` → PASS. **Commit**
 ```bash
 git add services/content-pipeline/src/agents/content-generation/n8n-image.ts
@@ -200,3 +203,5 @@ git commit -m "feat: cost read API + dashboard proxy"
 ## Notes
 - The `estimated` flag must surface in the API so totals aren't read as exact. If/when the CloudGrid AI Gateway exposes usage, switch the gateway branch in `ai.ts` to use it and set `estimated:false`.
 - Index `cost_events` on `{ siteDomain: 1, at: -1 }` and `{ model: 1, at: -1 }` — add to `ensureStatsIndexes()` (Plan 1) or a `ensureCostIndexes()` called at boot.
+- **Normalize model ids** when recording (prod gateway alias `claude-sonnet` vs local `claude-sonnet-4-20250514` → one key) so rollups don't fragment across environments.
+- **Out of scope (conscious):** `propose-filter.ts` (Opus `claude-opus-4-7`) and migration `article-cleanup.ts` (`claude-sonnet-4-6`) call the Anthropic SDK directly (not `generateContent`) and are **not** instrumented by this plan — they're outside the text-gen/quality/OpenAI/image scope. If their spend matters later, add a `recordTextUsage` call at those two sites (both have a site/domain in scope).

@@ -4,7 +4,7 @@
 
 **Goal:** A stateful, edge-triggered "Needs Attention" engine that posts Slack alerts for the ATL-specific conditions (failed articles, sync failed, in-review backlog, tracking off) plus two scheduled reminders, with dedup so it never re-fires every tick. Read-only `/attention` API for the console.
 
-**Architecture:** The engine lives in content-pipeline (owns crons + the existing Slack helper). Per-`(site,condition)` state in Mongo (`alert_state`) drives edge-triggering via a pure `evaluateCondition(state, value, policy, now)`. Inputs: `failedArticles` from the stats Mongo (Plan 1), `sync`/`tracking` from the checks readers (Plan 2), `reviewCount` from a KV `article-index` count. Delivery via a new exported `notifyAttention()` that posts the verbatim message (no severity prefix). Triggers: a daily cron + after-each-run. Infra alerts (down/SSL/domain) are owned by the Domains Dashboard, **not** this engine.
+**Architecture:** The engine lives in content-pipeline (owns crons + the existing Slack helper). Per-`(site,condition)` state in Mongo (`alert_state`) drives edge-triggering via a pure `evaluateCondition(state, input, now)` (where `input = { alerting, value, policy }` — see `types.ts`). Inputs: `failedArticles` from the stats Mongo (Plan 1), `sync`/`tracking` from the checks readers (Plan 2), `reviewCount` from a KV `article-index` count. Delivery via a new exported `notifyAttention()` that posts the verbatim message (no severity prefix). Triggers: a daily cron + after-each-run. Infra alerts (down/SSL/domain) are owned by the Domains Dashboard, **not** this engine.
 
 **Tech Stack:** TypeScript (strict), `mongodb` (Plan 1 `lib/mongo.ts`), existing `notifications.ts`, Vitest.
 
@@ -159,7 +159,7 @@ git commit -m "feat(content-pipeline): alert inputs (reviewCount + gather)"
 
 - [ ] **Step 2: Run → FAIL.**
 - [ ] **Step 3: Implement `runAlerts(now, { onlySite?, conditions? })`:**
-  - list sites (`listActiveSites`); for each enabled condition: `gatherInputs` → derive `{alerting, value}` → load `alert_state` (`_id = ${domain}:${conditionId}`) → `evaluateCondition` → if `shouldFire`, format the template and `notifyAttention`; **only if send succeeded** set `lastFiredAt=now`; persist `newState` (with `lastFiredAt` decided here).
+  - list sites via `listActiveSites(octokit, repo)` — it requires `(octokit, repo)` args (see `lib/site-brief.ts`); build the Octokit from `loadConfig().github` and pass `config.networkRepo`, as the existing agents do. For each enabled condition: `gatherInputs` → derive `{alerting, value}` → load `alert_state` (`_id = ${domain}:${conditionId}`) → `evaluateCondition` → if `shouldFire`, format the template and `notifyAttention`; **only if send succeeded** set `lastFiredAt=now`; persist `newState` (with `lastFiredAt` decided here).
   - reminders: evaluate network-scoped state keys; fire via `notifyAttention`.
   - Everything try/caught per condition; engine never crashes the cron.
   - Provide a thin `runAfterRun(domain, now)` that evaluates only `#1` + `#5` for one site (called from the generation hook).
@@ -179,7 +179,7 @@ git commit -m "feat(content-pipeline): alert runner + reminders with dedup"
 - [ ] **Step 2:** Add routes in `index.ts`:
   - `GET /run-alerts` (cron target) → `await runAlerts(new Date())` → `{status:"ok"}` (catch → log, still 200 so cron isn't marked failed; or 500 — match the `/scheduled-publish` convention).
   - `GET /attention` / `GET /attention/:domain` → `getAttention(...)` (503 on Mongo failure).
-- [ ] **Step 3:** After-run hook: at the same post-`runContentGeneration` boundary where `recordGeneration` is called (Plan 1 Task 8), also `void runAfterRun(siteDomain, new Date())` (fire-and-forget, failure-isolated).
+- [ ] **Step 3:** After-run hook: at **each** of the three post-`runContentGeneration` boundaries where `recordGeneration` is called (Plan 1 Task 8 — HTTP `/content-generate`, queue worker, scheduler), also `void runAfterRun(siteDomain, new Date())` (fire-and-forget, failure-isolated). In the **scheduler** path, place it inside the per-site loop so each site is evaluated (not once per run).
 - [ ] **Step 4:** `cloudgrid.yaml`: add a cron service mirroring `scheduled-publisher`:
 ```yaml
   run-alerts:

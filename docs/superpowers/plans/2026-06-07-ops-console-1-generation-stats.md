@@ -349,7 +349,7 @@ export function buildGenerationEvent(
   };
 }
 ```
-> Note: `success` requires `created >= requested`; a smaller-but-nonzero count with no further demand is still `partial`. If the scheduler currently treats "created>0" as success, align by reading `scheduled-publisher/index.ts` lines 269–286 and matching its intent; adjust the test + mapper together if the existing semantics differ.
+> Note: `success` requires `created >= requested`; a smaller-but-nonzero count is `partial`. The scheduler's own derivation (`scheduled-publisher/index.ts` ~269–286) is **richer** — it distinguishes `no_content` using `totalSourced === 0` / all-duplicates, which a `results[]`-only mapper can't see. `BatchContentGenerationResult` carries `totalSourced` and `duplicateCount` — pass the whole `result` to the mapper (it already does) and refine: treat `created===0 && failed===0` as `no_content` (covers all-skipped, all-duplicate, and nothing-sourced). Read those scheduler lines and align the mapper + test so the recorded `status` matches what the scheduler writes to `history.json`; adjust together if they differ.
 
 - [ ] **Step 4: Run → PASS.**
 
@@ -541,7 +541,7 @@ git commit -m "feat(content-pipeline): recordImageGenEvent"
 - Create: `services/content-pipeline/src/stats/schedule.ts`
 - Test: `services/content-pipeline/src/stats/__tests__/schedule.test.ts`
 
-Reuse the scheduler's article-count resolution (landmine #6): `articlesPerDay = articles_per_day ?? ceil(articles_per_week / preferred_days.length)`.
+Reuse the scheduler's article-count resolution (landmine #6): `articlesPerDay = articles_per_day ?? ceil(articles_per_week / preferred_days.length)`. A helper `resolveArticlesPerDay` already exists in `scheduled-publisher/index.ts` (~line 145) — reuse/extract it inside `buildScheduleSnapshot` rather than re-deriving, to avoid drift.
 
 - [ ] **Step 1: Write failing tests** for:
   - `buildScheduleSnapshot(brief.schedule)` → `{ articlesPerDay, preferredDays, weeklyTarget }` incl. the `articles_per_week` fallback.
@@ -690,7 +690,9 @@ export function sourceFromTriggeredBy(t: string): GenerationSource {
   return "scheduler"; // scheduled / scheduled-forced
 }
 ```
-Add `wp-import` to `GenerateJobData.triggeredBy` in `src/queue/types.ts` if the import path enqueues it (verify; the explore noted wp-import jobs exist).
+> **Do NOT modify `GenerateJobData.triggeredBy`.** Verified: WordPress article import runs on a *separate* queue (`ImportArticlesJobData` / `processImportArticlesJob`), not through `runContentGeneration`/`GenerateJobData` (whose `triggeredBy` is only `manual|scheduled|scheduled-forced`). Keep `"wp-import"` as a valid `GenerationSource` value (harmless, future-proof), but the mapper's `wp-import` branch is effectively dead for these three call sites — that's fine.
+
+- [ ] **Step 2b: Worker placement.** In `queue/content-generation.ts`, `runContentGeneration` is **skipped on BullMQ retries** (cached result, ~lines 97–102). Put the `recordGeneration` call **after** that if/else block (not immediately after the `runContentGeneration` line) so retried-from-cache runs still record.
 
 - [ ] **Step 3: Typecheck + run the full content-pipeline test suite.**
 Run: `cd services/content-pipeline && pnpm typecheck && pnpm test`
@@ -779,7 +781,7 @@ git commit -m "feat(content-pipeline): GET /site-stats[/:domain] routes + index 
 
 - [ ] **Step 3: Implement `site-stats.ts`:**
   - `recentArticles(domain, branch)`: enumerate via the existing `readArticlesWithKVFallback(domain, branch, readArticles)`; for the top-N slugs, ensure `quality_score` is present — if the KV path returns `score: undefined`, fall back to the Git frontmatter read (`readArticles`/article-detail read path) for those N slugs. Cache with the existing pattern; invalidate via `invalidateSiteCaches` (landmine #45).
-  - `nextRunFor(domain, scheduleSnapshot)`: read `readSchedulerConfig()` once per request (memoize across the all-sites call) and call the content-pipeline `computeNextRun` logic — **port** `computeNextRun` into a shared util OR duplicate minimally in the dashboard (it's pure). Prefer adding it to `packages/shared-types` (or a shared util) and importing in both services to avoid drift.
+  - `nextRunFor(domain, scheduleSnapshot)`: read `readSchedulerConfig()` once per request (memoize across the all-sites call) and compute the next run. `computeNextRun` is a **pure** function; since content-pipeline cannot import `@atomic-platform/shared-types` (it inlines types for its standalone build), keep a **dashboard-local copy** of `computeNextRun` (e.g. in `lib/site-stats.ts`) mirroring the content-pipeline one. Add a comment in both files pointing at each other so they stay in sync. (Do not route this through shared-types.)
 
 - [ ] **Step 4: Implement the routes** using the proxy pattern from `api/agent/generate/route.ts` (`getAgentUrl()` with the `content-pipeline-app` → `localhost:5000` fallback, landmine #4):
 ```typescript
@@ -868,5 +870,5 @@ git commit -m "chore: declare mongodb backing store for content-pipeline"
 
 ## Notes for the implementer
 - Do not break generation on Mongo errors — the failure-isolation tests (Task 4 step 1, Task 5) guard this; keep them green.
-- `computeNextRun` is shared between services — put it in `packages/shared-types` (or a shared util) and import in both to avoid drift.
+- `computeNextRun` is a pure function needed by both services, but content-pipeline **cannot** import `shared-types` (standalone build). Keep two minimal copies (content-pipeline `stats/schedule.ts` + dashboard `lib/site-stats.ts`) with cross-reference comments, rather than a shared-types module.
 - This plan is the **foundation**: the Checks, Costs, and Alerts plans depend on `lib/mongo.ts`, the `/site-stats` route conventions, and the dashboard proxy pattern established here.

@@ -17,13 +17,13 @@
 - Branch `michal-dev`. Failure-isolate each check: one source failing returns `unknown`/`n/a`, never blanks the others.
 - **Domains Dashboard API doc:** `/Users/michal/domains-dashboard/services/web/docs/API.md`. Fields used: `latestSnapshot.health.{statusCode,responseTimeMs,checkedAt}`, `latestSnapshot.ssl.{status,expiresAt,daysLeft}`, `latestSnapshot.renewal.{expiresAt,daysLeft,autoRenew}`, `overallStatus` (`healthy|warning|critical|not_live|unknown`). Endpoints `GET /api/domains` (bulk) and `GET /api/domains/:domain` (single), no auth.
 - **content-pipeline has no `CLOUDFLARE_API_TOKEN` today** (only `CLOUDFLARE_ACCOUNT_ID` in `r2-upload.ts`). Task 1 adds the KV-read credentials.
-- **Dual-account:** prod on Assets account; `financenewsbase` + `coolnews.dev` on Dev1. Reuse the dashboard's `isDev1Domain`/`getKvNamespaces` logic — Task 1 lifts these constants into `shared-types`.
+- **Dual-account:** prod on Assets account; `financenewsbase` + `coolnews.dev` on Dev1. The dashboard's `isDev1Domain`/`getKvNamespaces`/`getCredentials` live in `dashboard/src/lib/{constants,cloudflare}.ts`. **content-pipeline does NOT depend on `@atomic-platform/shared-types`** (it inlines shared types for its standalone `tsc` CloudGrid build — see `src/types.ts` header). So we **inline** a content-pipeline-local copy of the dual-account constants + helpers (mirroring how the repo already handles cross-service type sharing). Do NOT add a shared-types import to content-pipeline.
 - **`block.state`** convention: every checks block carries `state: "ok" | "n/a" | "unknown"` (distinct from `ssl.status`'s upstream enum). Absent/degraded handled explicitly.
 
 ## File structure
 ```
-packages/shared-types/src/cloudflare-accounts.ts   (create: DEV1 site set + KV namespace ids + isDev1Domain/getKvNamespaces)
 services/content-pipeline/
+  src/lib/cloudflare-accounts.ts      (create: content-pipeline-local DEV1 site set + KV namespace/account ids + isDev1Domain/getKvNamespaces/getAccountId — mirrors dashboard constants)
   src/lib/kv.ts                       (create: getKVEntry REST read + per-domain credentials)
   src/checks/sync.ts                  (create: readSyncStatus)
   src/checks/tracking.ts              (create: readTracking presence)
@@ -40,14 +40,14 @@ services/dashboard/
 
 ---
 
-## Task 1: Shared dual-account constants + content-pipeline KV reader
+## Task 1: content-pipeline dual-account constants + KV reader
 
 **Files:**
-- Create: `packages/shared-types/src/cloudflare-accounts.ts`
+- Create: `services/content-pipeline/src/lib/cloudflare-accounts.ts`
 - Create: `services/content-pipeline/src/lib/kv.ts`
 - Test: `services/content-pipeline/src/checks/__tests__/kv.test.ts`
 
-- [ ] **Step 1: Lift dual-account constants into shared-types.** Copy the values from `services/dashboard/src/lib/constants.ts` (`DEV1_SITE_IDS`, KV namespace ids for Assets prod/staging `b258e47065274b8b8af1a0b6d6529c1d` / `f6c35e1fa8c841b8b193509a3a237f7f`, Dev1 ids, account ids) into `cloudflare-accounts.ts` and export `isDev1Domain(domain)`, `getKvNamespaces(domain)`, `getAccountId(domain)`. Re-export from `packages/shared-types/src/index.ts`. Update the dashboard `constants.ts` to re-export from shared-types (avoid drift) — keep the existing public names.
+- [ ] **Step 1: Create a content-pipeline-local dual-account module** (do NOT touch shared-types; content-pipeline inlines its own copies). Copy the constant *values* from `services/dashboard/src/lib/constants.ts` + `cloudflare.ts` into `services/content-pipeline/src/lib/cloudflare-accounts.ts`: the Dev1 site-id set (`financenewsbase`, `muvizzcom`), Assets account id `4a8cfd85d617b38ce1813a552132bc86`, Dev1 account id `953511f6356ff606d84ac89bba3eff50`, CONFIG_KV prod `b258e47065274b8b8af1a0b6d6529c1d` / staging `f6c35e1fa8c841b8b193509a3a237f7f`, Dev1 KV ids. Export `isDev1Domain(domain)`, `getKvNamespaces(domain): {staging,prod}`, and a **new** `getAccountId(domain)` that returns the Dev1 account id for Dev1 domains else Assets. (Note: the dashboard's existing `getAccountId()` is zero-arg/Assets-only — we are *creating* a domain-aware one here, not reusing it. `credentialsFor` mirrors the dashboard's `getCredentials(domain)` token+account selection.)
 
 - [ ] **Step 2: Write failing test** for `getKVEntry` parsing (mock `fetch`): returns parsed JSON on 200, `null` on 404, throws on other non-OK.
 ```typescript
@@ -62,9 +62,9 @@ it("returns null on 404", async () => {
 
 - [ ] **Step 3: Run → FAIL.**
 
-- [ ] **Step 4: Implement `kv.ts`** (mirror dashboard `cloudflare.ts:getKVEntry` + a `credentialsFor(domain)` that reads `CLOUDFLARE_API_TOKEN` + `getAccountId(domain)` from shared-types; Dev1 uses `DEV1_CLOUDFLARE_API_TOKEN` if set):
+- [ ] **Step 4: Implement `kv.ts`** (mirror dashboard `cloudflare.ts:getKVEntry` + a `credentialsFor(domain)` that reads `CLOUDFLARE_API_TOKEN` + `getAccountId(domain)` from the local module; Dev1 uses `DEV1_CLOUDFLARE_API_TOKEN` if set):
 ```typescript
-import { getAccountId, isDev1Domain } from "@atomic-platform/shared-types";
+import { getAccountId, isDev1Domain } from "./cloudflare-accounts.js";
 
 export interface KvCreds { accountId: string; token: string; }
 
@@ -87,10 +87,10 @@ export async function getKVEntry(namespaceId: string, key: string, creds: KvCred
 }
 ```
 
-- [ ] **Step 5: Run → PASS. Step 6: typecheck both packages. Commit**
+- [ ] **Step 5: Run → PASS. Step 6: `cd services/content-pipeline && pnpm typecheck`. Commit**
 ```bash
-git add packages/shared-types/src/cloudflare-accounts.ts packages/shared-types/src/index.ts services/dashboard/src/lib/constants.ts services/content-pipeline/src/lib/kv.ts services/content-pipeline/src/checks/__tests__/kv.test.ts
-git commit -m "feat: shared cloudflare-account helpers + content-pipeline KV reader"
+git add services/content-pipeline/src/lib/cloudflare-accounts.ts services/content-pipeline/src/lib/kv.ts services/content-pipeline/src/checks/__tests__/kv.test.ts
+git commit -m "feat(content-pipeline): local dual-account helpers + KV reader"
 ```
 
 ---
@@ -135,18 +135,20 @@ git commit -m "feat(content-pipeline): tracking presence check from resolved con
 
 **Files:** Create `services/content-pipeline/src/checks/repo.ts`; Modify `index.ts`.
 
-- [ ] **Step 1: Failing test** for `getAtlChecks(domain)` → `{ siteDomain, sync, tracking }` (composes Tasks 2–3); `getAllAtlChecks()` iterates `listActiveSites()` (reuse from `lib/site-brief.js`) with bounded concurrency, each site independently isolated.
+- [ ] **Step 1: Failing test** for `getAtlChecks(domain)` → `{ siteDomain, sync, tracking }` (composes Tasks 2–3); `getAllAtlChecks(octokit, repo)` iterates `listActiveSites(octokit, repo)` (from `lib/site-brief.js` — **requires `(octokit, repo)` args**, see `scheduled-publisher/index.ts:355`) with bounded concurrency, each site independently isolated.
 
 - [ ] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement `repo.ts`**; then add routes in `handleRequest` (mirroring Plan 1 Task 10):
+- [ ] **Step 3: Implement `repo.ts`** (it obtains an Octokit via `createOctokit(config.github)` + `config.networkRepo` from `loadConfig()` so it can call `listActiveSites`). Then add routes in `handleRequest`. Parse the pathname (the existing `/scheduled-publish` route uses `new URL(...)` — do the same so a query string doesn't break the exact match):
 ```typescript
-if (req.method === "GET" && req.url === "/site-checks") { sendJson(res, 200, { status:"ok", sites: await getAllAtlChecks() }); return; }
-if (req.method === "GET" && req.url?.startsWith("/site-checks/")) {
-  const d = decodeURIComponent(req.url.slice("/site-checks/".length));
+const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+if (req.method === "GET" && pathname === "/site-checks") { sendJson(res, 200, { status:"ok", sites: await getAllAtlChecks(octokit, config.networkRepo) }); return; }
+if (req.method === "GET" && pathname.startsWith("/site-checks/")) {
+  const d = decodeURIComponent(pathname.slice("/site-checks/".length));
   sendJson(res, 200, { status:"ok", site: await getAtlChecks(d) }); return;
 }
 ```
+> Apply the same `new URL(...).pathname` parsing to the Plan 1 `/site-stats` routes if not already done.
 
 - [ ] **Step 4: typecheck + test → PASS. Step 5: Commit**
 ```bash
@@ -199,7 +201,7 @@ git commit -m "feat(dashboard): /api/site-checks merges Domains Dashboard + ATL 
 
 **Files:** Modify `cloudgrid.yaml`.
 
-- [ ] **Step 1:** Under the `content-pipeline` service, document the new secrets and add `DOMAINS_DASHBOARD_URL` env (for the dashboard service). content-pipeline needs (via `cloudgrid secrets set`): `CLOUDFLARE_API_TOKEN` (Workers KV Storage:**Read**), `CLOUDFLARE_ACCOUNT_ID` (already used by r2-upload), and the CONFIG_KV namespace ids are constants in `shared-types` (no env needed). Add a comment listing these. The dashboard already has the token.
+- [ ] **Step 1:** Under the `content-pipeline` service, document the new secrets and add `DOMAINS_DASHBOARD_URL` env (for the dashboard service). content-pipeline needs (via `cloudgrid secrets set`): `CLOUDFLARE_API_TOKEN` (Workers KV Storage:**Read**), `CLOUDFLARE_ACCOUNT_ID` (already used by r2-upload), and `DEV1_CLOUDFLARE_API_TOKEN` **if** the token isn't valid on the Dev1 account — otherwise `financenewsbase`/`muvizzcom` sync+tracking return `unknown`. The CONFIG_KV namespace ids are local constants (no env needed). Add a comment listing these. The dashboard already has the token.
 
 - [ ] **Step 2:** `cd services/content-pipeline && pnpm typecheck && pnpm test` and `cd services/dashboard && pnpm typecheck && pnpm test` → PASS. **Commit**
 ```bash
