@@ -801,6 +801,7 @@ async function handleRequest(
         count: countNum,
         topicName: topicNameStr,
         bypassSchedule: bypassScheduleBool,
+        source: "dashboard",
       },
       config,
     );

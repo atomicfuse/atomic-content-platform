@@ -264,6 +264,7 @@ async function processSingleSite(
           group: briefData.group,
           brief,
         },
+        source: "scheduler",
       },
       config,
     );

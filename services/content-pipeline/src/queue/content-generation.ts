@@ -113,6 +113,7 @@ export async function processGenerateJob(
         preloadedBrief,
         topicName,
         bypassSchedule: effectiveBypass,
+        source: sourceFromTriggeredBy(triggeredBy),
       },
       config,
     );
