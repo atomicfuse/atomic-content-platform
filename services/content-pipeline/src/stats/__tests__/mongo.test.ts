@@ -3,8 +3,10 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { getMongoDb, closeMongo } from "../../lib/mongo.js";
 
 let mem: MongoMemoryServer;
+let originalUrl: string | undefined;
 
 beforeAll(async () => {
+  originalUrl = process.env.MONGODB_URL;
   mem = await MongoMemoryServer.create();
   process.env.MONGODB_URL = mem.getUri();
 });
@@ -12,6 +14,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await closeMongo();
   await mem.stop();
+  process.env.MONGODB_URL = originalUrl;
 });
 
 describe("mongo connection", () => {

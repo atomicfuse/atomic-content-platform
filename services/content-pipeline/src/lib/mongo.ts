@@ -1,8 +1,5 @@
 import { MongoClient, type Db } from "mongodb";
 
-/** DB name within the cluster. Override via MONGODB_DB if needed. */
-const DB_NAME = process.env.MONGODB_DB ?? "atl_ops";
-
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
 
@@ -19,7 +16,9 @@ export async function getMongoDb(): Promise<Db> {
         throw err;
       });
     }
-    dbPromise = clientPromise.then((c) => c.db(DB_NAME));
+    /** DB name read at call time so MONGODB_DB set after import (e.g. in tests) is honoured. */
+    const dbName = process.env.MONGODB_DB ?? "atl_ops";
+    dbPromise = clientPromise.then((c) => c.db(dbName));
   }
   return dbPromise;
 }
