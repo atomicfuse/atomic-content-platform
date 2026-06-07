@@ -81,3 +81,20 @@ export function costFor(
 }
 
 export { PRICES };
+
+/**
+ * Return the per-model rate object for display in the read API, or null for
+ * unknown models.
+ *
+ * Text models →  { input: $/MTok, output: $/MTok }
+ * Image models → { perImage: $/image }
+ */
+export function priceForModel(
+  model: string,
+): { input?: number; output?: number; perImage?: number } | null {
+  const canonical = normalizeModelId(model);
+  const price = PRICES[canonical];
+  if (!price) return null;
+  if (price.kind === "text") return { input: price.input, output: price.output };
+  return { perImage: price.perImage };
+}

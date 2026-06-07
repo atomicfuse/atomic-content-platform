@@ -39,7 +39,8 @@ import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
 import { parseSiteStatsPath } from "../../stats/route-path.js";
 import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
-import { ensureStatsIndexes } from "../../lib/mongo.js";
+import { ensureStatsIndexes, ensureCostIndexes } from "../../lib/mongo.js";
+import { getSiteCosts, getAllSiteCosts } from "../../costs/repo.js";
 import {
   type BulkImageRequest,
   scanArticlesForGeneralImages,
@@ -738,6 +739,28 @@ async function handleRequest(
     }
   }
 
+  // Site costs — GET /site-costs (all) or GET /site-costs/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-costs") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllSiteCosts(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-costs/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-costs/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getSiteCosts(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
@@ -881,6 +904,7 @@ server.listen(config.port, () => {
   console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
   ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
+  ensureCostIndexes().catch((e) => console.error(`[costs] ensureCostIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
 });
 
 async function shutdown(signal: string): Promise<void> {
