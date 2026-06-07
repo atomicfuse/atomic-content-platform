@@ -52,6 +52,7 @@ import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
+import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -712,6 +713,28 @@ async function handleRequest(
         }
         return;
       }
+    }
+  }
+
+  // Site checks — GET /site-checks (all) or GET /site-checks/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-checks") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAtlChecks(config) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-checks/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-checks/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAtlChecks(domain) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
     }
   }
 
