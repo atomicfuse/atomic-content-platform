@@ -22,6 +22,7 @@ import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
 import { recordImageGenEvent } from "../../stats/recorder.js";
+import { recordImageUsage } from "../../costs/recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -548,6 +549,9 @@ export async function handleImageCallback(
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
     );
     recordOutcome(true, null);
+    // source approximation: most images originate from the scheduler; dashboard-triggered
+    // images share the same callback path but are not distinguishable here.
+    void recordImageUsage({ siteDomain: site_domain, source: "scheduler", model: "gemini-2.5-flash-image", images: 1 });
     markBulkCallbackReceived(site_domain, slug);
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
