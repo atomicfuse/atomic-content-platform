@@ -706,6 +706,16 @@ export function clearArticlesCache(): void {
   articlesCache.clear();
 }
 
+/** Flush every in-memory cache — tree, dashboard-index, articles,
+ *  article counts, site configs. Called via /api/cache-flush. */
+export function flushAllCaches(): void {
+  treeCacheStore.clear();
+  dashboardIndexCache.invalidate();
+  articlesCache.clear();
+  articleCountCache.clear();
+  siteConfigCache.clear();
+}
+
 /**
  * Invalidate caches for a specific site after a mutation (article delete,
  * config save, etc.). Clears: tree cache for the branch, article cache for
