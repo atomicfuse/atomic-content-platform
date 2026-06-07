@@ -17,6 +17,9 @@ import type { PendingArticle } from "../lib/writer.js";
 import { triggerN8nImage, trackPendingImage } from "../agents/content-generation/n8n-image.js";
 import { notifyImageDefaultFallback } from "../lib/notifications.js";
 import type { AgentConfig } from "../lib/config.js";
+import { recordGeneration, sourceFromTriggeredBy } from "../stats/recorder.js";
+import { runAfterRun } from "../alerts/run.js";
+import { buildScheduleSnapshot } from "../stats/schedule.js";
 
 export function createGenerateQueue(
   connection: Redis,
@@ -94,6 +97,7 @@ export async function processGenerateJob(
   const cacheKey = `job:${job.id}:articles`;
   let result: BatchContentGenerationResult;
 
+  const startedAt = new Date();
   const cached = await redis.get(cacheKey);
   if (cached && job.attemptsMade > 0) {
     result = JSON.parse(cached);
@@ -110,11 +114,32 @@ export async function processGenerateJob(
         preloadedBrief,
         topicName,
         bypassSchedule: effectiveBypass,
+        source: sourceFromTriggeredBy(triggeredBy),
       },
       config,
     );
     await redis.set(cacheKey, JSON.stringify(result), "EX", 3600);
   }
+  const finishedAt = new Date();
+
+  // Record the generation run to stats (failure-isolated; runs on
+  // retried-from-cache attempts too, hence placed after the if/else above).
+  // scheduler-flow sets triggeredBy="scheduled-forced" when a run is forced; bypassSchedule is set by manual dashboard enqueues.
+  await recordGeneration(
+    result,
+    {
+      source: sourceFromTriggeredBy(triggeredBy),
+      forced: triggeredBy === "scheduled-forced" || bypassSchedule === true,
+      topicName: topicName ?? null,
+      startedAt,
+      finishedAt,
+    },
+    buildScheduleSnapshot(preloadedBrief?.brief?.schedule),
+  );
+
+  // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
+  // runAfterRun is failure-isolated and never alters generation behavior).
+  void runAfterRun(siteDomain, new Date());
 
   // Surface total failure to BullMQ for retry
   const created = result.results.filter((r) => r.status === "created");

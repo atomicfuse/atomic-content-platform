@@ -26,7 +26,8 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "@rollup/rollup-darwin-arm64",
-      "sharp"
+      "sharp",
+      "mongodb-memory-server"
     ],
     "supportedArchitectures": {
       "os": ["current", "linux"],

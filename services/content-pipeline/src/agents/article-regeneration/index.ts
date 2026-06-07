@@ -70,7 +70,7 @@ export async function regenerateArticle(
 
     console.log(`[regen] Revising article: ${articlePath}`);
 
-    const rawResponse = await generateContent({
+    const { text: rawResponse } = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 4096,

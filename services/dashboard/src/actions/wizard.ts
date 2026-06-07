@@ -834,6 +834,13 @@ export async function attachCustomDomain(
     }
   }
 
+  // Flush stale in-memory caches so the dashboard reflects the new
+  // custom_domain / status immediately — covers tree, site-config,
+  // articles, and dashboard-index caches for this site.
+  // keepDashboardIndex: writeDashboardIndex already cached the correct index;
+  // invalidating it would force a re-fetch that may return stale GitHub data.
+  invalidateSiteCaches(domain, `staging/${domain}`, { keepDashboardIndex: true });
+
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
 
@@ -889,6 +896,12 @@ export async function detachCustomDomain(
   } catch (err) {
     console.warn('[detachCustomDomain] config.domain revert failed', err);
   }
+
+  // keepDashboardIndex: writeDashboardIndex (step 2) already cached the correct
+  // index with custom_domain=null. Invalidating it forces a re-fetch from GitHub
+  // whose API may still serve stale tree/blob data (CDN lag), re-caching the old
+  // custom_domain value.
+  invalidateSiteCaches(domain, `staging/${domain}`, { keepDashboardIndex: true });
 
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
