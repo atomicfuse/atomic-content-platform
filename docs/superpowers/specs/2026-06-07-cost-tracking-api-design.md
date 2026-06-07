@@ -58,9 +58,19 @@ at each call site after the response returns — the call sites already exist an
 - `ai.ts` (factual text + quality scoring): capture gateway `{text}` → estimate tokens; or capture Anthropic
   `usage` when on the local SDK path.
 - `openai-generator.ts`: capture `response.usage` (exact).
-- `gemini.ts` / image path: record one image-generation unit on success.
+- **Image generation — two distinct seams** (verified):
+  - **Mainline (scheduler/dashboard articles): the n8n image callback.** Production image generation is
+    **fire-and-forget via n8n** (landmine #34), not a synchronous Gemini call. The success/failure signal arrives
+    at `handleImageCallback` — so the per-image cost event is recorded **there** (one unit on `status === "ok"`,
+    `provider` from `payload.meta.provider`). This is the same hook the Stats spec uses for `image_gen_events`,
+    so both records can be written together.
+  - **Migration path: the direct `gemini.ts` call** in `migration/orchestrator.ts` (where `siteDomain` is in
+    scope) — record one unit on success there.
 
-Every call site **must** pass the `siteDomain` (already in scope during generation) and the `model` string.
+**Where the recorder is called for text:** from `processItem` / the `scoreArticle` caller in `agent.ts`, which
+already have `siteDomain` and `source` in scope — **not** threaded through `GeneratorConfig` (which carries
+`siteName`/`brief` but not `domain`; avoid a needless interface change). `source` ("scheduler"|"dashboard"|
+"wp-import") is the same value the Stats recorder receives; confirm the entrypoints pass it through.
 **Failure isolation:** recording a usage event never breaks generation (try/catch + log), same rule as Stats.
 
 > The site context flows from the same generation entrypoints covered in the Stats spec (scheduler / dashboard /

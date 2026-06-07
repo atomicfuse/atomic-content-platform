@@ -49,7 +49,7 @@ Thresholds are config constants. Each condition has an enable flag (so #9 ships 
 | # | Reads from |
 |---|---|
 | 1 | Stats `site_stats` / `generation_events` → `failedArticles.last7d` |
-| 2 | Checks `site_checks.uptime` (incl. `firstDetectedAt` for `{duration}`) |
+| 2 | Checks `site_checks.uptime.ok`. `{duration}` is derived from `alert_state.firstDetectedAt` (this engine's state), **not** from `site_checks` (which has no such field). |
 | 3 | Checks `site_checks.sync.ok` |
 | 5 | **Review count per site** — count of articles with `status: "review"`, from the existing article read path (`readArticlesWithKVFallback`, same as the review queue). *New small dependency:* expose `reviewCount` per site (cheap; computed during the same article read the Stats "recent articles" panel already does). Reminder "Review backlog" reuses this summed across the network. |
 | 6 | Checks `site_checks.ssl.daysRemaining` / `ok` |
@@ -78,12 +78,21 @@ Naive evaluation would re-fire every tick. Each condition is **stateful**.
 - **Transition + daily re-remind** while still alerting: #6 SSL ("daily until renewed"), #1 failed articles
   ("daily check + after each run" → fire on entering, then at most once/day while still over limit; the
   after-each-run trigger also fires on a fresh crossing).
-- **Transition + duration in message**: #2 site down (fire on going down; `{duration}` from `firstDetectedAt`;
-  optional re-remind cadence while down).
-- **Periodic**: #8 tracking (evaluate on the prober cadence; fire on transition, re-remind throttled).
+- **Transition + duration in message**: #2 site down (fire once on going down; `{duration}` from
+  `alert_state.firstDetectedAt`). Default: **transition-only, no re-remind while down** (re-fires only after it
+  recovers and goes down again). A re-remind interval can be added to the policy config later.
+- **Transition-only**: #8 tracking (evaluate on the prober cadence; fire once on transition to "off"; reset when
+  present again). No periodic re-remind by default.
+
+Every condition's fire policy is therefore fully enumerated as one of: `transition-only` or
+`transition + daily-re-remind`. The policy + its threshold/interval live in config (see Config).
 
 A shared `evaluateCondition(state, currentValue, policy, now) → { newState, shouldFire }` encapsulates this so
 every condition uses the same throttle/edge logic. `now` is **passed in** (never `Date.now()` inside) for testability.
+
+**Reminders reuse `alert_state` with reserved network-scoped keys** (they're network-wide, not per-site):
+`__network__:review_backlog` and `__network__:create_new_site`. Same `lastFiredAt` mechanism drives their
+cadence (weekly weekday / N-day cadence) so the digest doesn't double-send within a period.
 
 ## Fire triggers (when the engine runs)
 
@@ -100,11 +109,17 @@ triggers without double-firing (state is the single arbiter).
 
 ## Slack delivery
 
-- One channel via existing `SLACK_WEBHOOK_URL` + `dispatch()` in `notifications.ts`. Map severity: `🔴` messages
-  → critical, `⚠` → warning (the helper already prefixes severity; preserve the user's exact message text).
-- Reminders post their literal templates with `{n}` substituted.
-- Delivery is best-effort: a Slack failure is logged and must not break the cron (and must not flip `alert_state`
-  to "fired" — only mark `lastFiredAt` on a successful post, so a transient Slack outage retries next tick).
+- One channel via the existing `SLACK_WEBHOOK_URL` in `notifications.ts`.
+- **API-surface reality (verified):** `notifications.ts` exports only the `notifyX` wrappers; `dispatch()` /
+  `sendSlack()` / `withSeverity()` are **module-private**, and the only severities are `critical` (🔴 CRITICAL —)
+  and `not_critical` (🟡 NOT CRITICAL —). There is **no "warning" tier** and no `⚠` prefix. The user's message
+  templates already carry their own emoji (`🔴` / `⚠`) and exact wording. **Decision:** add one new exported
+  wrapper, `notifyAttention(message: string)`, that posts the message text **verbatim** (no CRITICAL/NOT-CRITICAL
+  prefix), so the templates render exactly as written and we don't get a doubled prefix. The engine calls
+  `notifyAttention`; we do not reuse `withSeverity`'s prefixing.
+- Reminders post their literal templates via the same `notifyAttention`, with `{n}` substituted.
+- Delivery is best-effort: a Slack failure is logged and must not break the cron, and must **not** advance
+  `lastFiredAt` (only set `lastFiredAt` on a successful post) so a transient Slack outage retries next tick.
 
 ## Config
 
@@ -124,10 +139,14 @@ in code if the file is absent (same pattern as the scheduler gate).
 "attention": {
   "alerting": [
     { "condition": "in_review", "severity": "warn", "since": "2026-06-07T14:00:00Z", "value": 17 },
-    { "condition": "ssl",        "severity": "warn", "since": "2026-06-05T09:00:00Z", "value": 9 }
+    { "condition": "ssl",        "severity": "warn", "since": "2026-06-05T09:00:00Z", "value": 9 },
+    { "condition": "site_down",  "severity": "critical", "since": "2026-06-07T13:40:00Z", "value": null }
   ]
 }
 ```
+
+`value` carries the numeric reading for numeric conditions (in-review count, SSL days, failed-articles count) and
+is `null` for boolean conditions (site_down, sync, tracking) — `since` + `condition` convey those.
 
 ## Error handling
 

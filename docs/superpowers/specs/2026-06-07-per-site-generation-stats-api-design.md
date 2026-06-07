@@ -283,7 +283,9 @@ is missing; the payload carries `site_domain`, `slug`, and `error`.
 ```
 
 Index: `{ siteDomain: 1, at: -1 }`. The recorder hook lives in `handleImageCallback` (same failure-isolation
-rule — never break the callback). API exposes:
+rule — never break the callback). Note the handler's early-return for malformed payloads (missing
+`site_domain`/`slug`/`branch`) happens before a usable `siteDomain` exists; those are intentionally **not**
+recorded (place the recorder hook after that guard). API exposes:
 
 ```
 "imageGenFailed": { "last7d": 1, "last30d": 3 }
@@ -307,11 +309,18 @@ Computed on read (no storage). If the scheduler is globally disabled, `nextRun: 
 
 A per-site list of the most recent N articles (default 5), surfaced for the console's "Recent articles" panel.
 
-- **Source:** reuse the dashboard's existing `readArticlesWithKVFallback(domain, branch, readArticles)` path
-  (the same one the review queue uses) — articles are **not** in Mongo. Sort by `publishDate` desc, take N.
-- **Fields:** `title`, `quality_score` (frontmatter), `status` (`published` | `review`), `slug`, `publishDate`.
+- **Enumerate** the most-recent N slugs from the article index (KV `article-index:<siteId>` or the Git fallback),
+  sorted by `publishDate` desc.
+- **Score source — important:** `quality_score` is **NOT in the KV `article-index`** (verified: `kvEntriesToArticles`
+  hardcodes `score: undefined`; the comment notes score/breakdown live only in frontmatter). Only the **Git**
+  read (`readArticles` → `quality_score` frontmatter) carries it. So for the top-N slugs, read their **frontmatter
+  from Git** (staging→main, the article-detail read path) to get `quality_score`. N defaults to 5, so this is a
+  handful of reads per site, cached. (Alternative for the plan: add `quality_score` to the KV `article-index`
+  schema in seed-kv — a KV-schema change requiring a re-seed per landmine #38; deferred unless the read cost bites.)
+- **Fields:** `title`, `score` (from frontmatter `quality_score`, may be `null` if unscored), `status`
+  (`published` | `review` | `draft` — map all three; surface `draft` deliberately, don't drop it), `slug`, `publishDate`.
 - **Where:** this enrichment runs in the **dashboard** `/api/site-stats` layer (it owns article reading and the
-  KV/GitHub fallback), not in content-pipeline. Keeps Mongo scoped to generation/image events.
+  KV/Git fallback), not in content-pipeline. Keeps Mongo scoped to generation/image events.
 
 ```
 "recentArticles": [
