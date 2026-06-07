@@ -150,6 +150,23 @@ async function sendTelegram(
   );
 }
 
+/**
+ * Post a message to Slack VERBATIM — no severity prefix added.
+ * Use this for alert templates that already carry their own emoji prefix.
+ * Returns `true` on a successful post, `false` if no webhook is configured
+ * or the send fails (never throws).
+ */
+export async function notifyAttention(config: NotificationConfig, message: string): Promise<boolean> {
+  if (!config.slackWebhookUrl) return false;
+  try {
+    await sendSlack(config, message);
+    return true;
+  } catch (e) {
+    console.error(`[alerts] slack send failed: ${e instanceof Error ? e.message : String(e)}`);
+    return false;
+  }
+}
+
 async function sendSlack(
   config: NotificationConfig,
   text: string,
