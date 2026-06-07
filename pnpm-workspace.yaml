@@ -1,3 +1,6 @@
 packages:
   - "packages/*"
   - "services/*"
+
+onlyBuiltDependencies:
+  - mongodb-memory-server
