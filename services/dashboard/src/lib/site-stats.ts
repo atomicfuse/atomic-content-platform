@@ -74,20 +74,49 @@ export function mapRecentArticles(entries: ArticleEntry[], n = 5): RecentArticle
 }
 
 /**
- * Resolve the most-recent N articles for a site.
- *
- * Enumeration goes through `readArticlesWithKVFallback` (cache → KV → Git).
- * The KV path returns `score: undefined` (quality_score is not in the KV
- * article-index), so for the selected top-N we backfill `score` from the Git
- * read (`readArticles`, which parses `quality_score` from frontmatter). The
- * Git read is only invoked if at least one of the top-N is missing a score.
+ * General-image predicate. Mirrors `isGeneralImage` in
+ * services/content-pipeline/src/agents/content-generation/bulk-image.ts so the
+ * `generalImages` count agrees with the bulk-image scanner: a missing image OR
+ * a `featuredImage` containing the substring "general-article" counts as a
+ * default/general image.
  */
-export async function recentArticles(
+function isGeneralImage(featuredImage: string | undefined): boolean {
+  if (!featuredImage) return true;
+  return featuredImage.includes("general-article");
+}
+
+/**
+ * Pure count step over the FULL article list:
+ *   - reviewCount: entries with `status === "review"`.
+ *   - generalImages: entries whose `featuredImage` is a default/general image
+ *     (see `isGeneralImage`).
+ *
+ * Side-effect-free so it can be unit-tested with in-memory fixtures.
+ */
+export function countArticleStats(entries: ArticleEntry[]): {
+  reviewCount: number;
+  generalImages: number;
+} {
+  let reviewCount = 0;
+  let generalImages = 0;
+  for (const e of entries) {
+    if (e.status === "review") reviewCount++;
+    if (isGeneralImage(e.featuredImage)) generalImages++;
+  }
+  return { reviewCount, generalImages };
+}
+
+/**
+ * Map the most-recent N articles, backfilling `score` from Git where the KV
+ * path left it null. Pure given the already-fetched `entries`; the only side
+ * effect is the conditional Git read for score backfill.
+ */
+async function buildRecentArticles(
+  entries: ArticleEntry[],
   domain: string,
   branch: string,
-  n = 5,
+  n: number,
 ): Promise<RecentArticle[]> {
-  const entries = await readArticlesWithKVFallback(domain, branch, readArticles);
   const top = mapRecentArticles(entries, n);
 
   // If any of the selected articles lack a score (KV path), backfill from Git.
@@ -109,6 +138,53 @@ export async function recentArticles(
   }
 
   return top;
+}
+
+export interface ArticleAggregates {
+  recentArticles: RecentArticle[];
+  reviewCount: number;
+  generalImages: number;
+}
+
+/**
+ * Resolve recentArticles + reviewCount + generalImages for a site from a SINGLE
+ * article fetch.
+ *
+ * Enumeration goes through `readArticlesWithKVFallback` (cache → KV → Git) ONCE.
+ * `reviewCount`/`generalImages` are computed over the FULL list; `recentArticles`
+ * is the top-N (with `quality_score` backfilled from Git when the KV path didn't
+ * carry it — the Git read is only invoked if at least one of the top-N lacks a
+ * score). Failure-isolated: if the fetch throws, returns all-empty/zero.
+ */
+export async function articleAggregates(
+  domain: string,
+  branch: string,
+  n = 5,
+): Promise<ArticleAggregates> {
+  let entries: ArticleEntry[];
+  try {
+    entries = await readArticlesWithKVFallback(domain, branch, readArticles);
+  } catch {
+    return { recentArticles: [], reviewCount: 0, generalImages: 0 };
+  }
+
+  const { reviewCount, generalImages } = countArticleStats(entries);
+  const recent = await buildRecentArticles(entries, domain, branch, n);
+
+  return { recentArticles: recent, reviewCount, generalImages };
+}
+
+/**
+ * Resolve the most-recent N articles for a site. Thin wrapper over
+ * `articleAggregates` for backward compatibility.
+ */
+export async function recentArticles(
+  domain: string,
+  branch: string,
+  n = 5,
+): Promise<RecentArticle[]> {
+  const { recentArticles: recent } = await articleAggregates(domain, branch, n);
+  return recent;
 }
 
 // ---------------------------------------------------------------------------

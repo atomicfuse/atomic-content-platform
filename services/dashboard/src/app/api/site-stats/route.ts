@@ -4,9 +4,9 @@ import { NextResponse } from "next/server";
 import { readDashboardIndex } from "@/lib/github";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
+  articleAggregates,
   computeNextRun,
   mapWithConcurrency,
-  recentArticles,
   type RecentArticle,
   type SchedulerGate,
 } from "@/lib/site-stats";
@@ -45,9 +45,11 @@ export interface SiteStatsResponse {
   imageGenFailed: { last7d: number; last30d: number };
 }
 
-/** Enriched site = raw stats + recentArticles + schedule.nextRun. */
+/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun. */
 export interface EnrichedSiteStats extends SiteStatsResponse {
   recentArticles: RecentArticle[];
+  reviewCount: number;
+  generalImages: number;
   schedule: (ScheduleSnapshot & { nextRun: Date | null }) | null;
 }
 
@@ -64,13 +66,17 @@ function emptyStats(siteDomain: string): SiteStatsResponse {
   };
 }
 
-/** Enrich one site: add recentArticles + schedule.nextRun. Shared with [domain]. */
+/**
+ * Enrich one site: add recentArticles + reviewCount + generalImages +
+ * schedule.nextRun. Shared with [domain]. The three article-derived fields come
+ * from a SINGLE article fetch via `articleAggregates`.
+ */
 export async function enrichSite(
   site: SiteStatsResponse,
   gate: SchedulerGate,
   now: Date,
 ): Promise<EnrichedSiteStats> {
-  const recent = await recentArticles(
+  const { recentArticles, reviewCount, generalImages } = await articleAggregates(
     site.siteDomain,
     `staging/${site.siteDomain}`,
   );
@@ -82,7 +88,7 @@ export async function enrichSite(
       }
     : null;
 
-  return { ...site, recentArticles: recent, schedule };
+  return { ...site, recentArticles, reviewCount, generalImages, schedule };
 }
 
 /**

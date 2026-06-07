@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapRecentArticles } from "@/lib/site-stats";
+import { countArticleStats, mapRecentArticles } from "@/lib/site-stats";
 import type { ArticleEntry } from "@/types/dashboard";
 
 function entry(partial: Partial<ArticleEntry> & { slug: string }): ArticleEntry {
@@ -87,5 +87,40 @@ describe("mapRecentArticles", () => {
     ];
     mapRecentArticles(entries);
     expect(entries.map((e) => e.slug)).toEqual(["a", "b"]);
+  });
+});
+
+describe("countArticleStats", () => {
+  it("counts only status === 'review' for reviewCount", () => {
+    const result = countArticleStats([
+      entry({ slug: "r1", status: "review", featuredImage: "custom.webp" }),
+      entry({ slug: "r2", status: "review", featuredImage: "custom.webp" }),
+      entry({ slug: "p", status: "published", featuredImage: "custom.webp" }),
+      entry({ slug: "d", status: "draft", featuredImage: "custom.webp" }),
+    ]);
+    expect(result.reviewCount).toBe(2);
+  });
+
+  it("counts general images via the 'general-article' substring", () => {
+    const result = countArticleStats([
+      entry({ slug: "g1", featuredImage: "site-general-article-1.webp" }),
+      entry({ slug: "g2", featuredImage: "site-general-article-2.webp" }),
+      entry({ slug: "g3", featuredImage: "https://r2/foo/general-article.png" }),
+      entry({ slug: "c1", featuredImage: "custom-hero.webp" }),
+      entry({ slug: "c2", featuredImage: "another-custom.webp" }),
+    ]);
+    expect(result.generalImages).toBe(3);
+  });
+
+  it("treats a missing featuredImage as a general image (mirrors bulk-image)", () => {
+    const result = countArticleStats([
+      entry({ slug: "no-img", featuredImage: undefined }),
+      entry({ slug: "custom", featuredImage: "custom-hero.webp" }),
+    ]);
+    expect(result.generalImages).toBe(1);
+  });
+
+  it("returns both 0 for an empty list", () => {
+    expect(countArticleStats([])).toEqual({ reviewCount: 0, generalImages: 0 });
   });
 });
