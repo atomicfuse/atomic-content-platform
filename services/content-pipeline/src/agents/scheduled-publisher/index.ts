@@ -20,6 +20,7 @@ import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief
 import type { SiteBriefData } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import { recordGeneration } from "../../stats/recorder.js";
+import { runAfterRun } from "../../alerts/run.js";
 import { buildScheduleSnapshot } from "../../stats/schedule.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -280,6 +281,10 @@ async function processSingleSite(
       },
       buildScheduleSnapshot(brief.schedule),
     );
+
+    // Re-evaluate run-sensitive alert conditions for this site (per-site, inside
+    // the loop; fire-and-forget; failure-isolated; never alters generation).
+    void runAfterRun(domain, new Date());
 
     const created = genResult.results.filter((r) => r.status === "created").length;
     const genErrors = genResult.results.filter((r) => r.status === "error");

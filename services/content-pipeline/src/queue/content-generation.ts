@@ -18,6 +18,7 @@ import { triggerN8nImage, trackPendingImage } from "../agents/content-generation
 import { notifyImageDefaultFallback } from "../lib/notifications.js";
 import type { AgentConfig } from "../lib/config.js";
 import { recordGeneration, sourceFromTriggeredBy } from "../stats/recorder.js";
+import { runAfterRun } from "../alerts/run.js";
 import { buildScheduleSnapshot } from "../stats/schedule.js";
 
 export function createGenerateQueue(
@@ -135,6 +136,10 @@ export async function processGenerateJob(
     },
     buildScheduleSnapshot(preloadedBrief?.brief?.schedule),
   );
+
+  // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
+  // runAfterRun is failure-isolated and never alters generation behavior).
+  void runAfterRun(siteDomain, new Date());
 
   // Surface total failure to BullMQ for retry
   const created = result.results.filter((r) => r.status === "created");

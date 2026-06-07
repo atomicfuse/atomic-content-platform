@@ -72,6 +72,17 @@ services:
     timezone: EST
     run: http://content-pipeline-app/scheduled-publish
 
+  # ---------------------------------------------------------------------------
+  # run-alerts — daily cron that triggers the Slack alert runner. The pipeline
+  # evaluates every site × condition plus network-scoped reminders, firing
+  # Slack notifications for anything that needs attention.
+  # ---------------------------------------------------------------------------
+  run-alerts:
+    type: cron
+    schedule: "0 13 * * *"   # ~09:00 EST daily; tune later
+    timezone: EST
+    run: http://content-pipeline-app/run-alerts
+
 requires:
   - redis: private
   - mongodb: private

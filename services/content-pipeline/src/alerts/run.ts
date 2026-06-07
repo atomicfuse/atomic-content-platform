@@ -31,7 +31,9 @@ import { loadAlertConfig, type AlertConfig } from "./config.js";
 import { evaluateCondition } from "./engine.js";
 import type { AlertState, ConditionId, EvalInput, FirePolicy } from "./types.js";
 
-const COLLECTION = "alert_state";
+/** Mongo collection holding per-(site,condition) and network-scoped alert state. */
+export const ALERT_STATE_COLLECTION = "alert_state";
+const COLLECTION = ALERT_STATE_COLLECTION;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface RunAlertsOptions {
@@ -347,23 +349,27 @@ async function runReminders(
  * Reuses the same config load + persist-on-success machinery. Failure-isolated.
  */
 export async function runAfterRun(domain: string, now: Date): Promise<void> {
-  const config = loadConfig();
-  const notifConfig: NotificationConfig = config.notifications;
-
-  const cfg = await loadAlertConfig(() =>
-    readFile(createOctokit(config.github), config.networkRepo, "scheduler/alerts.yaml"),
-  );
-  if (!cfg.enabled) return;
-
-  let db: Db;
+  // Fully failure-isolated: this is fired-and-forgotten by generation call
+  // sites (`void runAfterRun(...)`), so it must never reject. The config load
+  // and alerts.yaml read can throw (e.g. missing env, GitHub failure) — keep
+  // them inside the guard so an unhandled rejection can never escape.
   try {
-    db = await getMongoDb();
-  } catch (err) {
-    console.error("[alerts/run] Mongo unavailable, skipping runAfterRun:", err);
-    return;
-  }
+    const config = loadConfig();
+    const notifConfig: NotificationConfig = config.notifications;
 
-  try {
+    const cfg = await loadAlertConfig(() =>
+      readFile(createOctokit(config.github), config.networkRepo, "scheduler/alerts.yaml"),
+    );
+    if (!cfg.enabled) return;
+
+    let db: Db;
+    try {
+      db = await getMongoDb();
+    } catch (err) {
+      console.error("[alerts/run] Mongo unavailable, skipping runAfterRun:", err);
+      return;
+    }
+
     const inputs = await gatherInputs(domain, now);
     const only = new Set<ConditionId>(["failed_articles", "in_review"]);
     const plans = planConditions(domain, inputs, cfg, only);

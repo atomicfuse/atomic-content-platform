@@ -54,6 +54,8 @@ import matter from "gray-matter";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
+import { runAlerts, runAfterRun } from "../../alerts/run.js";
+import { getAttention, getAllAttention } from "../../alerts/repo.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -761,6 +763,46 @@ async function handleRequest(
     }
   }
 
+  // Run alerts — called by CloudGrid cron job. Always returns 200 (even on
+  // error) so a failed run doesn't mark the cron itself as failed; the error
+  // is logged for diagnosis.
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/run-alerts") {
+      try {
+        await runAlerts(new Date());
+        sendJson(res, 200, { status: "ok" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[server] Run alerts error:", message);
+        sendJson(res, 200, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+  // Attention — GET /attention (all sites) or GET /attention/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/attention") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAttention(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/attention/")) {
+      const domain = decodeURIComponent(pathname.slice("/attention/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAttention(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
@@ -840,6 +882,10 @@ async function handleRequest(
       },
       null,
     );
+
+    // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
+    // runAfterRun is failure-isolated and never alters generation behavior).
+    void runAfterRun(siteDomain, new Date());
 
     const resultBody = result as unknown as Record<string, unknown>;
     const hasCreated = result.results.some((r) => r.status === "created");
