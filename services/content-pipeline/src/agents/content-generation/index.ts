@@ -23,6 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
+import { recordGeneration } from "../../stats/recorder.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -36,6 +37,10 @@ import {
 } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
+import { parseSiteStatsPath } from "../../stats/route-path.js";
+import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
+import { ensureStatsIndexes, ensureCostIndexes } from "../../lib/mongo.js";
+import { getSiteCosts, getAllSiteCosts } from "../../costs/repo.js";
 import {
   type BulkImageRequest,
   scanArticlesForGeneralImages,
@@ -48,6 +53,9 @@ import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
+import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
+import { runAlerts, runAfterRun } from "../../alerts/run.js";
+import { getAttention, getAllAttention } from "../../alerts/repo.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -690,6 +698,111 @@ async function handleRequest(
     return;
   }
 
+  // Site stats — GET /site-stats (all) or GET /site-stats/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET") {
+      const ss = parseSiteStatsPath(pathname);
+      if (ss) {
+        try {
+          if (ss.kind === "all") {
+            sendJson(res, 200, { status: "ok", sites: await getAllSiteStats(new Date()) });
+          } else {
+            sendJson(res, 200, { status: "ok", site: await getSiteStats(ss.domain, new Date()) });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          sendJson(res, 503, { status: "error", message });
+        }
+        return;
+      }
+    }
+  }
+
+  // Site checks — GET /site-checks (all) or GET /site-checks/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-checks") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAtlChecks(config) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-checks/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-checks/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAtlChecks(domain) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
+  // Site costs — GET /site-costs (all) or GET /site-costs/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-costs") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllSiteCosts(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-costs/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-costs/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getSiteCosts(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
+  // Run alerts — called by CloudGrid cron job. Always returns 200 (even on
+  // error) so a failed run doesn't mark the cron itself as failed; the error
+  // is logged for diagnosis.
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/run-alerts") {
+      try {
+        await runAlerts(new Date());
+        sendJson(res, 200, { status: "ok" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[server] Run alerts error:", message);
+        sendJson(res, 200, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+  // Attention — GET /attention (all sites) or GET /attention/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/attention") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAttention(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/attention/")) {
+      const domain = decodeURIComponent(pathname.slice("/attention/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAttention(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
@@ -745,6 +858,7 @@ async function handleRequest(
   );
 
   try {
+    const startedAt = new Date();
     const result = await runContentGeneration(
       {
         siteDomain,
@@ -752,9 +866,26 @@ async function handleRequest(
         count: countNum,
         topicName: topicNameStr,
         bypassSchedule: bypassScheduleBool,
+        source: "dashboard",
       },
       config,
     );
+    const finishedAt = new Date();
+    await recordGeneration(
+      result,
+      {
+        source: "dashboard",
+        forced: bypassScheduleBool,
+        topicName: topicNameStr ?? null,
+        startedAt,
+        finishedAt,
+      },
+      null,
+    );
+
+    // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
+    // runAfterRun is failure-isolated and never alters generation behavior).
+    void runAfterRun(siteDomain, new Date());
 
     const resultBody = result as unknown as Record<string, unknown>;
     const hasCreated = result.results.some((r) => r.status === "created");
@@ -818,6 +949,8 @@ server.listen(config.port, () => {
   const effectiveAggregatorUrl = process.env.CONTENT_API_BASE_URL ?? config.contentAggregatorUrl;
   console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
+  ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
+  ensureCostIndexes().catch((e) => console.error(`[costs] ensureCostIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
 });
 
 async function shutdown(signal: string): Promise<void> {

@@ -40,6 +40,8 @@ import { readSiteBrief } from "../../lib/site-brief.js";
 import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
+import { recordTextUsage } from "../../costs/recorder.js";
+import type { GenerationSource } from "../../stats/types.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
 
@@ -103,6 +105,9 @@ export interface ContentGenerationParams {
     group: string;
     brief: SiteBrief;
   };
+  /** Origin of this generation run — threaded into cost recording. Reuses the
+   *  same value the callers compute for the stats recorder. */
+  source?: GenerationSource;
 }
 
 export interface ContentGenerationResult {
@@ -576,6 +581,7 @@ async function processItem(
   branch?: string,
   author?: string,
   topicsArray?: string[],
+  opts: { source: GenerationSource } = { source: "dashboard" },
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -617,6 +623,21 @@ async function processItem(
           `${primary.name}: ${msg} | ${fallback.name}: ${fallbackMsg}`,
         );
       }
+    }
+
+    // Record text-generation cost for the generator that ACTUALLY ran (the
+    // fallback path can flip Claude↔OpenAI). Fire-and-forget; failure-isolated.
+    if (generated.usage) {
+      const generatorModelId =
+        actualGenerator === "claude" ? "claude-sonnet-4-20250514" : "gpt-4o-mini";
+      void recordTextUsage({
+        siteDomain,
+        source: opts.source,
+        model: generatorModelId,
+        inputTokens: generated.usage.inputTokens,
+        outputTokens: generated.usage.outputTokens,
+        estimated: generated.usage.estimated,
+      });
     }
 
     // Step 2b: Validate generated body
@@ -674,6 +695,18 @@ async function processItem(
       scoreBreakdown = qualityResult.breakdown;
       qualityNote = qualityResult.note;
       articleStatus = resolveQualityStatus(qualityResult.overallScore, brief.quality_threshold);
+
+      // Record quality-scoring cost (Claude). Fire-and-forget; failure-isolated.
+      if (qualityResult.usage) {
+        void recordTextUsage({
+          siteDomain,
+          source: opts.source,
+          model: "claude-sonnet-4-20250514",
+          inputTokens: qualityResult.usage.inputTokens,
+          outputTokens: qualityResult.usage.outputTokens,
+          estimated: qualityResult.usage.estimated,
+        });
+      }
 
       console.log(
         `[agent] Quality score: ${qualityScore}/100 → ${articleStatus}` +
@@ -1004,6 +1037,7 @@ export async function runContentGeneration(
           tagIds,
           topicName: params.topicName,
           bypassSchedule: params.bypassSchedule ?? false,
+          source: params.source ?? "dashboard",
         });
       }
     }
@@ -1086,7 +1120,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor, undefined, { source: params.source ?? "dashboard" }),
       (result) => result.status === "created",
     );
 
@@ -1147,6 +1181,8 @@ async function runPerTopicGeneration(args: {
    *  dashboard's general "Generate N Articles" button so users can fire it
    *  any day; the cron sets this to false so it still honors preferred_days. */
   bypassSchedule?: boolean;
+  /** Origin of this run — threaded into per-item cost recording. */
+  source?: GenerationSource;
 }): Promise<BatchContentGenerationResult> {
   const { brief, siteDomain, config, existing } = args;
   const topics = brief.topics_v2 ?? [];
@@ -1358,6 +1394,7 @@ async function runPerTopicGeneration(args: {
         args.branch,
         args.author,
         topicNames,
+        { source: args.source ?? "dashboard" },
       );
       allResults.push(result);
       if (result.status === "created") {

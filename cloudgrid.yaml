@@ -19,6 +19,7 @@ services:
       # platform read-only env var pointing to a stale entity URL. Use
       # CONTENT_API_BASE_URL instead — all API routes check it first.
       CONTENT_API_BASE_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
+      DOMAINS_DASHBOARD_URL: https://domains-dashboard-53a6.atomic.cloudgrid.io
     # Secrets (via `cloudgrid secrets set KEY=VALUE`):
     #   NEXTAUTH_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
     #   GITHUB_TOKEN, GOOGLE_SERVICE_ACCOUNT_KEY,
@@ -41,7 +42,19 @@ services:
     # Secrets (via `cloudgrid secrets set KEY=VALUE`):
     #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY,
     #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (Assets account — for article image uploads)
+    #   CLOUDFLARE_API_TOKEN — Workers KV Storage:Read scope; used by Site Checks
+    #     sync/tracking checks to read sync-status:<id> and site-config:<id> from
+    #     CONFIG_KV. CONFIG_KV namespace IDs are compiled-in constants in
+    #     src/lib/cloudflare-accounts.ts and do NOT need env vars.
+    #   CLOUDFLARE_ACCOUNT_ID — Assets @ AtomicLabs account ID; also referenced by
+    #     r2-upload.ts for article image uploads.
+    #   DEV1_CLOUDFLARE_API_TOKEN — optional; only needed if the main token is not
+    #     valid on the Dev1 account (financenewsbase/muvizzcom sync+tracking checks).
+    #     Without it, those two legacy sites' sync/tracking return `unknown`.
     # REDIS_URL is auto-injected by `requires: redis: private`.
+    # MongoDB: `requires: mongodb: private` auto-injects the connection string.
+    #   getMongoDb() reads MONGODB_URL, falling back to MONGODB_URI, so either
+    #   injected name works without an explicit env: mapping.
     # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
     # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
     #   articles) and OpenAI image generator (Tier B fallback). Without it,
@@ -59,5 +72,17 @@ services:
     timezone: EST
     run: http://content-pipeline-app/scheduled-publish
 
+  # ---------------------------------------------------------------------------
+  # run-alerts — daily cron that triggers the Slack alert runner. The pipeline
+  # evaluates every site × condition plus network-scoped reminders, firing
+  # Slack notifications for anything that needs attention.
+  # ---------------------------------------------------------------------------
+  run-alerts:
+    type: cron
+    schedule: "0 13 * * *"   # ~09:00 EST daily; tune later
+    timezone: EST
+    run: http://content-pipeline-app/run-alerts
+
 requires:
   - redis: private
+  - mongodb: private

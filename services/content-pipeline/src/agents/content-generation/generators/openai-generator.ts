@@ -51,6 +51,14 @@ export class OpenAIGenerator implements Generator {
       throw new Error("Empty response from OpenAI");
     }
 
-    return parseGeneratedArticle(rawText);
+    const article = parseGeneratedArticle(rawText);
+    if (response.usage) {
+      article.usage = {
+        inputTokens: response.usage.prompt_tokens,
+        outputTokens: response.usage.completion_tokens,
+        estimated: false,
+      };
+    }
+    return article;
   }
 }
