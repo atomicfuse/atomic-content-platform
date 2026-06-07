@@ -9,143 +9,108 @@
 
 For each site, the ops console needs a **Checks** block:
 
-> **Checks** — Uptime · Sync (+ last) · SSL · Tracking (GA · GTM · Pixel)
+> **Checks** — Uptime · Sync (+ last) · SSL · Tracking (GA · GTM · Pixel) · (Domain expiry, informational)
 
-None of this is monitored today: there are **no liveness probes, no SSL checks, and no in-app sync-status reads**.
-The live `/_ping` endpoint exists on the Worker but nothing calls it. This subsystem adds a **periodic prober**
-plus a `site_checks` collection and exposes the results through the same content-pipeline-owned-Mongo +
-dashboard-proxy pattern as the Stats subsystem.
+## Key decision: reuse the existing Domains Dashboard, don't rebuild
 
-## Decisions (from brainstorm)
+An existing internal service — the **Domains Dashboard** (`https://domains-dashboard-53a6.atomic.cloudgrid.io`,
+JSON, no auth) — already monitors **uptime, SSL, domain registration/expiry, DNS/DNSSEC, and nameservers** for our
+domains, with health checks every 2h and a daily registrar/SSL sync. **All our live custom-domains are covered.**
+
+So this subsystem does **not** build an HTTP/TLS prober, a `site-checks` cron, or a `site_checks` Mongo
+collection. It **consumes** the Domains Dashboard for uptime/SSL/domain, and builds only the two ATL-specific
+checks the Domains Dashboard can't know about: **Sync** (KV `sync-status`) and **Tracking** (config-presence).
+
+### Decisions (from brainstorm)
 
 | Topic | Decision |
 |---|---|
-| Tracking check | **Config-presence** — verify GA/GTM/Pixel IDs are present in the site's resolved config. Not runtime-firing (no headless browser). Leave a clean hook for runtime verification later. |
-| Domain expiry | **Dropped** — not in scope (no registrar/WHOIS data source wired). |
-| Architecture | Same as Stats: content-pipeline owns Mongo + the prober; dashboard `/api/site-checks` proxies. |
+| Uptime / SSL | **Consume the Domains Dashboard API.** Drop our own probers. |
+| Domain expiry | **Surface it (`renewal.daysLeft`) for visibility; no Slack alert from us** (the Domains Dashboard owns domain/SSL/down alerting). |
+| Sync check | **Ours** — read `sync-status:<siteId>` from CONFIG_KV. |
+| Tracking check | **Ours** — config-presence of GA4/GTM/Pixel IDs in the resolved config (no headless/runtime firing). |
+| Coverage | All live custom-domains are in the Domains Dashboard; staging-only sites (no custom domain) → external checks are `n/a`. |
 
-## What each check means
+## What each check means and where it comes from
 
-| Check | Definition | Source |
+| Check | Source | Field(s) |
 |---|---|---|
-| **Uptime** | Live site responds 200 to `GET /_ping` (the Worker health route, `no-store`). Store last status + a rolling success ratio. | HTTP probe of the site's custom domain (or staging URL if not Live). |
-| **Sync** | The site's last KV sync succeeded, with its timestamp. | `sync-status:<siteId>` in CONFIG_KV (`{ ok, syncedAt, committedAt, gitSha, error? }`). |
-| **SSL** | TLS cert for the custom domain is valid and not expiring soon; store `notAfter` + days-remaining. | TLS handshake to the custom domain; read cert `notAfter`. |
-| **Tracking** | GA4, GTM, and Meta Pixel IDs are present (configured) in the site's resolved config. Per-channel boolean. | Resolved config (`tracking.ga4`, `tracking.gtm`, `tracking.facebook_pixel`) — config-presence only. |
+| **Uptime** | Domains Dashboard `GET /api/domains/:domain` | `latestSnapshot.health.statusCode`, `responseTimeMs`, `health.checkedAt`, `overallStatus` (`healthy`/`warning`/`critical`/`not_live`/`unknown`) |
+| **SSL** | Domains Dashboard | `latestSnapshot.ssl.status`, `ssl.expiresAt`, `ssl.daysLeft` |
+| **Domain expiry** (informational) | Domains Dashboard | `latestSnapshot.renewal.expiresAt`, `renewal.daysLeft`, `renewal.autoRenew` |
+| **Sync (+ last)** | CONFIG_KV `sync-status:<siteId>` | `{ ok, syncedAt, committedAt, gitSha, error? }` |
+| **Tracking** | Resolved config `site-config:<siteId>` (or `site.yaml`) | presence of `tracking.ga4`, `tracking.gtm`, `tracking.facebook_pixel` |
 
-> **Sync ≡ "build".** There is no separate build step in the post-Workers architecture — `sync-kv` *is* the
-> deploy. So the alerts spec's "build failed" condition collapses into "sync failed"; this subsystem exposes a
-> single `sync` check.
+> **Sync ≡ "build".** There is no separate build step post-Workers migration — `sync-kv` *is* the deploy. The
+> Alerts spec's "build failed" condition collapses into "sync failed"; this subsystem exposes a single `sync` check.
 
-## Data sourcing — important constraints (verified against code)
+## Architecture — read-through, no new datastore
 
-- **`sync-status:<siteId>` lives in CONFIG_KV** and is **not read by any app code today** — it's written by CI
-  (`sync-kv.yml`) and read only by the Worker. Reading it from a service needs **Cloudflare KV REST access**.
-  The **dashboard already holds `CLOUDFLARE_API_TOKEN`** (Workers KV Storage:Edit scope) and account ID; the
-  content-pipeline does **not** today. **Decision:** add `CLOUDFLARE_API_TOKEN` (read scope sufficient) +
-  `CLOUDFLARE_ACCOUNT_ID` + the CONFIG_KV namespace id (`b258e47065274b8b8af1a0b6d6529c1d` prod /
-  `f6c35e1fa8c841b8b193509a3a237f7f` staging) as content-pipeline secrets, and read sync-status via the KV REST
-  API. (Alternative considered: read the latest `sync-kv.yml` workflow-run conclusion via the existing Octokit —
-  rejected as less granular; KV sync-status is per-site and canonical.)
-- **Dual-account reality:** prod sites are on the **Assets** account behind `atl-sites-workers-manager`; two
-  legacy sites (`financenewsbase`, `coolnews.dev`) are still on **Dev1**. The prober must resolve the right KV
-  namespace / probe host per site, reusing the dashboard's existing `isDev1Domain()` / `getKvNamespaces()` logic
-  (move the small shared helper into `shared-types` or a shared lib if needed).
-- **Probe target:** Live sites → `https://<custom_domain>/_ping`; non-Live sites → the staging worker URL with
-  `?_atl_site=<domain>` (or skip uptime/SSL for staging-only sites and mark `n/a`).
-- **Resolved config for tracking** is already in KV as `site-config:<siteId>` (or read the site's `site.yaml`
-  via Octokit). Prefer the resolved KV config so it reflects the full org→group→override→site merge.
+Checks are computed **on read** (no cron, no persisted collection):
 
-## Data model (MongoDB)
+- **content-pipeline** owns the ATL-specific checks (consistent with the other subsystems owning backend data):
+  `GET /site-checks[/:domain]` reads **sync** (KV `sync-status`) and **tracking** (resolved config) from CONFIG_KV.
+  - **New credentials:** content-pipeline needs `CLOUDFLARE_API_TOKEN` (Workers KV Storage:**Read** is enough),
+    `CLOUDFLARE_ACCOUNT_ID`, and the CONFIG_KV namespace ids (prod `b258e47065274b8b8af1a0b6d6529c1d` /
+    staging `f6c35e1fa8c841b8b193509a3a237f7f`). The **dashboard** already holds the token; content-pipeline does
+    not today. KV is read via the Cloudflare KV **REST API** (no Worker binding outside the Worker).
+  - **Dual-account:** prod sites are on the **Assets** account; legacy `financenewsbase` + `coolnews.dev` are on
+    **Dev1**. Resolve the right namespace per site by reusing the dashboard's `isDev1Domain()` / `getKvNamespaces()`
+    logic — extract it into a shared lib (`shared-types` or a shared util) so both services use one copy.
+- **dashboard** `GET /api/site-checks[/:domain]` (public, NextAuth) **merges**: it proxies content-pipeline for
+  `sync` + `tracking` (standard `CONTENT_AGENT_URL` fallback, landmine #4) **and** fetches the Domains Dashboard
+  API for `uptime` + `ssl` + `domain`. Lists all sites from `dashboard-index.yaml`; staging-only sites get
+  `uptime/ssl/domain: { status: "n/a" }`.
+- **Caching:** Domains Dashboard data refreshes every 2h/daily, and sync/tracking are cheap KV reads — a short
+  read cache (e.g. 5–15 min, reuse the existing cache pattern) avoids hammering. No persistence required.
 
-**Collection `site_checks`** — one rollup doc per site, upserted each prober run:
+## Read API — response block
 
-```jsonc
-{
-  "_id":      "travelswire",
-  "uptime": {
-    "ok":        true,
-    "lastStatus":200,
-    "checkedAt": "2026-06-07T14:10:00Z",
-    "successRatio24h": 1.0       // rolling, from recent probe results
-  },
-  "sync": {
-    "ok":        true,
-    "syncedAt":  "2026-06-07T13:02:00Z",
-    "gitSha":    "abc1234",
-    "error":     null
-  },
-  "ssl": {
-    "ok":         true,
-    "notAfter":   "2026-08-20T00:00:00Z",
-    "daysRemaining": 74,
-    "checkedAt":  "2026-06-07T14:10:00Z"
-  },
-  "tracking": {
-    "ga4":   true,
-    "gtm":   false,
-    "pixel": true,
-    "checkedAt": "2026-06-07T14:10:00Z"
-  },
-  "updatedAt": "2026-06-07T14:10:00Z"
-}
-```
-
-Optional `check_results` time-series collection (append-only probe log) to support `successRatio24h` and history.
-Keep it lightweight (TTL index, e.g. 30 days) — flagged as a sub-decision; the rollup alone satisfies the console.
-
-## The prober (new cron)
-
-A new CloudGrid cron service (e.g. `site-checks`, every 15 min — frequency is a tunable) hits an internal
-content-pipeline endpoint `GET /run-checks` that:
-
-1. Lists active sites from `dashboard-index.yaml` (reuse `listActiveSites`).
-2. For each site, runs the four checks concurrently (bounded concurrency), each independently failure-isolated:
-   - **Uptime:** `fetch('/_ping')` with a short timeout; record status + ok.
-   - **SSL:** TLS connection to the custom domain; read peer cert `notAfter`. (Node `tls.connect`.)
-   - **Sync:** KV REST `GET sync-status:<siteId>`; parse `{ ok, syncedAt, ... }`.
-   - **Tracking:** read resolved config; presence-check the three IDs.
-3. Upserts `site_checks`. A single check failing to *execute* (e.g. KV timeout) records `ok: null`/`error`, never
-   aborts the others.
-
-`cloudgrid.yaml` gains a `site-checks` cron block mirroring the existing `scheduled-publisher` shape.
-
-## Read API
-
-- **content-pipeline** (internal): `GET /site-checks` and `GET /site-checks/:domain` → the `site_checks` rollup.
-- **dashboard** (public, NextAuth): `GET /api/site-checks[/:domain]` → proxies (uses the standard
-  `CONTENT_AGENT_URL` fallback pattern, landmine #4). Lists all sites so never-probed ones appear with nulls.
-
-Response block (merges into the per-site aggregate as `checks`):
+Merges into the per-site aggregate as `checks`:
 
 ```jsonc
 "checks": {
-  "uptime":   { "ok": true,  "lastStatus": 200, "successRatio24h": 1.0, "checkedAt": "…" },
-  "sync":     { "ok": true,  "syncedAt": "…", "error": null },
-  "ssl":      { "ok": true,  "daysRemaining": 74, "notAfter": "…" },
+  "uptime":   { "ok": true,  "statusCode": 200, "responseTimeMs": 142, "overallStatus": "healthy", "checkedAt": "…", "source": "domains-dashboard" },
+  "ssl":      { "status": "active", "daysLeft": 90, "expiresAt": "…", "source": "domains-dashboard" },
+  "domain":   { "daysLeft": 285, "expiresAt": "…", "autoRenew": true, "source": "domains-dashboard" },   // informational
+  "sync":     { "ok": true,  "syncedAt": "…", "gitSha": "abc1234", "error": null },
   "tracking": { "ga4": true, "gtm": false, "pixel": true }
 }
 ```
 
+- For staging-only sites: `uptime/ssl/domain` → `{ "status": "n/a" }`.
+- If the Domains Dashboard is unreachable, those three blocks return `{ "status": "unknown", "error": "…" }`
+  rather than failing the whole response (sync/tracking still resolve).
+- If a domain is unexpectedly missing from the Domains Dashboard (Domains Dashboard `404`): same `unknown`/`n/a`
+  treatment, logged.
+
 ## Error handling
 
-- Each check is independently try/caught; a failure records a falsy/`null` result with an `error` string rather
-  than throwing. The prober must always complete the full site loop.
-- Mongo write failures are logged and skipped (same principle as Stats).
-- Probe timeouts are short (e.g. 5s) so one slow/down site can't stall the run.
-- Mongo unreachable on read → API `503`.
+- Each of the five checks is independently try/caught; one failing (KV timeout, Domains Dashboard down) yields a
+  falsy/`unknown` block with an `error` string — never fails the whole site or the endpoint.
+- Domains Dashboard fetch uses a short timeout (e.g. 5s).
+- Read API: total failure (e.g. can't list sites) → `503`.
 
 ## Testing
 
-- **Unit:** SSL `notAfter` → days-remaining; tracking presence-check across resolved-config shapes
-  (missing `tracking`, partial IDs); sync-status parse incl. `ok:false` + `error`; uptime status mapping;
-  `successRatio24h` computation.
-- **Integration:** prober loop with mocked fetch/TLS/KV — one site failing a single check doesn't abort others;
-  `mongodb-memory-server` round-trip; dual-account namespace selection picks the right KV id per site.
+- **Unit:** map Domains Dashboard `latestSnapshot` → our `uptime`/`ssl`/`domain` blocks (incl. `not_live`,
+  `unknown`, missing-domain `404`); sync-status parse incl. `ok:false` + `error`; tracking presence across
+  resolved-config shapes (missing `tracking`, partial IDs); `n/a` for staging-only sites; dual-account namespace
+  selection picks the right KV id per site.
+- **Integration:** stub the Domains Dashboard API + KV REST; assert one source failing doesn't blank the others;
+  dashboard merge proxies pipeline (sync/tracking) and overlays external (uptime/ssl/domain) correctly.
 
 ## Out of scope
 
+- Building any uptime/SSL/domain probing — delegated to the Domains Dashboard.
 - Runtime "is the tag actually firing" verification (headless browser) — presence-check only; hook left for later.
-- Domain-expiry / WHOIS.
-- Historical uptime dashboards beyond `successRatio24h` (optional `check_results` TTL log is the only history).
-- Acting on failures (paging/Slack) — that's the Alerts spec; this subsystem only measures and exposes.
+- Slack alerting on down/SSL/domain — **owned by the Domains Dashboard** (see Alerts spec; our engine only fires
+  ATL-specific conditions sync/tracking/failed-articles/in-review).
+- Any persisted checks history (the Domains Dashboard keeps health/alert history; we read current state).
+
+## Dependency: Domains Dashboard API (consumed)
+
+- `GET /api/domains/:domain` → `latestSnapshot.{health,ssl,renewal,overallStatus}` (primary read, per site).
+- `GET /api/domains` → bulk variant (all monitored domains) for the all-sites listing.
+- No auth required. Base URL `https://domains-dashboard-53a6.atomic.cloudgrid.io`. Health every 2h; SSL/registrar
+  daily. Reference: `/Users/michal/domains-dashboard/services/web/docs/API.md`.

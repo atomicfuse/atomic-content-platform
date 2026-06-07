@@ -23,19 +23,23 @@ reminders. This is the **top layer** — it reads the data produced by Stats and
 
 ## Conditions
 
+This engine fires only the **ATL-specific** conditions. The **Domains Dashboard owns down/SSL/domain-expiry
+alerting** (decision: "they own infra alerts; we own ATL-specific"), so the original #2 (site down), #6 (SSL),
+and #7 (domain expiry) are **not** fired here — they're handled by that service. Our console still *displays*
+their status via the Checks block, but Slack delivery for them is theirs.
+
 Thresholds are config constants. Each condition has an enable flag (so #9 ships off).
 
 | # | Condition | Alerts when | Slack message | Fires |
 |---|---|---|---|---|
 | 1 | Failed articles | `failedArticles.last7d > 3` | `⚠ {site}: {n} failed articles in 7d (limit 3)` | daily check **+** after each run |
-| 2 | Site down | uptime probe unreachable | `🔴 {site} is down ({duration})` | on failed health check |
-| 3 | Sync failed | last KV sync `ok:false` | `🔴 {site}: content sync failed — visitors see old content` | on sync failure |
+| 3 | Sync failed | last KV sync `ok:false` | `🔴 {site}: content sync failed — visitors see old content` | daily check (reads `sync-status`) |
 | 5 | In review | review-count `> 15` | `⚠ {site}: {n} articles in review (limit 15)` | on crossing 15 |
-| 6 | SSL | invalid **or** expires `< 14d` | `⚠ {site}: SSL expires in {n}d` | daily until renewed |
-| 8 | Tracking off | GA/GTM **or** Pixel not present | `⚠ {site}: analytics/pixel not firing` | periodic check |
+| 8 | Tracking off | GA/GTM **or** Pixel not present | `⚠ {site}: analytics/pixel not firing` | daily check |
 | 9 | Image gen failed | *(disabled)* | — | — (flip on with a threshold) |
 
-(#4 build / #7 domain expiry intentionally absent — see Decisions.)
+**Owned by the Domains Dashboard, not this engine:** #2 site down, #4 build (≡ sync, no build step exists),
+#6 SSL, #7 domain expiry.
 
 ### Reminders (scheduled nudges — not site health)
 
@@ -46,14 +50,16 @@ Thresholds are config constants. Each condition has an enable flag (so #9 ships 
 
 ## Data sources per condition (all already produced by sibling specs)
 
+All inputs are read by the engine in content-pipeline. `failedArticles` is in its own Mongo; `sync`/`tracking`
+are the ATL checks it already computes from CONFIG_KV (see Checks spec — content-pipeline gains a CF read token
+for `sync-status` + resolved config); `reviewCount` is a cheap KV `article-index` count.
+
 | # | Reads from |
 |---|---|
-| 1 | Stats `site_stats` / `generation_events` → `failedArticles.last7d` |
-| 2 | Checks `site_checks.uptime.ok`. `{duration}` is derived from `alert_state.firstDetectedAt` (this engine's state), **not** from `site_checks` (which has no such field). |
-| 3 | Checks `site_checks.sync.ok` |
-| 5 | **Review count per site** — count of articles with `status: "review"`, from the existing article read path (`readArticlesWithKVFallback`, same as the review queue). *New small dependency:* expose `reviewCount` per site (cheap; computed during the same article read the Stats "recent articles" panel already does). Reminder "Review backlog" reuses this summed across the network. |
-| 6 | Checks `site_checks.ssl.daysRemaining` / `ok` |
-| 8 | Checks `site_checks.tracking.{ga4,gtm,pixel}` |
+| 1 | Stats Mongo (`generation_events`) → `failedArticles.last7d` (local) |
+| 3 | KV `sync-status:<siteId>` → `ok` (the same read the Checks `sync` block uses) |
+| 5 | **Review count per site** — count of `article-index:<siteId>` entries with `status: "review"` (single KV read). Reminder "Review backlog" reuses this summed across the network. |
+| 8 | Resolved config `tracking.{ga4,gtm,facebook_pixel}` presence (the Checks `tracking` block) |
 
 ## Edge-triggering & dedup — the core of the engine
 
@@ -73,19 +79,16 @@ Naive evaluation would re-fire every tick. Each condition is **stateful**.
 
 **Fire policy per condition** (config-driven):
 
-- **Transition-only** (fire once on OK→alerting, silent until it clears): #3 sync, #5 in-review ("on crossing 15"
-  → fire when `>15` and previous `≤15`; reset state when it drops back).
-- **Transition + daily re-remind** while still alerting: #6 SSL ("daily until renewed"), #1 failed articles
-  ("daily check + after each run" → fire on entering, then at most once/day while still over limit; the
-  after-each-run trigger also fires on a fresh crossing).
-- **Transition + duration in message**: #2 site down (fire once on going down; `{duration}` from
-  `alert_state.firstDetectedAt`). Default: **transition-only, no re-remind while down** (re-fires only after it
-  recovers and goes down again). A re-remind interval can be added to the policy config later.
-- **Transition-only**: #8 tracking (evaluate on the prober cadence; fire once on transition to "off"; reset when
-  present again). No periodic re-remind by default.
+- **Transition-only** (fire once on OK→alerting, silent until it clears):
+  - #3 sync (fire once when `sync-status.ok` goes false; reset when it's ok again).
+  - #5 in-review ("on crossing 15" → fire when `>15` and previous `≤15`; reset when it drops back).
+  - #8 tracking (fire once on transition to "off"; reset when present again).
+- **Transition + daily re-remind** while still alerting:
+  - #1 failed articles ("daily check + after each run" → fire on entering alerting, then at most once/day while
+    still over the limit; the after-each-run trigger also fires on a fresh crossing).
 
-Every condition's fire policy is therefore fully enumerated as one of: `transition-only` or
-`transition + daily-re-remind`. The policy + its threshold/interval live in config (see Config).
+Every condition's fire policy is therefore one of: `transition-only` or `transition + daily-re-remind`.
+The policy + its threshold live in config (see Config).
 
 A shared `evaluateCondition(state, currentValue, policy, now) → { newState, shouldFire }` encapsulates this so
 every condition uses the same throttle/edge logic. `now` is **passed in** (never `Date.now()` inside) for testability.
@@ -96,16 +99,16 @@ cadence (weekly weekday / N-day cadence) so the digest doesn't double-send withi
 
 ## Fire triggers (when the engine runs)
 
-1. **Daily cron** (`run-alerts`, new CloudGrid cron, e.g. 09:00 EST): evaluate **all** conditions for all sites;
-   emit reminders when due (weekly review-backlog digest on its configured weekday; "create new site" on its
-   cadence). This is the catch-all that satisfies "daily check" / "daily until renewed".
-2. **After each generation run**: evaluate #1 for that site (hook at the same post-`runContentGeneration`
-   boundary the Stats recorder uses).
-3. **After each checks run**: evaluate #2/#3/#6/#8 for probed sites (hook at the end of the Checks prober, which
-   already runs ~every 15 min).
+1. **Daily cron** (`run-alerts`, new CloudGrid cron, e.g. 09:00 EST): evaluate **all** conditions (#1, #3, #5, #8)
+   for all sites by reading their inputs (Mongo failedArticles + KV sync-status/tracking/review-count); emit
+   reminders when due (weekly review-backlog digest on its configured weekday; "create new site" on its cadence).
+   This is the catch-all "daily check".
+2. **After each generation run**: evaluate #1 and #5 for that site (a run changes both failed-article counts and
+   the review backlog) at the same post-`runContentGeneration` boundary the Stats recorder uses.
 
-All evaluations go through the same engine + `alert_state`, so the same condition can be driven by multiple
-triggers without double-firing (state is the single arbiter).
+(There is no "after each checks run" trigger — uptime/SSL/domain are owned by the Domains Dashboard, and our
+sync/tracking checks are read on the daily cron.) All evaluations go through the same engine + `alert_state`, so
+a condition driven by both triggers never double-fires (state is the single arbiter).
 
 ## Slack delivery
 
@@ -124,9 +127,10 @@ triggers without double-firing (state is the single arbiter).
 ## Config
 
 A small config object (constants + optional `scheduler/alerts.yaml` in the network repo, mirroring
-`scheduler/config.yaml`) holding: per-condition `enabled` + thresholds (`failedArticles: 3`, `inReview: 15`,
-`sslDays: 14`), the review-backlog digest weekday, the "create new site" cadence, and a global enable. Defaults
-in code if the file is absent (same pattern as the scheduler gate).
+`scheduler/config.yaml`) holding: per-condition `enabled` + thresholds (`failedArticles: 3`, `inReview: 15`),
+the review-backlog digest weekday, the "create new site" cadence, and a global enable. Defaults in code if the
+file is absent (same pattern as the scheduler gate). (No SSL/domain thresholds here — those live in the Domains
+Dashboard's own settings.)
 
 ## Read API (for the console's "Needs Attention" panel)
 
@@ -138,15 +142,16 @@ in code if the file is absent (same pattern as the scheduler gate).
 ```jsonc
 "attention": {
   "alerting": [
-    { "condition": "in_review", "severity": "warn", "since": "2026-06-07T14:00:00Z", "value": 17 },
-    { "condition": "ssl",        "severity": "warn", "since": "2026-06-05T09:00:00Z", "value": 9 },
-    { "condition": "site_down",  "severity": "critical", "since": "2026-06-07T13:40:00Z", "value": null }
+    { "condition": "in_review",       "severity": "warn",     "since": "2026-06-07T14:00:00Z", "value": 17 },
+    { "condition": "failed_articles", "severity": "warn",     "since": "2026-06-06T09:00:00Z", "value": 5 },
+    { "condition": "sync_failed",     "severity": "critical", "since": "2026-06-07T13:40:00Z", "value": null }
   ]
 }
 ```
 
-`value` carries the numeric reading for numeric conditions (in-review count, SSL days, failed-articles count) and
-is `null` for boolean conditions (site_down, sync, tracking) — `since` + `condition` convey those.
+`value` carries the numeric reading for numeric conditions (in-review count, failed-articles count) and is `null`
+for boolean conditions (sync_failed, tracking) — `since` + `condition` convey those. (Down/SSL/domain are not
+here — see the Checks block / Domains Dashboard for those.)
 
 ## Error handling
 
@@ -158,9 +163,9 @@ is `null` for boolean conditions (site_down, sync, tracking) — `since` + `cond
 
 - **Unit (the engine is the critical surface):** `evaluateCondition` edge cases per policy —
   - in-review crossing 15 fires once, not again at 16/17; resets and can re-fire after dropping to ≤15;
-  - SSL fires daily while `<14d`, stops after renewal;
+  - sync_failed fires once on `ok`→false, resets when ok again;
+  - tracking fires once on transition to "off", resets when present again;
   - failed-articles fires on crossing and re-reminds at most once/day;
-  - site-down `{duration}` derives from `firstDetectedAt`;
   - `now` injection (no wall-clock in logic).
 - **Reminders:** weekly digest fires only on its weekday; "create new site" respects cadence + `lastFiredAt`.
 - **Delivery:** a stubbed Slack failure does not advance `lastFiredAt` and does not throw.
