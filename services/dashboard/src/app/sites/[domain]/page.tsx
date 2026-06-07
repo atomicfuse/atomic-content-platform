@@ -25,10 +25,15 @@ export default async function SiteDetailPage({
   // Use staging branch for reads when site is in staging (files may not exist on main yet)
   const branch = site.staging_branch ?? undefined;
 
-  const [siteConfig, articles] = await Promise.all([
+  let [siteConfig, articles] = await Promise.all([
     readSiteConfig(decodedDomain, branch),
     readArticlesWithKVFallback(decodedDomain, branch, readArticles),
   ]);
+
+  // Fallback: if staging branch is gone (deleted), read config from main
+  if (!siteConfig && branch) {
+    siteConfig = await readSiteConfig(decodedDomain, undefined);
+  }
 
   const brief = siteConfig?.brief as {
     audience: string;
