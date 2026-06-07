@@ -122,6 +122,7 @@ export async function processGenerateJob(
 
   // Record the generation run to stats (failure-isolated; runs on
   // retried-from-cache attempts too, hence placed after the if/else above).
+  // scheduler-flow sets triggeredBy="scheduled-forced" when a run is forced; bypassSchedule is set by manual dashboard enqueues.
   await recordGeneration(
     result,
     {

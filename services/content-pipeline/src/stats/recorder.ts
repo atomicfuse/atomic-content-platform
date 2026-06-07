@@ -11,6 +11,7 @@ export interface EventContext {
   finishedAt: Date;
 }
 
+// NOTE: "wp-import" is a forward-looking GenerationSource value; GenerateJobData.triggeredBy doesn't currently emit it (WP import runs on a separate queue), so that branch is intentionally speculative.
 /**
  * Maps a job's `triggeredBy` to a GenerationSource.
  *   "manual"            → "dashboard"
