@@ -33,4 +33,9 @@ describe("computeNextRun", () => {
     const next = computeNextRun({ enabled: true, run_at_hours: [14], timezone: "America/New_York" }, ["Monday"], new Date("2026-06-08T14:00:00Z"));
     expect(next!.toISOString()).toBe("2026-06-08T18:00:00.000Z");
   });
+  it("handles winter EST (UTC-5): Sunday → Monday 14:00 EST", () => {
+    // 2026-01-04 is a Sunday; next Monday 14:00 America/New_York = EST (UTC-5) = 2026-01-05T19:00:00Z
+    const next = computeNextRun({ enabled: true, run_at_hours: [14], timezone: "America/New_York" }, ["Monday"], new Date("2026-01-04T00:00:00Z"));
+    expect(next!.toISOString()).toBe("2026-01-05T19:00:00.000Z");
+  });
 });
