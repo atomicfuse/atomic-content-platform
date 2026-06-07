@@ -46,6 +46,8 @@ What it answers (the 6 original requirements + extras):
 | Generated vs expected | `thisWeek.created` vs `thisWeek.expected` |
 | (added) Failed articles 7d/30d | `failedArticles.last7d` / `.last30d` |
 | (added) Image-gen failures 7d/30d | `imageGenFailed.last7d` / `.last30d` |
+| (added) **# articles in review** | `reviewCount` |
+| (added) **# articles on a general/default image** | `generalImages` |
 | (added) Recent articles | `recentArticles[]` (title · score · status) |
 
 **`GET /api/site-stats`** → `{ "sites": [ <SiteStat> ] }`
@@ -66,6 +68,8 @@ What it answers (the 6 original requirements + extras):
   "thisWeek": { "created": 4, "expected": 6 },// week = since most-recent Monday 00:00 UTC
   "failedArticles": { "last7d": 1, "last30d": 3 },
   "imageGenFailed": { "last7d": 0, "last30d": 2 },
+  "reviewCount": 4,                            // articles with status "review" (full count, any number)
+  "generalImages": 7,                          // articles still on a default/general image (featuredImage missing or contains "general-article")
   "recentArticles": [
     { "title": "Best Thriller Movies 2026", "score": 87, "status": "published", "slug": "best-thriller-movies-2026", "publishDate": "2026-06-07" }
     // status: published | review | draft ; score null if unscored ; newest first, max 5
