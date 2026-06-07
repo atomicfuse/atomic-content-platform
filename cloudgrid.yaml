@@ -42,9 +42,9 @@ services:
     #   GITHUB_TOKEN, GEMINI_API_KEY, OPENAI_API_KEY,
     #   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY (Assets account — for article image uploads)
     # REDIS_URL is auto-injected by `requires: redis: private`.
-    # MONGODB_URL is auto-injected by `requires: mongodb: private` as MONGODB_URI;
-    #   map it to MONGODB_URL via `env: MONGODB_URL: $MONGODB_URI` if CloudGrid
-    #   injects under a different name, since content-pipeline reads process.env.MONGODB_URL.
+    # MongoDB: `requires: mongodb: private` auto-injects the connection string.
+    #   getMongoDb() reads MONGODB_URL, falling back to MONGODB_URI, so either
+    #   injected name works without an explicit env: mapping.
     # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
     # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
     #   articles) and OpenAI image generator (Tier B fallback). Without it,

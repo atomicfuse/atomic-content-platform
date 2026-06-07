@@ -4,12 +4,12 @@ import { COLLECTIONS } from "../stats/types.js";
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
 
-/** Lazy, memoized Mongo client. Throws if MONGODB_URL is unset. */
+/** Lazy, memoized Mongo client. Throws if neither MONGODB_URL nor MONGODB_URI is set. */
 export async function getMongoDb(): Promise<Db> {
   if (!dbPromise) {
     if (!clientPromise) {
-      const url = process.env.MONGODB_URL;
-      if (!url) throw new Error("MONGODB_URL is not set");
+      const url = process.env.MONGODB_URL ?? process.env.MONGODB_URI;
+      if (!url) throw new Error("MONGODB_URL (or MONGODB_URI) is not set");
       const client = new MongoClient(url, { serverSelectionTimeoutMS: 5_000 });
       clientPromise = client.connect().catch((err) => {
         clientPromise = null; // allow retry on next call
