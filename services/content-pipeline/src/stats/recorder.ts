@@ -1,4 +1,6 @@
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
+import { getMongoDb } from "../lib/mongo.js";
+import { COLLECTIONS, type ScheduleSnapshot } from "./types.js";
 import type { GenerationEvent, GenerationSource, RunStatus } from "./types.js";
 
 export interface EventContext {
@@ -63,4 +65,76 @@ export function buildGenerationEvent(
     startedAt: ctx.startedAt,
     finishedAt: ctx.finishedAt,
   };
+}
+
+/**
+ * Persists a generation run to MongoDB:
+ *   1. Inserts a GenerationEvent document.
+ *   2. Upserts the SiteStats rollup document.
+ *
+ * Failure-isolated — any Mongo error is caught and logged; the caller
+ * (scheduler, dashboard) never sees an exception from this function.
+ */
+export async function recordGeneration(
+  result: BatchContentGenerationResult,
+  ctx: EventContext,
+  schedule: ScheduleSnapshot | null,
+): Promise<void> {
+  try {
+    const event = buildGenerationEvent(result, ctx);
+    const db = await getMongoDb();
+
+    // 1. Insert the raw event record
+    await db.collection(COLLECTIONS.generationEvents).insertOne(event as any);
+
+    // 2. Build $set — always includes the timestamp fields; conditionally
+    //    includes the per-run outcome fields.
+    const set: Record<string, unknown> = {
+      lastRunAt: event.finishedAt,
+      updatedAt: event.finishedAt,
+    };
+
+    if (schedule !== null) {
+      set["schedule"] = schedule;
+    }
+    if (event.created > 0) {
+      set["lastAddedAt"] = event.finishedAt;
+      set["lastAddedSource"] = event.source;
+      set["lastAddedCount"] = event.created;
+    }
+    if (event.status === "error" && event.created === 0) {
+      set["lastFailedAt"] = event.finishedAt;
+    }
+
+    // 3. Build $setOnInsert — null-defaults for every rollup field that is
+    //    NOT already in $set for this call.  This avoids the Mongo "path
+    //    conflict" error that occurs when the same key appears in both
+    //    $set and $setOnInsert.
+    const nullDefaults: Record<string, null> = {
+      lastAddedAt: null,
+      lastAddedSource: null,
+      lastAddedCount: null,
+      lastFailedAt: null,
+      schedule: null,
+    };
+    const setOnInsert: Record<string, null> = {};
+    for (const key of Object.keys(nullDefaults)) {
+      if (!(key in set)) {
+        setOnInsert[key] = null;
+      }
+    }
+
+    await db.collection(COLLECTIONS.siteStats).updateOne(
+      { _id: event.siteDomain as any },
+      {
+        $set: set,
+        $inc: { totalCreated: event.created },
+        $setOnInsert: setOnInsert,
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[stats] recordGeneration failed (non-fatal): ${msg}`);
+  }
 }
