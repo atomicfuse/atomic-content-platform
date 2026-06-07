@@ -834,6 +834,11 @@ export async function attachCustomDomain(
     }
   }
 
+  // Flush stale in-memory caches so the dashboard reflects the new
+  // custom_domain / status immediately — covers tree, site-config,
+  // articles, and dashboard-index caches for this site.
+  invalidateSiteCaches(domain, `staging/${domain}`);
+
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
 
@@ -889,6 +894,8 @@ export async function detachCustomDomain(
   } catch (err) {
     console.warn('[detachCustomDomain] config.domain revert failed', err);
   }
+
+  invalidateSiteCaches(domain, `staging/${domain}`);
 
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
