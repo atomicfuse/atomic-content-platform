@@ -721,7 +721,11 @@ export function flushAllCaches(): void {
  * config save, etc.). Clears: tree cache for the branch, article cache for
  * the domain, and site config cache for the domain.
  */
-export function invalidateSiteCaches(domain: string, branch?: string): void {
+export function invalidateSiteCaches(
+  domain: string,
+  branch?: string,
+  opts?: { keepDashboardIndex?: boolean },
+): void {
   const ref = branch ?? "main";
   treeCacheStore.delete(ref);
   // Always clear the main tree too — dashboardIndexCache reads from the main
@@ -732,7 +736,11 @@ export function invalidateSiteCaches(domain: string, branch?: string): void {
   articlesCache.delete(artKey);
   articleCountCache.delete(artKey);
   siteConfigCache.delete(artKey);
-  dashboardIndexCache.invalidate();
+  // When the caller just wrote the index via writeDashboardIndex(), the cache
+  // already holds the correct data. Invalidating it would force a re-fetch
+  // from GitHub whose API may still serve a stale tree/blob (CDN lag),
+  // re-caching old data. Pass keepDashboardIndex: true to preserve it.
+  if (!opts?.keepDashboardIndex) dashboardIndexCache.invalidate();
   invalidateKVArticleCache(domain);
 }
 
