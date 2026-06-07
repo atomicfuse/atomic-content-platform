@@ -5,6 +5,7 @@ import { readDashboardIndex } from "@/lib/github";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
   computeNextRun,
+  mapWithConcurrency,
   recentArticles,
   type RecentArticle,
   type SchedulerGate,
@@ -143,8 +144,10 @@ export async function GET(): Promise<NextResponse> {
   const gate = await readSchedulerConfig();
   const now = new Date();
 
-  const enriched = await Promise.all(
-    [...byDomain.values()].map((site) => enrichSite(site, gate, now)),
+  const enriched = await mapWithConcurrency(
+    [...byDomain.values()],
+    5,
+    (site) => enrichSite(site, gate, now),
   );
 
   return NextResponse.json({ sites: enriched });

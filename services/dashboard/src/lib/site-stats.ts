@@ -9,6 +9,34 @@
  *     preferred days (see computeNextRun below).
  */
 
+// ---------------------------------------------------------------------------
+// mapWithConcurrency
+// ---------------------------------------------------------------------------
+
+/**
+ * Like Promise.all(items.map(fn)) but caps the number of in-flight calls to
+ * `limit`. Preserves result order. No external dependencies.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return results;
+}
+
 import { readArticles } from "@/lib/github";
 import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import type { ArticleEntry } from "@/types/dashboard";
