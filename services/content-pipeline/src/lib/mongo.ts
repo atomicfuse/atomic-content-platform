@@ -1,4 +1,5 @@
 import { MongoClient, type Db } from "mongodb";
+import { COLLECTIONS } from "../stats/types.js";
 
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
@@ -21,6 +22,17 @@ export async function getMongoDb(): Promise<Db> {
     dbPromise = clientPromise.then((c) => c.db(dbName));
   }
   return dbPromise;
+}
+
+export async function ensureStatsIndexes(): Promise<void> {
+  const db = await getMongoDb();
+  await db.collection(COLLECTIONS.generationEvents).createIndexes([
+    { key: { siteDomain: 1, finishedAt: -1 }, name: "siteDomain_finishedAt" },
+    { key: { finishedAt: -1 }, name: "finishedAt" },
+  ]);
+  await db.collection(COLLECTIONS.imageGenEvents).createIndex(
+    { siteDomain: 1, at: -1 }, { name: "siteDomain_at" },
+  );
 }
 
 /** Close for test teardown / graceful shutdown. */
