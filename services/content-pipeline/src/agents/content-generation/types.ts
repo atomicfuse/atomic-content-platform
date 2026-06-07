@@ -5,6 +5,8 @@
  * internal types for the dual-model generation pipeline.
  */
 
+import type { TokenUsage } from "../../costs/usage.js";
+
 // ---------------------------------------------------------------------------
 // Content Aggregator v2 API types
 // ---------------------------------------------------------------------------
@@ -77,6 +79,8 @@ export interface GeneratedArticle {
   type: string;
   tags: string[];
   body: string;
+  /** Token usage for the generation call, when available. */
+  usage?: TokenUsage;
 }
 
 /** Generated or analyzed image asset. */

@@ -21,13 +21,14 @@ export class ClaudeGenerator implements Generator {
 
     console.log(`[claude-gen] Generating factual article: "${item.title}"`);
 
-    const rawResponse = await generateContent({
+    const { text, usage } = await generateContent({
       systemPrompt,
       userPrompt,
       // ai.ts maps "claude-sonnet" for CloudGrid, DEFAULT_MODEL for Anthropic SDK
       maxTokens: 4096,
     });
 
-    return parseGeneratedArticle(rawResponse);
+    const article = parseGeneratedArticle(text);
+    return { ...article, usage };
   }
 }

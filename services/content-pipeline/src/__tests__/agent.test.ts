@@ -56,8 +56,8 @@ vi.mock("../lib/site-brief.js", () => ({
 }));
 
 vi.mock("../lib/ai.js", () => ({
-  generateContent: vi.fn().mockResolvedValue(
-    JSON.stringify({
+  generateContent: vi.fn().mockResolvedValue({
+    text: JSON.stringify({
       title: "Generated Title",
       slug: "generated-title",
       description: "A description.",
@@ -65,7 +65,8 @@ vi.mock("../lib/ai.js", () => ({
       tags: ["AI", "tech"],
       body: "Generated article body.",
     }),
-  ),
+    usage: { inputTokens: 200, outputTokens: 800, estimated: false },
+  }),
 }));
 
 vi.mock("openai", () => ({

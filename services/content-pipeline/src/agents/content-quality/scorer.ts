@@ -8,6 +8,7 @@
 
 import type { SiteBrief, QualityWeights, QualityScoreBreakdown } from "../../types.js";
 import { generateContent } from "../../lib/ai.js";
+import type { TokenUsage } from "../../costs/usage.js";
 import { parseWordCountFromGuidelines } from "../word-count.js";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,8 @@ export interface QualityResult {
   breakdown: QualityScoreBreakdown;
   /** One-sentence reasoning note. */
   note: string;
+  /** Token usage for the scoring call(s) — summed across attempts that ran. */
+  usage: TokenUsage;
 }
 
 export interface ArticleToScore {
@@ -194,25 +197,37 @@ export async function scoreArticle(
   const resolvedWeights = resolveWeights(weights);
   const { systemPrompt, userPrompt } = buildQualityScoringPrompt(article, siteName, brief);
 
-  // Retry once on failure (rate limits, transient errors)
+  // Retry once on failure (rate limits, transient errors). Accumulate usage
+  // across whichever attempt(s) actually ran (first only, or first + retry).
   let rawResponse: string;
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, estimated: false };
+  const addUsage = (u: TokenUsage): void => {
+    usage.inputTokens += u.inputTokens;
+    usage.outputTokens += u.outputTokens;
+    // If any attempt was estimated, the aggregate is estimated.
+    usage.estimated = usage.estimated || u.estimated;
+  };
   try {
-    rawResponse = await generateContent({
+    const first = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 512,
     });
+    addUsage(first.usage);
+    rawResponse = first.text;
   } catch (firstErr) {
     console.warn(
       `[scorer] First attempt failed, retrying in 3s:`,
       firstErr instanceof Error ? firstErr.message : firstErr,
     );
     await new Promise((r) => setTimeout(r, 3000));
-    rawResponse = await generateContent({
+    const retry = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 512,
     });
+    addUsage(retry.usage);
+    rawResponse = retry.text;
   }
 
   const parsed = parseScoreResponse(rawResponse);
@@ -231,6 +246,7 @@ export async function scoreArticle(
     overallScore,
     breakdown,
     note: parsed.note || "No quality note provided.",
+    usage,
   };
 }
 
