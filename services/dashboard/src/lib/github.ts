@@ -218,7 +218,6 @@ export async function writeDashboardIndex(
   index: DashboardIndex,
   message: string
 ): Promise<void> {
-  dashboardIndexCache.invalidate();
   const octokit = getOctokit();
   const yamlContent = stringifyYaml(index, { lineWidth: 0 });
 
@@ -230,7 +229,6 @@ export async function writeDashboardIndex(
   } catch {
     // File doesn't exist yet
   }
-  invalidateTreeCache();
 
   await octokit.repos.createOrUpdateFileContents({
     owner: NETWORK_REPO_OWNER,
@@ -240,6 +238,12 @@ export async function writeDashboardIndex(
     content: Buffer.from(yamlContent).toString("base64"),
     sha,
   });
+
+  // Invalidate AFTER the write succeeds — avoids race condition where a
+  // concurrent request re-caches stale data from GitHub while the write
+  // is still in-flight.
+  invalidateTreeCache();
+  dashboardIndexCache.set(index);
 }
 
 /** Update a single site entry in the dashboard index.
