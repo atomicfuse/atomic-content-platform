@@ -153,6 +153,11 @@ Dashboard's own settings.)
 for boolean conditions (sync_failed, tracking) — `since` + `condition` convey those. (Down/SSL/domain are not
 here — see the Checks block / Domains Dashboard for those.)
 
+> `severity` here is a **read-API display field** for the UI (`warn`/`critical`), **not** the Slack helper's
+> `Severity` type. The engine does `{n}`/`{site}` substitution into the message template before calling
+> `notifyAttention(message)`; the wrapper posts the finished string verbatim. (`SLACK_WEBHOOK_URL` env →
+> `config.slackWebhookUrl` in the `NotificationConfig` the engine builds.)
+
 ## Error handling
 
 - Each condition evaluated independently (one failing eval doesn't skip the rest of the site or the run).

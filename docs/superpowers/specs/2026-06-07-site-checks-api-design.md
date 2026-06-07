@@ -78,7 +78,13 @@ Merges into the per-site aggregate as `checks`:
 }
 ```
 
-- For staging-only sites: `uptime/ssl/domain` → `{ "status": "n/a" }`.
+- **Block state convention:** every block carries a `state` of `ok` | `n/a` | `unknown` (distinct from
+  `ssl.status`, which is the *upstream* SSL enum `active`/`validation_failed`/…). Use `state` for OK-vs-degraded;
+  don't overload `ssl.status` with sentinels. `not_live` surfaces as `uptime.state: "ok"` is **false** with
+  `overallStatus: "not_live"` so down / not_live / n/a are distinguishable.
+- **Fetch once:** the all-sites listing fetches the Domains Dashboard **bulk** `GET /api/domains` a single time and
+  indexes by domain (not N per-site calls); the single-site endpoint uses `GET /api/domains/:domain`.
+- For staging-only sites: `uptime/ssl/domain` → `{ "state": "n/a" }`.
 - If the Domains Dashboard is unreachable, those three blocks return `{ "status": "unknown", "error": "…" }`
   rather than failing the whole response (sync/tracking still resolve).
 - If a domain is unexpectedly missing from the Domains Dashboard (Domains Dashboard `404`): same `unknown`/`n/a`
