@@ -724,6 +724,10 @@ export function flushAllCaches(): void {
 export function invalidateSiteCaches(domain: string, branch?: string): void {
   const ref = branch ?? "main";
   treeCacheStore.delete(ref);
+  // Always clear the main tree too — dashboardIndexCache reads from the main
+  // tree, so a stale main tree SHA causes readDashboardIndex() to re-cache
+  // old blob content even after dashboardIndexCache.invalidate().
+  if (ref !== "main") treeCacheStore.delete("main");
   const artKey = `${domain}@${ref}`;
   articlesCache.delete(artKey);
   articleCountCache.delete(artKey);
