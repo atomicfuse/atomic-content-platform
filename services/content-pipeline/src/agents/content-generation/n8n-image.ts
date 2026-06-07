@@ -21,6 +21,7 @@ import {
 import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
+import { recordImageGenEvent } from "../../stats/recorder.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -498,11 +499,24 @@ export async function handleImageCallback(
     return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
   }
 
+  // Fire-and-forget recorder helper — site_domain and slug are guaranteed present here.
+  const recordOutcome = (ok: boolean, error: string | null): void => {
+    void recordImageGenEvent({
+      siteDomain: site_domain,
+      slug,
+      ok,
+      provider: payload.meta?.provider ?? null,
+      error,
+      at: new Date(),
+    });
+  };
+
   // Check for error status from n8n
   if (status && status !== "ok") {
     const reason = payload.error ?? `n8n status: ${status}`;
     console.error(`${tag} FAIL — n8n error: ${reason} (provider=${provider}, duration=${durationMs ?? "?"}ms)`);
     alertFailure(`n8n image generation failed: ${reason}`);
+    recordOutcome(false, reason);
     markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: reason };
   }
@@ -510,6 +524,7 @@ export async function handleImageCallback(
   if (!payload.data_base64) {
     console.error(`${tag} FAIL — no image data in payload`);
     alertFailure("n8n returned no image data");
+    recordOutcome(false, "No image data in callback");
     markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: "No image data in callback" };
   }
@@ -532,6 +547,7 @@ export async function handleImageCallback(
       `${tag} SUCCESS — image delivered (provider=${provider}, ` +
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
     );
+    recordOutcome(true, null);
     markBulkCallbackReceived(site_domain, slug);
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
