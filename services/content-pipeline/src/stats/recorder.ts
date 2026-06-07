@@ -12,6 +12,18 @@ export interface EventContext {
 }
 
 /**
+ * Maps a job's `triggeredBy` to a GenerationSource.
+ *   "manual"            → "dashboard"
+ *   "wp-import"         → "wp-import"
+ *   "scheduled" / "scheduled-forced" / anything else → "scheduler"
+ */
+export function sourceFromTriggeredBy(t: string): GenerationSource {
+  if (t === "manual") return "dashboard";
+  if (t === "wp-import") return "wp-import";
+  return "scheduler"; // scheduled / scheduled-forced
+}
+
+/**
  * Pure mapper — derives a GenerationEvent from a BatchContentGenerationResult.
  * No I/O; safe to call in any context.
  *

@@ -23,6 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
+import { recordGeneration } from "../../stats/recorder.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -745,6 +746,7 @@ async function handleRequest(
   );
 
   try {
+    const startedAt = new Date();
     const result = await runContentGeneration(
       {
         siteDomain,
@@ -754,6 +756,18 @@ async function handleRequest(
         bypassSchedule: bypassScheduleBool,
       },
       config,
+    );
+    const finishedAt = new Date();
+    await recordGeneration(
+      result,
+      {
+        source: "dashboard",
+        forced: bypassScheduleBool,
+        topicName: topicNameStr ?? null,
+        startedAt,
+        finishedAt,
+      },
+      null,
     );
 
     const resultBody = result as unknown as Record<string, unknown>;
