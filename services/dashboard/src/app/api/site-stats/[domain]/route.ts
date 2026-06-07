@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { readSchedulerConfig } from "@/lib/scheduler";
-import { enrichSite, type SiteStatsResponse } from "../route";
+import { enrichSite, type SiteStatsResponse } from "@/lib/site-stats";
 
 const CONTENT_AGENT_URL =
   process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
