@@ -152,8 +152,9 @@ function invalidateTreeCache(branch?: string): void {
 }
 
 /** Read and parse dashboard-index.yaml from the network repo.
- *  Pass `fresh: true` to bypass the 30s TTL cache (e.g. before a
- *  uniqueness check that needs real-time data). */
+ *  Pass `fresh: true` to bypass ALL caches — including the tree cache —
+ *  and fetch directly via the Contents API. Use before uniqueness checks
+ *  or after mutations where the tree cache may still hold a stale SHA. */
 export async function readDashboardIndex(
   opts?: { fresh?: boolean },
 ): Promise<DashboardIndex> {
@@ -164,19 +165,40 @@ export async function readDashboardIndex(
 
   const octokit = getOctokit();
   try {
-    const tree = await getTreeCached();
-    const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
-    if (!entry?.sha) {
-      const empty: DashboardIndex = { sites: [], deleted: [] };
-      dashboardIndexCache.set(empty);
-      return empty;
+    let content: string;
+
+    if (opts?.fresh) {
+      // Direct Content API fetch — bypasses tree cache entirely.
+      // repos.getContent resolves the ref at call time, avoiding
+      // stale blob SHAs from a cached tree.
+      const { data } = await octokit.repos.getContent({
+        owner: NETWORK_REPO_OWNER,
+        repo: NETWORK_REPO_NAME,
+        path: DASHBOARD_INDEX_PATH,
+        ref: "main",
+      });
+      if (Array.isArray(data) || !("content" in data)) {
+        const empty: DashboardIndex = { sites: [], deleted: [] };
+        dashboardIndexCache.set(empty);
+        return empty;
+      }
+      content = Buffer.from(data.content, "base64").toString("utf-8");
+    } else {
+      // Standard path: tree + blob (fast, uses Infinity TTL tree cache)
+      const tree = await getTreeCached();
+      const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
+      if (!entry?.sha) {
+        const empty: DashboardIndex = { sites: [], deleted: [] };
+        dashboardIndexCache.set(empty);
+        return empty;
+      }
+      const { data: blobData } = await octokit.git.getBlob({
+        owner: NETWORK_REPO_OWNER,
+        repo: NETWORK_REPO_NAME,
+        file_sha: entry.sha,
+      });
+      content = Buffer.from(blobData.content, "base64").toString("utf-8");
     }
-    const { data: blobData } = await octokit.git.getBlob({
-      owner: NETWORK_REPO_OWNER,
-      repo: NETWORK_REPO_NAME,
-      file_sha: entry.sha,
-    });
-    const content = Buffer.from(blobData.content, "base64").toString("utf-8");
     const parsed = parseYaml(content) as DashboardIndex | null;
     if (!parsed) return { sites: [], deleted: [] };
     // Backfill new fields for entries written before pages_project/zone_id existed

@@ -13,6 +13,7 @@ import {
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
   invalidateSiteCaches,
+  flushAllCaches,
 } from "@/lib/github";
 import {
   deletePagesProject,
@@ -347,6 +348,11 @@ export async function permanentlyDeleteSite(domain: string): Promise<void> {
 }
 
 export async function refreshSiteCache(domain: string, branch?: string): Promise<void> {
-  invalidateSiteCaches(domain, branch);
+  // Flush ALL in-memory caches (tree, dashboard-index, articles, site-config).
+  // Then actively fetch fresh dashboard index via the Contents API (bypasses
+  // the tree cache entirely) so the cache is pre-populated with verified-fresh
+  // data before router.refresh() triggers the page re-render.
+  flushAllCaches();
+  await readDashboardIndex({ fresh: true });
   revalidatePath(`/sites/${domain}`);
 }
