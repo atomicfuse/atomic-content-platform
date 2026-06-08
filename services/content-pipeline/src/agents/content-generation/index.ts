@@ -40,7 +40,8 @@ import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
 import { parseSiteStatsPath } from "../../stats/route-path.js";
 import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
-import { ensureStatsIndexes, ensureCostIndexes } from "../../lib/mongo.js";
+import { ensureStatsIndexes, ensureCostIndexes, getMongoDb } from "../../lib/mongo.js";
+import { COLLECTIONS } from "../../stats/types.js";
 import { getSiteCosts, getAllSiteCosts } from "../../costs/repo.js";
 import {
   type BulkImageRequest,
@@ -901,6 +902,161 @@ async function handleRequest(
           return sendJson(res, 502, { ok: false, error: `GitHub API ${resp.status}: ${errText}` });
         }
         return sendJson(res, 200, { ok: true, message: `Triggered sync-kv for ${domain}` });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /backfill-history — one-time import of scheduler/history.json into MongoDB
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-history") {
+      try {
+        const octokit = createOctokit(config.github);
+        const raw = await readFile(octokit, config.github.repo, "scheduler/history.json");
+        const history = JSON.parse(raw) as Array<{
+          timestamp: string;
+          forced: boolean;
+          sites: Array<{
+            domain: string;
+            status: string;
+            articlesCreated: number;
+            articlesRequested: number;
+            message?: string;
+          }>;
+        }>;
+
+        // Read all briefs for schedule data (from main)
+        const briefCache = new Map<string, Awaited<ReturnType<typeof readSiteBrief>> | null>();
+        const getBrief = async (domain: string): Promise<ReturnType<typeof readSiteBrief> | null> => {
+          if (briefCache.has(domain)) return briefCache.get(domain)!;
+          try {
+            const b = await readSiteBrief(octokit, config.github.repo, domain);
+            briefCache.set(domain, b);
+            return b;
+          } catch {
+            briefCache.set(domain, null);
+            return null;
+          }
+        };
+
+        const db = await getMongoDb();
+        let eventsInserted = 0;
+        let rollupUpserted = 0;
+
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            // Derive status matching recorder.ts logic
+            const created = site.articlesCreated;
+            const failed = site.status === "error" ? (site.articlesRequested - created) : 0;
+            let status: "success" | "partial" | "error" | "no_content";
+            if (site.status === "success") status = "success";
+            else if (site.status === "partial") status = "partial";
+            else if (site.status === "error") status = "error";
+            else status = "no_content";
+
+            const event = {
+              siteDomain: site.domain,
+              source: "scheduler" as const,
+              forced: run.forced,
+              topicName: null,
+              requested: site.articlesRequested,
+              created,
+              failed,
+              status,
+              message: site.message ?? null,
+              startedAt: finishedAt,
+              finishedAt,
+            };
+
+            // Insert event (skip if duplicate by domain+timestamp)
+            try {
+              await db.collection(COLLECTIONS.generationEvents).insertOne(event as any);
+              eventsInserted++;
+            } catch {
+              // duplicate or write error — skip
+            }
+
+            // Resolve schedule from brief
+            let schedule = null;
+            try {
+              const briefData = await getBrief(site.domain);
+              if (briefData) schedule = buildScheduleFromBrief(briefData.brief);
+            } catch { /* no brief */ }
+
+            // Upsert rollup — use $max so the latest timestamp wins
+            const setFields: Record<string, unknown> = {
+              updatedAt: finishedAt,
+            };
+            if (schedule) setFields["schedule"] = schedule;
+
+            await db.collection(COLLECTIONS.siteStats).updateOne(
+              { _id: site.domain as any },
+              {
+                $max: { lastRunAt: finishedAt },
+                $set: setFields,
+                $inc: { totalCreated: created },
+                $setOnInsert: {
+                  lastAddedAt: created > 0 ? finishedAt : null,
+                  lastAddedSource: created > 0 ? "scheduler" : null,
+                  lastAddedCount: created > 0 ? created : null,
+                  lastFailedAt: status === "error" ? finishedAt : null,
+                },
+              },
+              { upsert: true },
+            );
+            rollupUpserted++;
+          }
+        }
+
+        // Also seed schedule for sites NOT in history (from dashboard-index)
+        const indexRaw = await readFile(octokit, config.github.repo, "dashboard-index.yaml");
+        const { parse: parseYaml } = await import("yaml");
+        const dashIndex = parseYaml(indexRaw) as { sites: Array<{ domain: string }> };
+        let scheduleSeedCount = 0;
+
+        for (const entry of dashIndex.sites) {
+          // Skip if already has a rollup doc
+          const exists = await db.collection(COLLECTIONS.siteStats).findOne(
+            { _id: entry.domain as any },
+            { projection: { _id: 1 } },
+          );
+          if (exists) continue;
+
+          let schedule = null;
+          try {
+            const briefData = await getBrief(entry.domain);
+            if (briefData) schedule = buildScheduleFromBrief(briefData.brief);
+          } catch { /* no brief */ }
+
+          if (schedule) {
+            const now = new Date();
+            await db.collection(COLLECTIONS.siteStats).insertOne({
+              _id: entry.domain as any,
+              lastRunAt: now,
+              lastAddedAt: null,
+              lastAddedSource: null,
+              lastAddedCount: null,
+              lastFailedAt: null,
+              totalCreated: 0,
+              schedule,
+              updatedAt: now,
+            } as any);
+            scheduleSeedCount++;
+          }
+        }
+
+        await ensureStatsIndexes();
+
+        return sendJson(res, 200, {
+          ok: true,
+          eventsInserted,
+          rollupUpserted,
+          scheduleSeedCount,
+          historyEntries: history.length,
+        });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err) });
       }
