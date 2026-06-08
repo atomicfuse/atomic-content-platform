@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,6 +76,130 @@ function Spinner(): React.ReactElement {
         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
       />
     </svg>
+  );
+}
+
+/** Searchable site selector dropdown. */
+function SiteCombobox({
+  id,
+  sites,
+  value,
+  onChange,
+  disabled,
+  placeholder,
+  excludeDomain,
+}: {
+  id: string;
+  sites: SiteEntry[];
+  value: string;
+  onChange: (domain: string) => void;
+  disabled?: boolean;
+  placeholder: string;
+  excludeDomain?: string;
+}): React.ReactElement {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent): void {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return (): void => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const available = excludeDomain
+      ? sites.filter((s) => s.domain !== excludeDomain)
+      : sites;
+    if (!query.trim()) return available;
+    const q = query.toLowerCase();
+    return available.filter(
+      (s) =>
+        s.domain.toLowerCase().includes(q) ||
+        s.status.toLowerCase().includes(q) ||
+        (s.custom_domain?.toLowerCase().includes(q) ?? false),
+    );
+  }, [sites, query, excludeDomain]);
+
+  const handleSelect = (domain: string): void => {
+    onChange(domain);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const handleClear = (): void => {
+    onChange("");
+    setQuery("");
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      {/* Selected value display / search input */}
+      {value && !open ? (
+        <div className="flex items-center gap-2 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm">
+          <span className="flex-1 text-[var(--text-primary)] font-medium truncate">
+            {value}
+          </span>
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={disabled}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+            aria-label="Clear selection"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ) : (
+        <input
+          id={id}
+          type="text"
+          value={query}
+          onChange={(e): void => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={(): void => setOpen(true)}
+          disabled={disabled}
+          placeholder={value || placeholder}
+          className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] px-3 py-2 text-sm outline-none focus:border-cyan disabled:opacity-50"
+        />
+      )}
+
+      {/* Dropdown */}
+      {open && !disabled && (
+        <div className="absolute z-50 mt-1 w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-[var(--text-muted)] text-center">
+              No sites match &ldquo;{query}&rdquo;
+            </div>
+          ) : (
+            filtered.map((s) => (
+              <button
+                key={s.domain}
+                type="button"
+                onClick={(): void => handleSelect(s.domain)}
+                className={`w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-surface)] transition-colors flex items-center justify-between gap-2 ${
+                  s.domain === value
+                    ? "bg-cyan/10 text-cyan"
+                    : "text-[var(--text-primary)]"
+                }`}
+              >
+                <span className="truncate font-medium">{s.domain}</span>
+                <span className="text-xs text-[var(--text-muted)] shrink-0">{s.status}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -270,35 +394,14 @@ export default function CopyArticlesPage(): React.ReactElement {
           >
             Source Site
           </label>
-          <div className="relative">
-            <select
-              id="source-select"
-              value={sourceDomain}
-              onChange={(e): void => {
-                setSourceDomain(e.target.value);
-              }}
-              disabled={sitesLoading}
-              className="w-full appearance-none rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)] px-3 py-2 pr-8 text-sm outline-none focus:border-cyan disabled:opacity-50"
-            >
-              <option value="">
-                {sitesLoading ? "Loading sites…" : "Select source site"}
-              </option>
-              {activeSites.map((s) => (
-                <option key={s.domain} value={s.domain}>
-                  {s.domain}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
-          </div>
+          <SiteCombobox
+            id="source-select"
+            sites={activeSites}
+            value={sourceDomain}
+            onChange={(domain): void => setSourceDomain(domain)}
+            disabled={sitesLoading}
+            placeholder={sitesLoading ? "Loading sites…" : "Search source site…"}
+          />
         </div>
 
         {/* Target */}
@@ -309,39 +412,19 @@ export default function CopyArticlesPage(): React.ReactElement {
           >
             Target Site
           </label>
-          <div className="relative">
-            <select
-              id="target-select"
-              value={targetDomain}
-              onChange={(e): void => {
-                setTargetDomain(e.target.value);
-                setCopyResult(null);
-                setCopyError(null);
-              }}
-              disabled={sitesLoading}
-              className="w-full appearance-none rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-[var(--text-primary)] px-3 py-2 pr-8 text-sm outline-none focus:border-cyan disabled:opacity-50"
-            >
-              <option value="">
-                {sitesLoading ? "Loading sites…" : "Select target site"}
-              </option>
-              {activeSites
-                .filter((s) => s.domain !== sourceDomain)
-                .map((s) => (
-                  <option key={s.domain} value={s.domain}>
-                    {s.domain}
-                  </option>
-                ))}
-            </select>
-            <svg
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-            </svg>
-          </div>
+          <SiteCombobox
+            id="target-select"
+            sites={activeSites}
+            value={targetDomain}
+            onChange={(domain): void => {
+              setTargetDomain(domain);
+              setCopyResult(null);
+              setCopyError(null);
+            }}
+            disabled={sitesLoading}
+            placeholder={sitesLoading ? "Loading sites…" : "Search target site…"}
+            excludeDomain={sourceDomain}
+          />
         </div>
       </div>
 
