@@ -33,6 +33,7 @@ const GUIDE_PAGES = [
   { slug: "20-bundles", title: "Content Bundles & Subscriptions" },
   { slug: "20-query-param-overrides", title: "Query-Param Overrides & Template Vars" },
   { slug: "21-per-topic-filters", title: "Per-Topic Filters" },
+  { slug: "22-ops-console-api", title: "Ops Console API" },
 ];
 
 export default function GuidePage(): React.ReactElement {

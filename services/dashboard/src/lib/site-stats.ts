@@ -331,3 +331,80 @@ export function computeNextRun(
 
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Per-site enrichment (shared by /api/site-stats and /api/site-stats/[domain])
+//
+// These live here, NOT in the route files: a Next.js App Router `route.ts` may
+// only export route handlers (GET/POST/…). Exporting helpers/types from a route
+// breaks the production build (`.next/types` enforces an index signature of
+// `never` on extra exports). Keeping them in this lib lets both routes import.
+// ---------------------------------------------------------------------------
+
+/** Schedule shape served by content-pipeline's SiteStatsResponse. */
+export interface ScheduleSnapshot {
+  articlesPerDay: number;
+  preferredDays: string[];
+  weeklyTarget: number;
+}
+
+/** One raw site from the content-pipeline /site-stats proxy. */
+export interface SiteStatsResponse {
+  siteDomain: string;
+  schedule: ScheduleSnapshot | null;
+  lastAdded: {
+    at: string | null;
+    source: string | null;
+    count: number | null;
+  };
+  lastFailedAt: string | null;
+  thisWeek: { created: number; expected: number };
+  failedArticles: { last7d: number; last30d: number };
+  imageGenFailed: { last7d: number; last30d: number };
+}
+
+/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun. */
+export interface EnrichedSiteStats extends SiteStatsResponse {
+  recentArticles: RecentArticle[];
+  reviewCount: number;
+  generalImages: number;
+  schedule: (ScheduleSnapshot & { nextRun: Date | null }) | null;
+}
+
+/** Default/empty stats for a site that the pipeline never reported on. */
+export function emptyStats(siteDomain: string): SiteStatsResponse {
+  return {
+    siteDomain,
+    schedule: null,
+    lastAdded: { at: null, source: null, count: null },
+    lastFailedAt: null,
+    thisWeek: { created: 0, expected: 0 },
+    failedArticles: { last7d: 0, last30d: 0 },
+    imageGenFailed: { last7d: 0, last30d: 0 },
+  };
+}
+
+/**
+ * Enrich one site: add recentArticles + reviewCount + generalImages +
+ * schedule.nextRun. The three article-derived fields come from a SINGLE article
+ * fetch via `articleAggregates`.
+ */
+export async function enrichSite(
+  site: SiteStatsResponse,
+  gate: SchedulerGate,
+  now: Date,
+): Promise<EnrichedSiteStats> {
+  const { recentArticles, reviewCount, generalImages } = await articleAggregates(
+    site.siteDomain,
+    `staging/${site.siteDomain}`,
+  );
+
+  const schedule = site.schedule
+    ? {
+        ...site.schedule,
+        nextRun: computeNextRun(gate, site.schedule.preferredDays, now),
+      }
+    : null;
+
+  return { ...site, recentArticles, reviewCount, generalImages, schedule };
+}
