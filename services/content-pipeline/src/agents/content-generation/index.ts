@@ -914,8 +914,13 @@ async function handleRequest(
     if (req.method === "POST" && pathname === "/backfill-history") {
       try {
         const octokit = createOctokit(config.github);
-        const raw = await readFile(octokit, config.github.repo, "scheduler/history.json");
-        const history = JSON.parse(raw) as Array<{
+
+        // 1. Read history + dashboard-index in parallel (2 Git calls)
+        const [historyRaw, indexRaw] = await Promise.all([
+          readFile(octokit, config.github.repo, "scheduler/history.json"),
+          readFile(octokit, config.github.repo, "dashboard-index.yaml"),
+        ]);
+        const history = JSON.parse(historyRaw) as Array<{
           timestamp: string;
           forced: boolean;
           sites: Array<{
@@ -926,29 +931,34 @@ async function handleRequest(
             message?: string;
           }>;
         }>;
+        const { parse: parseYaml } = await import("yaml");
+        const dashIndex = parseYaml(indexRaw) as { sites: Array<{ domain: string }> };
 
-        // Read all briefs for schedule data (from main)
-        const briefCache = new Map<string, Awaited<ReturnType<typeof readSiteBrief>> | null>();
-        const getBrief = async (domain: string): Promise<ReturnType<typeof readSiteBrief> | null> => {
-          if (briefCache.has(domain)) return briefCache.get(domain)!;
-          try {
-            const b = await readSiteBrief(octokit, config.github.repo, domain);
-            briefCache.set(domain, b);
-            return b;
-          } catch {
-            briefCache.set(domain, null);
-            return null;
-          }
-        };
+        // 2. Collect all unique domains, then read briefs in parallel (concurrency 10)
+        const allDomains = new Set<string>();
+        for (const run of history) for (const s of run.sites) allDomains.add(s.domain);
+        for (const entry of dashIndex.sites) allDomains.add(entry.domain);
 
-        const db = await getMongoDb();
-        let eventsInserted = 0;
-        let rollupUpserted = 0;
+        const briefSchedules = new Map<string, ReturnType<typeof buildScheduleFromBrief>>();
+        const domainArr = [...allDomains];
+        const CONCURRENCY = 10;
+        for (let i = 0; i < domainArr.length; i += CONCURRENCY) {
+          const batch = domainArr.slice(i, i + CONCURRENCY);
+          await Promise.all(batch.map(async (domain) => {
+            try {
+              const b = await readSiteBrief(octokit, config.github.repo, domain);
+              briefSchedules.set(domain, buildScheduleFromBrief(b.brief));
+            } catch {
+              briefSchedules.set(domain, null);
+            }
+          }));
+        }
 
+        // 3. Build all event docs in memory
+        const events: Record<string, unknown>[] = [];
         for (const run of history) {
           const finishedAt = new Date(run.timestamp);
           for (const site of run.sites) {
-            // Derive status matching recorder.ts logic
             const created = site.articlesCreated;
             const failed = site.status === "error" ? (site.articlesRequested - created) : 0;
             let status: "success" | "partial" | "error" | "no_content";
@@ -957,9 +967,9 @@ async function handleRequest(
             else if (site.status === "error") status = "error";
             else status = "no_content";
 
-            const event = {
+            events.push({
               siteDomain: site.domain,
-              source: "scheduler" as const,
+              source: "scheduler",
               forced: run.forced,
               topicName: null,
               requested: site.articlesRequested,
@@ -969,83 +979,69 @@ async function handleRequest(
               message: site.message ?? null,
               startedAt: finishedAt,
               finishedAt,
-            };
-
-            // Insert event (skip if duplicate by domain+timestamp)
-            try {
-              await db.collection(COLLECTIONS.generationEvents).insertOne(event as any);
-              eventsInserted++;
-            } catch {
-              // duplicate or write error — skip
-            }
-
-            // Resolve schedule from brief
-            let schedule = null;
-            try {
-              const briefData = await getBrief(site.domain);
-              if (briefData) schedule = buildScheduleFromBrief(briefData.brief);
-            } catch { /* no brief */ }
-
-            // Upsert rollup — use $max so the latest timestamp wins
-            const setFields: Record<string, unknown> = {
-              updatedAt: finishedAt,
-            };
-            if (schedule) setFields["schedule"] = schedule;
-
-            await db.collection(COLLECTIONS.siteStats).updateOne(
-              { _id: site.domain as any },
-              {
-                $max: { lastRunAt: finishedAt },
-                $set: setFields,
-                $inc: { totalCreated: created },
-                $setOnInsert: {
-                  lastAddedAt: created > 0 ? finishedAt : null,
-                  lastAddedSource: created > 0 ? "scheduler" : null,
-                  lastAddedCount: created > 0 ? created : null,
-                  lastFailedAt: status === "error" ? finishedAt : null,
-                },
-              },
-              { upsert: true },
-            );
-            rollupUpserted++;
+            });
           }
         }
 
-        // Also seed schedule for sites NOT in history (from dashboard-index)
-        const indexRaw = await readFile(octokit, config.github.repo, "dashboard-index.yaml");
-        const { parse: parseYaml } = await import("yaml");
-        const dashIndex = parseYaml(indexRaw) as { sites: Array<{ domain: string }> };
-        let scheduleSeedCount = 0;
+        // 4. Bulk-insert events
+        const db = await getMongoDb();
+        let eventsInserted = 0;
+        if (events.length > 0) {
+          const result = await db.collection(COLLECTIONS.generationEvents)
+            .insertMany(events as any[], { ordered: false })
+            .catch((err: any) => ({ insertedCount: err.insertedCount ?? 0 }));
+          eventsInserted = (result as any).insertedCount ?? 0;
+        }
 
-        for (const entry of dashIndex.sites) {
-          // Skip if already has a rollup doc
-          const exists = await db.collection(COLLECTIONS.siteStats).findOne(
-            { _id: entry.domain as any },
-            { projection: { _id: 1 } },
-          );
-          if (exists) continue;
-
-          let schedule = null;
-          try {
-            const briefData = await getBrief(entry.domain);
-            if (briefData) schedule = buildScheduleFromBrief(briefData.brief);
-          } catch { /* no brief */ }
-
-          if (schedule) {
-            const now = new Date();
-            await db.collection(COLLECTIONS.siteStats).insertOne({
-              _id: entry.domain as any,
-              lastRunAt: now,
-              lastAddedAt: null,
-              lastAddedSource: null,
-              lastAddedCount: null,
-              lastFailedAt: null,
-              totalCreated: 0,
-              schedule,
-              updatedAt: now,
-            } as any);
-            scheduleSeedCount++;
+        // 5. Upsert site_stats rollups — one per domain (sequential, fast against Mongo)
+        let rollupUpserted = 0;
+        // Aggregate last successful run per domain from history
+        const lastRun = new Map<string, { at: Date; created: number; total: number }>();
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            const prev = lastRun.get(site.domain);
+            const total = (prev?.total ?? 0) + site.articlesCreated;
+            if (!prev || finishedAt > prev.at) {
+              lastRun.set(site.domain, { at: finishedAt, created: site.articlesCreated, total });
+            } else {
+              lastRun.set(site.domain, { ...prev, total });
+            }
           }
+        }
+
+        for (const domain of allDomains) {
+          const schedule = briefSchedules.get(domain) ?? null;
+          const run = lastRun.get(domain);
+          const now = new Date();
+
+          await db.collection(COLLECTIONS.siteStats).updateOne(
+            { _id: domain as any },
+            {
+              $set: {
+                schedule,
+                updatedAt: now,
+                ...(run ? { lastRunAt: run.at } : {}),
+                ...(run && run.created > 0 ? {
+                  lastAddedAt: run.at,
+                  lastAddedSource: "scheduler",
+                  lastAddedCount: run.created,
+                } : {}),
+              },
+              $setOnInsert: {
+                ...(run ? {} : { lastRunAt: now }),
+                lastFailedAt: null,
+                totalCreated: run?.total ?? 0,
+                ...(!run || run.created === 0 ? {
+                  lastAddedAt: null,
+                  lastAddedSource: null,
+                  lastAddedCount: null,
+                } : {}),
+              },
+            },
+            { upsert: true },
+          );
+          rollupUpserted++;
         }
 
         await ensureStatsIndexes();
@@ -1054,7 +1050,7 @@ async function handleRequest(
           ok: true,
           eventsInserted,
           rollupUpserted,
-          scheduleSeedCount,
+          totalDomains: allDomains.size,
           historyEntries: history.length,
         });
       } catch (err) {
