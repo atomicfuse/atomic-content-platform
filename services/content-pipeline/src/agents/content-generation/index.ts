@@ -56,7 +56,7 @@ import { readSiteBrief } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
-import { getR2Usage } from "../../stats/r2-tally.js";
+import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -813,6 +813,21 @@ async function handleRequest(
         return sendJson(res, 200, { status: "ok", ...usage });
       } catch (err) {
         return sendJson(res, 503, { status: "error", error: String(err) });
+      }
+    }
+  }
+
+  // POST /r2-tally-increment
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/r2-tally-increment") {
+      try {
+        const body = await readBody(req);
+        const { bytes, count } = JSON.parse(body) as { bytes?: unknown; count?: unknown };
+        await incrementR2Tally(Number(bytes) || 0, Number(count) || 0);
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
       }
     }
   }

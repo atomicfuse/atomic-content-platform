@@ -12,6 +12,16 @@ import {
   buildImageFrontmatterPath,
 } from "@/lib/article-upload";
 
+const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
+const isLocalDev = process.env.NODE_ENV === "development";
+
+function getAgentUrl(): string {
+  if (isLocalDev && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
+    return "http://localhost:5000";
+  }
+  return CONTENT_AGENT_URL;
+}
+
 /** Allowed image MIME types and their extensions. */
 const IMAGE_TYPES: Record<string, string> = {
   "image/png": "png",
@@ -123,6 +133,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const uploaded = await uploadToR2(r2Key, optimized, "image/webp", domain);
       if (uploaded) {
         imagePath = buildImageFrontmatterPath(slug, "webp");
+        // Increment R2 tally (fire-and-forget)
+        fetch(`${getAgentUrl()}/r2-tally-increment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bytes: optimized.length, count: 1 }),
+        }).catch(() => {/* non-blocking */});
       }
       // If R2 upload fails, continue without image (non-blocking)
     }

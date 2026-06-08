@@ -23,6 +23,7 @@ import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
 import { recordImageGenEvent } from "../../stats/recorder.js";
 import { recordImageUsage } from "../../costs/recorder.js";
+import { incrementR2Tally } from "../../stats/r2-tally.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -602,6 +603,11 @@ export async function processN8nImageResult(
     throw new Error(`R2 upload failed for ${r2Key} — image not persisted`);
   }
   console.log(`${tag} R2 upload OK → ${r2Key}`);
+
+  // Increment R2 usage tally (fire-and-forget, non-blocking)
+  incrementR2Tally(optimized.length, 1).catch((err) =>
+    console.warn("[r2-tally] increment failed:", err),
+  );
 
   // 3. Read article, update frontmatter, commit (or buffer for bulk mode).
   const octokit = createOctokit(github);
