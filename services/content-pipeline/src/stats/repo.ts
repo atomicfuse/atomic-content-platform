@@ -1,6 +1,7 @@
 import { getMongoDb } from "../lib/mongo.js";
 import { COLLECTIONS } from "./types.js";
 import type { ScheduleSnapshot, GenerationSource } from "./types.js";
+import { countTodayCreated } from "./daily.js";
 
 export interface SiteStatsResponse {
   siteDomain: string;
@@ -10,6 +11,7 @@ export interface SiteStatsResponse {
   thisWeek: { created: number; expected: number };   // expected = schedule?.weeklyTarget ?? 0
   failedArticles: { last7d: number; last30d: number };
   imageGenFailed: { last7d: number; last30d: number };
+  today?: { created: number };
 }
 
 /**
@@ -103,12 +105,14 @@ export async function getSiteStats(domain: string, now: Date): Promise<SiteStats
     failed30d,
     imgFailed7d,
     imgFailed30d,
+    todayCreated,
   ] = await Promise.all([
     sumField(domain, "created", weekStart),
     sumField(domain, "failed", cutoff7d),
     sumField(domain, "failed", cutoff30d),
     countFailedImages(domain, cutoff7d),
     countFailedImages(domain, cutoff30d),
+    countTodayCreated(domain, now),
   ]);
 
   return {
@@ -126,6 +130,7 @@ export async function getSiteStats(domain: string, now: Date): Promise<SiteStats
     },
     failedArticles: { last7d: failed7d, last30d: failed30d },
     imageGenFailed: { last7d: imgFailed7d, last30d: imgFailed30d },
+    today: { created: todayCreated },
   };
 }
 
