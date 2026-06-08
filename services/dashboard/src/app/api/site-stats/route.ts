@@ -43,6 +43,7 @@ export async function GET(): Promise<NextResponse> {
   try {
     const res = await fetch(`${agentUrl}/site-stats`, {
       headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5_000),
     });
     if (res.ok) {
       const body = (await res.json()) as { sites?: SiteStatsResponse[] };
@@ -50,7 +51,7 @@ export async function GET(): Promise<NextResponse> {
     }
     // Non-ok → sites stays empty; dashboard-index merge + enrichment still run.
   } catch {
-    // Pipeline unreachable — proceed with empty stats, enrichment fills in the rest.
+    // Pipeline unreachable or timed out — proceed with enrichment from Git/KV.
   }
 
   // Merge in sites that the pipeline never reported on so they still appear.

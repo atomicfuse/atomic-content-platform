@@ -532,12 +532,11 @@ export async function preloadBriefs(
 }
 
 /**
- * Enrich one site: add recentArticles + reviewCount + generalImages +
- * schedule.nextRun + today.expected. The three article-derived fields come from
- * a SINGLE article fetch via `articleAggregates`.
+ * Enrich one site: add schedule + article aggregates.
  *
- * Schedule resolution: pipeline (MongoDB) → pre-loaded brief → null.
- * Article reads use `main` branch (shared cached tree) with KV-first path.
+ * Schedule is computed first (instant, from pre-loaded brief, no IO). Article
+ * aggregates (KV → Git) are wrapped in a 5s per-site timeout so one slow
+ * site doesn't block the entire batch.
  */
 export async function enrichSite(
   site: SiteStatsResponse,
@@ -545,16 +544,7 @@ export async function enrichSite(
   now: Date,
   preloadedBrief?: Record<string, unknown> | null,
 ): Promise<EnrichedSiteStats> {
-  // Article aggregates: KV first (no Git tree needed), Git fallback uses main
-  // (cached tree). Much faster than per-site staging branch reads.
-  const { recentArticles, reviewCount, generalImages } = await articleAggregates(
-    site.siteDomain,
-    "main",
-  );
-
-  // Resolve schedule: prefer pipeline (MongoDB), fall back to pre-loaded brief.
-  // The brief fallback handles both scheduling models: per-topic (topics_v2)
-  // and legacy (brief.schedule).
+  // ---- Schedule (instant, no IO) ----
   let rawSchedule = site.schedule;
   if (!rawSchedule && preloadedBrief) {
     rawSchedule = buildScheduleFromBrief(preloadedBrief);
@@ -574,6 +564,22 @@ export async function enrichSite(
         now,
       )
     : 0;
+
+  // ---- Article aggregates (IO, with per-site timeout) ----
+  let recentArticles: RecentArticle[] = [];
+  let reviewCount = 0;
+  let generalImages = 0;
+  try {
+    const result = await Promise.race([
+      articleAggregates(site.siteDomain, "main"),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+    ]);
+    if (result) {
+      ({ recentArticles, reviewCount, generalImages } = result);
+    }
+  } catch {
+    // keep defaults (empty articles, zero counts)
+  }
 
   return {
     ...site,
