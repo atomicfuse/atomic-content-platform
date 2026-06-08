@@ -24,6 +24,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true }
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { recordGeneration } from "../../stats/recorder.js";
+import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -39,7 +40,8 @@ import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
 import { parseSiteStatsPath } from "../../stats/route-path.js";
 import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
-import { ensureStatsIndexes, ensureCostIndexes } from "../../lib/mongo.js";
+import { ensureStatsIndexes, ensureCostIndexes, getMongoDb } from "../../lib/mongo.js";
+import { COLLECTIONS } from "../../stats/types.js";
 import { getSiteCosts, getAllSiteCosts } from "../../costs/repo.js";
 import {
   type BulkImageRequest,
@@ -56,6 +58,7 @@ import { readSiteBrief } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
+import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -699,6 +702,10 @@ async function handleRequest(
   }
 
   // Site stats — GET /site-stats (all) or GET /site-stats/:domain (one)
+  //
+  // Enriches sites with null schedule from site briefs (handles both per-topic
+  // and legacy schedule models). This ensures the API always returns schedule
+  // data when the brief has it, even if MongoDB lacks a snapshot.
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method === "GET") {
@@ -706,9 +713,11 @@ async function handleRequest(
       if (ss) {
         try {
           if (ss.kind === "all") {
-            sendJson(res, 200, { status: "ok", sites: await getAllSiteStats(new Date()) });
+            const sites = await getAllSiteStats(new Date());
+            sendJson(res, 200, { status: "ok", sites });
           } else {
-            sendJson(res, 200, { status: "ok", site: await getSiteStats(ss.domain, new Date()) });
+            const site = await getSiteStats(ss.domain, new Date());
+            sendJson(res, 200, { status: "ok", site });
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -803,6 +812,228 @@ async function handleRequest(
     }
   }
 
+  // GET /r2-usage
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/r2-usage") {
+      try {
+        const usage = await getR2Usage();
+        return sendJson(res, 200, { status: "ok", ...usage });
+      } catch (err) {
+        return sendJson(res, 503, { status: "error", error: String(err) });
+      }
+    }
+  }
+
+  // POST /r2-tally-increment
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/r2-tally-increment") {
+      try {
+        const body = await readBody(req);
+        const { bytes, count } = JSON.parse(body) as { bytes?: unknown; count?: unknown };
+        await incrementR2Tally(Number(bytes) || 0, Number(count) || 0);
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /seed-kv — trigger KV re-seed via GitHub Actions workflow_dispatch
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/seed-kv") {
+      try {
+        const body = await readBody(req);
+        const { domain } = JSON.parse(body) as { domain?: string };
+        if (!domain) {
+          return sendJson(res, 400, { ok: false, error: "Missing domain" });
+        }
+        // Trigger the sync-kv.yml workflow in the network repo via GitHub API
+        const token = process.env.GITHUB_TOKEN;
+        if (!token) {
+          return sendJson(res, 500, { ok: false, error: "GITHUB_TOKEN not configured" });
+        }
+        const owner = "atomicfuse";
+        const repo = "atomic-labs-network";
+        const resp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync-kv.yml/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ref: "main",
+              inputs: { site_id: domain, force_all: "false" },
+            }),
+          },
+        );
+        if (!resp.ok) {
+          const errText = await resp.text();
+          return sendJson(res, 502, { ok: false, error: `GitHub API ${resp.status}: ${errText}` });
+        }
+        return sendJson(res, 200, { ok: true, message: `Triggered sync-kv for ${domain}` });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /backfill-history — one-time import of scheduler/history.json into MongoDB
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-history") {
+      try {
+        const octokit = createOctokit(config.github);
+
+        // 1. Read history + dashboard-index in parallel (2 Git calls)
+        const [historyRaw, indexRaw] = await Promise.all([
+          readFile(octokit, config.github.repo, "scheduler/history.json"),
+          readFile(octokit, config.github.repo, "dashboard-index.yaml"),
+        ]);
+        const history = JSON.parse(historyRaw) as Array<{
+          timestamp: string;
+          forced: boolean;
+          sites: Array<{
+            domain: string;
+            status: string;
+            articlesCreated: number;
+            articlesRequested: number;
+            message?: string;
+          }>;
+        }>;
+        const { parse: parseYaml } = await import("yaml");
+        const dashIndex = parseYaml(indexRaw) as { sites: Array<{ domain: string }> };
+
+        // 2. Collect all unique domains, then read briefs in parallel (concurrency 10)
+        const allDomains = new Set<string>();
+        for (const run of history) for (const s of run.sites) allDomains.add(s.domain);
+        for (const entry of dashIndex.sites) allDomains.add(entry.domain);
+
+        const briefSchedules = new Map<string, ReturnType<typeof buildScheduleFromBrief>>();
+        const domainArr = [...allDomains];
+        const CONCURRENCY = 10;
+        for (let i = 0; i < domainArr.length; i += CONCURRENCY) {
+          const batch = domainArr.slice(i, i + CONCURRENCY);
+          await Promise.all(batch.map(async (domain) => {
+            try {
+              const b = await readSiteBrief(octokit, config.github.repo, domain);
+              briefSchedules.set(domain, buildScheduleFromBrief(b.brief));
+            } catch {
+              briefSchedules.set(domain, null);
+            }
+          }));
+        }
+
+        // 3. Build all event docs in memory
+        const events: Record<string, unknown>[] = [];
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            const created = site.articlesCreated;
+            const failed = site.status === "error" ? (site.articlesRequested - created) : 0;
+            let status: "success" | "partial" | "error" | "no_content";
+            if (site.status === "success") status = "success";
+            else if (site.status === "partial") status = "partial";
+            else if (site.status === "error") status = "error";
+            else status = "no_content";
+
+            events.push({
+              siteDomain: site.domain,
+              source: "scheduler",
+              forced: run.forced,
+              topicName: null,
+              requested: site.articlesRequested,
+              created,
+              failed,
+              status,
+              message: site.message ?? null,
+              startedAt: finishedAt,
+              finishedAt,
+            });
+          }
+        }
+
+        // 4. Bulk-insert events
+        const db = await getMongoDb();
+        let eventsInserted = 0;
+        if (events.length > 0) {
+          const result = await db.collection(COLLECTIONS.generationEvents)
+            .insertMany(events as any[], { ordered: false })
+            .catch((err: any) => ({ insertedCount: err.insertedCount ?? 0 }));
+          eventsInserted = (result as any).insertedCount ?? 0;
+        }
+
+        // 5. Upsert site_stats rollups — one per domain (sequential, fast against Mongo)
+        let rollupUpserted = 0;
+        // Aggregate last successful run per domain from history
+        const lastRun = new Map<string, { at: Date; created: number; total: number }>();
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            const prev = lastRun.get(site.domain);
+            const total = (prev?.total ?? 0) + site.articlesCreated;
+            if (!prev || finishedAt > prev.at) {
+              lastRun.set(site.domain, { at: finishedAt, created: site.articlesCreated, total });
+            } else {
+              lastRun.set(site.domain, { ...prev, total });
+            }
+          }
+        }
+
+        for (const domain of allDomains) {
+          const schedule = briefSchedules.get(domain) ?? null;
+          const run = lastRun.get(domain);
+          const now = new Date();
+
+          await db.collection(COLLECTIONS.siteStats).updateOne(
+            { _id: domain as any },
+            {
+              $set: {
+                schedule,
+                updatedAt: now,
+                ...(run ? { lastRunAt: run.at } : {}),
+                ...(run && run.created > 0 ? {
+                  lastAddedAt: run.at,
+                  lastAddedSource: "scheduler",
+                  lastAddedCount: run.created,
+                } : {}),
+              },
+              $setOnInsert: {
+                ...(run ? {} : { lastRunAt: now }),
+                lastFailedAt: null,
+                totalCreated: run?.total ?? 0,
+                ...(!run || run.created === 0 ? {
+                  lastAddedAt: null,
+                  lastAddedSource: null,
+                  lastAddedCount: null,
+                } : {}),
+              },
+            },
+            { upsert: true },
+          );
+          rollupUpserted++;
+        }
+
+        await ensureStatsIndexes();
+
+        return sendJson(res, 200, {
+          ok: true,
+          eventsInserted,
+          rollupUpserted,
+          totalDomains: allDomains.size,
+          historyEntries: history.length,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
@@ -871,6 +1102,21 @@ async function handleRequest(
       config,
     );
     const finishedAt = new Date();
+
+    // Read the brief's schedule so MongoDB stays populated even for
+    // dashboard-triggered generation (previously passed null).
+    // Uses buildScheduleFromBrief which handles both per-topic (topics_v2)
+    // and legacy (brief.schedule) models.
+    let schedule: ReturnType<typeof buildScheduleFromBrief> = null;
+    try {
+      const octokit = createOctokit(config.github);
+      const briefBranch = branchStr ?? `staging/${siteDomain}`;
+      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, briefBranch);
+      schedule = buildScheduleFromBrief(briefData.brief);
+    } catch {
+      // Brief read failed — record with null schedule (non-fatal)
+    }
+
     await recordGeneration(
       result,
       {
@@ -880,7 +1126,7 @@ async function handleRequest(
         startedAt,
         finishedAt,
       },
-      null,
+      schedule,
     );
 
     // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;

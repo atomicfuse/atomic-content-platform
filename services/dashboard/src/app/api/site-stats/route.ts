@@ -1,12 +1,18 @@
 // services/dashboard/src/app/api/site-stats/route.ts
+//
+// Primary data source: MongoDB via content-pipeline /site-stats.
+// Git reads (dashboard-index, scheduler config) are best-effort with strict
+// timeouts so the route works even when GitHub is rate-limited or unavailable.
 import { NextResponse } from "next/server";
 
 import { readDashboardIndex } from "@/lib/github";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
-  enrichSite,
+  computeNextRun,
+  computeTodayExpected,
   emptyStats,
-  mapWithConcurrency,
+  type EnrichedSiteStats,
+  type SchedulerGate,
   type SiteStatsResponse,
 } from "@/lib/site-stats";
 
@@ -22,70 +28,102 @@ function getAgentUrl(): string {
   return CONTENT_AGENT_URL;
 }
 
+/** Default scheduler gate — matches the content-pipeline defaults. */
+const DEFAULT_GATE: SchedulerGate = {
+  enabled: true,
+  run_at_hours: [14],
+  timezone: "America/New_York",
+};
+
+/** Race a promise against a timeout. Returns fallback on timeout/error. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * GET /api/site-stats
  *
- * Proxies content-pipeline `GET /site-stats`, merges in every site from
- * dashboard-index.yaml (so never-generated sites still appear with empty
- * stats), and enriches each site with recentArticles + schedule.nextRun.
+ * Proxies content-pipeline `GET /site-stats` (MongoDB), then best-effort
+ * merges dashboard-index (Git) and computes schedule.nextRun.
  *
- * Public route — the dashboard middleware excludes `/api/` from auth, which is
- * acceptable here (the ops console serves external consumers too).
+ * All Git reads have strict timeouts — if GitHub is rate-limited the route
+ * still returns in <6s with MongoDB data alone.
  */
 export async function GET(): Promise<NextResponse> {
   const agentUrl = getAgentUrl();
 
-  let sites: SiteStatsResponse[];
-  try {
-    const res = await fetch(`${agentUrl}/site-stats`, {
-      headers: { Accept: "application/json" },
-    });
-    if (!res.ok) {
-      return NextResponse.json(
-        {
-          status: "error",
-          message: `Content agent returned HTTP ${res.status} for /site-stats.`,
-        },
-        { status: 502 },
-      );
-    }
-    const body = (await res.json()) as { sites?: SiteStatsResponse[] };
-    sites = Array.isArray(body.sites) ? body.sites : [];
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to reach content agent";
-    return NextResponse.json(
-      {
-        status: "error",
-        message: `Content agent unavailable: ${message}. Is the agent running?`,
-      },
-      { status: 502 },
-    );
-  }
+  // All three data sources fetched in parallel — worst case 5s (not 10s).
+  const [pipelineResult, index, gate] = await Promise.all([
+    // 1. Primary: MongoDB stats via content-pipeline (5s timeout)
+    (async (): Promise<SiteStatsResponse[]> => {
+      try {
+        const res = await fetch(`${agentUrl}/site-stats`, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { sites?: SiteStatsResponse[] };
+          return Array.isArray(body.sites) ? body.sites : [];
+        }
+      } catch {
+        // Pipeline unreachable
+      }
+      return [];
+    })(),
+    // 2. Best-effort: dashboard-index (3s timeout)
+    withTimeout(readDashboardIndex().catch(() => null), 3_000, null),
+    // 3. Best-effort: scheduler gate (2s timeout)
+    withTimeout(readSchedulerConfig().catch(() => DEFAULT_GATE), 2_000, DEFAULT_GATE),
+  ]);
 
-  // Merge in sites that the pipeline never reported on so they still appear.
   const byDomain = new Map<string, SiteStatsResponse>(
-    sites.map((s) => [s.siteDomain, s]),
+    pipelineResult.map((s) => [s.siteDomain, s]),
   );
-  try {
-    const index = await readDashboardIndex();
+  if (index) {
     for (const entry of index.sites) {
       if (!byDomain.has(entry.domain)) {
         byDomain.set(entry.domain, emptyStats(entry.domain));
       }
     }
-  } catch {
-    // If the index can't be read, fall back to just the proxied sites.
   }
 
-  const gate = await readSchedulerConfig();
+  // 4. Pure enrichment: schedule.nextRun + today.expected (no IO)
   const now = new Date();
-
-  const enriched = await mapWithConcurrency(
-    [...byDomain.values()],
-    5,
-    (site) => enrichSite(site, gate, now),
-  );
+  const enriched: EnrichedSiteStats[] = [...byDomain.values()].map((site) => {
+    const rawSchedule = site.schedule;
+    const schedule = rawSchedule
+      ? {
+          ...rawSchedule,
+          nextRun: computeNextRun(gate, rawSchedule.preferredDays, now),
+        }
+      : null;
+    const todayExpected = rawSchedule
+      ? computeTodayExpected(
+          rawSchedule.articlesPerDay,
+          rawSchedule.preferredDays,
+          now,
+        )
+      : 0;
+    return {
+      ...site,
+      recentArticles: [],
+      reviewCount: 0,
+      generalImages: 0,
+      schedule,
+      today: { created: site.today?.created ?? 0, expected: todayExpected },
+    };
+  });
 
   return NextResponse.json({ sites: enriched });
 }

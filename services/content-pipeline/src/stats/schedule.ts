@@ -5,7 +5,7 @@
  * (Intl only for timezone math).
  */
 
-import type { PublishSchedule } from "../types.js";
+import type { PublishSchedule, SiteBrief, TopicV2 } from "../types.js";
 import type { ScheduleSnapshot } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,60 @@ export function buildScheduleSnapshot(
     preferredDays: days,
     weeklyTarget,
   };
+}
+
+// Day ordering for sorted display
+const DAY_ORDER: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
+};
+
+/**
+ * Aggregate per-topic schedules (topics_v2 model) into a single snapshot.
+ *
+ * Each topic has its own `articles_per_week` + `preferred_days`. We aggregate:
+ *   - preferredDays: union of all topics' days, sorted by weekday order
+ *   - weeklyTarget: sum of all topics' articles_per_week
+ *   - articlesPerDay: ceil(weeklyTarget / number of unique preferred days)
+ */
+function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
+  const allDays = new Set<string>();
+  let totalWeekly = 0;
+
+  for (const topic of topics) {
+    if (!topic.schedule) continue;
+    totalWeekly += topic.schedule.articles_per_week ?? 0;
+    for (const d of topic.schedule.preferred_days) allDays.add(d);
+  }
+
+  if (totalWeekly <= 0 || allDays.size === 0) return null;
+
+  const preferredDays = [...allDays].sort(
+    (a, b) => (DAY_ORDER[a] ?? 99) - (DAY_ORDER[b] ?? 99),
+  );
+  const articlesPerDay = Math.ceil(totalWeekly / preferredDays.length);
+  return { articlesPerDay, preferredDays, weeklyTarget: totalWeekly };
+}
+
+/**
+ * Build a ScheduleSnapshot from the full site brief. Handles both models:
+ *   1. Per-topic (topics_v2): aggregates each topic's schedule
+ *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
+ *
+ * Per-topic takes priority when present.
+ */
+export function buildScheduleFromBrief(brief: SiteBrief): ScheduleSnapshot;
+export function buildScheduleFromBrief(brief: SiteBrief | undefined | null): ScheduleSnapshot | null;
+export function buildScheduleFromBrief(
+  brief: SiteBrief | undefined | null,
+): ScheduleSnapshot | null {
+  if (!brief) return null;
+
+  if (Array.isArray(brief.topics_v2) && brief.topics_v2.length > 0) {
+    return scheduleFromTopics(brief.topics_v2);
+  }
+
+  return buildScheduleSnapshot(brief.schedule);
 }
 
 // ---------------------------------------------------------------------------

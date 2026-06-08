@@ -37,7 +37,7 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-import { readArticles } from "@/lib/github";
+import { readArticles, readSiteConfig } from "@/lib/github";
 import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import type { ArticleEntry } from "@/types/dashboard";
 
@@ -333,6 +333,24 @@ export function computeNextRun(
 }
 
 // ---------------------------------------------------------------------------
+// computeTodayExpected
+// ---------------------------------------------------------------------------
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * Returns articlesPerDay if today (UTC) is one of the preferredDays, else 0.
+ */
+export function computeTodayExpected(
+  articlesPerDay: number,
+  preferredDays: string[],
+  now: Date,
+): number {
+  const todayName = DAY_NAMES[now.getUTCDay()];
+  return preferredDays.includes(todayName) ? articlesPerDay : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Per-site enrichment (shared by /api/site-stats and /api/site-stats/[domain])
 //
 // These live here, NOT in the route files: a Next.js App Router `route.ts` may
@@ -359,16 +377,18 @@ export interface SiteStatsResponse {
   };
   lastFailedAt: string | null;
   thisWeek: { created: number; expected: number };
+  today?: { created: number };
   failedArticles: { last7d: number; last30d: number };
   imageGenFailed: { last7d: number; last30d: number };
 }
 
-/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun. */
+/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun + today.expected. */
 export interface EnrichedSiteStats extends SiteStatsResponse {
   recentArticles: RecentArticle[];
   reviewCount: number;
   generalImages: number;
   schedule: (ScheduleSnapshot & { nextRun: Date | null }) | null;
+  today: { created: number; expected: number };
 }
 
 /** Default/empty stats for a site that the pipeline never reported on. */
@@ -379,32 +399,194 @@ export function emptyStats(siteDomain: string): SiteStatsResponse {
     lastAdded: { at: null, source: null, count: null },
     lastFailedAt: null,
     thisWeek: { created: 0, expected: 0 },
+    today: { created: 0 },
     failedArticles: { last7d: 0, last30d: 0 },
     imageGenFailed: { last7d: 0, last30d: 0 },
   };
 }
 
+// Day ordering for consistent display
+const DAY_ORDER: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
+};
+
 /**
- * Enrich one site: add recentArticles + reviewCount + generalImages +
- * schedule.nextRun. The three article-derived fields come from a SINGLE article
- * fetch via `articleAggregates`.
+ * Build a ScheduleSnapshot from a site-level brief.schedule (legacy model).
+ *
+ * Replicates the content-pipeline's `buildScheduleSnapshot` logic.
+ * Keep in sync with services/content-pipeline/src/stats/schedule.ts.
+ */
+function scheduleFromSiteLevel(
+  raw: Record<string, unknown>,
+): ScheduleSnapshot | null {
+  const preferredDays = Array.isArray(raw.preferred_days)
+    ? (raw.preferred_days as string[])
+    : [];
+
+  let articlesPerDay: number;
+  if (typeof raw.articles_per_day === "number" && raw.articles_per_day > 0) {
+    articlesPerDay = raw.articles_per_day;
+  } else {
+    const perWeek =
+      typeof raw.articles_per_week === "number" ? raw.articles_per_week : 0;
+    if (perWeek <= 0) {
+      articlesPerDay = 0;
+    } else {
+      const daysCount = preferredDays.length || 7;
+      articlesPerDay = Math.max(1, Math.ceil(perWeek / daysCount));
+    }
+  }
+
+  const weeklyTarget = articlesPerDay * preferredDays.length;
+  return { articlesPerDay, preferredDays, weeklyTarget };
+}
+
+/**
+ * Aggregate per-topic schedules (topics_v2 model) into a single snapshot.
+ *
+ * Each topic has its own `articles_per_week` + `preferred_days`. We aggregate:
+ *   - preferredDays: union of all topics' days, sorted by weekday order
+ *   - weeklyTarget: sum of all topics' articles_per_week
+ *   - articlesPerDay: ceil(weeklyTarget / number of unique preferred days)
+ */
+function scheduleFromTopics(
+  topics: Array<Record<string, unknown>>,
+): ScheduleSnapshot | null {
+  const allDays = new Set<string>();
+  let totalWeekly = 0;
+
+  for (const topic of topics) {
+    const sched = topic.schedule as Record<string, unknown> | undefined;
+    if (!sched) continue;
+    const perWeek =
+      typeof sched.articles_per_week === "number" ? sched.articles_per_week : 0;
+    totalWeekly += perWeek;
+    const days = Array.isArray(sched.preferred_days)
+      ? (sched.preferred_days as string[])
+      : [];
+    for (const d of days) allDays.add(d);
+  }
+
+  if (totalWeekly <= 0 || allDays.size === 0) return null;
+
+  const preferredDays = [...allDays].sort(
+    (a, b) => (DAY_ORDER[a] ?? 99) - (DAY_ORDER[b] ?? 99),
+  );
+  const articlesPerDay = Math.ceil(totalWeekly / preferredDays.length);
+  return { articlesPerDay, preferredDays, weeklyTarget: totalWeekly };
+}
+
+/**
+ * Build a ScheduleSnapshot from the full brief object (parsed site.yaml).
+ *
+ * Handles both scheduling models:
+ *   1. Per-topic (topics_v2): aggregates each topic's schedule
+ *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
+ *
+ * Per-topic takes priority when present.
+ */
+export function buildScheduleFromBrief(
+  brief: Record<string, unknown> | undefined | null,
+): ScheduleSnapshot | null {
+  if (!brief) return null;
+
+  // Per-topic model: aggregate topics_v2[*].schedule
+  const topicsV2 = brief.topics_v2 as
+    | Array<Record<string, unknown>>
+    | undefined;
+  if (Array.isArray(topicsV2) && topicsV2.length > 0) {
+    return scheduleFromTopics(topicsV2);
+  }
+
+  // Legacy model: brief.schedule
+  const schedule = brief.schedule as Record<string, unknown> | undefined;
+  return schedule ? scheduleFromSiteLevel(schedule) : null;
+}
+
+/**
+ * Pre-load all site briefs from the `main` branch in bulk.
+ *
+ * The main tree is already cached (with Infinity TTL) after the
+ * `readDashboardIndex()` call, so each `readSiteConfig(domain)` is just a
+ * single blob read — no extra tree fetch. With concurrency 10 and ~50 sites,
+ * this completes in ~1-2 seconds.
+ *
+ * Reading from main (instead of each site's `staging/<domain>`) avoids 50+
+ * separate tree fetches that were causing the API to time out (>30s).
+ */
+export async function preloadBriefs(
+  domains: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const briefs = new Map<string, Record<string, unknown>>();
+  await mapWithConcurrency(domains, 10, async (domain) => {
+    try {
+      const config = await readSiteConfig(domain); // defaults to main
+      const brief = config?.brief as Record<string, unknown> | undefined;
+      if (brief) briefs.set(domain, brief);
+    } catch {
+      // Skip sites whose config can't be read from main
+    }
+  });
+  return briefs;
+}
+
+/**
+ * Enrich one site: add schedule + article aggregates.
+ *
+ * Schedule is computed first (instant, from pre-loaded brief, no IO). Article
+ * aggregates (KV → Git) are wrapped in a 5s per-site timeout so one slow
+ * site doesn't block the entire batch.
  */
 export async function enrichSite(
   site: SiteStatsResponse,
   gate: SchedulerGate,
   now: Date,
+  preloadedBrief?: Record<string, unknown> | null,
 ): Promise<EnrichedSiteStats> {
-  const { recentArticles, reviewCount, generalImages } = await articleAggregates(
-    site.siteDomain,
-    `staging/${site.siteDomain}`,
-  );
+  // ---- Schedule (instant, no IO) ----
+  let rawSchedule = site.schedule;
+  if (!rawSchedule && preloadedBrief) {
+    rawSchedule = buildScheduleFromBrief(preloadedBrief);
+  }
 
-  const schedule = site.schedule
+  const schedule = rawSchedule
     ? {
-        ...site.schedule,
-        nextRun: computeNextRun(gate, site.schedule.preferredDays, now),
+        ...rawSchedule,
+        nextRun: computeNextRun(gate, rawSchedule.preferredDays, now),
       }
     : null;
 
-  return { ...site, recentArticles, reviewCount, generalImages, schedule };
+  const todayExpected = rawSchedule
+    ? computeTodayExpected(
+        rawSchedule.articlesPerDay,
+        rawSchedule.preferredDays,
+        now,
+      )
+    : 0;
+
+  // ---- Article aggregates (IO, with per-site timeout) ----
+  let recentArticles: RecentArticle[] = [];
+  let reviewCount = 0;
+  let generalImages = 0;
+  try {
+    const result = await Promise.race([
+      articleAggregates(site.siteDomain, "main"),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+    ]);
+    if (result) {
+      ({ recentArticles, reviewCount, generalImages } = result);
+    }
+  } catch {
+    // keep defaults (empty articles, zero counts)
+  }
+
+  return {
+    ...site,
+    recentArticles,
+    reviewCount,
+    generalImages,
+    schedule,
+    today: { created: site.today?.created ?? 0, expected: todayExpected },
+  };
 }
