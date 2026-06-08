@@ -505,38 +505,59 @@ export function buildScheduleFromBrief(
 }
 
 /**
+ * Pre-load all site briefs from the `main` branch in bulk.
+ *
+ * The main tree is already cached (with Infinity TTL) after the
+ * `readDashboardIndex()` call, so each `readSiteConfig(domain)` is just a
+ * single blob read — no extra tree fetch. With concurrency 10 and ~50 sites,
+ * this completes in ~1-2 seconds.
+ *
+ * Reading from main (instead of each site's `staging/<domain>`) avoids 50+
+ * separate tree fetches that were causing the API to time out (>30s).
+ */
+export async function preloadBriefs(
+  domains: string[],
+): Promise<Map<string, Record<string, unknown>>> {
+  const briefs = new Map<string, Record<string, unknown>>();
+  await mapWithConcurrency(domains, 10, async (domain) => {
+    try {
+      const config = await readSiteConfig(domain); // defaults to main
+      const brief = config?.brief as Record<string, unknown> | undefined;
+      if (brief) briefs.set(domain, brief);
+    } catch {
+      // Skip sites whose config can't be read from main
+    }
+  });
+  return briefs;
+}
+
+/**
  * Enrich one site: add recentArticles + reviewCount + generalImages +
  * schedule.nextRun + today.expected. The three article-derived fields come from
  * a SINGLE article fetch via `articleAggregates`.
  *
- * When the pipeline's schedule is null (MongoDB has no schedule snapshot —
- * happens when only dashboard-triggered generation has run), falls back to
- * reading the site's brief.schedule from Git via readSiteConfig.
+ * Schedule resolution: pipeline (MongoDB) → pre-loaded brief → null.
+ * Article reads use `main` branch (shared cached tree) with KV-first path.
  */
 export async function enrichSite(
   site: SiteStatsResponse,
   gate: SchedulerGate,
   now: Date,
+  preloadedBrief?: Record<string, unknown> | null,
 ): Promise<EnrichedSiteStats> {
-  const branch = `staging/${site.siteDomain}`;
-
+  // Article aggregates: KV first (no Git tree needed), Git fallback uses main
+  // (cached tree). Much faster than per-site staging branch reads.
   const { recentArticles, reviewCount, generalImages } = await articleAggregates(
     site.siteDomain,
-    branch,
+    "main",
   );
 
-  // Resolve schedule: prefer pipeline (MongoDB), fall back to site brief (Git).
+  // Resolve schedule: prefer pipeline (MongoDB), fall back to pre-loaded brief.
   // The brief fallback handles both scheduling models: per-topic (topics_v2)
   // and legacy (brief.schedule).
   let rawSchedule = site.schedule;
-  if (!rawSchedule) {
-    try {
-      const config = await readSiteConfig(site.siteDomain, branch);
-      const brief = config?.brief as Record<string, unknown> | undefined;
-      rawSchedule = buildScheduleFromBrief(brief);
-    } catch {
-      // Git read failed — keep schedule null
-    }
+  if (!rawSchedule && preloadedBrief) {
+    rawSchedule = buildScheduleFromBrief(preloadedBrief);
   }
 
   const schedule = rawSchedule

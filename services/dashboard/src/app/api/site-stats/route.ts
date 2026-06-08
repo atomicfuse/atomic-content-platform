@@ -7,6 +7,7 @@ import {
   enrichSite,
   emptyStats,
   mapWithConcurrency,
+  preloadBriefs,
   type SiteStatsResponse,
 } from "@/lib/site-stats";
 
@@ -67,13 +68,20 @@ export async function GET(): Promise<NextResponse> {
     // If the index can't be read, fall back to just the proxied sites.
   }
 
-  const gate = await readSchedulerConfig();
+  // Pre-load all briefs from main in bulk. The main tree is already cached
+  // from readDashboardIndex(), so this is just N blob reads (no extra tree
+  // fetches). Much faster than reading each site's staging branch individually.
+  const allDomains = [...byDomain.keys()];
+  const [gate, briefs] = await Promise.all([
+    readSchedulerConfig(),
+    preloadBriefs(allDomains),
+  ]);
   const now = new Date();
 
   const enriched = await mapWithConcurrency(
     [...byDomain.values()],
-    5,
-    (site) => enrichSite(site, gate, now),
+    10,
+    (site) => enrichSite(site, gate, now, briefs.get(site.siteDomain)),
   );
 
   return NextResponse.json({ sites: enriched });
