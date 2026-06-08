@@ -405,18 +405,21 @@ export function emptyStats(siteDomain: string): SiteStatsResponse {
   };
 }
 
+// Day ordering for consistent display
+const DAY_ORDER: Record<string, number> = {
+  Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+  Thursday: 4, Friday: 5, Saturday: 6,
+};
+
 /**
- * Build a ScheduleSnapshot from a raw brief.schedule object (parsed YAML).
+ * Build a ScheduleSnapshot from a site-level brief.schedule (legacy model).
  *
- * Replicates the content-pipeline's `buildScheduleSnapshot` logic so we can
- * derive schedule data from the site brief when MongoDB doesn't have it.
+ * Replicates the content-pipeline's `buildScheduleSnapshot` logic.
  * Keep in sync with services/content-pipeline/src/stats/schedule.ts.
  */
-export function buildScheduleFromBrief(
-  raw: Record<string, unknown> | undefined | null,
+function scheduleFromSiteLevel(
+  raw: Record<string, unknown>,
 ): ScheduleSnapshot | null {
-  if (!raw) return null;
-
   const preferredDays = Array.isArray(raw.preferred_days)
     ? (raw.preferred_days as string[])
     : [];
@@ -440,6 +443,68 @@ export function buildScheduleFromBrief(
 }
 
 /**
+ * Aggregate per-topic schedules (topics_v2 model) into a single snapshot.
+ *
+ * Each topic has its own `articles_per_week` + `preferred_days`. We aggregate:
+ *   - preferredDays: union of all topics' days, sorted by weekday order
+ *   - weeklyTarget: sum of all topics' articles_per_week
+ *   - articlesPerDay: ceil(weeklyTarget / number of unique preferred days)
+ */
+function scheduleFromTopics(
+  topics: Array<Record<string, unknown>>,
+): ScheduleSnapshot | null {
+  const allDays = new Set<string>();
+  let totalWeekly = 0;
+
+  for (const topic of topics) {
+    const sched = topic.schedule as Record<string, unknown> | undefined;
+    if (!sched) continue;
+    const perWeek =
+      typeof sched.articles_per_week === "number" ? sched.articles_per_week : 0;
+    totalWeekly += perWeek;
+    const days = Array.isArray(sched.preferred_days)
+      ? (sched.preferred_days as string[])
+      : [];
+    for (const d of days) allDays.add(d);
+  }
+
+  if (totalWeekly <= 0 || allDays.size === 0) return null;
+
+  const preferredDays = [...allDays].sort(
+    (a, b) => (DAY_ORDER[a] ?? 99) - (DAY_ORDER[b] ?? 99),
+  );
+  const articlesPerDay = Math.ceil(totalWeekly / preferredDays.length);
+  return { articlesPerDay, preferredDays, weeklyTarget: totalWeekly };
+}
+
+/**
+ * Build a ScheduleSnapshot from the full brief object (parsed site.yaml).
+ *
+ * Handles both scheduling models:
+ *   1. Per-topic (topics_v2): aggregates each topic's schedule
+ *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
+ *
+ * Per-topic takes priority when present.
+ */
+export function buildScheduleFromBrief(
+  brief: Record<string, unknown> | undefined | null,
+): ScheduleSnapshot | null {
+  if (!brief) return null;
+
+  // Per-topic model: aggregate topics_v2[*].schedule
+  const topicsV2 = brief.topics_v2 as
+    | Array<Record<string, unknown>>
+    | undefined;
+  if (Array.isArray(topicsV2) && topicsV2.length > 0) {
+    return scheduleFromTopics(topicsV2);
+  }
+
+  // Legacy model: brief.schedule
+  const schedule = brief.schedule as Record<string, unknown> | undefined;
+  return schedule ? scheduleFromSiteLevel(schedule) : null;
+}
+
+/**
  * Enrich one site: add recentArticles + reviewCount + generalImages +
  * schedule.nextRun + today.expected. The three article-derived fields come from
  * a SINGLE article fetch via `articleAggregates`.
@@ -460,16 +525,15 @@ export async function enrichSite(
     branch,
   );
 
-  // Resolve schedule: prefer pipeline (MongoDB), fall back to site brief (Git)
+  // Resolve schedule: prefer pipeline (MongoDB), fall back to site brief (Git).
+  // The brief fallback handles both scheduling models: per-topic (topics_v2)
+  // and legacy (brief.schedule).
   let rawSchedule = site.schedule;
   if (!rawSchedule) {
     try {
       const config = await readSiteConfig(site.siteDomain, branch);
       const brief = config?.brief as Record<string, unknown> | undefined;
-      const briefSchedule = brief?.schedule as
-        | Record<string, unknown>
-        | undefined;
-      rawSchedule = buildScheduleFromBrief(briefSchedule);
+      rawSchedule = buildScheduleFromBrief(brief);
     } catch {
       // Git read failed — keep schedule null
     }

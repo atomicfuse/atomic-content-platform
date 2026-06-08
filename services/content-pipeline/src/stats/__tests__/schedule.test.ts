@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildScheduleSnapshot, computeNextRun } from "../schedule.js";
+import { buildScheduleSnapshot, buildScheduleFromBrief, computeNextRun } from "../schedule.js";
+import type { SiteBrief } from "../../types.js";
 
 describe("buildScheduleSnapshot", () => {
   it("uses articles_per_day when present", () => {
@@ -11,6 +12,49 @@ describe("buildScheduleSnapshot", () => {
   });
   it("returns null for undefined schedule", () => {
     expect(buildScheduleSnapshot(undefined)).toBeNull();
+  });
+});
+
+describe("buildScheduleFromBrief", () => {
+  it("uses legacy brief.schedule when no topics_v2", () => {
+    const brief = {
+      schedule: { articles_per_day: 2, preferred_days: ["Monday", "Wednesday"], preferred_time: "10:00" },
+    } as SiteBrief;
+    expect(buildScheduleFromBrief(brief)).toEqual({
+      articlesPerDay: 2,
+      preferredDays: ["Monday", "Wednesday"],
+      weeklyTarget: 4,
+    });
+  });
+
+  it("aggregates per-topic schedules when topics_v2 present", () => {
+    const brief = {
+      topics_v2: [
+        { name: "A", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Wednesday"] } },
+        { name: "B", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Thursday"] } },
+        { name: "C", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Tuesday"] } },
+        { name: "D", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Thursday"] } },
+      ],
+      schedule: { articles_per_day: 1, preferred_days: ["Monday"], preferred_time: "10:00" },
+    } as SiteBrief;
+    const result = buildScheduleFromBrief(brief);
+    // Total weekly: 8, unique days: Tue/Wed/Thu (3)
+    expect(result?.weeklyTarget).toBe(8);
+    expect(result?.preferredDays).toEqual(["Tuesday", "Wednesday", "Thursday"]);
+    expect(result?.articlesPerDay).toBe(3); // ceil(8/3)
+  });
+
+  it("returns null for null/undefined brief", () => {
+    expect(buildScheduleFromBrief(null)).toBeNull();
+    expect(buildScheduleFromBrief(undefined)).toBeNull();
+  });
+
+  it("falls through to legacy when topics_v2 is empty", () => {
+    const brief = {
+      topics_v2: [],
+      schedule: { articles_per_day: 3, preferred_days: ["Monday"], preferred_time: "10:00" },
+    } as unknown as SiteBrief;
+    expect(buildScheduleFromBrief(brief)?.articlesPerDay).toBe(3);
   });
 });
 

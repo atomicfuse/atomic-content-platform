@@ -24,7 +24,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true }
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { recordGeneration } from "../../stats/recorder.js";
-import { buildScheduleSnapshot } from "../../stats/schedule.js";
+import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -701,16 +701,47 @@ async function handleRequest(
   }
 
   // Site stats — GET /site-stats (all) or GET /site-stats/:domain (one)
+  //
+  // Enriches sites with null schedule from site briefs (handles both per-topic
+  // and legacy schedule models). This ensures the API always returns schedule
+  // data when the brief has it, even if MongoDB lacks a snapshot.
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method === "GET") {
       const ss = parseSiteStatsPath(pathname);
       if (ss) {
         try {
+          const enrichSchedule = async (
+            site: Awaited<ReturnType<typeof getSiteStats>>,
+          ): Promise<Awaited<ReturnType<typeof getSiteStats>>> => {
+            if (site.schedule) return site;
+            try {
+              const octokit = createOctokit(config.github);
+              const branch = `staging/${site.siteDomain}`;
+              const briefData = await readSiteBrief(
+                octokit, config.github.repo, site.siteDomain, branch,
+              );
+              const schedule = buildScheduleFromBrief(briefData.brief);
+              if (schedule) {
+                return {
+                  ...site,
+                  schedule,
+                  thisWeek: { ...site.thisWeek, expected: schedule.weeklyTarget },
+                };
+              }
+            } catch {
+              // Brief read failed — return site as-is
+            }
+            return site;
+          };
+
           if (ss.kind === "all") {
-            sendJson(res, 200, { status: "ok", sites: await getAllSiteStats(new Date()) });
+            const sites = await getAllSiteStats(new Date());
+            const enriched = await Promise.all(sites.map(enrichSchedule));
+            sendJson(res, 200, { status: "ok", sites: enriched });
           } else {
-            sendJson(res, 200, { status: "ok", site: await getSiteStats(ss.domain, new Date()) });
+            const site = await getSiteStats(ss.domain, new Date());
+            sendJson(res, 200, { status: "ok", site: await enrichSchedule(site) });
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -947,12 +978,14 @@ async function handleRequest(
 
     // Read the brief's schedule so MongoDB stays populated even for
     // dashboard-triggered generation (previously passed null).
-    let schedule: ReturnType<typeof buildScheduleSnapshot> = null;
+    // Uses buildScheduleFromBrief which handles both per-topic (topics_v2)
+    // and legacy (brief.schedule) models.
+    let schedule: ReturnType<typeof buildScheduleFromBrief> = null;
     try {
       const octokit = createOctokit(config.github);
       const briefBranch = branchStr ?? `staging/${siteDomain}`;
       const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, briefBranch);
-      schedule = buildScheduleSnapshot(briefData.brief.schedule);
+      schedule = buildScheduleFromBrief(briefData.brief);
     } catch {
       // Brief read failed — record with null schedule (non-fatal)
     }
