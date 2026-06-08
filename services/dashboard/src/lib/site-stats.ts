@@ -333,6 +333,24 @@ export function computeNextRun(
 }
 
 // ---------------------------------------------------------------------------
+// computeTodayExpected
+// ---------------------------------------------------------------------------
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/**
+ * Returns articlesPerDay if today (UTC) is one of the preferredDays, else 0.
+ */
+export function computeTodayExpected(
+  articlesPerDay: number,
+  preferredDays: string[],
+  now: Date,
+): number {
+  const todayName = DAY_NAMES[now.getUTCDay()];
+  return preferredDays.includes(todayName) ? articlesPerDay : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Per-site enrichment (shared by /api/site-stats and /api/site-stats/[domain])
 //
 // These live here, NOT in the route files: a Next.js App Router `route.ts` may
@@ -359,16 +377,18 @@ export interface SiteStatsResponse {
   };
   lastFailedAt: string | null;
   thisWeek: { created: number; expected: number };
+  today?: { created: number };
   failedArticles: { last7d: number; last30d: number };
   imageGenFailed: { last7d: number; last30d: number };
 }
 
-/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun. */
+/** Enriched site = raw stats + recentArticles + counts + schedule.nextRun + today.expected. */
 export interface EnrichedSiteStats extends SiteStatsResponse {
   recentArticles: RecentArticle[];
   reviewCount: number;
   generalImages: number;
   schedule: (ScheduleSnapshot & { nextRun: Date | null }) | null;
+  today: { created: number; expected: number };
 }
 
 /** Default/empty stats for a site that the pipeline never reported on. */
@@ -379,6 +399,7 @@ export function emptyStats(siteDomain: string): SiteStatsResponse {
     lastAdded: { at: null, source: null, count: null },
     lastFailedAt: null,
     thisWeek: { created: 0, expected: 0 },
+    today: { created: 0 },
     failedArticles: { last7d: 0, last30d: 0 },
     imageGenFailed: { last7d: 0, last30d: 0 },
   };
@@ -386,8 +407,8 @@ export function emptyStats(siteDomain: string): SiteStatsResponse {
 
 /**
  * Enrich one site: add recentArticles + reviewCount + generalImages +
- * schedule.nextRun. The three article-derived fields come from a SINGLE article
- * fetch via `articleAggregates`.
+ * schedule.nextRun + today.expected. The three article-derived fields come from
+ * a SINGLE article fetch via `articleAggregates`.
  */
 export async function enrichSite(
   site: SiteStatsResponse,
@@ -406,5 +427,20 @@ export async function enrichSite(
       }
     : null;
 
-  return { ...site, recentArticles, reviewCount, generalImages, schedule };
+  const todayExpected = site.schedule
+    ? computeTodayExpected(
+        site.schedule.articlesPerDay,
+        site.schedule.preferredDays,
+        now,
+      )
+    : 0;
+
+  return {
+    ...site,
+    recentArticles,
+    reviewCount,
+    generalImages,
+    schedule,
+    today: { created: site.today?.created ?? 0, expected: todayExpected },
+  };
 }
