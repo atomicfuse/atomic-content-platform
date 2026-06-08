@@ -1,12 +1,7 @@
 import { readDashboardIndex } from "@/lib/github";
-import nextDynamic from "next/dynamic";
+import OpsDashboard from "@/components/ops/OpsDashboard";
 
 export const dynamic = "force-dynamic";
-
-const OpsDashboard = nextDynamic(() => import("@/components/ops/OpsDashboard"), {
-  ssr: false,
-  loading: () => <div className="p-8 text-secondary text-center">Loading ops dashboard...</div>,
-});
 
 async function fetchJson(path: string): Promise<Record<string, unknown>> {
   const base = process.env.NEXTAUTH_URL ?? "http://localhost:3001";
