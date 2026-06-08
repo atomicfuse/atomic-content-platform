@@ -36,7 +36,7 @@ describe("buildScheduleFromBrief", () => {
         { name: "D", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Thursday"] } },
       ],
       schedule: { articles_per_day: 1, preferred_days: ["Monday"], preferred_time: "10:00" },
-    } as SiteBrief;
+    } as unknown as SiteBrief;
     const result = buildScheduleFromBrief(brief);
     // Total weekly: 8, unique days: Tue/Wed/Thu (3)
     expect(result?.weeklyTarget).toBe(8);
