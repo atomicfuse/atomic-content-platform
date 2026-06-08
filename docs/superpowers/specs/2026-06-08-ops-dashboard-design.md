@@ -338,7 +338,7 @@ Sub-card borders are semantic: red border for Failed Articles, amber for Image G
 { "ok": false, "error": "seed-kv failed: ..." }
 ```
 
-Implementation: Calls the content-pipeline's existing `/seed-kv` endpoint (internal, proxied like other agent calls using the `getAgentUrl()` fallback pattern). The content-pipeline runs `seed-kv.ts` for the requested site. Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` on the content-pipeline side. Returns success/failure — the UI shows a toast notification.
+Implementation: Calls a new content-pipeline `/seed-kv` endpoint (internal, proxied like other agent calls using the `getAgentUrl()` fallback pattern). The content-pipeline runs `seed-kv.ts` for the requested site. Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` on the content-pipeline side. Returns success/failure — the UI shows a toast notification.
 
 The button is disabled with a spinner while the request is in-flight. On success: green toast "KV re-seeded for {domain}". On failure: red toast with the error message.
 
