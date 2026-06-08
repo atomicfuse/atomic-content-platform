@@ -40,9 +40,7 @@ export function AttachDomainPanel({
       try {
         await attachCustomDomain(domain, selectedZone.domain, selectedZone.zoneId);
         setSelectedZone(null);
-        // Full page reload — router.refresh() goes through Next.js RSC
-        // caching layers that can serve stale data. A hard reload is the
-        // only reliable way to pick up the updated dashboard index.
+        await fetch("/api/cache-flush", { method: "POST" });
         window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to attach domain", "error");
@@ -54,6 +52,7 @@ export function AttachDomainPanel({
     startTransition(async () => {
       try {
         await detachCustomDomain(domain);
+        await fetch("/api/cache-flush", { method: "POST" });
         window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to disconnect domain", "error");
