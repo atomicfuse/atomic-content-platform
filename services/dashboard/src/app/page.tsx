@@ -10,7 +10,7 @@ async function fetchJson(path: string): Promise<Record<string, unknown>> {
   try {
     const resp = await fetch(`${base}${path}`, {
       next: { revalidate: 60 },
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!resp.ok) return {};
     return await resp.json();
