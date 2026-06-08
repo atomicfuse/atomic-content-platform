@@ -759,6 +759,11 @@ git commit -m "feat: increment R2 tally on image uploads (content-pipeline + das
 
 **Files:**
 - Create: `services/content-pipeline/src/stats/backfill-r2.ts`
+- Modify: `services/content-pipeline/package.json` (add `@aws-sdk/client-s3` dev dependency)
+
+- [ ] **Step 0: Install S3 client dependency**
+
+Run: `cd services/content-pipeline && pnpm add -D @aws-sdk/client-s3`
 
 - [ ] **Step 1: Write the backfill script**
 
@@ -1079,7 +1084,7 @@ Modify `services/content-pipeline/src/agents/content-generation/index.ts`.
 
 Add route handler (near `/r2-usage`):
 ```typescript
-  // POST /seed-kv — trigger KV re-seed for a single site
+  // POST /seed-kv — trigger KV re-seed via GitHub Actions workflow_dispatch
   if (req.method === "POST" && pathname === "/seed-kv") {
     try {
       const body = await readBody(req);
@@ -1087,12 +1092,33 @@ Add route handler (near `/r2-usage`):
       if (!domain) {
         return sendJson(res, 400, { ok: false, error: "Missing domain" });
       }
-      // Import and run seed-kv as a child process
-      const { execSync } = await import("node:child_process");
-      const cmd = `pnpm seed:kv ${domain}`;
-      const cwd = path.resolve(__dirname, "../../../../packages/site-worker");
-      execSync(cmd, { cwd, timeout: 120_000, stdio: "pipe" });
-      return sendJson(res, 200, { ok: true });
+      // Trigger the sync-kv.yml workflow in the network repo via GitHub API
+      const token = process.env.GITHUB_TOKEN;
+      if (!token) {
+        return sendJson(res, 500, { ok: false, error: "GITHUB_TOKEN not configured" });
+      }
+      const owner = "atomicfuse";
+      const repo = "atomic-labs-network";
+      const resp = await fetch(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync-kv.yml/dispatches`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github.v3+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ref: "main",
+            inputs: { site_id: domain, force_all: "false" },
+          }),
+        },
+      );
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return sendJson(res, 502, { ok: false, error: `GitHub API ${resp.status}: ${errText}` });
+      }
+      return sendJson(res, 200, { ok: true, message: `Triggered sync-kv for ${domain}` });
     } catch (err) {
       return sendJson(res, 500, { ok: false, error: String(err) });
     }
@@ -1218,24 +1244,33 @@ describe("cardPredicate", () => {
 
 describe("computeCostStrip", () => {
   it("returns zeroes for empty input", () => {
-    const result = computeCostStrip([], { totalBytes: 0, totalImages: 0, capacityPct: 0, lastUpdated: null });
+    const result = computeCostStrip([], { totalBytes: 0, totalImages: 0, capacityPct: 0, lastUpdated: null }, []);
     expect(result.aiSpendToday).toBe(0);
     expect(result.avgPerArticle7d).toBe(0);
     expect(result.expectedMonthly).toBe(0);
   });
 
-  it("computes network-wide totals", () => {
+  it("computes network-wide totals with expected monthly", () => {
+    // Site A: avg $0.50/article, 10 articles in 7d
+    // Site B: avg $0.60/article, 5 articles in 7d
+    // Weighted avg = (0.50*10 + 0.60*5) / (10+5) = 8.0/15 ≈ 0.533
     const costs = [
-      { todayUsd: 1.0, thisWeekUsd: 5.0, created7d: 10, allTimeTokens: { input: 1000, output: 500 } },
-      { todayUsd: 0.5, thisWeekUsd: 3.0, created7d: 5, allTimeTokens: { input: 2000, output: 1000 } },
+      { todayUsd: 1.0, avgPerArticle7dUsd: 0.50, created7d: 10, allTimeTokens: { input: 1000, output: 500 } },
+      { todayUsd: 0.5, avgPerArticle7dUsd: 0.60, created7d: 5, allTimeTokens: { input: 2000, output: 1000 } },
     ];
     const r2 = { totalBytes: 5 * 1024 ** 3, totalImages: 100, capacityPct: 50, lastUpdated: null };
-    const result = computeCostStrip(costs as never[], r2);
+    const schedules = [
+      { articlesPerDay: 2, preferredDays: ["Monday", "Wednesday", "Friday"] },
+      { articlesPerDay: 1, preferredDays: ["Monday", "Tuesday"] },
+    ];
+    const result = computeCostStrip(costs as never[], r2, schedules);
     expect(result.aiSpendToday).toBeCloseTo(1.5, 2);
     expect(result.avgPerArticle7d).toBeCloseTo(0.533, 2); // 8.0 / 15
     expect(result.totalTokensIn).toBe(3000);
     expect(result.totalTokensOut).toBe(1500);
     expect(result.r2.totalImages).toBe(100);
+    // expectedMonthly = 0.533 * (2*3 + 1*2) * 4.33 = 0.533 * 8 * 4.33 ≈ 18.46
+    expect(result.expectedMonthly).toBeCloseTo(18.46, 0);
   });
 });
 ```
@@ -1284,7 +1319,7 @@ export interface OpsRow {
   lastAdded: { at: string; source: string; count: number } | null;
   lastFailedAt: string | null;
   uptime: { state: string; ok: boolean; statusCode: number | null; responseTimeMs: number | null };
-  sync: { state: string; ok: boolean; syncedAt: string | null; error: string | null };
+  sync: { state: string; ok: boolean | null; syncedAt: string | null; error: string | null };
   ssl: { state: string; status: string | null; daysLeft: number | null; expiresAt: string | null };
   tracking: { state: string; ga4: boolean; gtm: boolean; pixel: boolean };
   domainExpiry: { state: string; daysLeft: number | null; expiresAt: string | null; autoRenew: boolean | null };
@@ -1318,8 +1353,9 @@ function within24h(syncedAt: string | null): boolean {
 }
 
 export function computeTier(row: Omit<OpsRow, "tier">): 0 | 1 | 2 | 3 | 4 {
-  if (!row.uptime.ok) return 0;
-  if (!row.sync.ok && within24h(row.sync.syncedAt)) return 1;
+  // Staging-only sites have uptime.state === "n/a" — never tier 0
+  if (row.uptime.state !== "n/a" && !row.uptime.ok) return 0;
+  if (row.sync.ok !== null && !row.sync.ok && within24h(row.sync.syncedAt)) return 1;
   if (row.failedArticles7d > 3 || row.reviewCount > 15) return 2;
   if (row.alerts.length > 0) return 3;
   return 4;
@@ -1336,9 +1372,9 @@ export function cardPredicate(card: CardId): (row: OpsRow) => boolean {
     case "FAILED_ARTICLES":
       return (r) => r.failedArticles7d > 3;
     case "SITES_DOWN":
-      return (r) => !r.uptime.ok;
+      return (r) => r.uptime.state !== "n/a" && !r.uptime.ok;
     case "SYNC_FAILED":
-      return (r) => !r.sync.ok && within24h(r.sync.syncedAt);
+      return (r) => r.sync.ok !== null && !r.sync.ok && within24h(r.sync.syncedAt);
     case "PUBLISHED_TODAY":
       return (r) => r.todayExpected > 0;
     case "IN_REVIEW":
@@ -1350,7 +1386,7 @@ export function cardPredicate(card: CardId): (row: OpsRow) => boolean {
 
 interface CostInput {
   todayUsd: number;
-  thisWeekUsd: number;
+  avgPerArticle7dUsd: number;
   created7d: number;
   allTimeTokens: { input: number; output: number };
 }
@@ -1362,27 +1398,41 @@ interface R2Input {
   lastUpdated: string | null;
 }
 
-export function computeCostStrip(costs: CostInput[], r2: R2Input): CostStripData {
+interface ScheduleInput {
+  articlesPerDay: number;
+  preferredDays: string[];
+}
+
+export function computeCostStrip(
+  costs: CostInput[],
+  r2: R2Input,
+  schedules: (ScheduleInput | null)[],
+): CostStripData {
   let aiSpendToday = 0;
-  let totalCost7d = 0;
+  let weightedCost7d = 0;   // sum of avgPerArticle7dUsd * created7d per site
   let totalCreated7d = 0;
   let totalTokensIn = 0;
   let totalTokensOut = 0;
 
   for (const c of costs) {
     aiSpendToday += c.todayUsd;
-    totalCost7d += c.thisWeekUsd;
+    weightedCost7d += c.avgPerArticle7dUsd * c.created7d;
     totalCreated7d += c.created7d;
     totalTokensIn += c.allTimeTokens.input;
     totalTokensOut += c.allTimeTokens.output;
   }
 
-  const avgPerArticle7d = totalCreated7d > 0 ? totalCost7d / totalCreated7d : 0;
+  // Network-wide weighted average cost per article (rolling 7d)
+  const avgPerArticle7d = totalCreated7d > 0 ? weightedCost7d / totalCreated7d : 0;
 
-  // projectedMonthlyArticles: sum across all sites of articlesPerDay * preferredDays * 4.33
-  // This is computed separately in OpsDashboard from OpsRows (needs schedule data)
-  // CostStrip receives the final expectedMonthly from OpsDashboard
-  const expectedMonthly = 0; // placeholder — computed by caller
+  // projectedMonthlyArticles: sum of articlesPerDay * preferredDays.length * 4.33 across all sites
+  let projectedMonthlyArticles = 0;
+  for (const s of schedules) {
+    if (s) {
+      projectedMonthlyArticles += s.articlesPerDay * s.preferredDays.length * 4.33;
+    }
+  }
+  const expectedMonthly = avgPerArticle7d * projectedMonthlyArticles;
 
   return {
     aiSpendToday,
@@ -1688,7 +1738,7 @@ Create `services/dashboard/src/components/ops/FilterBar.tsx`:
 ```tsx
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import type React from "react";
 import type { SiteStatus } from "@/types/dashboard";
 
 interface FilterBarProps {
@@ -2210,15 +2260,10 @@ export default function OpsDashboard({
   // Cost strip
   const costStripData = useMemo(() => {
     const costInputs = (costs.sites ?? []).map((c) => c.windows);
-    const base = computeCostStrip(costInputs, r2);
-    // Compute expectedMonthly from schedule data
-    let projectedMonthly = 0;
-    for (const row of allRows) {
-      if (row.schedule) {
-        projectedMonthly += row.schedule.articlesPerDay * row.schedule.preferredDays.length * 4.33;
-      }
-    }
-    return { ...base, expectedMonthly: base.avgPerArticle7d * projectedMonthly };
+    const schedules = allRows.map((r) =>
+      r.schedule ? { articlesPerDay: r.schedule.articlesPerDay, preferredDays: r.schedule.preferredDays } : null,
+    );
+    return computeCostStrip(costInputs, r2, schedules);
   }, [costs, r2, allRows]);
 
   // Verticals for filter dropdown
