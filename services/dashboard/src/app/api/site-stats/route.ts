@@ -63,31 +63,32 @@ async function withTimeout<T>(
 export async function GET(): Promise<NextResponse> {
   const agentUrl = getAgentUrl();
 
-  // 1. Primary: MongoDB stats via content-pipeline
-  let sites: SiteStatsResponse[] = [];
-  try {
-    const res = await fetch(`${agentUrl}/site-stats`, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (res.ok) {
-      const body = (await res.json()) as { sites?: SiteStatsResponse[] };
-      sites = Array.isArray(body.sites) ? body.sites : [];
-    }
-  } catch {
-    // Pipeline unreachable — proceed with empty; dashboard-index may fill gaps.
-  }
+  // All three data sources fetched in parallel — worst case 5s (not 10s).
+  const [pipelineResult, index, gate] = await Promise.all([
+    // 1. Primary: MongoDB stats via content-pipeline (5s timeout)
+    (async (): Promise<SiteStatsResponse[]> => {
+      try {
+        const res = await fetch(`${agentUrl}/site-stats`, {
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { sites?: SiteStatsResponse[] };
+          return Array.isArray(body.sites) ? body.sites : [];
+        }
+      } catch {
+        // Pipeline unreachable
+      }
+      return [];
+    })(),
+    // 2. Best-effort: dashboard-index (3s timeout)
+    withTimeout(readDashboardIndex().catch(() => null), 3_000, null),
+    // 3. Best-effort: scheduler gate (2s timeout)
+    withTimeout(readSchedulerConfig().catch(() => DEFAULT_GATE), 2_000, DEFAULT_GATE),
+  ]);
 
   const byDomain = new Map<string, SiteStatsResponse>(
-    sites.map((s) => [s.siteDomain, s]),
-  );
-
-  // 2. Best-effort: dashboard-index for site metadata + gap-fill (3s timeout).
-  //    If Git is rate-limited this resolves instantly with null.
-  const index = await withTimeout(
-    readDashboardIndex().catch(() => null),
-    3_000,
-    null,
+    pipelineResult.map((s) => [s.siteDomain, s]),
   );
   if (index) {
     for (const entry of index.sites) {
@@ -96,13 +97,6 @@ export async function GET(): Promise<NextResponse> {
       }
     }
   }
-
-  // 3. Best-effort: scheduler gate for nextRun computation (2s timeout).
-  const gate = await withTimeout(
-    readSchedulerConfig().catch(() => DEFAULT_GATE),
-    2_000,
-    DEFAULT_GATE,
-  );
 
   // 4. Pure enrichment: schedule.nextRun + today.expected (no IO)
   const now = new Date();

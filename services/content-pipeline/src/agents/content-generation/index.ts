@@ -712,37 +712,12 @@ async function handleRequest(
       const ss = parseSiteStatsPath(pathname);
       if (ss) {
         try {
-          const enrichSchedule = async (
-            site: Awaited<ReturnType<typeof getSiteStats>>,
-          ): Promise<Awaited<ReturnType<typeof getSiteStats>>> => {
-            if (site.schedule) return site;
-            try {
-              const octokit = createOctokit(config.github);
-              const branch = `staging/${site.siteDomain}`;
-              const briefData = await readSiteBrief(
-                octokit, config.github.repo, site.siteDomain, branch,
-              );
-              const schedule = buildScheduleFromBrief(briefData.brief);
-              if (schedule) {
-                return {
-                  ...site,
-                  schedule,
-                  thisWeek: { ...site.thisWeek, expected: schedule.weeklyTarget },
-                };
-              }
-            } catch {
-              // Brief read failed — return site as-is
-            }
-            return site;
-          };
-
           if (ss.kind === "all") {
             const sites = await getAllSiteStats(new Date());
-            const enriched = await Promise.all(sites.map(enrichSchedule));
-            sendJson(res, 200, { status: "ok", sites: enriched });
+            sendJson(res, 200, { status: "ok", sites });
           } else {
             const site = await getSiteStats(ss.domain, new Date());
-            sendJson(res, 200, { status: "ok", site: await enrichSchedule(site) });
+            sendJson(res, 200, { status: "ok", site });
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
