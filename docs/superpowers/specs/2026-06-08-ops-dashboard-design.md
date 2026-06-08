@@ -31,6 +31,7 @@ Rebuild the dashboard homepage as an operational console. The current sites tabl
 page.tsx (server component)
 │
 ├── Promise.all([
+│     readDashboardIndex(),            ← site list + status + vertical + customDomain
 │     fetch("/api/site-stats"),
 │     fetch("/api/site-checks"),
 │     fetch("/api/site-costs"),
@@ -39,6 +40,7 @@ page.tsx (server component)
 │   ])
 │
 └── <OpsDashboard
+      initialIndex={index}             ← DashboardSiteEntry[] (status, vertical, customDomain)
       initialStats={stats}
       initialChecks={checks}
       initialCosts={costs}
@@ -46,38 +48,42 @@ page.tsx (server component)
       initialR2={r2}
     />
         │
-        ├── useEffect: poll all 5 endpoints every 60s
-        ├── useMemo: merge data into unified OpsRow[]
+        ├── useEffect: poll 5 API endpoints every 60s (index is static, not polled)
+        ├── useMemo: merge index + API data into unified OpsRow[]
         ├── useMemo: compute card counts from merged rows
         ├── useMemo: compute cost strip totals
         └── useState: activeCard, expandedRows, search, filters
 ```
 
-The server component fetches all 5 endpoints in parallel for fast first paint. The client component receives the initial data as props and starts a 60-second polling interval on mount. Each poll fetches all 5 endpoints, merges the results, and React re-renders with fresh data. A "Last refreshed: Xs ago" indicator and manual "Refresh now" button are in the header.
+**6 data sources:** The server component fetches the dashboard index (for `status`, `customDomain`, `vertical` — fields not available in any API endpoint) plus the 5 API endpoints in parallel for fast first paint. The client component receives all initial data as props. Only the 5 API endpoints are polled on a 60-second interval — the dashboard index is static (site metadata doesn't change between page loads). A "Last refreshed: Xs ago" indicator and manual "Refresh now" button are in the header.
 
 ### Merged Row Type
 
-Each table row joins data from all 4 site-keyed API responses on `siteDomain`:
+Each table row joins data from the dashboard index + 4 site-keyed API responses on `siteDomain`. The merge happens in `ops-helpers.ts` → `mergeOpsRows()`, which flattens nested API fields and renames for clarity:
 
 ```ts
 type OpsRow = {
+  // from dashboard index (DashboardSiteEntry)
   domain: string;
   status: SiteStatus;
   customDomain: string | null;
-  // from /api/site-stats
+  vertical: string;                    // for Category filter dropdown
+
+  // from /api/site-stats — flattened from failedArticles.last7d → failedArticles7d
   failedArticles7d: number;
   failedArticles30d: number;
   imageGenFailed7d: number;
   imageGenFailed30d: number;
   reviewCount: number;
   generalImages: number;
-  todayCreated: number;
-  todayExpected: number;
+  todayCreated: number;               // from today.created (new field)
+  todayExpected: number;              // from today.expected (new field)
+  thisWeekCreated: number;            // from thisWeek.created — needed for cost formulas
   schedule: {
     articlesPerDay: number;
     preferredDays: string[];
     weeklyTarget: number;
-    nextRun: string | null;
+    nextRun: string | null;           // ISO string (JSON-serialized Date)
   } | null;
   recentArticles: {
     title: string;
@@ -88,18 +94,30 @@ type OpsRow = {
   }[];
   lastAdded: { at: string; source: string; count: number } | null;
   lastFailedAt: string | null;
-  // from /api/site-checks
-  uptime: { state: string; ok: boolean; statusCode: number; responseTimeMs: number };
-  sync: { state: string; ok: boolean; syncedAt: string; error: string | null };
-  ssl: { state: string; status: string; daysLeft: number; expiresAt: string };
+
+  // from /api/site-checks — matches MergedChecks shape
+  uptime: { state: string; ok: boolean; statusCode: number | null; responseTimeMs: number | null };
+  sync: { state: string; ok: boolean; syncedAt: string | null; error: string | null };
+  ssl: { state: string; status: string | null; daysLeft: number | null; expiresAt: string | null };
   tracking: { state: string; ga4: boolean; gtm: boolean; pixel: boolean };
-  domainCheck: { state: string; daysLeft: number; expiresAt: string; autoRenew: boolean };
-  // from /api/attention
+  domainExpiry: { state: string; daysLeft: number | null; expiresAt: string | null; autoRenew: boolean | null };
+  // Note: API field is `domain` in MergedChecks; renamed to `domainExpiry` to avoid
+  // collision with the `domain: string` field above.
+
+  // from /api/attention — API field is `alerting`; renamed to `alerts` during merge
   alerts: { condition: string; severity: string; since: string; value: number | null }[];
-  // computed
+
+  // computed by mergeOpsRows()
   tier: 0 | 1 | 2 | 3 | 4;
 };
 ```
+
+**Field mapping notes** (implemented in `mergeOpsRows()`):
+- `failedArticles.last7d` → `failedArticles7d` (flatten)
+- `imageGenFailed.last7d` → `imageGenFailed7d` (flatten)
+- `checks.domain` → `domainExpiry` (rename to avoid collision)
+- `alerting[]` → `alerts[]` (rename for clarity)
+- Nullable check fields (`statusCode`, `responseTimeMs`, `daysLeft`, etc.) preserve `null` — UI components handle null display ("n/a", "—")
 
 ## API Extensions
 
@@ -116,7 +134,11 @@ Add `today` field to each `SiteStat` in the response:
 }
 ```
 
-Computed in the dashboard API route (`/api/site-stats/route.ts`) during enrichment, same pattern as `computeNextRun`. The content-pipeline `generation_events` collection already has timestamps for per-day queries.
+**Two-part implementation:**
+
+1. **Content-pipeline** (`/site-stats` response): Add `today.created` — count of `generation_events` where `createdAt >= startOfDay(today, UTC)` and `status = "published"` for each site. This is a new MongoDB aggregation in `services/content-pipeline/src/stats/repo.ts` (the existing stats query module).
+
+2. **Dashboard enrichment** (`enrichSite()` in `site-stats.ts`): Add `today.expected` — computed from the site's `schedule.articlesPerDay` and `schedule.preferredDays`, same day-of-week check as `computeNextRun()`. For sites with `schedule: null` (never generated), defaults to `{ created: 0, expected: 0 }`. Uses site-level `articlesPerDay` (not per-topic — per-topic scheduling is a content-pipeline internal detail; the site-level schedule is the resolved value).
 
 ### 2. `/api/site-costs` — add daily + aggregate fields
 
@@ -137,6 +159,9 @@ Extend `windows` in each `SiteCost`:
 - `todayUsd`: sum of `cost_events` where date = today (UTC).
 - `allTimeTokens`: sum of all `tokensUse.input` / `.output` across all `cost_events`.
 - `avgPerArticle7dUsd`: `sum(cost 7d) / count(articles created 7d)` — joins `cost_events` with `generation_events`.
+- `created7d`: count of articles created in the last 7 days for this site (from `generation_events`). Needed by the CostStrip for network-wide average computation.
+
+All new fields are computed in `services/content-pipeline/src/costs/repo.ts` (where `getSiteCosts` / `SiteCostsResponse` is defined). The dashboard's `/api/site-costs/route.ts` is a thin proxy and passes through unchanged.
 
 ### 3. `/api/site-checks` — no changes
 
@@ -202,22 +227,41 @@ Active card gets a `#6D4AFF` (purple) border. Clicking a card sets it as the act
 | Failed Articles (7d) | `FAILED_ARTICLES` | `rows.filter(r => r.failedArticles7d > 3).length` | Error red |
 | Sites Down | `SITES_DOWN` | `rows.filter(r => !r.uptime.ok).length` | Error red |
 | Sync Failed (24h) | `SYNC_FAILED` | `rows.filter(r => !r.sync.ok && within24h(r.sync.syncedAt)).length` | Warning orange |
-| Published Today | `PUBLISHED_TODAY` | `sum(todayCreated) / sum(todayExpected)` format | Success green |
-| In Review | `IN_REVIEW` | `sum(rows[].reviewCount)` | Info purple |
+| Published Today | `PUBLISHED_TODAY` | `sum(todayCreated) / sum(todayExpected)` display format | Success green |
+| In Review | `IN_REVIEW` | `sum(rows[].reviewCount)` total | Info purple |
+
+**Card filter predicates** (applied to table when card is active):
+
+| Card | Filter predicate |
+|------|-----------------|
+| All Sites (Live) | `r.status === "Live"` |
+| Needs Attention | `r.alerts.length > 0` |
+| Failed Articles (7d) | `r.failedArticles7d > 3` |
+| Sites Down | `r.uptime.ok === false` |
+| Sync Failed (24h) | `r.sync.ok === false && within24h(r.sync.syncedAt)` |
+| Published Today | `r.todayExpected > 0` (shows all sites scheduled for today) |
+| In Review | `r.reviewCount > 0` |
 
 ### CostStrip
 
 Single horizontal bar with 5 metrics separated by light dividers:
 
-| Metric | Source | Format |
-|--------|--------|--------|
-| AI spend today | `sum(costs[].windows.todayUsd)` | `$X.XX` |
-| Avg/article (7d) | `sum(costs[].windows.avgPerArticle7dUsd * articlesCreated7d) / totalArticles7d` | `$X.XX` |
-| Expected monthly | `networkAvgPerArticle × totalMonthlyArticles` | `$XX.XX` |
-| Total tokens | `sum(costs[].windows.allTimeTokens)` | `X.XM in · X.XM out` |
-| R2 storage | `/api/r2-usage` | `X.X GB · XX% · XX,XXX imgs` |
+| Metric | Source | Computation | Format |
+|--------|--------|-------------|--------|
+| AI spend today | `/api/site-costs` | `sum(sites[].windows.todayUsd)` | `$X.XX` |
+| Avg/article (7d) | `/api/site-costs` | `totalCost7d / totalCreated7d` (see below) | `$X.XX` |
+| Expected monthly | derived | `networkAvgPerArticle × projectedMonthlyArticles` (see below) | `$XX.XX` |
+| Total tokens | `/api/site-costs` | `sum(sites[].windows.allTimeTokens.input)`, same for `.output` | `X.XM in · X.XM out` |
+| R2 storage | `/api/r2-usage` | `totalBytes`, `capacityPct`, `totalImages` directly | `X.X GB · XX% · XX,XXX imgs` |
 
-`Expected monthly` = `avgPerArticle7d × sum(articlesPerDay × preferredDays.length × 4.33)` across all sites.
+**Cost formula details:**
+
+- `totalCost7d` = `sum(sites[].windows.thisWeekUsd)` — network-wide AI spend last 7 days.
+- `totalCreated7d` = `sum(sites[].windows.created7d)` — network-wide articles created last 7 days (new field from API extension #2).
+- `networkAvgPerArticle` = `totalCost7d / totalCreated7d` — the true network average (not an average of per-site averages).
+- `projectedMonthlyArticles` = `sum(sites[].schedule.articlesPerDay × sites[].schedule.preferredDays.length × 4.33)` — from site-stats schedule data, only for sites with `schedule !== null`.
+- `Expected monthly` = `networkAvgPerArticle × projectedMonthlyArticles`.
+- If `totalCreated7d === 0`, display "—" for Avg/article and Expected monthly (avoid division by zero).
 
 ### OpsTable
 
@@ -234,7 +278,7 @@ Single horizontal bar with 5 metrics separated by light dividers:
 | Review | `reviewCount` | Purple if > 15, gray otherwise |
 | SSL | `ssl.status` | Green checkmark / red X / gray "n/a" |
 | Tracking | `tracking.ga4/gtm/pixel` | Three inline labels, green if true, muted if false |
-| Domain | `domainCheck.daysLeft` | Days number, orange if < 60, red if < 30 |
+| Domain | `domainExpiry.daysLeft` | Days number, orange if < 60, red if < 30, "—" if null |
 
 **Default sort:** Priority-tiered (tier ascending, then alphabetical within tier).
 
@@ -276,15 +320,34 @@ Sub-card borders are semantic: red border for Failed Articles, amber for Image G
 |--------|-------|--------|
 | View Site → | Primary (solid purple) | `router.push(/sites/${domain})` |
 | Review Queue → | Secondary (purple outline) | `router.push(/sites/${domain}?tab=content&filter=review)` |
-| Re-seed KV | Secondary | Calls `POST /api/sites/reseed` (new endpoint, triggers `seed-kv` for the site) |
+| Re-seed KV | Secondary | Calls `POST /api/sites/reseed` (see below) |
 | Generate Images → | Secondary | `router.push(/general-images?site=${domain})` |
+
+### Re-seed KV Endpoint
+
+**`POST /api/sites/reseed`** — new dashboard API route.
+
+```jsonc
+// Request
+{ "domain": "travelswire" }
+
+// Response (success)
+{ "ok": true, "message": "KV re-seed triggered for travelswire" }
+
+// Response (error)
+{ "ok": false, "error": "seed-kv failed: ..." }
+```
+
+Implementation: Calls the content-pipeline's existing `/seed-kv` endpoint (internal, proxied like other agent calls using the `getAgentUrl()` fallback pattern). The content-pipeline runs `seed-kv.ts` for the requested site. Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` on the content-pipeline side. Returns success/failure — the UI shows a toast notification.
+
+The button is disabled with a spinner while the request is in-flight. On success: green toast "KV re-seeded for {domain}". On failure: red toast with the error message.
 
 ### FilterBar
 
 Horizontal row above the table:
 - Search input (filters by domain, debounced 300ms)
 - Status dropdown (All / Live / Staging / WordPress / etc.)
-- Category dropdown (populated from site data)
+- Category dropdown (populated from `vertical` field on `DashboardSiteEntry` — deduplicated list of all unique verticals across sites)
 - "Reset filters" link (purple text)
 
 Filters compose with the active card filter. Search + dropdown filters are AND-ed. Card filter is AND-ed on top.
@@ -321,18 +384,22 @@ Uses existing `next-themes` dark/light toggle. No hardcoded hex values in compon
 
 ### Dark Mode
 
-Uses the existing dashboard dark theme (already in place via `next-themes`). The GitHub-dark-inspired palette from the dark mockup applies:
+Uses the existing dashboard dark theme (already in place via `next-themes`). Purple remains the primary accent in both modes — `#d2a8ff` in dark mode maps to the same semantic role as `#6D4AFF` in light mode (active card border, primary buttons, links, selected states).
 
-| Token | Hex |
-|-------|-----|
-| Page background | `#0d1117` |
-| Surface | `#161b22` |
-| Border | `#30363d` |
-| Accent | `#58a6ff` |
-| Success | `#3fb950` |
-| Error | `#f85149` |
-| Warning | `#f0883e` |
-| Purple | `#d2a8ff` |
+| Token | Hex | Light equivalent |
+|-------|-----|-----------------|
+| Page background | `#0d1117` | `#F8F9FC` |
+| Surface | `#161b22` | `#FFFFFF` |
+| Border | `#30363d` | `#E7E8F0` |
+| Primary (accent) | `#d2a8ff` | `#6D4AFF` |
+| Primary light | `#1c1433` | `#F3F0FF` |
+| Primary border | `#4c3a80` | `#D9CCFF` |
+| Success | `#3fb950` | `#10B981` |
+| Error | `#f85149` | `#EF4444` |
+| Warning | `#f0883e` | `#F59E0B` |
+| Muted | `#484f58` | `#D1D5DB` |
+
+Tailwind CSS variables map these via `dark:` variants. The `--color-primary` variable switches between `#6D4AFF` (light) and `#d2a8ff` (dark) so components use a single class (e.g. `text-primary`, `border-primary`) without per-mode overrides.
 
 ### Shadow
 
@@ -345,22 +412,30 @@ box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05),
 
 | File | Change |
 |------|--------|
-| `services/dashboard/src/app/page.tsx` | Replace current content — server-fetch 5 endpoints + render `<OpsDashboard>` |
-| `services/dashboard/src/components/ops/OpsDashboard.tsx` | **New** — main client component |
+| **Dashboard — page + components** | |
+| `services/dashboard/src/app/page.tsx` | Replace current content — server-fetch 6 sources (index + 5 APIs), render `<OpsDashboard>` |
+| `services/dashboard/src/components/ops/OpsDashboard.tsx` | **New** — main client component (polling, state, merge) |
 | `services/dashboard/src/components/ops/FilterCards.tsx` | **New** — 7 filter cards |
 | `services/dashboard/src/components/ops/CostStrip.tsx` | **New** — cost/usage bar |
-| `services/dashboard/src/components/ops/FilterBar.tsx` | **New** — search + dropdowns |
+| `services/dashboard/src/components/ops/FilterBar.tsx` | **New** — search + status/category dropdowns |
 | `services/dashboard/src/components/ops/OpsTable.tsx` | **New** — table with header, rows, pagination |
-| `services/dashboard/src/components/ops/OpsTableRow.tsx` | **New** — row + expand |
-| `services/dashboard/src/components/ops/SiteDetailPanel.tsx` | **New** — detail panels + actions |
-| `services/dashboard/src/lib/ops-helpers.ts` | **New** — merge, tier, predicates, cost math |
+| `services/dashboard/src/components/ops/OpsTableRow.tsx` | **New** — row + expand toggle |
+| `services/dashboard/src/components/ops/SiteDetailPanel.tsx` | **New** — 5-panel detail + action buttons |
+| `services/dashboard/src/lib/ops-helpers.ts` | **New** — `mergeOpsRows()`, tier computation, card predicates, cost strip math |
+| **Dashboard — API routes** | |
 | `services/dashboard/src/app/api/r2-usage/route.ts` | **New** — R2 metrics from MongoDB |
-| `services/dashboard/src/app/api/site-stats/route.ts` | Extend — `today` field enrichment |
-| `services/dashboard/src/app/api/site-costs/route.ts` | Extend — `todayUsd`, `allTimeTokens`, `avgPerArticle7dUsd` |
-| `services/content-pipeline/src/stats/daily-stats.ts` | **New** — daily granularity MongoDB queries |
-| `services/content-pipeline/src/stats/r2-tally.ts` | **New** — R2 tally increment helpers |
+| `services/dashboard/src/app/api/sites/reseed/route.ts` | **New** — `POST` proxies to content-pipeline `/seed-kv` for a single site |
+| `services/dashboard/src/app/api/site-stats/route.ts` | Extend — add `today.expected` in `enrichSite()` |
+| `services/dashboard/src/lib/site-stats.ts` | Extend — `enrichSite()` adds `today.expected` computation |
+| **Content-pipeline** | |
+| `services/content-pipeline/src/stats/repo.ts` | Extend — add `today.created` to `/site-stats` response (daily aggregation query) |
+| `services/content-pipeline/src/costs/repo.ts` | Extend — add `todayUsd`, `allTimeTokens`, `avgPerArticle7dUsd`, `created7d` to `SiteCostsResponse.windows` |
+| `services/content-pipeline/src/stats/r2-tally.ts` | **New** — R2 tally `$inc` helpers + `/r2-usage` query |
 | `services/content-pipeline/src/stats/backfill-r2.ts` | **New** — one-time R2 backfill script |
-| R2 upload call sites (seed-kv, dashboard upload, content-pipeline image gen) | Add `$inc` tally on each upload |
+| **R2 upload call sites** | |
+| `packages/site-worker/scripts/seed-kv.ts` | Add `$inc` R2 tally on image upload |
+| `services/dashboard/src/app/api/articles/upload/route.ts` | Add `$inc` R2 tally on article image upload |
+| `services/content-pipeline/src/agents/content-generation/agent.ts` | Add `$inc` R2 tally on image generation upload |
 
 **Untouched:** `SitesTable.tsx`, `StatsPanel.tsx`, `ActivityFeed.tsx` — remain for `/sites`. The dashboard page stops importing them.
 
