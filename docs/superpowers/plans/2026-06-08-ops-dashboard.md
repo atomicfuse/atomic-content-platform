@@ -103,10 +103,10 @@ describe("countTodayCreated", () => {
     const yesterday = new Date("2026-06-07T14:00:00Z");
 
     await coll.insertMany([
-      { siteDomain: "travelswire", finishedAt: today, articlesCreated: 3, status: "success" },
-      { siteDomain: "travelswire", finishedAt: yesterday, articlesCreated: 2, status: "success" },
-      { siteDomain: "wineoceans", finishedAt: today, articlesCreated: 1, status: "success" },
-      { siteDomain: "travelswire", finishedAt: today, articlesCreated: 0, status: "error" },
+      { siteDomain: "travelswire", finishedAt: today, created: 3, failed: 0, status: "success" },
+      { siteDomain: "travelswire", finishedAt: yesterday, created: 2, failed: 0, status: "success" },
+      { siteDomain: "wineoceans", finishedAt: today, created: 1, failed: 0, status: "success" },
+      { siteDomain: "travelswire", finishedAt: today, created: 0, failed: 1, status: "error" },
     ]);
 
     const result = await countTodayCreated("travelswire", today);
@@ -120,14 +120,14 @@ describe("countTodayCreated", () => {
     await coll.insertOne({
       siteDomain: "travelswire",
       finishedAt: new Date("2026-06-07T23:59:59Z"),
-      articlesCreated: 5,
+      created: 5, failed: 0,
       status: "success",
     });
     // Event at 00:00 today
     await coll.insertOne({
       siteDomain: "travelswire",
       finishedAt: new Date("2026-06-08T00:00:00Z"),
-      articlesCreated: 2,
+      created: 2, failed: 0,
       status: "success",
     });
 
@@ -152,7 +152,7 @@ import { COLLECTIONS } from "./types.js";
 
 /**
  * Count articles created today (UTC) for a single site.
- * Sums `articlesCreated` from generation_events where status=success
+ * Sums `created` from generation_events where status=success
  * and finishedAt >= start of today UTC.
  */
 export async function countTodayCreated(
@@ -176,7 +176,7 @@ export async function countTodayCreated(
     {
       $group: {
         _id: null,
-        total: { $sum: "$articlesCreated" },
+        total: { $sum: "$created" },
       },
     },
   ];
@@ -202,8 +202,10 @@ import { countTodayCreated } from "./daily.js";
 
 Extend the `SiteStatsResponse` interface (around line 5-13) — add:
 ```typescript
-  today: { created: number };
+  today?: { created: number };
 ```
+
+Note: `today` is optional so existing consumers of the response type are not broken.
 
 In `getSiteStats()` (around line 79-130), after the existing aggregation queries, add:
 ```typescript
@@ -287,9 +289,9 @@ describe("extendWindows", () => {
     const db = await getMongoDb();
     const coll = db.collection(COST_COLLECTIONS.costEvents);
     await coll.insertMany([
-      { siteDomain: "travelswire", at: now, costUsd: 0.50, tokensInput: 1000, tokensOutput: 500 },
-      { siteDomain: "travelswire", at: now, costUsd: 0.30, tokensInput: 800, tokensOutput: 200 },
-      { siteDomain: "travelswire", at: new Date("2026-06-07T14:00:00Z"), costUsd: 1.00, tokensInput: 5000, tokensOutput: 2000 },
+      { siteDomain: "travelswire", at: now, costUsd: 0.50, inputTokens: 1000, outputTokens: 500 },
+      { siteDomain: "travelswire", at: now, costUsd: 0.30, inputTokens: 800, outputTokens: 200 },
+      { siteDomain: "travelswire", at: new Date("2026-06-07T14:00:00Z"), costUsd: 1.00, inputTokens: 5000, outputTokens: 2000 },
     ]);
 
     const result = await extendWindows("travelswire", now);
@@ -300,8 +302,8 @@ describe("extendWindows", () => {
     const db = await getMongoDb();
     const coll = db.collection(COST_COLLECTIONS.costEvents);
     await coll.insertMany([
-      { siteDomain: "travelswire", at: now, costUsd: 0.50, tokensInput: 1000, tokensOutput: 500 },
-      { siteDomain: "travelswire", at: new Date("2026-01-01T00:00:00Z"), costUsd: 2.00, tokensInput: 4000, tokensOutput: 1500 },
+      { siteDomain: "travelswire", at: now, costUsd: 0.50, inputTokens: 1000, outputTokens: 500 },
+      { siteDomain: "travelswire", at: new Date("2026-01-01T00:00:00Z"), costUsd: 2.00, inputTokens: 4000, outputTokens: 1500 },
     ]);
 
     const result = await extendWindows("travelswire", now);
@@ -315,12 +317,12 @@ describe("extendWindows", () => {
     const threeDaysAgo = new Date("2026-06-05T14:00:00Z");
 
     await costColl.insertMany([
-      { siteDomain: "travelswire", at: threeDaysAgo, costUsd: 1.00, tokensInput: 1000, tokensOutput: 500 },
-      { siteDomain: "travelswire", at: now, costUsd: 0.50, tokensInput: 800, tokensOutput: 200 },
+      { siteDomain: "travelswire", at: threeDaysAgo, costUsd: 1.00, inputTokens: 1000, outputTokens: 500 },
+      { siteDomain: "travelswire", at: now, costUsd: 0.50, inputTokens: 800, outputTokens: 200 },
     ]);
     await genColl.insertMany([
-      { siteDomain: "travelswire", finishedAt: threeDaysAgo, articlesCreated: 3, status: "success" },
-      { siteDomain: "travelswire", finishedAt: now, articlesCreated: 2, status: "success" },
+      { siteDomain: "travelswire", finishedAt: threeDaysAgo, created: 3, status: "success" },
+      { siteDomain: "travelswire", finishedAt: now, created: 2, status: "success" },
     ]);
 
     const result = await extendWindows("travelswire", now);
@@ -331,7 +333,7 @@ describe("extendWindows", () => {
   it("returns 0 avgPerArticle7dUsd when no articles created", async () => {
     const db = await getMongoDb();
     await db.collection(COST_COLLECTIONS.costEvents).insertOne({
-      siteDomain: "travelswire", at: now, costUsd: 1.00, tokensInput: 1000, tokensOutput: 500,
+      siteDomain: "travelswire", at: now, costUsd: 1.00, inputTokens: 1000, outputTokens: 500,
     });
 
     const result = await extendWindows("travelswire", now);
@@ -393,8 +395,8 @@ export async function extendWindows(
           {
             $group: {
               _id: null,
-              input: { $sum: "$tokensInput" },
-              output: { $sum: "$tokensOutput" },
+              input: { $sum: "$inputTokens" },
+              output: { $sum: "$outputTokens" },
             },
           },
         ])
@@ -418,7 +420,7 @@ export async function extendWindows(
               status: "success",
             },
           },
-          { $group: { _id: null, total: { $sum: "$articlesCreated" } } },
+          { $group: { _id: null, total: { $sum: "$created" } } },
         ])
         .toArray(),
     ]);
@@ -2305,12 +2307,11 @@ Replace the entire content of `services/dashboard/src/app/page.tsx`:
 
 ```tsx
 import { readDashboardIndex } from "@/lib/github";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 
-export const dynamic_config = "force-dynamic";
-export { dynamic_config as dynamic };
+export const dynamic = "force-dynamic";
 
-const OpsDashboard = dynamic(() => import("@/components/ops/OpsDashboard"), {
+const OpsDashboard = nextDynamic(() => import("@/components/ops/OpsDashboard"), {
   ssr: false,
   loading: () => <div className="p-8 text-secondary text-center">Loading ops dashboard...</div>,
 });
@@ -2539,3 +2540,5 @@ Task 15 (Theme tokens) ─── Task 16 (Integration) ────────�
 ```
 
 Tasks 1-6 can run in parallel. Tasks 9-12 can run in parallel. Task 13 depends on 8-12. Task 14 depends on 13+15. Task 16 is last.
+
+**Exception:** Tasks 3, 4, and 7 all modify `services/content-pipeline/src/agents/content-generation/index.ts` (adding routes). If running in parallel subagents, serialize these three tasks to avoid merge conflicts on that file.
