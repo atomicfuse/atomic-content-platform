@@ -48,6 +48,17 @@ interface OpsDashboardProps {
 
 const POLL_INTERVAL = 60_000;
 
+const EMPTY_R2: R2Data = { totalBytes: 0, totalImages: 0, capacityPct: 0, lastUpdated: null };
+
+function safeR2(raw: R2Data): R2Data {
+  return {
+    totalBytes: raw?.totalBytes ?? 0,
+    totalImages: raw?.totalImages ?? 0,
+    capacityPct: raw?.capacityPct ?? 0,
+    lastUpdated: raw?.lastUpdated ?? null,
+  };
+}
+
 export default function OpsDashboard({
   initialIndex,
   initialStats,
@@ -60,7 +71,7 @@ export default function OpsDashboard({
   const [checks, setChecks] = useState(initialChecks);
   const [costs, setCosts] = useState(initialCosts);
   const [attention, setAttention] = useState(initialAttention);
-  const [r2, setR2] = useState(initialR2);
+  const [r2, setR2] = useState(safeR2(initialR2));
   const [lastRefreshed, setLastRefreshed] = useState(Date.now());
   const [failCount, setFailCount] = useState(0);
 
@@ -90,7 +101,7 @@ export default function OpsDashboard({
       if (chResp) setChecks(chResp as typeof initialChecks);
       if (coResp) setCosts(coResp as typeof initialCosts);
       if (aResp) setAttention(aResp as typeof initialAttention);
-      if (rResp) setR2(rResp as R2Data);
+      if (rResp) setR2(safeR2(rResp as R2Data));
       setLastRefreshed(Date.now());
       setFailCount(0);
     } catch {
