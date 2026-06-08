@@ -56,6 +56,7 @@ import { readSiteBrief } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
+import { getR2Usage } from "../../stats/r2-tally.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -800,6 +801,19 @@ async function handleRequest(
         sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
       }
       return;
+    }
+  }
+
+  // GET /r2-usage
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/r2-usage") {
+      try {
+        const usage = await getR2Usage();
+        return sendJson(res, 200, { status: "ok", ...usage });
+      } catch (err) {
+        return sendJson(res, 503, { status: "error", error: String(err) });
+      }
     }
   }
 
