@@ -85,4 +85,4 @@ services:
 
 requires:
   - redis: private
-  - mongodb: private
+  - db: private
