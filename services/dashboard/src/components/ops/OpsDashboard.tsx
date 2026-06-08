@@ -47,8 +47,23 @@ interface OpsDashboardProps {
 }
 
 const POLL_INTERVAL = 60_000;
+/** Consider data stale after 30s — only re-fetch on mount if older. */
+const STALE_THRESHOLD = 30_000;
 
 const EMPTY_R2: R2Data = { totalBytes: 0, totalImages: 0, capacityPct: 0, lastUpdated: null };
+
+/* ------------------------------------------------------------------ */
+/*  Module-level cache — survives unmount/remount across navigations   */
+/* ------------------------------------------------------------------ */
+interface DataCache {
+  stats: { sites: StatsInput[] };
+  checks: { sites: ChecksInput[] };
+  costs: { sites: CostSite[] };
+  attention: { sites: AttentionInput[] };
+  r2: R2Data;
+  lastRefreshed: number;
+}
+let _cache: DataCache | null = null;
 
 function safeR2(raw: R2Data): R2Data {
   return {
@@ -67,12 +82,13 @@ export default function OpsDashboard({
   initialAttention,
   initialR2,
 }: OpsDashboardProps): React.ReactElement {
-  const [stats, setStats] = useState(initialStats);
-  const [checks, setChecks] = useState(initialChecks);
-  const [costs, setCosts] = useState(initialCosts);
-  const [attention, setAttention] = useState(initialAttention);
-  const [r2, setR2] = useState(safeR2(initialR2));
-  const [lastRefreshed, setLastRefreshed] = useState(Date.now());
+  // Prefer module cache (survives navigation) over server-provided initial data
+  const [stats, setStats] = useState(_cache?.stats ?? initialStats);
+  const [checks, setChecks] = useState(_cache?.checks ?? initialChecks);
+  const [costs, setCosts] = useState(_cache?.costs ?? initialCosts);
+  const [attention, setAttention] = useState(_cache?.attention ?? initialAttention);
+  const [r2, setR2] = useState(_cache?.r2 ?? safeR2(initialR2));
+  const [lastRefreshed, setLastRefreshed] = useState(_cache?.lastRefreshed ?? Date.now());
   const [failCount, setFailCount] = useState(0);
 
   const [activeCard, setActiveCard] = useState<CardId | null>(null);
@@ -87,7 +103,7 @@ export default function OpsDashboard({
     return () => clearTimeout(t);
   }, [search]);
 
-  // Polling
+  // Polling — persists results to module cache so data survives navigation
   const poll = useCallback(async () => {
     try {
       const [sResp, chResp, coResp, aResp, rResp] = await Promise.all([
@@ -102,14 +118,27 @@ export default function OpsDashboard({
       if (coResp) setCosts(coResp as typeof initialCosts);
       if (aResp) setAttention(aResp as typeof initialAttention);
       if (rResp) setR2(safeR2(rResp as R2Data));
-      setLastRefreshed(Date.now());
+      const now = Date.now();
+      setLastRefreshed(now);
       setFailCount(0);
+      // Persist to module cache
+      _cache = {
+        stats: sResp ?? _cache?.stats ?? initialStats,
+        checks: chResp ?? _cache?.checks ?? initialChecks,
+        costs: coResp ?? _cache?.costs ?? initialCosts,
+        attention: aResp ?? _cache?.attention ?? initialAttention,
+        r2: rResp ? safeR2(rResp as R2Data) : (_cache?.r2 ?? safeR2(initialR2)),
+        lastRefreshed: now,
+      };
     } catch {
       setFailCount((c) => c + 1);
     }
-  }, [initialStats, initialChecks, initialCosts, initialAttention]);
+  }, [initialStats, initialChecks, initialCosts, initialAttention, initialR2]);
 
   useEffect(() => {
+    // Only poll immediately if cached data is stale or missing
+    const age = Date.now() - (_cache?.lastRefreshed ?? 0);
+    if (age > STALE_THRESHOLD) poll();
     const id = setInterval(poll, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [poll]);

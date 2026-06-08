@@ -1,14 +1,15 @@
 import { readDashboardIndex } from "@/lib/github";
 import OpsDashboard from "@/components/ops/OpsDashboard";
 
-export const dynamic = "force-dynamic";
+/** Cache page output for 60s — navigating back within the window is instant. */
+export const revalidate = 60;
 
 async function fetchJson(path: string): Promise<Record<string, unknown>> {
   const base = process.env.NEXTAUTH_URL ?? "http://localhost:3001";
   try {
     const resp = await fetch(`${base}${path}`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(15_000),
+      next: { revalidate: 60 },
+      signal: AbortSignal.timeout(10_000),
     });
     if (!resp.ok) return {};
     return await resp.json();
