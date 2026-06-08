@@ -39,6 +39,8 @@
   --color-error: #ef4444;
 
   /* Ops dashboard semantic tokens (resolved via CSS variables) */
+  --color-primary: var(--ops-primary);
+  --color-secondary: var(--ops-secondary);
   --color-primary-text: var(--ops-primary-text);
   --color-heading: var(--ops-heading);
   --color-card: var(--ops-card);
@@ -82,6 +84,8 @@
   --text-muted: #6b7280;
 
   /* Ops dashboard tokens — dark */
+  --ops-primary: #d2a8ff;
+  --ops-secondary: #7d8590;
   --ops-primary-text: #e6edf3;
   --ops-heading: #e6edf3;
   --ops-card: #161b22;
@@ -116,6 +120,8 @@
   --text-muted: var(--color-gray-400);
 
   /* Ops dashboard tokens — light */
+  --ops-primary: #6D4AFF;
+  --ops-secondary: #6B7280;
   --ops-primary-text: #111827;
   --ops-heading: #0F172A;
   --ops-card: #FFFFFF;
