@@ -2,6 +2,19 @@ import { MongoClient, type Db } from "mongodb";
 import { COLLECTIONS } from "../stats/types.js";
 import { COST_COLLECTIONS } from "../costs/types.js";
 
+/** Extract the database name from a mongodb:// URL path segment. */
+function dbNameFromUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // pathname is "/<dbName>" — strip leading slash
+    const name = parsed.pathname.replace(/^\//, "");
+    if (name) return name;
+  } catch {
+    // malformed URL — fall through
+  }
+  return "atl_ops"; // ultimate fallback
+}
+
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
 
@@ -18,8 +31,12 @@ export async function getMongoDb(): Promise<Db> {
         throw err;
       });
     }
-    /** DB name read at call time so MONGODB_DB set after import (e.g. in tests) is honoured. */
-    const dbName = process.env.MONGODB_DB ?? "atl_ops";
+    /** DB name: explicit env > parsed from URL path > fallback.
+     *  CloudGrid injects the provisioned DB name in the URL path
+     *  (e.g. …/sites-platform-e297?authSource=admin). */
+    const dbName = process.env.MONGODB_DB ?? dbNameFromUrl(
+      process.env.MONGODB_URL ?? process.env.MONGODB_URI ?? "",
+    );
     dbPromise = clientPromise.then((c) => c.db(dbName));
   }
   return dbPromise;
