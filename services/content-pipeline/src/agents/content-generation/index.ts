@@ -24,6 +24,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true }
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
 import { recordGeneration } from "../../stats/recorder.js";
+import { buildScheduleSnapshot } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -943,6 +944,19 @@ async function handleRequest(
       config,
     );
     const finishedAt = new Date();
+
+    // Read the brief's schedule so MongoDB stays populated even for
+    // dashboard-triggered generation (previously passed null).
+    let schedule: ReturnType<typeof buildScheduleSnapshot> = null;
+    try {
+      const octokit = createOctokit(config.github);
+      const briefBranch = branchStr ?? `staging/${siteDomain}`;
+      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, briefBranch);
+      schedule = buildScheduleSnapshot(briefData.brief.schedule);
+    } catch {
+      // Brief read failed — record with null schedule (non-fatal)
+    }
+
     await recordGeneration(
       result,
       {
@@ -952,7 +966,7 @@ async function handleRequest(
         startedAt,
         finishedAt,
       },
-      null,
+      schedule,
     );
 
     // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;

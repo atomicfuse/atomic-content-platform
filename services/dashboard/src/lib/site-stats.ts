@@ -37,7 +37,7 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-import { readArticles } from "@/lib/github";
+import { readArticles, readSiteConfig } from "@/lib/github";
 import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import type { ArticleEntry } from "@/types/dashboard";
 
@@ -406,31 +406,86 @@ export function emptyStats(siteDomain: string): SiteStatsResponse {
 }
 
 /**
+ * Build a ScheduleSnapshot from a raw brief.schedule object (parsed YAML).
+ *
+ * Replicates the content-pipeline's `buildScheduleSnapshot` logic so we can
+ * derive schedule data from the site brief when MongoDB doesn't have it.
+ * Keep in sync with services/content-pipeline/src/stats/schedule.ts.
+ */
+export function buildScheduleFromBrief(
+  raw: Record<string, unknown> | undefined | null,
+): ScheduleSnapshot | null {
+  if (!raw) return null;
+
+  const preferredDays = Array.isArray(raw.preferred_days)
+    ? (raw.preferred_days as string[])
+    : [];
+
+  let articlesPerDay: number;
+  if (typeof raw.articles_per_day === "number" && raw.articles_per_day > 0) {
+    articlesPerDay = raw.articles_per_day;
+  } else {
+    const perWeek =
+      typeof raw.articles_per_week === "number" ? raw.articles_per_week : 0;
+    if (perWeek <= 0) {
+      articlesPerDay = 0;
+    } else {
+      const daysCount = preferredDays.length || 7;
+      articlesPerDay = Math.max(1, Math.ceil(perWeek / daysCount));
+    }
+  }
+
+  const weeklyTarget = articlesPerDay * preferredDays.length;
+  return { articlesPerDay, preferredDays, weeklyTarget };
+}
+
+/**
  * Enrich one site: add recentArticles + reviewCount + generalImages +
  * schedule.nextRun + today.expected. The three article-derived fields come from
  * a SINGLE article fetch via `articleAggregates`.
+ *
+ * When the pipeline's schedule is null (MongoDB has no schedule snapshot —
+ * happens when only dashboard-triggered generation has run), falls back to
+ * reading the site's brief.schedule from Git via readSiteConfig.
  */
 export async function enrichSite(
   site: SiteStatsResponse,
   gate: SchedulerGate,
   now: Date,
 ): Promise<EnrichedSiteStats> {
+  const branch = `staging/${site.siteDomain}`;
+
   const { recentArticles, reviewCount, generalImages } = await articleAggregates(
     site.siteDomain,
-    `staging/${site.siteDomain}`,
+    branch,
   );
 
-  const schedule = site.schedule
+  // Resolve schedule: prefer pipeline (MongoDB), fall back to site brief (Git)
+  let rawSchedule = site.schedule;
+  if (!rawSchedule) {
+    try {
+      const config = await readSiteConfig(site.siteDomain, branch);
+      const brief = config?.brief as Record<string, unknown> | undefined;
+      const briefSchedule = brief?.schedule as
+        | Record<string, unknown>
+        | undefined;
+      rawSchedule = buildScheduleFromBrief(briefSchedule);
+    } catch {
+      // Git read failed — keep schedule null
+    }
+  }
+
+  const schedule = rawSchedule
     ? {
-        ...site.schedule,
-        nextRun: computeNextRun(gate, site.schedule.preferredDays, now),
+        ...rawSchedule,
+        nextRun: computeNextRun(gate, rawSchedule.preferredDays, now),
       }
     : null;
 
-  const todayExpected = site.schedule
+  const todayExpected = rawSchedule
     ? computeTodayExpected(
-        site.schedule.articlesPerDay,
-        site.schedule.preferredDays,
+        rawSchedule.articlesPerDay,
+        rawSchedule.preferredDays,
         now,
       )
     : 0;
