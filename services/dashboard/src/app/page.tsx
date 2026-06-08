@@ -1,4 +1,5 @@
 import { readDashboardIndex } from "@/lib/github";
+import type { DashboardIndex } from "@/types/dashboard";
 import OpsDashboard from "@/components/ops/OpsDashboard";
 
 /** Cache page output for 60s — navigating back within the window is instant. */
@@ -9,7 +10,7 @@ async function fetchJson(path: string): Promise<Record<string, unknown>> {
   try {
     const resp = await fetch(`${base}${path}`, {
       next: { revalidate: 60 },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(8_000),
     });
     if (!resp.ok) return {};
     return await resp.json();
@@ -18,9 +19,23 @@ async function fetchJson(path: string): Promise<Record<string, unknown>> {
   }
 }
 
+/** Read dashboard-index with a strict timeout so rate limits don't block the page. */
+async function safeReadIndex(): Promise<DashboardIndex> {
+  try {
+    return await Promise.race([
+      readDashboardIndex(),
+      new Promise<DashboardIndex>((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), 5_000),
+      ),
+    ]);
+  } catch {
+    return { sites: [] };
+  }
+}
+
 export default async function DashboardPage(): Promise<React.ReactElement> {
   const [index, stats, checks, costs, attention, r2] = await Promise.all([
-    readDashboardIndex(),
+    safeReadIndex(),
     fetchJson("/api/site-stats"),
     fetchJson("/api/site-checks"),
     fetchJson("/api/site-costs"),
