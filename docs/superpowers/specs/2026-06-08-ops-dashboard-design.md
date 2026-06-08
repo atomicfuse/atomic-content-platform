@@ -1,0 +1,374 @@
+# Ops Dashboard — Design Spec
+
+**Date:** 2026-06-08
+**Status:** Draft
+**Replaces:** Current dashboard homepage (StatsPanel + SitesTable + ActivityFeed)
+
+## Overview
+
+Rebuild the dashboard homepage as an operational console. The current sites table moves exclusively to `/sites`. The new dashboard surfaces per-site health, generation stats, AI costs, and alerts through filter cards, a cost strip, a sortable table, and expandable site detail panels.
+
+## Decisions Log
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Layout | Card-as-filter, full-width table (no persistent sidebar) | Simpler, table gets full width |
+| Row expand | Multi-expand | Compare multiple sites simultaneously |
+| Detail actions | View Site, Review Queue, Re-seed KV, Generate Images | Quick-action without navigating away |
+| Data gaps | Extend API first, then build UI | No stubs or placeholders |
+| R2 metrics | MongoDB running tally + backfill | Fast reads, no runtime R2 scan |
+| Published today | `articlesPerDay` only on `preferredDays` | Respects schedule, zero on off-days |
+| Sort order | Priority-tiered (down > sync fail > failures > alerts > healthy) | Clear severity ordering without opaque scores |
+| Sync failed card | Sync only (renamed from "Failed 24h build/sync") | Builds don't exist post-migration |
+| Data freshness | Server-render + client polling (60s) | Ops dashboard stays current without reload |
+| Light theme | AtomicLabs brand palette (#6D4AFF primary) | Linear/Vercel/Stripe SaaS aesthetic |
+
+## Architecture
+
+### Data Flow
+
+```
+page.tsx (server component)
+│
+├── Promise.all([
+│     fetch("/api/site-stats"),
+│     fetch("/api/site-checks"),
+│     fetch("/api/site-costs"),
+│     fetch("/api/attention"),
+│     fetch("/api/r2-usage"),
+│   ])
+│
+└── <OpsDashboard
+      initialStats={stats}
+      initialChecks={checks}
+      initialCosts={costs}
+      initialAttention={attention}
+      initialR2={r2}
+    />
+        │
+        ├── useEffect: poll all 5 endpoints every 60s
+        ├── useMemo: merge data into unified OpsRow[]
+        ├── useMemo: compute card counts from merged rows
+        ├── useMemo: compute cost strip totals
+        └── useState: activeCard, expandedRows, search, filters
+```
+
+The server component fetches all 5 endpoints in parallel for fast first paint. The client component receives the initial data as props and starts a 60-second polling interval on mount. Each poll fetches all 5 endpoints, merges the results, and React re-renders with fresh data. A "Last refreshed: Xs ago" indicator and manual "Refresh now" button are in the header.
+
+### Merged Row Type
+
+Each table row joins data from all 4 site-keyed API responses on `siteDomain`:
+
+```ts
+type OpsRow = {
+  domain: string;
+  status: SiteStatus;
+  customDomain: string | null;
+  // from /api/site-stats
+  failedArticles7d: number;
+  failedArticles30d: number;
+  imageGenFailed7d: number;
+  imageGenFailed30d: number;
+  reviewCount: number;
+  generalImages: number;
+  todayCreated: number;
+  todayExpected: number;
+  schedule: {
+    articlesPerDay: number;
+    preferredDays: string[];
+    weeklyTarget: number;
+    nextRun: string | null;
+  } | null;
+  recentArticles: {
+    title: string;
+    score: number | null;
+    status: string;
+    slug: string;
+    publishDate: string;
+  }[];
+  lastAdded: { at: string; source: string; count: number } | null;
+  lastFailedAt: string | null;
+  // from /api/site-checks
+  uptime: { state: string; ok: boolean; statusCode: number; responseTimeMs: number };
+  sync: { state: string; ok: boolean; syncedAt: string; error: string | null };
+  ssl: { state: string; status: string; daysLeft: number; expiresAt: string };
+  tracking: { state: string; ga4: boolean; gtm: boolean; pixel: boolean };
+  domainCheck: { state: string; daysLeft: number; expiresAt: string; autoRenew: boolean };
+  // from /api/attention
+  alerts: { condition: string; severity: string; since: string; value: number | null }[];
+  // computed
+  tier: 0 | 1 | 2 | 3 | 4;
+};
+```
+
+## API Extensions
+
+### 1. `/api/site-stats` — add daily granularity
+
+Add `today` field to each `SiteStat` in the response:
+
+```jsonc
+{
+  "today": {
+    "created": 2,
+    "expected": 3  // articlesPerDay if today is a preferredDay, else 0
+  }
+}
+```
+
+Computed in the dashboard API route (`/api/site-stats/route.ts`) during enrichment, same pattern as `computeNextRun`. The content-pipeline `generation_events` collection already has timestamps for per-day queries.
+
+### 2. `/api/site-costs` — add daily + aggregate fields
+
+Extend `windows` in each `SiteCost`:
+
+```jsonc
+{
+  "windows": {
+    "todayUsd": 0.42,
+    "thisWeekUsd": 1.12,
+    "last30dUsd": 6.40,
+    "allTimeTokens": { "input": 5200000, "output": 1800000 },
+    "avgPerArticle7dUsd": 0.18
+  }
+}
+```
+
+- `todayUsd`: sum of `cost_events` where date = today (UTC).
+- `allTimeTokens`: sum of all `tokensUse.input` / `.output` across all `cost_events`.
+- `avgPerArticle7dUsd`: `sum(cost 7d) / count(articles created 7d)` — joins `cost_events` with `generation_events`.
+
+### 3. `/api/site-checks` — no changes
+
+The "Sync failed (24h)" card is computed client-side: `sync.ok === false && Date.now() - new Date(sync.syncedAt) < 86400000`. No API changes needed.
+
+### 4. `/api/r2-usage` — new endpoint
+
+New dashboard API route:
+
+```jsonc
+// GET /api/r2-usage
+{
+  "totalBytes": 4831838208,
+  "totalImages": 14200,
+  "capacityPct": 4.5,
+  "lastUpdated": "2026-06-08T12:00:00Z"
+}
+```
+
+Reads from a MongoDB `r2_usage` collection (single document, upserted on each write).
+
+**Write path:** Every R2 upload increments the tally:
+- `seed-kv.ts` image uploads: `$inc: { totalBytes: size, totalImages: 1 }`
+- Dashboard article image upload (`/api/articles/upload`): same `$inc`
+- Content-pipeline image generation: same `$inc`
+
+**Backfill:** One-time `services/content-pipeline/src/stats/backfill-r2.ts` script. Lists all objects in `atl-assets-prod` via S3 API, sums sizes, counts objects, writes the initial tally to MongoDB. Idempotent (overwrites the tally document).
+
+**Capacity calculation:** `capacityPct = totalBytes / R2_CAPACITY_BYTES * 100`. `R2_CAPACITY_BYTES` defaults to 10GB (free tier). Configurable via env var if the plan changes.
+
+## Component Design
+
+### Component Hierarchy
+
+```
+services/dashboard/src/
+├── app/page.tsx                           # server component: fetch + render
+├── components/ops/
+│   ├── OpsDashboard.tsx                   # "use client" — polling, state, merge
+│   ├── FilterCards.tsx                    # 7 clickable metric cards
+│   ├── CostStrip.tsx                     # single-line cost/usage bar
+│   ├── FilterBar.tsx                     # search input + status/category dropdowns
+│   ├── OpsTable.tsx                      # table container (header + rows + pagination)
+│   ├── OpsTableRow.tsx                   # single row with expand toggle
+│   └── SiteDetailPanel.tsx              # 5-panel detail + action buttons
+└── lib/
+    └── ops-helpers.ts                    # merge, tier, card predicates, cost sums
+```
+
+### FilterCards
+
+Seven cards in a horizontal grid (`grid-cols-7`). Each card displays:
+- Icon in a colored circle (status-colored background)
+- Uppercase label
+- Bold count number
+
+Active card gets a `#6D4AFF` (purple) border. Clicking a card sets it as the active filter. Clicking the active card deselects it (shows all sites). Card counts are always computed from **unfiltered** data so they stay accurate regardless of active filter.
+
+| Card | Label | Count source | Color |
+|------|-------|-------------|-------|
+| All Sites (Live) | `ALL_LIVE` | `rows.filter(r => r.status === "Live").length` | Purple (accent) |
+| Needs Attention | `ATTENTION` | `rows.filter(r => r.alerts.length > 0).length` | Warning orange |
+| Failed Articles (7d) | `FAILED_ARTICLES` | `rows.filter(r => r.failedArticles7d > 3).length` | Error red |
+| Sites Down | `SITES_DOWN` | `rows.filter(r => !r.uptime.ok).length` | Error red |
+| Sync Failed (24h) | `SYNC_FAILED` | `rows.filter(r => !r.sync.ok && within24h(r.sync.syncedAt)).length` | Warning orange |
+| Published Today | `PUBLISHED_TODAY` | `sum(todayCreated) / sum(todayExpected)` format | Success green |
+| In Review | `IN_REVIEW` | `sum(rows[].reviewCount)` | Info purple |
+
+### CostStrip
+
+Single horizontal bar with 5 metrics separated by light dividers:
+
+| Metric | Source | Format |
+|--------|--------|--------|
+| AI spend today | `sum(costs[].windows.todayUsd)` | `$X.XX` |
+| Avg/article (7d) | `sum(costs[].windows.avgPerArticle7dUsd * articlesCreated7d) / totalArticles7d` | `$X.XX` |
+| Expected monthly | `networkAvgPerArticle × totalMonthlyArticles` | `$XX.XX` |
+| Total tokens | `sum(costs[].windows.allTimeTokens)` | `X.XM in · X.XM out` |
+| R2 storage | `/api/r2-usage` | `X.X GB · XX% · XX,XXX imgs` |
+
+`Expected monthly` = `avgPerArticle7d × sum(articlesPerDay × preferredDays.length × 4.33)` across all sites.
+
+### OpsTable
+
+10 columns:
+
+| Column | Source | Display |
+|--------|--------|---------|
+| Site | `domain` / `customDomain` | Text, bold |
+| Status | `status` | Colored badge (Live=green, Staging=amber, etc.) |
+| Failed 7d | `failedArticles7d` | Red if > 3, muted gray if 0 |
+| Img Fail | `imageGenFailed7d` | Orange if > 0, muted gray if 0 |
+| Uptime | `uptime.ok` | Green dot "Up" / Red dot "Down" / gray "n/a" |
+| Sync | `sync.ok` | Green dot "OK" / Red dot "Fail" |
+| Review | `reviewCount` | Purple if > 15, gray otherwise |
+| SSL | `ssl.status` | Green checkmark / red X / gray "n/a" |
+| Tracking | `tracking.ga4/gtm/pixel` | Three inline labels, green if true, muted if false |
+| Domain | `domainCheck.daysLeft` | Days number, orange if < 60, red if < 30 |
+
+**Default sort:** Priority-tiered (tier ascending, then alphabetical within tier).
+
+**Pagination:** Same pattern as existing SitesTable — page size selector (10, 25, 50, 100), prev/next buttons, page number selector.
+
+**Row click:** Toggles expand/collapse for that row (multi-expand enabled).
+
+**Row highlighting:** Problem rows (tier 0) get a light red background (`#FEF2F2`).
+
+### Priority Tiers
+
+| Tier | Condition | Visual |
+|------|-----------|--------|
+| 0 — critical | `uptime.ok === false` | Red background row |
+| 1 — error | `sync.ok === false && within 24h` | Normal row, red sync indicator |
+| 2 — warning | `failedArticles7d > 3` OR `reviewCount > 15` | Normal row, red/purple counts |
+| 3 — info | `alerts.length > 0` (not covered above) | Normal row |
+| 4 — healthy | No issues | Normal row, all green |
+
+Within each tier: alphabetical by domain.
+
+### SiteDetailPanel
+
+Expands below the clicked row with a purple top border (`#6D4AFF`). Contains a 5-column grid of white cards on a gray background:
+
+| Panel | Content |
+|-------|---------|
+| **Schedule** | Preferred days, articles/day, next run datetime |
+| **Failed Articles** | 7d count (bold, red), 30d count |
+| **Image Gen Failed** | 7d count (bold, orange), 30d count |
+| **Checks** | Uptime (status + response time), Sync (status + last sync time), SSL (status + days left), Tracking (GA4/GTM/Pixel booleans) |
+| **Recent Articles** | Up to 5 articles: title, quality score (color-coded), status |
+
+Sub-card borders are semantic: red border for Failed Articles, amber for Image Gen Failed, purple for the rest.
+
+**Action buttons row** below the panels:
+
+| Button | Style | Action |
+|--------|-------|--------|
+| View Site → | Primary (solid purple) | `router.push(/sites/${domain})` |
+| Review Queue → | Secondary (purple outline) | `router.push(/sites/${domain}?tab=content&filter=review)` |
+| Re-seed KV | Secondary | Calls `POST /api/sites/reseed` (new endpoint, triggers `seed-kv` for the site) |
+| Generate Images → | Secondary | `router.push(/general-images?site=${domain})` |
+
+### FilterBar
+
+Horizontal row above the table:
+- Search input (filters by domain, debounced 300ms)
+- Status dropdown (All / Live / Staging / WordPress / etc.)
+- Category dropdown (populated from site data)
+- "Reset filters" link (purple text)
+
+Filters compose with the active card filter. Search + dropdown filters are AND-ed. Card filter is AND-ed on top.
+
+## Theme
+
+Uses existing `next-themes` dark/light toggle. No hardcoded hex values in components — all colors via Tailwind classes.
+
+### Light Mode Palette (AtomicLabs brand)
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| Primary | `#6D4AFF` | Active card border, selected state, links, primary buttons, pagination active |
+| Primary hover | `#5B3EF0` | Button hover |
+| Primary light | `#F3F0FF` | Icon circles, active row background, info background |
+| Primary border | `#D9CCFF` | Secondary button border, info card border |
+| Page background | `#F8F9FC` | Canvas |
+| Card background | `#FFFFFF` | Cards, table, inputs |
+| Card border | `#E7E8F0` | Default card/table border |
+| Divider | `#EEF0F5` | Table row borders, section dividers |
+| Secondary text | `#6B7280` | Labels, muted values |
+| Primary text | `#111827` | Values, counts |
+| Heading text | `#0F172A` | Site names, section headings |
+| Success | `#10B981` | Up, OK, published, good scores |
+| Success bg | `#ECFDF5` | Live badge background |
+| Success border | `#A7F3D0` | Live badge border |
+| Warning | `#F59E0B` | Sync failed, image fail, moderate scores |
+| Warning bg | `#FFFBEB` | Staging badge, warning card icon bg |
+| Warning border | `#FCD34D` | Staging badge border, image fail card border |
+| Error | `#EF4444` | Down, failed articles, critical |
+| Error bg | `#FEF2F2` | Problem row highlight, error card icon bg |
+| Error border | `#FECACA` | Failed articles card border |
+| Muted | `#D1D5DB` | Zero values, missing data, disabled tracking labels |
+
+### Dark Mode
+
+Uses the existing dashboard dark theme (already in place via `next-themes`). The GitHub-dark-inspired palette from the dark mockup applies:
+
+| Token | Hex |
+|-------|-----|
+| Page background | `#0d1117` |
+| Surface | `#161b22` |
+| Border | `#30363d` |
+| Accent | `#58a6ff` |
+| Success | `#3fb950` |
+| Error | `#f85149` |
+| Warning | `#f0883e` |
+| Purple | `#d2a8ff` |
+
+### Shadow
+
+```css
+box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05),
+            0 8px 24px rgba(15, 23, 42, 0.04);
+```
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `services/dashboard/src/app/page.tsx` | Replace current content — server-fetch 5 endpoints + render `<OpsDashboard>` |
+| `services/dashboard/src/components/ops/OpsDashboard.tsx` | **New** — main client component |
+| `services/dashboard/src/components/ops/FilterCards.tsx` | **New** — 7 filter cards |
+| `services/dashboard/src/components/ops/CostStrip.tsx` | **New** — cost/usage bar |
+| `services/dashboard/src/components/ops/FilterBar.tsx` | **New** — search + dropdowns |
+| `services/dashboard/src/components/ops/OpsTable.tsx` | **New** — table with header, rows, pagination |
+| `services/dashboard/src/components/ops/OpsTableRow.tsx` | **New** — row + expand |
+| `services/dashboard/src/components/ops/SiteDetailPanel.tsx` | **New** — detail panels + actions |
+| `services/dashboard/src/lib/ops-helpers.ts` | **New** — merge, tier, predicates, cost math |
+| `services/dashboard/src/app/api/r2-usage/route.ts` | **New** — R2 metrics from MongoDB |
+| `services/dashboard/src/app/api/site-stats/route.ts` | Extend — `today` field enrichment |
+| `services/dashboard/src/app/api/site-costs/route.ts` | Extend — `todayUsd`, `allTimeTokens`, `avgPerArticle7dUsd` |
+| `services/content-pipeline/src/stats/daily-stats.ts` | **New** — daily granularity MongoDB queries |
+| `services/content-pipeline/src/stats/r2-tally.ts` | **New** — R2 tally increment helpers |
+| `services/content-pipeline/src/stats/backfill-r2.ts` | **New** — one-time R2 backfill script |
+| R2 upload call sites (seed-kv, dashboard upload, content-pipeline image gen) | Add `$inc` tally on each upload |
+
+**Untouched:** `SitesTable.tsx`, `StatsPanel.tsx`, `ActivityFeed.tsx` — remain for `/sites`. The dashboard page stops importing them.
+
+## Edge Cases
+
+- **MongoDB down:** All endpoints return 503. `OpsDashboard` shows a banner: "Unable to load ops data — check MongoDB connection." Cards show "—" instead of counts. Last-known data from previous successful poll is preserved in state.
+- **Content-pipeline down:** `/api/site-stats` and `/api/site-costs` return 502. Dashboard shows partial data (checks from Domains Dashboard still work). Affected cards show "—".
+- **No generation history:** New sites show zero counts across all stats. Cards compute correctly (zero doesn't trigger alerts).
+- **Staging-only sites:** Uptime, SSL, Domain columns show "n/a". These sites never appear in "Sites Down" or domain expiry warnings.
+- **Polling failure:** If a poll fails, the previous successful data is retained. The "Last refreshed" timer keeps counting up. After 3 consecutive failures, a subtle warning appears.
+- **Multiple dashboard users:** Each browser polls independently. At 60s intervals with 5 lightweight endpoints, this is negligible load. Content-pipeline already caches upstream responses.
