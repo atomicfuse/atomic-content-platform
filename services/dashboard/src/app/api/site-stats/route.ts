@@ -35,32 +35,21 @@ function getAgentUrl(): string {
 export async function GET(): Promise<NextResponse> {
   const agentUrl = getAgentUrl();
 
-  let sites: SiteStatsResponse[];
+  // Fetch from content-pipeline (MongoDB stats). If the pipeline is down or
+  // returns an error, fall through with an empty array — enrichment from
+  // Git/KV/briefs still works and provides schedule, articles, review counts.
+  let sites: SiteStatsResponse[] = [];
   try {
     const res = await fetch(`${agentUrl}/site-stats`, {
       headers: { Accept: "application/json" },
     });
-    if (!res.ok) {
-      return NextResponse.json(
-        {
-          status: "error",
-          message: `Content agent returned HTTP ${res.status} for /site-stats.`,
-        },
-        { status: 502 },
-      );
+    if (res.ok) {
+      const body = (await res.json()) as { sites?: SiteStatsResponse[] };
+      sites = Array.isArray(body.sites) ? body.sites : [];
     }
-    const body = (await res.json()) as { sites?: SiteStatsResponse[] };
-    sites = Array.isArray(body.sites) ? body.sites : [];
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to reach content agent";
-    return NextResponse.json(
-      {
-        status: "error",
-        message: `Content agent unavailable: ${message}. Is the agent running?`,
-      },
-      { status: 502 },
-    );
+    // Non-ok → sites stays empty; dashboard-index merge + enrichment still run.
+  } catch {
+    // Pipeline unreachable — proceed with empty stats, enrichment fills in the rest.
   }
 
   // Merge in sites that the pipeline never reported on so they still appear.
