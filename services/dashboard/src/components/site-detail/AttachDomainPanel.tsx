@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { attachCustomDomain, detachCustomDomain, getAvailableZones } from "@/actions/wizard";
@@ -17,7 +16,6 @@ export function AttachDomainPanel({
 }: AttachDomainPanelProps): React.ReactElement {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
-  const router = useRouter();
   const [selectedZone, setSelectedZone] = useState<{ domain: string; zoneId: string } | null>(null);
   const [zones, setZones] = useState<Array<{ domain: string; zoneId: string }>>([]);
   const [loadingZones, setLoadingZones] = useState(false);
@@ -42,8 +40,10 @@ export function AttachDomainPanel({
       try {
         await attachCustomDomain(domain, selectedZone.domain, selectedZone.zoneId);
         setSelectedZone(null);
-        router.refresh();
-        toast("Domain connected — live in ~60 seconds", "success");
+        // Full page reload — router.refresh() goes through Next.js RSC
+        // caching layers that can serve stale data. A hard reload is the
+        // only reliable way to pick up the updated dashboard index.
+        window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to attach domain", "error");
       }
@@ -54,8 +54,7 @@ export function AttachDomainPanel({
     startTransition(async () => {
       try {
         await detachCustomDomain(domain);
-        router.refresh();
-        toast("Domain disconnected", "success");
+        window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to disconnect domain", "error");
       }

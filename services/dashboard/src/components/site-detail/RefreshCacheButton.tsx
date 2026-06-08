@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { refreshSiteCache } from "@/actions/sites";
 
@@ -10,17 +9,15 @@ interface RefreshCacheButtonProps {
 }
 
 export function RefreshCacheButton({ domain, branch }: RefreshCacheButtonProps) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [spinning, setSpinning] = useState(false);
 
   async function handleClick() {
     setSpinning(true);
     await refreshSiteCache(domain, branch ?? undefined);
-    startTransition(() => {
-      router.refresh();
-    });
-    setTimeout(() => setSpinning(false), 600);
+    // Full page reload — router.refresh() goes through Next.js RSC
+    // caching layers that can serve stale data.
+    window.location.reload();
   }
 
   return (
