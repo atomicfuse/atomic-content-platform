@@ -1,6 +1,7 @@
 import { getMongoDb } from "../lib/mongo.js";
 import { COST_COLLECTIONS, type SiteCosts, type ModelRollup } from "./types.js";
 import { priceForModel } from "./pricing.js";
+import { extendWindows, type ExtendedWindows } from "./windows.js";
 
 export interface ModelCostEntry {
   model: string;
@@ -15,7 +16,10 @@ export interface SiteCostsResponse {
   siteDomain: string;
   totalCostUsd: number;
   byModel: ModelCostEntry[];
-  windows: { thisWeekUsd: number; last30dUsd: number };
+  windows: {
+    thisWeekUsd: number;
+    last30dUsd: number;
+  } & ExtendedWindows;
 }
 
 /**
@@ -84,16 +88,17 @@ export async function getSiteCosts(
   const weekStart = startOfWeek(now);
   const cutoff30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-  const [thisWeekUsd, last30dUsd] = await Promise.all([
+  const [thisWeekUsd, last30dUsd, extended] = await Promise.all([
     sumCostWindow(domain, weekStart),
     sumCostWindow(domain, cutoff30d),
+    extendWindows(domain, now),
   ]);
 
   return {
     siteDomain: domain,
     totalCostUsd: rollup?.totalCostUsd ?? 0,
     byModel: rollup ? rollupToEntries(rollup.byModel) : [],
-    windows: { thisWeekUsd, last30dUsd },
+    windows: { thisWeekUsd, last30dUsd, ...extended },
   };
 }
 
