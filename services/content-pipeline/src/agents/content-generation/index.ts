@@ -832,6 +832,49 @@ async function handleRequest(
     }
   }
 
+  // POST /seed-kv — trigger KV re-seed via GitHub Actions workflow_dispatch
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/seed-kv") {
+      try {
+        const body = await readBody(req);
+        const { domain } = JSON.parse(body) as { domain?: string };
+        if (!domain) {
+          return sendJson(res, 400, { ok: false, error: "Missing domain" });
+        }
+        // Trigger the sync-kv.yml workflow in the network repo via GitHub API
+        const token = process.env.GITHUB_TOKEN;
+        if (!token) {
+          return sendJson(res, 500, { ok: false, error: "GITHUB_TOKEN not configured" });
+        }
+        const owner = "atomicfuse";
+        const repo = "atomic-labs-network";
+        const resp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync-kv.yml/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ref: "main",
+              inputs: { site_id: domain, force_all: "false" },
+            }),
+          },
+        );
+        if (!resp.ok) {
+          const errText = await resp.text();
+          return sendJson(res, 502, { ok: false, error: `GitHub API ${resp.status}: ${errText}` });
+        }
+        return sendJson(res, 200, { ok: true, message: `Triggered sync-kv for ${domain}` });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res, config);
     return;
