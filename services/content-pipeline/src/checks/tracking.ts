@@ -15,11 +15,16 @@ export async function readTracking(domain: string): Promise<TrackingCheck> {
     const creds = credentialsFor(domain);
     const namespaceId = getKvNamespaces(domain).prod;
     const raw = await getKVEntry(namespaceId, `site-config:${domain}`, creds);
-    const tracking = (
-      raw && typeof raw === "object"
-        ? (raw as Record<string, unknown>).tracking
-        : undefined
-    ) as Record<string, unknown> | undefined;
+
+    // No KV entry (staging-only site, or never seeded to prod) — treat as
+    // unknown so computeTrackingOff returns false (no false-positive alerts).
+    if (!raw || typeof raw !== "object") {
+      return { state: "unknown", ga4: false, gtm: false, pixel: false };
+    }
+
+    const tracking = (raw as Record<string, unknown>).tracking as
+      | Record<string, unknown>
+      | undefined;
     return {
       state: "ok",
       ga4: present(tracking?.ga4),
