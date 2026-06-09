@@ -122,40 +122,67 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const targetArticles = await readArticles(targetDomain, targetBranch);
     const targetSlugs = new Set(targetArticles.map((a) => a.slug));
 
-    // --- Process each slug ---
+    // --- Process each slug (parallel read + image copy) ---
     const copied: string[] = [];
     const skipped: SkippedArticle[] = [];
     const warnings: string[] = [];
     const filesToCommit: Array<{ path: string; content: string }> = [];
 
+    // Separate conflict-skipped slugs from slugs that need fetching
+    const slugsToFetch: string[] = [];
     for (const slug of slugs) {
-      // Check for slug conflict on target
       if (targetSlugs.has(slug)) {
         skipped.push({ slug, reason: "Article with this slug already exists on target site" });
-        continue;
+      } else {
+        slugsToFetch.push(slug);
       }
+    }
 
-      // Read full article markdown from source branch
-      const sourcePath = `sites/${sourceDomain}/articles/${slug}.md`;
-      const content = await readFileContent(sourcePath, sourceBranch);
+    // Fetch all article contents in parallel (batches of 5)
+    const BATCH_SIZE = 5;
+    const articleContents = new Map<string, string>();
 
-      if (content === null) {
-        skipped.push({ slug, reason: "Article not found on source site" });
-        continue;
+    for (let i = 0; i < slugsToFetch.length; i += BATCH_SIZE) {
+      const batch = slugsToFetch.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map(async (slug) => {
+          const sourcePath = `sites/${sourceDomain}/articles/${slug}.md`;
+          const content = await readFileContent(sourcePath, sourceBranch);
+          return { slug, content };
+        }),
+      );
+      for (const { slug, content } of results) {
+        if (content === null) {
+          skipped.push({ slug, reason: "Article not found on source site" });
+        } else {
+          articleContents.set(slug, content);
+        }
       }
+    }
 
-      // --- Copy R2 image if present ---
+    // Copy R2 images in parallel for all fetched articles
+    const imageCopyPromises: Array<Promise<void>> = [];
+
+    for (const [slug, content] of articleContents) {
       const featuredImage = parseFeaturedImage(content);
-      if (featuredImage) {
-        const filename = extractImageFilename(featuredImage);
-        if (filename) {
-          const sourceR2Key = `${sourceDomain}/assets/images/${filename}`;
-          const targetR2Key = `${targetDomain}/assets/images/${filename}`;
+      if (!featuredImage) continue;
 
+      const filename = extractImageFilename(featuredImage);
+      if (!filename) {
+        const msg = `[${slug}] Could not extract image filename from featuredImage: "${featuredImage}" — article copied without image`;
+        console.warn(`[articles/copy] ${msg}`);
+        warnings.push(msg);
+        continue;
+      }
+
+      const sourceR2Key = `${sourceDomain}/assets/images/${filename}`;
+      const targetR2Key = `${targetDomain}/assets/images/${filename}`;
+
+      imageCopyPromises.push(
+        (async (): Promise<void> => {
           try {
             const imageBuffer = await readFromR2(sourceR2Key);
             if (imageBuffer) {
-              // Detect content type from filename extension
               const ext = filename.split(".").pop()?.toLowerCase() ?? "";
               const contentTypeMap: Record<string, string> = {
                 webp: "image/webp",
@@ -181,14 +208,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             console.warn(`[articles/copy] ${msg}`);
             warnings.push(msg);
           }
-        } else {
-          const msg = `[${slug}] Could not extract image filename from featuredImage: "${featuredImage}" — article copied without image`;
-          console.warn(`[articles/copy] ${msg}`);
-          warnings.push(msg);
-        }
-      }
+        })(),
+      );
+    }
 
-      // Queue article for commit to target branch
+    // Wait for all image copies to complete
+    await Promise.all(imageCopyPromises);
+
+    // Queue all fetched articles for commit
+    for (const [slug, content] of articleContents) {
       const targetPath = `sites/${targetDomain}/articles/${slug}.md`;
       filesToCommit.push({ path: targetPath, content });
       copied.push(slug);

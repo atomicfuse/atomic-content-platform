@@ -331,10 +331,21 @@ export default function CopyArticlesPage(): React.ReactElement {
         }),
       });
 
-      const data = (await res.json()) as CopyResult & { error?: string };
+      const text = await res.text();
+      let data: (CopyResult & { error?: string }) | null = null;
+      try {
+        data = JSON.parse(text) as CopyResult & { error?: string };
+      } catch {
+        // Server returned non-JSON (likely HTML timeout page)
+        setCopyError(
+          `Server returned a non-JSON response (HTTP ${res.status}). ` +
+          "The copy may have partially succeeded — check the target site for copied articles.",
+        );
+        return;
+      }
 
       if (!res.ok) {
-        setCopyError(data.error ?? `HTTP ${res.status}`);
+        setCopyError(data?.error ?? `HTTP ${res.status}`);
         return;
       }
 
