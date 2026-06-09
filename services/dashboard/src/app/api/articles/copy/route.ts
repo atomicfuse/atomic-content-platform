@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { parse as parseYaml } from "yaml";
+import { marked } from "marked";
 import {
   readDashboardIndex,
   readArticles,
@@ -9,6 +11,8 @@ import {
   invalidateSiteCaches,
 } from "@/lib/github";
 import { readFromR2, uploadToR2 } from "@/lib/r2-upload";
+import { bulkPutKV, getKVEntry } from "@/lib/cloudflare";
+import { getKvNamespaces } from "@/lib/constants";
 
 interface CopyRequestBody {
   sourceDomain: string;
@@ -25,6 +29,29 @@ interface CopyResponse {
   copied: string[];
   skipped: SkippedArticle[];
   warnings: string[];
+}
+
+// --- KV article types (mirrors site-worker/src/lib/kv-schema.ts) ---
+
+interface ArticleIndexEntry {
+  slug: string;
+  title: string;
+  description?: string;
+  author: string;
+  publishDate: string;
+  featuredImage?: string;
+  tags: string[];
+  type: "listicle" | "how-to" | "review" | "standard";
+  status: "draft" | "review" | "published";
+  featured?: ("hero" | "must-read")[];
+  scripts?: unknown[];
+  videos?: unknown[];
+  topics?: string[];
+}
+
+interface ArticleRecord {
+  frontmatter: ArticleIndexEntry;
+  body: string;
 }
 
 /** Extract the image filename from a domain-relative featuredImage path.
@@ -46,6 +73,60 @@ function parseFeaturedImage(markdown: string): string | null {
   if (multiline) return multiline[1]!.trim();
 
   return null;
+}
+
+// --- Helpers for building KV entries (mirrors seed-kv logic) ---
+
+function splitFrontmatter(raw: string): { front: Record<string, unknown>; body: string } {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(raw);
+  if (!match) return { front: {}, body: raw };
+  const front = (parseYaml(match[1] ?? "") as Record<string, unknown> | null) ?? {};
+  return { front, body: match[2] ?? "" };
+}
+
+function rewriteAssetUrls(html: string, siteId: string): string {
+  const prefix = `/${siteId}/assets/`;
+  return html
+    .replace(/(\bsrc\s*=\s*["'])\/assets\//g, `$1${prefix}`)
+    .replace(/(\bhref\s*=\s*["'])\/assets\//g, `$1${prefix}`)
+    .replace(/(\()\/assets\//g, `$1${prefix}`);
+}
+
+function rewriteFrontmatterUrl(url: string | undefined, siteId: string): string | undefined {
+  if (!url) return url;
+  if (url.startsWith("/assets/")) return `/${siteId}/assets${url.slice("/assets".length)}`;
+  return url;
+}
+
+const FEATURED_VALID = new Set(["hero", "must-read"] as const);
+function parseFeaturedFlags(raw: unknown): ("hero" | "must-read")[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const arr = Array.isArray(raw) ? raw : [raw];
+  const filtered = arr
+    .map((v) => String(v).trim())
+    .filter((v): v is "hero" | "must-read" => FEATURED_VALID.has(v as "hero" | "must-read"));
+  return filtered.length > 0 ? filtered : Array.isArray(raw) && raw.length === 0 ? undefined : [];
+}
+
+function markdownToArticleRecord(slug: string, markdown: string, siteId: string): ArticleRecord {
+  const { front, body } = splitFrontmatter(markdown);
+  const frontmatter: ArticleIndexEntry = {
+    slug,
+    title: String(front.title ?? slug),
+    description: front.description ? String(front.description) : undefined,
+    author: String(front.author ?? "Editorial Team"),
+    publishDate: new Date(String(front.publishDate ?? Date.now())).toISOString(),
+    featuredImage: rewriteFrontmatterUrl(front.featuredImage ? String(front.featuredImage) : undefined, siteId),
+    tags: Array.isArray(front.tags) ? front.tags.map(String) : [],
+    type: (front.type as ArticleIndexEntry["type"]) ?? "standard",
+    status: (front.status as ArticleIndexEntry["status"]) ?? "draft",
+    featured: parseFeaturedFlags(front.featured),
+    scripts: Array.isArray(front.scripts) ? (front.scripts as unknown[]) : undefined,
+    videos: Array.isArray(front.videos) ? (front.videos as unknown[]) : undefined,
+    topics: Array.isArray(front.topics) ? front.topics.map(String) : undefined,
+  };
+  const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
+  return { frontmatter, body: html };
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -235,6 +316,59 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // Invalidate caches for both branches
       invalidateSiteCaches(targetDomain, targetBranch);
       invalidateSiteCaches(targetDomain, "main");
+    }
+
+    // --- Write articles directly to KV for immediate live availability ---
+    if (copied.length > 0) {
+      try {
+        const kv = getKvNamespaces(targetDomain);
+
+        // Parse each article into KV format (same logic as seed-kv.ts)
+        const kvRecords: ArticleRecord[] = [];
+        for (const slug of copied) {
+          const markdown = articleContents.get(slug);
+          if (!markdown) continue;
+          kvRecords.push(markdownToArticleRecord(slug, markdown, targetDomain));
+        }
+
+        // Read existing article index from production KV and merge
+        const indexRaw = await getKVEntry(kv.prod, `article-index:${targetDomain}`, targetDomain);
+        const currentIndex: ArticleIndexEntry[] = indexRaw ? JSON.parse(indexRaw) as ArticleIndexEntry[] : [];
+        const indexMap = new Map(currentIndex.map((a) => [a.slug, a]));
+        for (const record of kvRecords) {
+          indexMap.set(record.frontmatter.slug, record.frontmatter);
+        }
+        const updatedIndex = Array.from(indexMap.values()).sort(
+          (a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime(),
+        );
+
+        // Build bulk KV entries: individual articles + updated index
+        const kvEntries: Array<{ key: string; value: string }> = [];
+        for (const record of kvRecords) {
+          kvEntries.push({
+            key: `article:${targetDomain}:${record.frontmatter.slug}`,
+            value: JSON.stringify(record),
+          });
+        }
+        kvEntries.push({
+          key: `article-index:${targetDomain}`,
+          value: JSON.stringify(updatedIndex),
+        });
+
+        // Write to both production and staging KV in parallel
+        await Promise.all([
+          bulkPutKV(kv.prod, kvEntries, targetDomain),
+          bulkPutKV(kv.staging, kvEntries, targetDomain),
+        ]);
+
+        console.log(
+          `[articles/copy] Wrote ${kvRecords.length} articles + index to prod+staging KV for ${targetDomain}`,
+        );
+      } catch (kvErr) {
+        const msg = `KV write failed (articles are in Git but may take a few minutes to appear on live site): ${kvErr instanceof Error ? kvErr.message : "unknown error"}`;
+        console.error(`[articles/copy] ${msg}`);
+        warnings.push(msg);
+      }
     }
 
     const response: CopyResponse = { copied, skipped, warnings };
