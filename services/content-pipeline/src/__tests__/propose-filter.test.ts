@@ -1,17 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the Anthropic SDK so tests don't make real API calls
-vi.mock("@anthropic-ai/sdk", () => {
-  return {
-    default: vi.fn().mockImplementation(() => ({
-      messages: {
-        create: vi.fn(),
-      },
-    })),
-  };
-});
+// Mock the shared AI abstraction so tests don't make real API calls.
+// proposeFilter routes through generateContent (CloudGrid gateway / SDK
+// fallback) rather than instantiating the Anthropic SDK directly.
+vi.mock("../lib/ai.js", () => ({
+  generateContent: vi.fn(),
+}));
 
-import Anthropic from "@anthropic-ai/sdk";
+import { generateContent } from "../lib/ai.js";
 import { proposeFilter, type ProposeFilterRequest } from "../agents/content-generation/propose-filter.js";
 
 function makeRequest(overrides: Partial<ProposeFilterRequest> = {}): ProposeFilterRequest {
@@ -33,12 +29,10 @@ function makeRequest(overrides: Partial<ProposeFilterRequest> = {}): ProposeFilt
 }
 
 function mockClaudeResponse(jsonStr: string): void {
-  const mockCreate = vi.fn().mockResolvedValue({
-    content: [{ type: "text", text: jsonStr }],
+  vi.mocked(generateContent).mockResolvedValue({
+    text: jsonStr,
+    usage: { inputTokens: 0, outputTokens: 0, estimated: true },
   });
-  vi.mocked(Anthropic).mockImplementation(
-    () => ({ messages: { create: mockCreate } }) as unknown as InstanceType<typeof Anthropic>,
-  );
 }
 
 describe("proposeFilter", () => {
@@ -51,7 +45,7 @@ describe("proposeFilter", () => {
       rationale: "Wine/beer with travel context",
     }));
 
-    const result = await proposeFilter(makeRequest(), "test-key");
+    const result = await proposeFilter(makeRequest());
 
     expect(result.category_ids).toEqual(["cat-alc"]);
     expect(result.tag_ids).toEqual(["tag-wine-tourism", "tag-culinary-travel"]);
@@ -66,7 +60,7 @@ describe("proposeFilter", () => {
       rationale: "...",
     }));
 
-    const result = await proposeFilter(makeRequest(), "test-key");
+    const result = await proposeFilter(makeRequest());
 
     expect(result.category_ids).toEqual(["cat-alc"]);
     expect(result.tag_ids).toEqual(["tag-wine-tourism"]);
@@ -82,24 +76,24 @@ describe("proposeFilter", () => {
       "\n```\nHope that helps!"
     );
 
-    const result = await proposeFilter(makeRequest(), "test-key");
+    const result = await proposeFilter(makeRequest());
     expect(result.category_ids).toEqual(["cat-alc"]);
   });
 
   it("throws when Claude returns no JSON at all", async () => {
     mockClaudeResponse("Sorry, I cannot help with that request.");
-    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(/no JSON/);
+    await expect(proposeFilter(makeRequest())).rejects.toThrow(/no JSON/);
   });
 
   it("throws when Claude returns malformed JSON", async () => {
     // Wrap in braces so the regex matches, but the content is invalid JSON
     mockClaudeResponse('{ "category_ids": [bad json }');
-    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(/invalid JSON/);
+    await expect(proposeFilter(makeRequest())).rejects.toThrow(/invalid JSON/);
   });
 
   it("throws when siteTheme is empty", async () => {
     await expect(
-      proposeFilter(makeRequest({ siteTheme: "" }), "test-key"),
+      proposeFilter(makeRequest({ siteTheme: "" })),
     ).rejects.toThrow(/siteTheme is required/);
   });
 });

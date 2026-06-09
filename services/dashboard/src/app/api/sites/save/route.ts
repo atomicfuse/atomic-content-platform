@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
 import {
   commitSiteFiles,
+  invalidateSiteCaches,
   readDashboardIndex,
   readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
@@ -238,6 +239,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.topics_v2 !== undefined) {
         if (configUpdates.topics_v2.length > 0) {
           brief.topics_v2 = configUpdates.topics_v2;
+          // Keep the legacy `topics` array in sync with topic names. The site
+          // nav menu (Header.astro) and category-page routing read
+          // `brief.topics`, so without this the live menu shows stale values
+          // and per-topic add/remove/reorder never reaches the site.
+          brief.topics = configUpdates.topics_v2.map((t) => t.name);
         } else {
           delete (brief as Record<string, unknown>).topics_v2;
         }
@@ -356,6 +362,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
+
+    // Clear in-memory caches (tree, articles, site config) so the next read of
+    // the site detail page reflects this save. siteConfigCache has an infinite
+    // TTL, so without this the dashboard serves the pre-save config forever and
+    // edits appear lost. See landmine #45.
+    invalidateSiteCaches(domain, site.staging_branch);
 
     // Propagate vertical (category label) to dashboard-index so the Sites grid
     // reflects category changes immediately. Compare against `site.vertical`

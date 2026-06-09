@@ -4,6 +4,7 @@ vi.mock("@/lib/github", () => ({
   commitSiteFiles: vi.fn().mockResolvedValue(undefined),
   readDashboardIndex: vi.fn(),
   readSiteConfig: vi.fn(),
+  invalidateSiteCaches: vi.fn(),
 }));
 
 const mockFetch = vi.fn();
@@ -66,6 +67,9 @@ describe("migrateSiteToPerTopic", () => {
     const parsed = parseYaml(files[0]!.content) as { brief: Record<string, unknown> };
     expect(parsed.brief.theme).toBe("Travel and eating while traveling");
     expect(parsed.brief.topics_v2).toEqual(TOPICS_V2);
+    // Legacy `topics` array must mirror topic names — the live nav menu and
+    // category routing read it.
+    expect(parsed.brief.topics).toEqual(["Destinations", "Wine & Beer"]);
     expect(parsed.brief.bundle_ids).toBeUndefined();
     expect(parsed.brief.category_ids).toBeUndefined();
     expect(parsed.brief.tag_ids).toBeUndefined();

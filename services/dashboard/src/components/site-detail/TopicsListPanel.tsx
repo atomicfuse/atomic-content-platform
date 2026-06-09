@@ -7,7 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import type { TopicV2 } from "@/types/dashboard";
 import { Button } from "@/components/ui/Button";
 import { TopicEditModal } from "./TopicEditModal";
-import { useAllCategories } from "@/hooks/useReferenceData";
+import { useAllCategories, useTags } from "@/hooks/useReferenceData";
 
 interface Props {
   domain: string;
@@ -28,8 +28,67 @@ export function TopicsListPanel({
   savedTopicNames,
 }: Props): React.ReactElement {
   const { categories: allCategories } = useAllCategories();
+  const { tags: allTags } = useTags();
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [addingNew, setAddingNew] = useState(false);
+  // Bulk AI re-proposal progress. `null` when idle.
+  const [regenAll, setRegenAll] = useState<{ done: number; total: number } | null>(null);
+
+  // Topics that can be AI-regenerated: filter-source only (bundle topics carry
+  // their filter on the aggregator, not here).
+  const filterTopicCount = topics.filter((t) => t.source.type === "filter").length;
+  const canRegenerateAll = filterTopicCount > 0 && !!siteTheme.trim() && regenAll === null;
+
+  /** Re-propose a filter for every filter-source topic from the site theme.
+   *  Overwrites each topic's categories + tags with the AI suggestion. Updates
+   *  local state only — the user still clicks "Save changes" to persist. */
+  async function handleRegenerateAll(): Promise<void> {
+    const targets = topics.filter((t) => t.source.type === "filter");
+    if (targets.length === 0) return;
+    if (
+      !confirm(
+        `Re-propose filters for ${targets.length} topic${targets.length > 1 ? "s" : ""} from the site theme?\n\n` +
+          `This overwrites the current categories and tags on each. You can still review before saving.`,
+      )
+    ) {
+      return;
+    }
+    setRegenAll({ done: 0, total: targets.length });
+    const next = [...topics];
+    const categoriesPayload = allCategories.map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id }));
+    const tagsPayload = allTags.map((t) => ({ id: t.id, name: t.name, usage_count: t.usage_count }));
+    let done = 0;
+    for (let i = 0; i < next.length; i++) {
+      const t = next[i]!;
+      if (t.source.type !== "filter") continue;
+      try {
+        const res = await fetch("/api/ai/propose-filter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteTheme,
+            topicName: t.name,
+            topicDescription: t.description,
+            categories: categoriesPayload,
+            tags: tagsPayload,
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { category_ids?: string[]; tag_ids?: string[] };
+          next[i] = {
+            ...t,
+            source: { type: "filter", category_ids: data.category_ids ?? [], tag_ids: data.tag_ids ?? [] },
+          };
+          onChange([...next]); // reflect each topic as it completes
+        }
+      } catch {
+        // Skip this topic on error; continue with the rest.
+      }
+      done += 1;
+      setRegenAll({ done, total: targets.length });
+    }
+    setRegenAll(null);
+  }
 
   function handleDragEnd(event: DragEndEvent): void {
     const { active, over } = event;
@@ -61,8 +120,32 @@ export function TopicsListPanel({
         <h3 className="text-sm uppercase tracking-wider font-semibold text-[var(--text-secondary)]">
           Topics ({topics.length})
         </h3>
-        <Button variant="ghost" onClick={(): void => setAddingNew(true)}>+ Add Topic</Button>
+        <div className="flex items-center gap-2">
+          {filterTopicCount > 0 && (
+            <button
+              type="button"
+              onClick={(): void => void handleRegenerateAll()}
+              disabled={!canRegenerateAll}
+              title={
+                !siteTheme.trim()
+                  ? "Set a site theme first — the AI proposes filters from it"
+                  : `Re-propose filters for all ${filterTopicCount} filter topic${filterTopicCount > 1 ? "s" : ""} from the site theme`
+              }
+              className="text-xs px-2 py-1 rounded border border-cyan/40 text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {regenAll
+                ? `Regenerating… ${regenAll.done}/${regenAll.total}`
+                : "✨ Regenerate all"}
+            </button>
+          )}
+          <Button variant="ghost" onClick={(): void => setAddingNew(true)}>+ Add Topic</Button>
+        </div>
       </div>
+      {regenAll && (
+        <p className="text-[11px] text-[var(--text-muted)] mb-2">
+          Re-proposing filters from the site theme — review the results, then click “Save changes”.
+        </p>
+      )}
 
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={topics.map((t) => t.name)} strategy={verticalListSortingStrategy}>

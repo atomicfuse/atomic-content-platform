@@ -92,7 +92,6 @@ function readBody(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<st
 async function handleProposeFilter(
   req: http.IncomingMessage,
   res: http.ServerResponse,
-  config: ReturnType<typeof loadConfig>,
 ): Promise<void> {
   if (req.method !== "POST") {
     sendJson(res, 405, { status: "error", message: "Method not allowed" });
@@ -121,24 +120,15 @@ async function handleProposeFilter(
     return;
   }
 
-  const apiKey = config.anthropicApiKey;
-  if (!apiKey) {
-    sendJson(res, 500, { status: "error", message: "ANTHROPIC_API_KEY not configured" });
-    return;
-  }
-
   try {
     const { proposeFilter } = await import("./propose-filter.js");
-    const result = await proposeFilter(
-      {
-        siteTheme: p.siteTheme,
-        topicName: p.topicName,
-        topicDescription: typeof p.topicDescription === "string" ? p.topicDescription : undefined,
-        categories: Array.isArray(p.categories) ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"]) : [],
-        tags: Array.isArray(p.tags) ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"]) : [],
-      },
-      apiKey,
-    );
+    const result = await proposeFilter({
+      siteTheme: p.siteTheme,
+      topicName: p.topicName,
+      topicDescription: typeof p.topicDescription === "string" ? p.topicDescription : undefined,
+      categories: Array.isArray(p.categories) ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"]) : [],
+      tags: Array.isArray(p.tags) ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"]) : [],
+    });
     sendJson(res, 200, result as unknown as Record<string, unknown>);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -1091,7 +1081,7 @@ async function handleRequest(
   }
 
   if (req.url === "/propose-filter") {
-    await handleProposeFilter(req, res, config);
+    await handleProposeFilter(req, res);
     return;
   }
 
