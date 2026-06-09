@@ -40,6 +40,7 @@ import {
 import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
+import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
 
 interface StagingResult {
   stagingUrl: string;
@@ -558,14 +559,15 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
 }
 
 /** Fetch Cloudflare zones not already used as a site identifier or as
- *  another site's custom_domain. */
+ *  another site's custom_domain, and not blacklisted. */
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
-  const [assetsZones, dev1Zones, index] = await Promise.all([
+  const [assetsZones, dev1Zones, index, blacklisted] = await Promise.all([
     listZones(),
     listZones("financenewsbase"), // any Dev1 domain triggers Dev1 creds
     readDashboardIndex(),
+    fetchBlacklistedDomains(),
   ]);
 
   const usedCustomDomains = new Set(
@@ -581,7 +583,12 @@ export async function getAvailableZones(): Promise<
   });
 
   return allZones
-    .filter((z) => z.status === "active" && !usedCustomDomains.has(z.name))
+    .filter(
+      (z) =>
+        z.status === "active" &&
+        !usedCustomDomains.has(z.name) &&
+        !blacklisted.has(z.name),
+    )
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 

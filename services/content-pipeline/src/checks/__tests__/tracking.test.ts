@@ -47,6 +47,19 @@ describe("readTracking", () => {
     });
   });
 
+  it("returns state:unknown when KV entry is null (staging-only / not seeded)", async () => {
+    mockGetKVEntry.mockResolvedValue(null);
+
+    const result = await readTracking("staging-site");
+
+    expect(result).toEqual({
+      state: "unknown",
+      ga4: false,
+      gtm: false,
+      pixel: false,
+    });
+  });
+
   it("returns state:unknown and all false when getKVEntry throws", async () => {
     mockGetKVEntry.mockRejectedValue(new Error("KV read site-config:travelswire: 500"));
 

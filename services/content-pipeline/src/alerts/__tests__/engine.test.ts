@@ -32,13 +32,70 @@ describe("evaluateCondition", () => {
   });
 
   it("transition_then_daily re-fires only after 24h", () => {
-    const r1 = evaluateCondition(okState("s:failed_articles"), { alerting: true, value: 5, policy: "transition_then_daily" }, t0);
+    const r1 = evaluateCondition(okState("s:sync_failed"), { alerting: true, value: 5, policy: "transition_then_daily" }, t0);
     expect(r1.shouldFire).toBe(true);
     const sameDay = evaluateCondition(r1.newState, { alerting: true, value: 6, policy: "transition_then_daily" }, new Date("2026-06-07T21:00:00Z")); // +12h
     expect(sameDay.shouldFire).toBe(false);
     const nextDay = evaluateCondition(sameDay.newState, { alerting: true, value: 7, policy: "transition_then_daily" }, new Date("2026-06-08T09:30:00Z")); // +24.5h from t0
     expect(nextDay.shouldFire).toBe(true);
     expect(nextDay.newState.lastFiredAt).toEqual(new Date("2026-06-08T09:30:00Z"));
+  });
+
+  it("transition_then_interval re-fires after the configured interval", () => {
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const r1 = evaluateCondition(
+      okState("s:monthly_creation_alert"),
+      { alerting: true, value: 5, policy: "transition_then_interval", intervalMs: thirtyDaysMs },
+      t0,
+    );
+    expect(r1.shouldFire).toBe(true);
+
+    // 15 days later — should NOT re-fire
+    const fifteenDaysLater = new Date(t0.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const r2 = evaluateCondition(
+      r1.newState,
+      { alerting: true, value: 3, policy: "transition_then_interval", intervalMs: thirtyDaysMs },
+      fifteenDaysLater,
+    );
+    expect(r2.shouldFire).toBe(false);
+
+    // 31 days later — should re-fire
+    const thirtyOneDaysLater = new Date(t0.getTime() + 31 * 24 * 60 * 60 * 1000);
+    const r3 = evaluateCondition(
+      r2.newState,
+      { alerting: true, value: 2, policy: "transition_then_interval", intervalMs: thirtyDaysMs },
+      thirtyOneDaysLater,
+    );
+    expect(r3.shouldFire).toBe(true);
+    expect(r3.newState.lastFiredAt).toEqual(thirtyOneDaysLater);
+  });
+
+  it("transition_then_interval with 14d interval", () => {
+    const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+    const r1 = evaluateCondition(
+      okState("s:zero_articles_14d"),
+      { alerting: true, value: 0, policy: "transition_then_interval", intervalMs: fourteenDaysMs },
+      t0,
+    );
+    expect(r1.shouldFire).toBe(true);
+
+    // 7 days later — should NOT re-fire
+    const sevenDaysLater = new Date(t0.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const r2 = evaluateCondition(
+      r1.newState,
+      { alerting: true, value: 0, policy: "transition_then_interval", intervalMs: fourteenDaysMs },
+      sevenDaysLater,
+    );
+    expect(r2.shouldFire).toBe(false);
+
+    // 15 days later — should re-fire
+    const fifteenDaysLater = new Date(t0.getTime() + 15 * 24 * 60 * 60 * 1000);
+    const r3 = evaluateCondition(
+      r2.newState,
+      { alerting: true, value: 0, policy: "transition_then_interval", intervalMs: fourteenDaysMs },
+      fifteenDaysLater,
+    );
+    expect(r3.shouldFire).toBe(true);
   });
 
   it("does not fire when not alerting from ok", () => {

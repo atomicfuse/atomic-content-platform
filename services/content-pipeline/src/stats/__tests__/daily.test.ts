@@ -45,6 +45,20 @@ describe("countTodayCreated", () => {
     expect(result).toBe(3);
   });
 
+  it("includes partial events (created > 0, some failed)", async () => {
+    const db = await getMongoDb();
+    const coll = db.collection(COLLECTIONS.generationEvents);
+    const today = new Date("2026-06-08T14:00:00Z");
+
+    await coll.insertMany([
+      { siteDomain: "travelswire", finishedAt: today, created: 3, failed: 0, status: "success" },
+      { siteDomain: "travelswire", finishedAt: today, created: 2, failed: 1, status: "partial" },
+    ]);
+
+    const result = await countTodayCreated("travelswire", today);
+    expect(result).toBe(5);
+  });
+
   it("handles events at midnight boundary correctly", async () => {
     const db = await getMongoDb();
     const coll = db.collection(COLLECTIONS.generationEvents);

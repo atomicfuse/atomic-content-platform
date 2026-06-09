@@ -21,7 +21,7 @@ export async function countTodayCreated(
       $match: {
         siteDomain: domain,
         finishedAt: { $gte: startOfDay },
-        status: "success",
+        status: { $in: ["success", "partial"] },
       },
     },
     {

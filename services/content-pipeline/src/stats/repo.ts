@@ -57,6 +57,24 @@ async function sumField(
 }
 
 /**
+ * Sums a numeric field from `generation_events` for a given domain,
+ * filtered by `finishedAt >= since` AND `status` in the given set.
+ */
+export async function sumFieldWithStatus(
+  domain: string,
+  field: "created" | "failed",
+  since: Date,
+  statuses: string[],
+): Promise<number> {
+  const db = await getMongoDb();
+  const result = await db.collection(COLLECTIONS.generationEvents).aggregate<{ total: number }>([
+    { $match: { siteDomain: domain, finishedAt: { $gte: since }, status: { $in: statuses } } },
+    { $group: { _id: null, total: { $sum: `$${field}` } } },
+  ]).toArray();
+  return result[0]?.total ?? 0;
+}
+
+/**
  * Counts `image_gen_events` for a domain where `ok === false` and `at >= since`.
  */
 async function countFailedImages(domain: string, since: Date): Promise<number> {

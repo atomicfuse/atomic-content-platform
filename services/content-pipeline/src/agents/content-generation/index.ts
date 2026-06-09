@@ -59,6 +59,7 @@ import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
 import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
+import { runBackfillR2 } from "../../stats/backfill-r2.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -714,9 +715,42 @@ async function handleRequest(
         try {
           if (ss.kind === "all") {
             const sites = await getAllSiteStats(new Date());
+            // Enrich sites with null schedule from site briefs
+            const needsSchedule = sites.filter((s) => s.schedule === null);
+            if (needsSchedule.length > 0) {
+              const octokit = createOctokit(config.github);
+              const CONCURRENCY = 10;
+              const domains = needsSchedule.map((s) => s.siteDomain);
+              for (let i = 0; i < domains.length; i += CONCURRENCY) {
+                const batch = domains.slice(i, i + CONCURRENCY);
+                await Promise.all(batch.map(async (domain) => {
+                  try {
+                    const b = await readSiteBrief(octokit, config.github.repo, domain);
+                    const schedule = buildScheduleFromBrief(b.brief);
+                    if (schedule) {
+                      const site = sites.find((s) => s.siteDomain === domain);
+                      if (site) site.schedule = schedule;
+                    }
+                  } catch {
+                    // Brief read failed — leave schedule as null
+                  }
+                }));
+              }
+            }
             sendJson(res, 200, { status: "ok", sites });
           } else {
             const site = await getSiteStats(ss.domain, new Date());
+            // Enrich single site with schedule from brief if null
+            if (site.schedule === null) {
+              try {
+                const octokit = createOctokit(config.github);
+                const b = await readSiteBrief(octokit, config.github.repo, ss.domain);
+                const schedule = buildScheduleFromBrief(b.brief);
+                if (schedule) site.schedule = schedule;
+              } catch {
+                // Brief read failed — leave schedule as null
+              }
+            }
             sendJson(res, 200, { status: "ok", site });
           }
         } catch (err) {
@@ -836,6 +870,24 @@ async function handleRequest(
         return sendJson(res, 200, { ok: true });
       } catch (err) {
         return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /backfill-r2 — scan entire R2 bucket and overwrite the r2_usage tally
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-r2") {
+      try {
+        const result = await runBackfillR2();
+        return sendJson(res, 200, {
+          status: "ok",
+          totalBytes: result.totalBytes,
+          totalImages: result.totalImages,
+          totalMB: result.totalMB,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { status: "error", error: String(err) });
       }
     }
   }

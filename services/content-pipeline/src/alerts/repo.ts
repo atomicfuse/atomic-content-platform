@@ -33,14 +33,16 @@ function splitId(id: string): { domain: string; condition: string } {
 
 /** Map an alerting state doc → an AttentionItem. */
 function toItem(condition: string, doc: AlertState): AttentionItem {
+  const conditionsWithValue = new Set([
+    "in_review",
+    "monthly_creation_alert",
+    "zero_articles_14d",
+  ]);
   return {
     condition,
-    severity: condition === "sync_failed" ? "critical" : "warn",
+    severity: condition === "sync_failed" || condition === "zero_articles_14d" ? "critical" : "warn",
     since: doc.firstDetectedAt,
-    value:
-      condition === "failed_articles" || condition === "in_review"
-        ? doc.lastValue
-        : null,
+    value: conditionsWithValue.has(condition) ? doc.lastValue : null,
   };
 }
 

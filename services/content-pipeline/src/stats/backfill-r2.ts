@@ -1,8 +1,9 @@
 /**
- * One-time, idempotent backfill: scan all objects in the R2 bucket via S3 API
+ * Idempotent backfill: scan all objects in the R2 bucket via S3 API
  * and write the totals to the r2_usage MongoDB collection.
  *
- * Usage: cd services/content-pipeline && pnpm tsx src/stats/backfill-r2.ts
+ * CLI usage: cd services/content-pipeline && pnpm tsx src/stats/backfill-r2.ts
+ * HTTP usage: POST /backfill-r2 on the content-pipeline server
  *
  * Requires: MONGODB_URL, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID
  * Optional: R2_BUCKET (defaults to "atl-assets-prod")
@@ -18,33 +19,42 @@ interface R2TallyDoc {
   lastUpdated: Date | null;
 }
 
-const BUCKET = process.env.R2_BUCKET ?? "atl-assets-prod";
-const ACCOUNT_ID = process.env.CLOUDFLARE_ACCOUNT_ID;
-const ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
-const SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
+export interface BackfillR2Result {
+  totalBytes: number;
+  totalImages: number;
+  totalMB: string;
+}
 
-async function main(): Promise<void> {
-  if (!ACCOUNT_ID || !ACCESS_KEY || !SECRET_KEY) {
-    console.error("Missing R2 credentials. Set CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY");
-    process.exit(1);
+/**
+ * Scan the entire R2 bucket and overwrite the r2_usage tally in MongoDB.
+ * Returns the totals. Throws on missing credentials or S3/Mongo errors.
+ */
+export async function runBackfillR2(): Promise<BackfillR2Result> {
+  const bucket = process.env.R2_BUCKET ?? "atl-assets-prod";
+  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+  const accessKey = process.env.R2_ACCESS_KEY_ID;
+  const secretKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!accountId || !accessKey || !secretKey) {
+    throw new Error("Missing R2 credentials. Set CLOUDFLARE_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY");
   }
 
   const s3 = new S3Client({
     region: "auto",
-    endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
   });
 
   let totalBytes = 0;
   let totalImages = 0;
   let continuationToken: string | undefined;
 
-  console.log(`[backfill-r2] Scanning bucket "${BUCKET}"...`);
+  console.log(`[backfill-r2] Scanning bucket "${bucket}"...`);
 
   do {
     const resp = await s3.send(
       new ListObjectsV2Command({
-        Bucket: BUCKET,
+        Bucket: bucket,
         ContinuationToken: continuationToken,
         MaxKeys: 1000,
       }),
@@ -59,7 +69,8 @@ async function main(): Promise<void> {
     console.log(`[backfill-r2] Scanned ${totalImages} objects so far...`);
   } while (continuationToken);
 
-  console.log(`[backfill-r2] Total: ${totalImages} objects, ${(totalBytes / 1024 / 1024).toFixed(1)} MB`);
+  const totalMB = (totalBytes / 1024 / 1024).toFixed(1);
+  console.log(`[backfill-r2] Total: ${totalImages} objects, ${totalMB} MB`);
 
   const db = await getMongoDb();
   await db.collection<R2TallyDoc>(R2_COLLECTION).updateOne(
@@ -69,10 +80,20 @@ async function main(): Promise<void> {
   );
 
   console.log("[backfill-r2] Tally written to MongoDB. Done.");
-  await closeMongo();
+  return { totalBytes, totalImages, totalMB };
 }
 
-main().catch((err) => {
-  console.error("[backfill-r2] Fatal:", err);
-  process.exit(1);
-});
+// CLI entry point — only runs when this file is executed directly
+const isDirectRun =
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  (process.argv[1].endsWith("backfill-r2.ts") || process.argv[1].endsWith("backfill-r2.js"));
+
+if (isDirectRun) {
+  runBackfillR2()
+    .then(() => closeMongo())
+    .catch((err) => {
+      console.error("[backfill-r2] Fatal:", err);
+      process.exit(1);
+    });
+}

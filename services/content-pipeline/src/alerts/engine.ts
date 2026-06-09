@@ -65,13 +65,18 @@ export function evaluateCondition(
     };
   }
 
-  // transition_then_daily: re-fire if 24h has elapsed since lastFiredAt
+  // transition_then_daily / transition_then_interval: re-fire after interval
+  const intervalMs =
+    input.policy === "transition_then_interval" && input.intervalMs
+      ? input.intervalMs
+      : TWENTY_FOUR_HOURS_MS;
+
   const elapsed =
     state.lastFiredAt == null
       ? Infinity
       : now.getTime() - state.lastFiredAt.getTime();
 
-  if (elapsed >= TWENTY_FOUR_HOURS_MS) {
+  if (elapsed >= intervalMs) {
     return {
       newState: {
         ...state,

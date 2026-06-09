@@ -31,3 +31,30 @@ export async function GET(): Promise<NextResponse> {
     );
   }
 }
+
+/**
+ * POST /api/r2-usage — trigger a full R2 bucket scan to recalculate the
+ * r2_usage tally in MongoDB. Proxies to content-pipeline POST /backfill-r2.
+ * This is a one-time operation; future uploads are tracked incrementally.
+ */
+export async function POST(): Promise<NextResponse> {
+  try {
+    const resp = await fetch(`${getAgentUrl()}/backfill-r2`, {
+      method: "POST",
+      signal: AbortSignal.timeout(120_000), // R2 scan can take a while
+    });
+    if (!resp.ok) {
+      return NextResponse.json(
+        { status: "error", error: `Upstream ${resp.status}` },
+        { status: 502 },
+      );
+    }
+    const data: Record<string, unknown> = await resp.json();
+    return NextResponse.json(data);
+  } catch (err) {
+    return NextResponse.json(
+      { status: "error", error: String(err) },
+      { status: 502 },
+    );
+  }
+}

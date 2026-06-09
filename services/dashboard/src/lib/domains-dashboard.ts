@@ -187,6 +187,25 @@ export async function fetchAllDomains(): Promise<Map<string, ExternalChecks>> {
   }
 }
 
+/** Fetch the set of blacklisted domain names. Returns an empty set on error. */
+export async function fetchBlacklistedDomains(): Promise<Set<string>> {
+  try {
+    const res = await fetch(`${BASE}/api/domains`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return new Set();
+    const data = (await res.json()) as Array<{
+      domain: string;
+      isBlacklisted?: boolean;
+    }>;
+    return new Set(
+      data.filter((d) => d.isBlacklisted === true).map((d) => d.domain),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 /** Fetch a single domain's ExternalChecks. 404 or any error → all "unknown". */
 export async function fetchDomainChecks(
   domain: string,
