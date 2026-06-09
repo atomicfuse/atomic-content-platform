@@ -97,7 +97,10 @@ export async function createSiteAndBuildStaging(
         "how-to": 20,
         review: 10,
       },
-      topics: data.topics,
+      // For per-topic sites the nav menu + category routing read `topics`, so
+      // it must mirror topics_v2 names. Fall back to the raw collected topics
+      // for legacy (non-per-topic) sites.
+      topics: topics_v2.length > 0 ? topics_v2.map((t) => t.name) : data.topics,
       theme: data.theme || undefined,
       topics_v2: topics_v2.length > 0 ? topics_v2 : undefined,
       seo_keywords_focus: [],
