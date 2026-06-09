@@ -5,7 +5,7 @@
  * dropped before returning).
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { generateContent } from "../../lib/ai.js";
 
 export interface ProposeFilterTaxonomyCategory {
   id: string;
@@ -36,11 +36,8 @@ export interface ProposeFilterResponse {
   dropped_unknown_ids: string[];
 }
 
-const CLAUDE_MODEL = "claude-opus-4-7";
-
 export async function proposeFilter(
   req: ProposeFilterRequest,
-  apiKey: string,
 ): Promise<ProposeFilterResponse> {
   if (!req.siteTheme.trim()) {
     throw new Error("siteTheme is required");
@@ -95,17 +92,17 @@ Constraints:
 Return JSON only, no surrounding prose:
 { "category_ids": [...], "tag_ids": [...], "rationale": "1-2 sentence explanation" }`;
 
-  const client = new Anthropic({ apiKey });
-  const response = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
+  // Route through the shared AI abstraction (CloudGrid AI Gateway in prod,
+  // Anthropic SDK fallback locally). This is the same path the rest of the
+  // pipeline uses — proposing a filter must NOT instantiate the raw SDK with a
+  // bare ANTHROPIC_API_KEY, which is absent in CloudGrid and rejected by the
+  // gateway-era local env (caused a 502 on "Propose with AI").
+  const { text } = await generateContent({
+    systemPrompt:
+      "You map editorial topics to a content taxonomy. Reply with JSON only.",
+    userPrompt: prompt,
+    maxTokens: 1024,
   });
-
-  const text = response.content
-    .filter((block): block is Anthropic.TextBlock => block.type === "text")
-    .map((b) => b.text)
-    .join("");
 
   // Extract the JSON object — Claude may wrap it in markdown fences.
   const jsonMatch = text.match(/\{[\s\S]*\}/);

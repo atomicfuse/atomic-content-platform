@@ -4,6 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import type { TopicV2 } from "@/types/dashboard";
 import {
   commitSiteFiles,
+  invalidateSiteCaches,
   readDashboardIndex,
   readSiteConfig as readSiteConfigFromGit,
 } from "@/lib/github";
@@ -53,6 +54,9 @@ export async function migrateSiteToPerTopic(
   const brief = (existing.brief ?? {}) as Record<string, unknown>;
   brief.theme = args.theme;
   brief.topics_v2 = args.topics_v2;
+  // Mirror topic names into the legacy `topics` array so the site nav menu
+  // (Header.astro) and category-page routing reflect the per-topic model.
+  brief.topics = args.topics_v2.map((t) => t.name);
   delete brief.bundle_ids;
   delete brief.bundle_id;
   delete brief.category_ids;
@@ -68,6 +72,10 @@ export async function migrateSiteToPerTopic(
     `feat: migrate ${args.domain} to per-topic filters`,
     site.staging_branch,
   );
+
+  // Drop stale in-memory caches so the site detail page re-reads the migrated
+  // config (siteConfigCache has an infinite TTL). See landmine #45.
+  invalidateSiteCaches(args.domain, site.staging_branch);
 
   // Best-effort delete orphan bundles on the aggregator.
   let bundlesDeleted = 0;

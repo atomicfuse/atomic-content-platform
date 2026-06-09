@@ -84,11 +84,17 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
         <div>
           <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Topic name *</div>
           <Input value={name} onChange={(e): void => setName(e.target.value)} placeholder="e.g. Wine & Beer" />
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            This is the label shown in the site&apos;s navigation menu.
+          </p>
         </div>
 
         <div>
           <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Brief description (optional — helps AI)</div>
           <Input value={description} onChange={(e): void => setDescription(e.target.value)} placeholder="Wine and brewery culture for travelers" />
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            Internal only — used to guide AI filter proposals. Not shown anywhere on the live site.
+          </p>
         </div>
 
         {/* Filter section */}
