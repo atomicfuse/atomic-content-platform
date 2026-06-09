@@ -222,16 +222,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       copied.push(slug);
     }
 
-    // --- Atomic commit all articles to target branch ---
+    // --- Atomic commit to both staging and main (live) ---
     if (filesToCommit.length > 0) {
-      await commitNetworkFiles(
-        filesToCommit,
-        `feat(content): copy ${filesToCommit.length} article(s) from ${sourceDomain} to ${targetDomain}`,
-        targetBranch,
-      );
+      const commitMsg = `feat(content): copy ${filesToCommit.length} article(s) from ${sourceDomain} to ${targetDomain}`;
 
-      // Invalidate caches for target domain
+      // Commit to staging and main in parallel
+      await Promise.all([
+        commitNetworkFiles(filesToCommit, commitMsg, targetBranch),
+        commitNetworkFiles(filesToCommit, commitMsg, "main"),
+      ]);
+
+      // Invalidate caches for both branches
       invalidateSiteCaches(targetDomain, targetBranch);
+      invalidateSiteCaches(targetDomain, "main");
     }
 
     const response: CopyResponse = { copied, skipped, warnings };
