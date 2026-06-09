@@ -30,7 +30,7 @@ async function seed(): Promise<void> {
   const docs: AlertState[] = [
     // travelswire: two alerting conditions + one ok
     {
-      _id: "travelswire:failed_articles",
+      _id: "travelswire:monthly_creation_alert",
       status: "alerting",
       firstDetectedAt: d("2026-06-05T10:00:00Z"),
       lastFiredAt: d("2026-06-06T10:00:00Z"),
@@ -68,7 +68,7 @@ async function seed(): Promise<void> {
     },
     // network-scoped reminder — must be excluded
     {
-      _id: "__network__:review_backlog",
+      _id: "__network__:general_images",
       status: "alerting",
       firstDetectedAt: d("2026-06-01T10:00:00Z"),
       lastFiredAt: d("2026-06-06T10:00:00Z"),
@@ -87,7 +87,7 @@ describe("getAttention", () => {
     const items = [...r.alerting].sort((a, b) => a.condition.localeCompare(b.condition));
     expect(items).toEqual([
       {
-        condition: "failed_articles",
+        condition: "monthly_creation_alert",
         severity: "warn",
         since: d("2026-06-05T10:00:00Z"),
         value: 7,
@@ -136,7 +136,7 @@ describe("getAllAttention", () => {
 
     const tw = all.find((s) => s.siteDomain === "travelswire");
     expect(tw?.alerting.map((a) => a.condition).sort()).toEqual([
-      "failed_articles",
+      "monthly_creation_alert",
       "sync_failed",
     ]);
 

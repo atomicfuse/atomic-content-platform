@@ -1,12 +1,12 @@
 /**
- * Alert runner — the orchestration heart of the Slack Alerts feature (Plan 4).
+ * Alert runner — the orchestration heart of the Slack Alerts feature.
  *
  * Two entry points:
  *   - `runAlerts(now, opts?)`  — full cron tick: every site × every enabled
  *     condition, then the network-scoped reminders.
  *   - `runAfterRun(domain, now)` — a thin variant fired right after a
- *     generation run for a single site; re-checks only the two conditions a
- *     run can move (failed_articles, in_review).
+ *     generation run for a single site; re-checks only the conditions a
+ *     run can move (monthly_creation_alert, zero_articles_14d, in_review).
  *
  * Persist-on-success rule (the core invariant):
  * ─────────────────────────────────────────────
@@ -24,17 +24,21 @@ import type { Db } from "mongodb";
 import { getMongoDb } from "../lib/mongo.js";
 import { loadConfig } from "../lib/config.js";
 import { createOctokit, readFile } from "../lib/github.js";
-import { listActiveSites } from "../lib/site-brief.js";
+import { listActiveSites, readSiteBrief } from "../lib/site-brief.js";
 import { notifyAttention, type NotificationConfig } from "../lib/notifications.js";
 import { gatherInputs, type AlertInputs } from "./inputs.js";
 import { loadAlertConfig, type AlertConfig } from "./config.js";
 import { evaluateCondition } from "./engine.js";
+import { buildScheduleFromBrief } from "../stats/schedule.js";
 import type { AlertState, ConditionId, EvalInput, FirePolicy } from "./types.js";
 
 /** Mongo collection holding per-(site,condition) and network-scoped alert state. */
 export const ALERT_STATE_COLLECTION = "alert_state";
 const COLLECTION = ALERT_STATE_COLLECTION;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+export const DASHBOARD_URL =
+  process.env.DASHBOARD_URL ?? "https://sites-platform-e297.atomic.cloudgrid.io";
 
 export interface RunAlertsOptions {
   /** Scope the run to a single site (used by runAfterRun). */
@@ -61,9 +65,7 @@ function defaultState(id: string): AlertState {
 
 /**
  * Build the list of condition plans for a site from its inputs + config.
- * Only ENABLED conditions are included (skips when `cfg.enabled` is false or
- * the per-condition `enabled` flag is false). `imageGenFailed` is intentionally
- * not a runner condition.
+ * Only ENABLED conditions are included.
  */
 function planConditions(
   domain: string,
@@ -75,18 +77,8 @@ function planConditions(
   if (!cfg.enabled) return plans;
 
   const want = (id: ConditionId): boolean => !only || only.has(id);
-
-  if (want("failed_articles") && cfg.failedArticles.enabled) {
-    plans.push({
-      conditionId: "failed_articles",
-      input: {
-        alerting: inputs.failedArticles7d > cfg.failedArticles.limit,
-        value: inputs.failedArticles7d,
-        policy: "transition_then_daily" as FirePolicy,
-      },
-      message: `⚠ ${domain}: ${inputs.failedArticles7d} failed articles in 7d (limit ${cfg.failedArticles.limit})`,
-    });
-  }
+  const { siteName } = inputs;
+  const siteUrl = `${DASHBOARD_URL}/sites/${domain}`;
 
   if (want("sync_failed") && cfg.syncFailed.enabled) {
     plans.push({
@@ -96,7 +88,7 @@ function planConditions(
         value: null,
         policy: "transition_only" as FirePolicy,
       },
-      message: `🔴 ${domain}: content sync failed — visitors see old content`,
+      message: `🔴 ${siteName}: content sync failed — visitors see old content\n${siteUrl}`,
     });
   }
 
@@ -108,7 +100,7 @@ function planConditions(
         value: inputs.reviewCount,
         policy: "transition_only" as FirePolicy,
       },
-      message: `⚠ ${domain}: ${inputs.reviewCount} articles in review (limit ${cfg.inReview.limit})`,
+      message: `⚠ ${siteName}: ${inputs.reviewCount} articles in review (limit ${cfg.inReview.limit})\n${siteUrl}`,
     });
   }
 
@@ -120,7 +112,37 @@ function planConditions(
         value: null,
         policy: "transition_only" as FirePolicy,
       },
-      message: `⚠ ${domain}: analytics/pixel not firing`,
+      message: `⚠ ${siteName}: no analytics provider (GA4/GTM) configured\n${siteUrl}`,
+    });
+  }
+
+  if (want("monthly_creation_alert") && cfg.monthlyCreationAlert.enabled) {
+    const thresholdFailed =
+      inputs.expectedMonthly > 0
+        ? inputs.failedLast30d > (cfg.monthlyCreationAlert.failureThresholdPct / 100) * inputs.expectedMonthly
+        : false;
+    plans.push({
+      conditionId: "monthly_creation_alert",
+      input: {
+        alerting: thresholdFailed,
+        value: inputs.createdLast30d,
+        policy: "transition_then_interval" as FirePolicy,
+        intervalMs: 30 * DAY_MS,
+      },
+      message: `⚠ Article creation alert: ${siteName} — only ${inputs.createdLast30d} articles created this month out of ${inputs.expectedMonthly} expected\n${siteUrl}`,
+    });
+  }
+
+  if (want("zero_articles_14d") && cfg.zeroArticles14d.enabled) {
+    plans.push({
+      conditionId: "zero_articles_14d",
+      input: {
+        alerting: inputs.createdLast14d === 0,
+        value: 0,
+        policy: "transition_then_interval" as FirePolicy,
+        intervalMs: 14 * DAY_MS,
+      },
+      message: `🔴 Article creation alert: ${siteName} — 0 articles created in the last 14 days\n${siteUrl}`,
     });
   }
 
@@ -204,15 +226,6 @@ async function maybeFireReminder(
   }
 }
 
-/** Same UTC calendar date? */
-function sameUtcDate(a: Date, b: Date): boolean {
-  return (
-    a.getUTCFullYear() === b.getUTCFullYear() &&
-    a.getUTCMonth() === b.getUTCMonth() &&
-    a.getUTCDate() === b.getUTCDate()
-  );
-}
-
 async function loadReminderState(db: Db, id: string): Promise<AlertState> {
   const existing = await db
     .collection<AlertState>(COLLECTION)
@@ -244,9 +257,11 @@ export async function runAlerts(
     return;
   }
 
-  let sites: Array<{ domain: string }>;
+  const octokit = createOctokit(config.github);
+
+  let sites: Array<{ domain: string; branch: string }>;
   try {
-    sites = await listActiveSites(createOctokit(config.github), config.networkRepo);
+    sites = await listActiveSites(octokit, config.networkRepo);
   } catch (err) {
     console.error("[alerts/run] failed to list sites:", err);
     return;
@@ -256,13 +271,24 @@ export async function runAlerts(
     sites = sites.filter((s) => s.domain === opts.onlySite);
   }
 
-  let totalReviewCount = 0;
+  let totalGeneralImages = 0;
 
   for (const site of sites) {
-    const { domain } = site;
+    const { domain, branch } = site;
     try {
-      const inputs = await gatherInputs(domain, now);
-      totalReviewCount += inputs.reviewCount;
+      // Read site brief to get siteName + schedule for new conditions
+      let siteName = domain;
+      let schedule: { articlesPerDay: number; preferredDays: string[] } | null = null;
+      try {
+        const briefData = await readSiteBrief(octokit, config.networkRepo, domain, branch);
+        siteName = briefData.siteName || domain;
+        schedule = buildScheduleFromBrief(briefData.brief);
+      } catch {
+        // Brief read failed — use domain as siteName, no schedule
+      }
+
+      const inputs = await gatherInputs(domain, now, { schedule, siteName });
+      totalGeneralImages += inputs.generalImages;
 
       const plans = planConditions(domain, inputs, cfg);
       for (const plan of plans) {
@@ -284,7 +310,7 @@ export async function runAlerts(
   // Reminders are network-scoped — only run on a full (non-scoped) tick.
   if (opts?.onlySite) return;
 
-  await runReminders(db, cfg, totalReviewCount, now, notifConfig);
+  await runReminders(db, cfg, totalGeneralImages, now, notifConfig);
 }
 
 /**
@@ -294,29 +320,30 @@ export async function runAlerts(
 async function runReminders(
   db: Db,
   cfg: AlertConfig,
-  totalReviewCount: number,
+  totalGeneralImages: number,
   now: Date,
   notifConfig: NotificationConfig,
 ): Promise<void> {
-  // review_backlog — fire on its UTC weekday, at most once per UTC day.
-  if (cfg.reminders.reviewBacklog.enabled) {
+  // general_images — fire every 7 days if totalGeneralImages > 0
+  if (cfg.reminders.generalImages.enabled) {
     try {
-      const state = await loadReminderState(db, "__network__:review_backlog");
-      const isWeekday = now.getUTCDay() === cfg.reminders.reviewBacklog.weekday;
-      const alreadyFiredToday =
-        state.lastFiredAt != null && sameUtcDate(state.lastFiredAt, now);
-      const shouldFire = isWeekday && !alreadyFiredToday;
+      const state = await loadReminderState(db, "__network__:general_images");
+      const intervalMs = 7 * DAY_MS;
+      const intervalPassed =
+        state.lastFiredAt == null ||
+        now.getTime() - state.lastFiredAt.getTime() >= intervalMs;
+      const shouldFire = totalGeneralImages > 0 && intervalPassed;
       await maybeFireReminder(
         db,
-        "review_backlog",
+        "general_images",
         shouldFire,
         state,
-        `${totalReviewCount} articles waiting for review across the network`,
+        `📷 There are ${totalGeneralImages} articles using a general image — review it here:\n${DASHBOARD_URL}/articles/general-images`,
         now,
         notifConfig,
       );
     } catch (err) {
-      console.error("[alerts/run] review_backlog reminder failed:", err);
+      console.error("[alerts/run] general_images reminder failed:", err);
     }
   }
 
@@ -333,7 +360,7 @@ async function runReminders(
         "create_new_site",
         shouldFire,
         state,
-        `Time to create a new site`,
+        `Time to create a new site\n${DASHBOARD_URL}/wizard`,
         now,
         notifConfig,
       );
@@ -344,15 +371,11 @@ async function runReminders(
 }
 
 /**
- * Post-generation-run variant: a generation run changes failed_articles and
- * in_review, so re-evaluate ONLY those two conditions for the single domain.
+ * Post-generation-run variant: a generation run changes article counts and
+ * review count, so re-evaluate the relevant conditions for the single domain.
  * Reuses the same config load + persist-on-success machinery. Failure-isolated.
  */
 export async function runAfterRun(domain: string, now: Date): Promise<void> {
-  // Fully failure-isolated: this is fired-and-forgotten by generation call
-  // sites (`void runAfterRun(...)`), so it must never reject. The config load
-  // and alerts.yaml read can throw (e.g. missing env, GitHub failure) — keep
-  // them inside the guard so an unhandled rejection can never escape.
   try {
     const config = loadConfig();
     const notifConfig: NotificationConfig = config.notifications;
@@ -370,8 +393,20 @@ export async function runAfterRun(domain: string, now: Date): Promise<void> {
       return;
     }
 
-    const inputs = await gatherInputs(domain, now);
-    const only = new Set<ConditionId>(["failed_articles", "in_review"]);
+    // Read site brief for siteName + schedule
+    const octokit = createOctokit(config.github);
+    let siteName = domain;
+    let schedule: { articlesPerDay: number; preferredDays: string[] } | null = null;
+    try {
+      const briefData = await readSiteBrief(octokit, config.networkRepo, domain, `staging/${domain}`);
+      siteName = briefData.siteName || domain;
+      schedule = buildScheduleFromBrief(briefData.brief);
+    } catch {
+      // Brief read failed — use domain as siteName
+    }
+
+    const inputs = await gatherInputs(domain, now, { schedule, siteName });
+    const only = new Set<ConditionId>(["monthly_creation_alert", "zero_articles_14d", "in_review"]);
     const plans = planConditions(domain, inputs, cfg, only);
     for (const plan of plans) {
       await evaluateAndMaybeFire(

@@ -10,21 +10,20 @@ describe("mergeAlertConfig", () => {
     expect(mergeAlertConfig({})).toEqual(DEFAULT_ALERT_CONFIG);
   });
 
-  it("overrides failedArticles.limit while keeping enabled default", () => {
-    const result = mergeAlertConfig({ failedArticles: { limit: 5 } });
-    expect(result.failedArticles.limit).toBe(5);
-    expect(result.failedArticles.enabled).toBe(true);
+  it("overrides monthlyCreationAlert.failureThresholdPct while keeping enabled default", () => {
+    const result = mergeAlertConfig({ monthlyCreationAlert: { failureThresholdPct: 50 } });
+    expect(result.monthlyCreationAlert.failureThresholdPct).toBe(50);
+    expect(result.monthlyCreationAlert.enabled).toBe(true);
     expect(result.inReview).toEqual(DEFAULT_ALERT_CONFIG.inReview);
     expect(result.syncFailed).toEqual(DEFAULT_ALERT_CONFIG.syncFailed);
     expect(result.reminders).toEqual(DEFAULT_ALERT_CONFIG.reminders);
   });
 
-  it("overrides imageGenFailed.enabled to true", () => {
-    const result = mergeAlertConfig({ imageGenFailed: { enabled: true } });
-    expect(result.imageGenFailed.enabled).toBe(true);
-    // Other top-level keys untouched
+  it("overrides zeroArticles14d.enabled to false", () => {
+    const result = mergeAlertConfig({ zeroArticles14d: { enabled: false } });
+    expect(result.zeroArticles14d.enabled).toBe(false);
     expect(result.enabled).toBe(true);
-    expect(result.failedArticles).toEqual(DEFAULT_ALERT_CONFIG.failedArticles);
+    expect(result.monthlyCreationAlert).toEqual(DEFAULT_ALERT_CONFIG.monthlyCreationAlert);
   });
 
   it("ignores bad (non-number) inReview.limit, keeps default", () => {
@@ -34,9 +33,8 @@ describe("mergeAlertConfig", () => {
   });
 
   it("deep-merges reminders keeping unset keys as defaults", () => {
-    const result = mergeAlertConfig({ reminders: { reviewBacklog: { weekday: 3 } } });
-    expect(result.reminders.reviewBacklog.weekday).toBe(3);
-    expect(result.reminders.reviewBacklog.enabled).toBe(true);
+    const result = mergeAlertConfig({ reminders: { generalImages: { enabled: false } } });
+    expect(result.reminders.generalImages.enabled).toBe(false);
     expect(result.reminders.createNewSite).toEqual(DEFAULT_ALERT_CONFIG.reminders.createNewSite);
   });
 
@@ -68,10 +66,10 @@ describe("loadAlertConfig", () => {
 
   it("deep-merges a partial YAML payload from the reader", async () => {
     const partialReader = async (): Promise<string> =>
-      "failedArticles:\n  limit: 7\n";
+      "monthlyCreationAlert:\n  failureThresholdPct: 80\n";
     const result = await loadAlertConfig(partialReader);
-    expect(result.failedArticles.limit).toBe(7);
-    expect(result.failedArticles.enabled).toBe(true);
+    expect(result.monthlyCreationAlert.failureThresholdPct).toBe(80);
+    expect(result.monthlyCreationAlert.enabled).toBe(true);
     expect(result.enabled).toBe(true);
   });
 });

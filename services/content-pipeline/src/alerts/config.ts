@@ -12,27 +12,27 @@ import { parse as parseYaml } from "yaml";
 
 export interface AlertConfig {
   enabled: boolean;
-  failedArticles: { enabled: boolean; limit: number };
   syncFailed: { enabled: boolean };
   inReview: { enabled: boolean; limit: number };
   trackingOff: { enabled: boolean };
-  imageGenFailed: { enabled: boolean };
+  monthlyCreationAlert: { enabled: boolean; failureThresholdPct: number };
+  zeroArticles14d: { enabled: boolean };
   reminders: {
-    reviewBacklog: { enabled: boolean; weekday: number }; // 0=Sun..6=Sat; default Monday=1
     createNewSite: { enabled: boolean; everyDays: number };
+    generalImages: { enabled: boolean };
   };
 }
 
 export const DEFAULT_ALERT_CONFIG: AlertConfig = {
   enabled: true,
-  failedArticles: { enabled: true, limit: 3 },
   syncFailed: { enabled: true },
   inReview: { enabled: true, limit: 15 },
   trackingOff: { enabled: true },
-  imageGenFailed: { enabled: false }, // #9 ships OFF
+  monthlyCreationAlert: { enabled: true, failureThresholdPct: 70 },
+  zeroArticles14d: { enabled: true },
   reminders: {
-    reviewBacklog: { enabled: true, weekday: 1 },
     createNewSite: { enabled: true, everyDays: 14 },
+    generalImages: { enabled: true },
   },
 };
 
@@ -67,21 +67,17 @@ export function mergeAlertConfig(parsed: unknown): AlertConfig {
     return { ...DEFAULT_ALERT_CONFIG };
   }
 
-  const fa = isRecord(parsed.failedArticles) ? parsed.failedArticles : {};
   const sf = isRecord(parsed.syncFailed) ? parsed.syncFailed : {};
   const ir = isRecord(parsed.inReview) ? parsed.inReview : {};
   const to = isRecord(parsed.trackingOff) ? parsed.trackingOff : {};
-  const igf = isRecord(parsed.imageGenFailed) ? parsed.imageGenFailed : {};
+  const mca = isRecord(parsed.monthlyCreationAlert) ? parsed.monthlyCreationAlert : {};
+  const za = isRecord(parsed.zeroArticles14d) ? parsed.zeroArticles14d : {};
   const rem = isRecord(parsed.reminders) ? parsed.reminders : {};
-  const rb = isRecord(rem.reviewBacklog) ? rem.reviewBacklog : {};
   const cns = isRecord(rem.createNewSite) ? rem.createNewSite : {};
+  const gi = isRecord(rem.generalImages) ? rem.generalImages : {};
 
   return {
     enabled: safeBool(parsed.enabled, DEFAULT_ALERT_CONFIG.enabled),
-    failedArticles: {
-      enabled: safeBool(fa.enabled, DEFAULT_ALERT_CONFIG.failedArticles.enabled),
-      limit: safeNum(fa.limit, DEFAULT_ALERT_CONFIG.failedArticles.limit),
-    },
     syncFailed: {
       enabled: safeBool(sf.enabled, DEFAULT_ALERT_CONFIG.syncFailed.enabled),
     },
@@ -92,17 +88,20 @@ export function mergeAlertConfig(parsed: unknown): AlertConfig {
     trackingOff: {
       enabled: safeBool(to.enabled, DEFAULT_ALERT_CONFIG.trackingOff.enabled),
     },
-    imageGenFailed: {
-      enabled: safeBool(igf.enabled, DEFAULT_ALERT_CONFIG.imageGenFailed.enabled),
+    monthlyCreationAlert: {
+      enabled: safeBool(mca.enabled, DEFAULT_ALERT_CONFIG.monthlyCreationAlert.enabled),
+      failureThresholdPct: safeNum(mca.failureThresholdPct, DEFAULT_ALERT_CONFIG.monthlyCreationAlert.failureThresholdPct),
+    },
+    zeroArticles14d: {
+      enabled: safeBool(za.enabled, DEFAULT_ALERT_CONFIG.zeroArticles14d.enabled),
     },
     reminders: {
-      reviewBacklog: {
-        enabled: safeBool(rb.enabled, DEFAULT_ALERT_CONFIG.reminders.reviewBacklog.enabled),
-        weekday: safeNum(rb.weekday, DEFAULT_ALERT_CONFIG.reminders.reviewBacklog.weekday),
-      },
       createNewSite: {
         enabled: safeBool(cns.enabled, DEFAULT_ALERT_CONFIG.reminders.createNewSite.enabled),
         everyDays: safeNum(cns.everyDays, DEFAULT_ALERT_CONFIG.reminders.createNewSite.everyDays),
+      },
+      generalImages: {
+        enabled: safeBool(gi.enabled, DEFAULT_ALERT_CONFIG.reminders.generalImages.enabled),
       },
     },
   };

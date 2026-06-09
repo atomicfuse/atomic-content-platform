@@ -9,7 +9,7 @@ const mockCredentialsFor = vi.fn();
 const mockGetKvNamespaces = vi.fn();
 const mockReadSyncStatus = vi.fn();
 const mockReadTracking = vi.fn();
-const mockGetSiteStats = vi.fn();
+const mockSumFieldWithStatus = vi.fn();
 
 vi.mock("../../lib/kv.js", () => ({
   getKVEntry: (...args: unknown[]): unknown => mockGetKVEntry(...args),
@@ -29,12 +29,13 @@ vi.mock("../../checks/tracking.js", () => ({
 }));
 
 vi.mock("../../stats/repo.js", () => ({
-  getSiteStats: (...args: unknown[]): unknown => mockGetSiteStats(...args),
+  sumFieldWithStatus: (...args: unknown[]): unknown => mockSumFieldWithStatus(...args),
 }));
 
 // Import AFTER mocks (vi.mock is hoisted, but the import must be below)
 import {
   reviewCount,
+  generalImagesCount,
   gatherInputs,
   computeTrackingOff,
 } from "../inputs.js";
@@ -59,48 +60,33 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("computeTrackingOff", () => {
-  it("returns false when GA4 and pixel are both present (GTM absent)", () => {
+  it("returns false when GA4 is present (GTM absent)", () => {
     expect(
-      computeTrackingOff({ ga4: true, gtm: false, pixel: true, state: "ok" }),
+      computeTrackingOff({ ga4: true, gtm: false, state: "ok" }),
     ).toBe(false);
   });
 
-  it("returns false when GTM and pixel are present (GA4 absent)", () => {
+  it("returns false when GTM is present (GA4 absent)", () => {
     expect(
-      computeTrackingOff({ ga4: false, gtm: true, pixel: true, state: "ok" }),
+      computeTrackingOff({ ga4: false, gtm: true, state: "ok" }),
     ).toBe(false);
   });
 
-  it("returns false when GA4, GTM, and pixel are all present", () => {
+  it("returns false when GA4 and GTM are both present", () => {
     expect(
-      computeTrackingOff({ ga4: true, gtm: true, pixel: true, state: "ok" }),
+      computeTrackingOff({ ga4: true, gtm: true, state: "ok" }),
     ).toBe(false);
   });
 
   it("returns true when no analytics configured (no GA4, no GTM)", () => {
-    // (!ga4 && !gtm) → true
     expect(
-      computeTrackingOff({ ga4: false, gtm: false, pixel: true, state: "ok" }),
-    ).toBe(true);
-  });
-
-  it("returns true when pixel is absent (even with GA4 present)", () => {
-    // !pixel → true
-    expect(
-      computeTrackingOff({ ga4: true, gtm: false, pixel: false, state: "ok" }),
-    ).toBe(true);
-  });
-
-  it("returns true when no analytics AND no pixel", () => {
-    // both conditions true
-    expect(
-      computeTrackingOff({ ga4: false, gtm: false, pixel: false, state: "ok" }),
+      computeTrackingOff({ ga4: false, gtm: false, state: "ok" }),
     ).toBe(true);
   });
 
   it("returns false when state is 'unknown' regardless of flags (avoid false positives)", () => {
     expect(
-      computeTrackingOff({ ga4: false, gtm: false, pixel: false, state: "unknown" }),
+      computeTrackingOff({ ga4: false, gtm: false, state: "unknown" }),
     ).toBe(false);
   });
 });
@@ -153,21 +139,46 @@ describe("reviewCount", () => {
 });
 
 // ---------------------------------------------------------------------------
-// gatherInputs — composes four sources, each failure-isolated
+// generalImagesCount
+// ---------------------------------------------------------------------------
+
+describe("generalImagesCount", () => {
+  it("counts articles with missing featuredImage", async () => {
+    mockGetKVEntry.mockResolvedValue([
+      { slug: "a1", status: "published" },
+      { slug: "a2", status: "published", featuredImage: "https://r2.dev/img.webp" },
+    ]);
+    expect(await generalImagesCount(DOMAIN)).toBe(1);
+  });
+
+  it("counts articles with general-article in featuredImage", async () => {
+    mockGetKVEntry.mockResolvedValue([
+      { slug: "a1", featuredImage: "travelswire-general-article.webp" },
+      { slug: "a2", featuredImage: "https://r2.dev/real-image.webp" },
+      { slug: "a3", featuredImage: "another-general-article-img.webp" },
+    ]);
+    expect(await generalImagesCount(DOMAIN)).toBe(2);
+  });
+
+  it("returns 0 when getKVEntry returns null", async () => {
+    mockGetKVEntry.mockResolvedValue(null);
+    expect(await generalImagesCount(DOMAIN)).toBe(0);
+  });
+
+  it("returns 0 (never throws) when getKVEntry throws", async () => {
+    mockGetKVEntry.mockRejectedValue(new Error("boom"));
+    expect(await generalImagesCount(DOMAIN)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// gatherInputs — composes sources, each failure-isolated
 // ---------------------------------------------------------------------------
 
 describe("gatherInputs", () => {
   beforeEach(() => {
     // Default happy-path: all deps succeed
-    mockGetSiteStats.mockResolvedValue({
-      siteDomain: DOMAIN,
-      failedArticles: { last7d: 3, last30d: 10 },
-      imageGenFailed: { last7d: 0, last30d: 0 },
-      schedule: null,
-      lastAdded: { at: null, source: null, count: null },
-      lastFailedAt: null,
-      thisWeek: { created: 5, expected: 7 },
-    });
+    mockSumFieldWithStatus.mockResolvedValue(0);
     mockReadSyncStatus.mockResolvedValue({
       state: "ok",
       ok: true,
@@ -187,30 +198,24 @@ describe("gatherInputs", () => {
     ]);
   });
 
-  it("composes all four fields from mocked dependencies", async () => {
-    const inputs = await gatherInputs(DOMAIN, NOW);
+  it("composes all fields from mocked dependencies", async () => {
+    const inputs = await gatherInputs(DOMAIN, NOW, {
+      schedule: { articlesPerDay: 2, preferredDays: ["Monday", "Wednesday", "Friday"] },
+      siteName: "TravelSwire",
+    });
 
-    expect(inputs.failedArticles7d).toBe(3);
     expect(inputs.syncOk).toBe(true);
-    expect(inputs.trackingOff).toBe(false); // ga4=true, pixel=true → no alert
+    expect(inputs.trackingOff).toBe(false); // ga4=true → no alert
     expect(inputs.reviewCount).toBe(2);
-  });
-
-  it("defaults failedArticles7d to 0 when getSiteStats throws", async () => {
-    mockGetSiteStats.mockRejectedValue(new Error("mongo unreachable"));
-    const inputs = await gatherInputs(DOMAIN, NOW);
-    expect(inputs.failedArticles7d).toBe(0);
-    // Other fields still populated
-    expect(inputs.syncOk).toBe(true);
-    expect(inputs.reviewCount).toBe(2);
+    expect(inputs.siteName).toBe("TravelSwire");
+    // 2 * 3 * 4.33 = 25.98 → rounded to 26
+    expect(inputs.expectedMonthly).toBe(26);
   });
 
   it("defaults syncOk to null when readSyncStatus throws", async () => {
     mockReadSyncStatus.mockRejectedValue(new Error("kv unreachable"));
     const inputs = await gatherInputs(DOMAIN, NOW);
     expect(inputs.syncOk).toBeNull();
-    // Other fields still populated
-    expect(inputs.failedArticles7d).toBe(3);
     expect(inputs.reviewCount).toBe(2);
   });
 
@@ -218,8 +223,6 @@ describe("gatherInputs", () => {
     mockReadTracking.mockRejectedValue(new Error("config read failed"));
     const inputs = await gatherInputs(DOMAIN, NOW);
     expect(inputs.trackingOff).toBe(false);
-    // Other fields still populated
-    expect(inputs.failedArticles7d).toBe(3);
     expect(inputs.syncOk).toBe(true);
   });
 
@@ -227,8 +230,6 @@ describe("gatherInputs", () => {
     mockGetKVEntry.mockRejectedValue(new Error("kv timeout"));
     const inputs = await gatherInputs(DOMAIN, NOW);
     expect(inputs.reviewCount).toBe(0);
-    // Other fields still populated
-    expect(inputs.failedArticles7d).toBe(3);
     expect(inputs.syncOk).toBe(true);
   });
 
@@ -243,7 +244,7 @@ describe("gatherInputs", () => {
     expect(inputs.trackingOff).toBe(true);
   });
 
-  it("sets trackingOff=true when pixel is absent", async () => {
+  it("sets trackingOff=false when pixel is absent but GA4 is present (pixel no longer checked)", async () => {
     mockReadTracking.mockResolvedValue({
       state: "ok",
       ga4: true,
@@ -251,7 +252,7 @@ describe("gatherInputs", () => {
       pixel: false,
     });
     const inputs = await gatherInputs(DOMAIN, NOW);
-    expect(inputs.trackingOff).toBe(true);
+    expect(inputs.trackingOff).toBe(false);
   });
 
   it("sets trackingOff=false when state=unknown (read failure → no false positive)", async () => {
@@ -265,18 +266,31 @@ describe("gatherInputs", () => {
     expect(inputs.trackingOff).toBe(false);
   });
 
-  it("returns all defaults when every dependency fails", async () => {
-    mockGetSiteStats.mockRejectedValue(new Error("boom"));
+  it("returns safe defaults when every dependency fails", async () => {
+    mockSumFieldWithStatus.mockRejectedValue(new Error("boom"));
     mockReadSyncStatus.mockRejectedValue(new Error("boom"));
     mockReadTracking.mockRejectedValue(new Error("boom"));
     mockGetKVEntry.mockRejectedValue(new Error("boom"));
 
     const inputs = await gatherInputs(DOMAIN, NOW);
-    expect(inputs).toEqual({
-      failedArticles7d: 0,
-      syncOk: null,
-      trackingOff: false,
-      reviewCount: 0,
-    });
+    expect(inputs.syncOk).toBeNull();
+    expect(inputs.trackingOff).toBe(false);
+    expect(inputs.reviewCount).toBe(0);
+    expect(inputs.createdLast30d).toBe(0);
+    expect(inputs.failedLast30d).toBe(0);
+    expect(inputs.createdLast14d).toBe(0);
+    expect(inputs.expectedMonthly).toBe(0);
+    expect(inputs.siteName).toBe(DOMAIN);
+    expect(inputs.generalImages).toBe(0);
+  });
+
+  it("uses domain as siteName when opts not provided", async () => {
+    const inputs = await gatherInputs(DOMAIN, NOW);
+    expect(inputs.siteName).toBe(DOMAIN);
+  });
+
+  it("computes expectedMonthly as 0 when no schedule provided", async () => {
+    const inputs = await gatherInputs(DOMAIN, NOW);
+    expect(inputs.expectedMonthly).toBe(0);
   });
 });
