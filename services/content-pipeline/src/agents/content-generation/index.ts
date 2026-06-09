@@ -54,7 +54,7 @@ import {
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
 import { createOctokit, readFile } from "../../lib/github.js";
-import { readSiteBrief } from "../../lib/site-brief.js";
+import { readSiteBrief, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
@@ -725,7 +725,9 @@ async function handleRequest(
                 const batch = domains.slice(i, i + CONCURRENCY);
                 await Promise.all(batch.map(async (domain) => {
                   try {
-                    const b = await readSiteBrief(octokit, config.github.repo, domain);
+                    const { data: b } = await readSiteBriefWithFallback(
+                      octokit, config.github.repo, domain, `staging/${domain}`,
+                    );
                     const schedule = buildScheduleFromBrief(b.brief);
                     if (schedule) {
                       const site = sites.find((s) => s.siteDomain === domain);
@@ -744,7 +746,9 @@ async function handleRequest(
             if (site.schedule === null) {
               try {
                 const octokit = createOctokit(config.github);
-                const b = await readSiteBrief(octokit, config.github.repo, ss.domain);
+                const { data: b } = await readSiteBriefWithFallback(
+                  octokit, config.github.repo, ss.domain, `staging/${ss.domain}`,
+                );
                 const schedule = buildScheduleFromBrief(b.brief);
                 if (schedule) site.schedule = schedule;
               } catch {
