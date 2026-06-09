@@ -35,10 +35,17 @@ function extractImageFilename(featuredImage: string): string | null {
 }
 
 /** Parse the featuredImage field from raw markdown frontmatter.
- *  Handles both quoted and unquoted YAML values. */
+ *  Handles quoted, unquoted, and YAML multiline (>- / |-) values. */
 function parseFeaturedImage(markdown: string): string | null {
-  const match = markdown.match(/^featuredImage:\s*["']?([^"'\n]+)["']?\s*$/m);
-  return match ? match[1]!.trim() : null;
+  // Try standard single-line: `featuredImage: /path` or `featuredImage: "/path"`
+  const inline = markdown.match(/^featuredImage:\s*["']?([^"'\n>|]+)["']?\s*$/m);
+  if (inline) return inline[1]!.trim();
+
+  // Try YAML multiline fold/block: `featuredImage: >-\n  /path` or `featuredImage: |-\n  /path`
+  const multiline = markdown.match(/^featuredImage:\s*[>|]-?\s*\n\s+(.+)$/m);
+  if (multiline) return multiline[1]!.trim();
+
+  return null;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -160,20 +167,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               const contentType = contentTypeMap[ext] ?? "image/webp";
               const uploaded = await uploadToR2(targetR2Key, imageBuffer, contentType);
               if (!uploaded) {
-                warnings.push(
-                  `[${slug}] R2 image copy failed for "${filename}" — article copied without image`,
-                );
+                const msg = `[${slug}] R2 image copy failed for "${filename}" — article copied without image`;
+                console.warn(`[articles/copy] ${msg}`);
+                warnings.push(msg);
               }
             } else {
-              warnings.push(
-                `[${slug}] R2 image "${filename}" not found in source — article copied without image`,
-              );
+              const msg = `[${slug}] R2 image "${filename}" not found in source — article copied without image`;
+              console.warn(`[articles/copy] ${msg}`);
+              warnings.push(msg);
             }
           } catch (err) {
-            warnings.push(
-              `[${slug}] R2 image copy error for "${filename}": ${err instanceof Error ? err.message : "unknown error"} — article copied without image`,
-            );
+            const msg = `[${slug}] R2 image copy error for "${filename}": ${err instanceof Error ? err.message : "unknown error"} — article copied without image`;
+            console.warn(`[articles/copy] ${msg}`);
+            warnings.push(msg);
           }
+        } else {
+          const msg = `[${slug}] Could not extract image filename from featuredImage: "${featuredImage}" — article copied without image`;
+          console.warn(`[articles/copy] ${msg}`);
+          warnings.push(msg);
         }
       }
 
