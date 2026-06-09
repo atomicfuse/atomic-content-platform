@@ -435,6 +435,56 @@ describe("runAlerts — create_new_site reminder", () => {
 });
 
 // ---------------------------------------------------------------------------
+// orphan cleanup
+// ---------------------------------------------------------------------------
+
+describe("runAlerts — orphan cleanup", () => {
+  it("clears orphaned failed_articles and review_backlog docs on a full tick", async () => {
+    const db = await getMongoDb();
+    // Seed stale docs from removed conditions
+    await db.collection<AlertState>(COLLECTION).insertMany([
+      {
+        _id: "travelswire:failed_articles" as any,
+        status: "alerting",
+        firstDetectedAt: new Date("2026-06-01T00:00:00Z"),
+        lastFiredAt: new Date("2026-06-07T00:00:00Z"),
+        lastValue: 5,
+      },
+      {
+        _id: "__network__:review_backlog" as any,
+        status: "alerting",
+        firstDetectedAt: new Date("2026-06-01T00:00:00Z"),
+        lastFiredAt: new Date("2026-06-07T00:00:00Z"),
+        lastValue: null,
+      },
+      // This one is valid and should NOT be cleared
+      {
+        _id: "travelswire:tracking_off" as any,
+        status: "alerting",
+        firstDetectedAt: new Date("2026-06-01T00:00:00Z"),
+        lastFiredAt: new Date("2026-06-07T00:00:00Z"),
+        lastValue: null,
+      },
+    ]);
+
+    await runAlerts(NOW);
+
+    // Orphaned docs should be cleared to "ok"
+    const fa = await getState("travelswire:failed_articles");
+    expect(fa!.status).toBe("ok");
+    expect(fa!.firstDetectedAt).toBeNull();
+
+    const rb = await getState("__network__:review_backlog");
+    expect(rb!.status).toBe("ok");
+    expect(rb!.firstDetectedAt).toBeNull();
+
+    // Valid doc should still be evaluated (tracking_off is a real condition)
+    const to = await getState("travelswire:tracking_off");
+    expect(to).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runAfterRun
 // ---------------------------------------------------------------------------
 

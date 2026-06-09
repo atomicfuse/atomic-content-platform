@@ -37,6 +37,54 @@ export const ALERT_STATE_COLLECTION = "alert_state";
 const COLLECTION = ALERT_STATE_COLLECTION;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Active condition IDs + network-scoped reminder IDs. Anything else is orphaned. */
+const VALID_CONDITION_SUFFIXES = new Set<string>([
+  "sync_failed",
+  "in_review",
+  "tracking_off",
+  "monthly_creation_alert",
+  "zero_articles_14d",
+]);
+const VALID_NETWORK_IDS = new Set<string>([
+  "__network__:general_images",
+  "__network__:create_new_site",
+]);
+
+/**
+ * Clear orphaned alert_state docs left behind by removed conditions
+ * (e.g. `failed_articles`, `review_backlog`). Runs once per full cron tick.
+ * Sets `status: "ok"` so they no longer count as "Needs Attention".
+ * Failure-isolated — never blocks the rest of the run.
+ */
+async function cleanupOrphanedConditions(db: Db): Promise<void> {
+  try {
+    const docs = await db
+      .collection<AlertState>(COLLECTION)
+      .find({ status: "alerting" })
+      .toArray();
+
+    const orphaned = docs.filter((doc) => {
+      if (VALID_NETWORK_IDS.has(doc._id)) return false;
+      if (doc._id.startsWith("__network__:")) return true; // unknown network reminder
+      const suffix = doc._id.slice(doc._id.lastIndexOf(":") + 1);
+      return !VALID_CONDITION_SUFFIXES.has(suffix);
+    });
+
+    if (orphaned.length === 0) return;
+
+    const ids = orphaned.map((d) => d._id);
+    await db
+      .collection<AlertState>(COLLECTION)
+      .updateMany(
+        { _id: { $in: ids } },
+        { $set: { status: "ok", firstDetectedAt: null } },
+      );
+    console.log(`[alerts/run] cleaned up ${ids.length} orphaned alert docs: ${ids.join(", ")}`);
+  } catch (err) {
+    console.error("[alerts/run] orphan cleanup failed (non-fatal):", err);
+  }
+}
+
 export const DASHBOARD_URL =
   process.env.DASHBOARD_URL ?? "https://sites-platform-e297.atomic.cloudgrid.io";
 
@@ -255,6 +303,12 @@ export async function runAlerts(
   } catch (err) {
     console.error("[alerts/run] Mongo unavailable, skipping run:", err);
     return;
+  }
+
+  // Clean up orphaned docs from removed conditions (e.g. failed_articles, review_backlog).
+  // Only on full ticks, not scoped runs.
+  if (!opts?.onlySite) {
+    await cleanupOrphanedConditions(db);
   }
 
   const octokit = createOctokit(config.github);
