@@ -2,6 +2,10 @@
 
 Orientation for Claude Code sessions. Read this before touching code.
 
+## Rules
+
+- **Never run `cloudgrid plug` without explicit user permission.** Always ask first.
+
 ## Overview
 
 Atomic Content Network Platform — a multi-tenant content network for managing ad-monetized sites at scale. Turborepo/pnpm monorepo with two CloudGrid services plus a multi-tenant Astro Worker (`site-worker`) that serves all sites from KV + R2. Production traffic flows through `atl-sites-workers-manager` — a thin routing Worker that owns all Custom Domains and delegates to `atomic-site-worker`, `green-dream-b06f`, and `atl-streamed-lander` via Service Bindings. The legacy per-site `site-builder` package was retired in Phase 8 of the Pages → Workers migration (2026-04-26).
