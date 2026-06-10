@@ -256,7 +256,7 @@ export async function scoreArticle(
 export function resolveStatus(
   overallScore: number,
   threshold?: number,
-): "published" | "review" {
+): "approved" | "review" {
   const t = threshold ?? DEFAULT_THRESHOLD;
-  return overallScore >= t ? "published" : "review";
+  return overallScore >= t ? "approved" : "review";
 }

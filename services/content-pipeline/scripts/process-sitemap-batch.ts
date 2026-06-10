@@ -325,7 +325,7 @@ interface ProcessedArticle {
   file: BatchFileEntry;
   image?: { slug: string; title: string; description: string };
   qualityScore?: number;
-  articleStatus: "published" | "review";
+  articleStatus: "approved" | "review";
 }
 
 async function processImport(
@@ -355,7 +355,7 @@ async function processImport(
   let quality_score: number | undefined;
   let score_breakdown: QualityScoreBreakdown | undefined;
   let quality_note: string | undefined;
-  let articleStatus: "published" | "review" = "published";
+  let articleStatus: "approved" | "review" = "approved";
 
   if (brief) {
     try {
@@ -452,7 +452,7 @@ async function processGenerate(
   let quality_score: number | undefined;
   let score_breakdown: QualityScoreBreakdown | undefined;
   let quality_note: string | undefined;
-  let articleStatus: "published" | "review" = "published";
+  let articleStatus: "approved" | "review" = "approved";
 
   try {
     await sleep(INTER_REQUEST_DELAY_MS);

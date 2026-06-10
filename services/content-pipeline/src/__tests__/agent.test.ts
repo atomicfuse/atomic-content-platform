@@ -117,7 +117,7 @@ vi.mock("../agents/content-quality/scorer.js", () => ({
   }),
   resolveStatus: vi.fn().mockImplementation((score: number, threshold?: number) => {
     const t = threshold ?? 75;
-    return score >= t ? "published" : "review";
+    return score >= t ? "approved" : "review";
   }),
 }));
 
@@ -207,8 +207,8 @@ describe("runContentGeneration", () => {
 
     const created = result.results.find((r) => r.status === "created");
     const writtenContent = created?._pendingArticle?.content ?? "";
-    // Mock scorer returns 82, default threshold is 75 → published
-    expect(writtenContent).toContain("status: published");
+    // Mock scorer returns 82, default threshold is 75 → approved
+    expect(writtenContent).toContain("status: approved");
   });
 
   it("includes quality score in frontmatter", async () => {
@@ -230,7 +230,7 @@ describe("runContentGeneration", () => {
     );
 
     expect(result.results[0]!.qualityScore).toBe(82);
-    expect(result.results[0]!.articleStatus).toBe("published");
+    expect(result.results[0]!.articleStatus).toBe("approved");
   });
 
   it("flags article for review when score is below threshold", async () => {
