@@ -4,7 +4,9 @@ import {
   readFileContent,
   commitNetworkFiles,
   deleteNetworkFile,
+  invalidateSiteCaches,
 } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 
 export async function GET(
   _req: NextRequest,
@@ -42,6 +44,8 @@ export async function PUT(
       [{ path: `overrides/config/${id}.yaml`, content: yamlContent }],
       `config(overrides): update ${id}`,
     );
+    invalidateSiteCaches("", "main");
+    revalidatePath("/overrides");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(`[api/overrides/${id}] write error:`, error);
@@ -62,6 +66,8 @@ export async function DELETE(
       `overrides/config/${id}.yaml`,
       `config(overrides): delete ${id}`,
     );
+    invalidateSiteCaches("", "main");
+    revalidatePath("/overrides");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(`[api/overrides/${id}] delete error:`, error);

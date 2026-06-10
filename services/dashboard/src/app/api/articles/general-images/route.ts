@@ -43,8 +43,7 @@ async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
     (s) =>
       s.status === "Staging" ||
       s.status === "Ready" ||
-      s.status === "Live" ||
-      s.status === "WordPress",
+      s.status === "Live",
   );
 
   const results: GeneralImageArticle[] = [];

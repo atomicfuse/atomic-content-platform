@@ -62,7 +62,7 @@ export function RebuildConfirmModal({
       .then((res) => res.json())
       .then((sites: Array<{ domain: string; status: string }>) => {
         const live = sites
-          .filter((s) => affectedSet.has(s.domain) && (s.status === "Live" || s.status === "WordPress"))
+          .filter((s) => affectedSet.has(s.domain) && s.status === "Live")
           .map((s) => s.domain);
         setLiveDomains(live);
       })

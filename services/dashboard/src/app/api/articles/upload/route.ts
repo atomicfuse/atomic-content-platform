@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
 import sharp from "sharp";
-import { commitNetworkFiles, readFileContent } from "@/lib/github";
+import { commitNetworkFiles, readFileContent, invalidateSiteCaches } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 import { uploadToR2 } from "@/lib/r2-upload";
 import {
   parseFrontmatter,
@@ -183,6 +184,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `feat(content): upload article ${slug} for ${domain}`,
       targetBranch,
     );
+    invalidateSiteCaches(domain, targetBranch);
+    revalidatePath(`/sites/${domain}`);
 
     return NextResponse.json(
       {

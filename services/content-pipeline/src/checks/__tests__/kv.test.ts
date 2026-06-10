@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { getKVEntry } from "../../lib/kv.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { getKVEntry, clearKVCache } from "../../lib/kv.js";
 import { isDev1Domain, getKvNamespaces, getAccountId } from "../../lib/cloudflare-accounts.js";
 
+beforeEach(() => { clearKVCache(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("getKVEntry", () => {

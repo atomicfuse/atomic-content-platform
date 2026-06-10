@@ -16,7 +16,6 @@ const STATUS_STYLES: Record<string, string> = {
   Preview: "bg-primary-light text-primary border-primary-border",
   Ready: "bg-primary-light text-primary border-primary-border",
   New: "bg-card text-secondary border-card-border",
-  WordPress: "bg-warning-light text-warning border-warning-border",
 };
 
 export function OpsTableRow({ row, expanded, onToggle }: OpsTableRowProps): React.ReactElement {

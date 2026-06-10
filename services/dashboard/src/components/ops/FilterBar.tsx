@@ -15,7 +15,7 @@ interface FilterBarProps {
   onReset: () => void;
 }
 
-const STATUSES: (SiteStatus | "All")[] = ["All", "Live", "Staging", "Preview", "Ready", "New", "WordPress"];
+const STATUSES: (SiteStatus | "All")[] = ["All", "Live", "Staging", "Preview", "Ready", "New"];
 
 export function FilterBar({
   search,

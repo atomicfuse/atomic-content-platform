@@ -4,12 +4,12 @@ import {
   triggerWorkflowViaPush,
 } from "@/lib/github";
 
-const PRODUCTION_ELIGIBLE_STATUSES = new Set(["Live", "WordPress"]);
+const PRODUCTION_ELIGIBLE_STATUSES = new Set(["Live"]);
 
 /**
  * POST /api/sites/rebuild-production
  * Pushes .build-trigger to main for each eligible site, firing sync-kv.yml
- * on main → seeds production KV. Only Live/WordPress sites are synced
+ * on main → seeds production KV. Only Live sites are synced
  * (others may not have sites/<domain>/ on main yet).
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
