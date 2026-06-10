@@ -1,6 +1,7 @@
 "use client";
 
-import type { OpsRow } from "@/lib/ops-helpers";
+import { type OpsRow, ALERT_LABELS } from "@/lib/ops-helpers";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { SiteDetailPanel } from "./SiteDetailPanel";
 
 interface OpsTableRowProps {
@@ -24,7 +25,26 @@ export function OpsTableRow({ row, expanded, onToggle }: OpsTableRowProps): Reac
   return (
     <>
       <tr onClick={onToggle} className={`cursor-pointer hover:bg-primary-light/30 ${tierBg} border-b border-divider`}>
-        <td className="px-3.5 py-2.5 text-heading font-semibold text-sm">{row.customDomain ?? row.domain}</td>
+        <td className="px-3.5 py-2.5 text-heading font-semibold text-sm">
+          {row.alerts.length > 0 ? (
+            <Tooltip
+              content={
+                <ul className="list-none m-0 p-0 space-y-1 text-xs">
+                  {row.alerts.map((a) => (
+                    <li key={a.condition} className="flex items-start gap-1.5">
+                      <span className={a.severity === "critical" ? "text-error" : "text-warning"}>●</span>
+                      <span>{ALERT_LABELS[a.condition] ?? a.condition}</span>
+                    </li>
+                  ))}
+                </ul>
+              }
+            >
+              <span className="cursor-help border-b border-dotted border-warning">{row.customDomain ?? row.domain}</span>
+            </Tooltip>
+          ) : (
+            row.customDomain ?? row.domain
+          )}
+        </td>
         <td className="px-3.5 py-2.5">
           <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_STYLES[row.status] ?? ""}`}>{row.status}</span>
         </td>

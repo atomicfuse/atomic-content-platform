@@ -1,5 +1,17 @@
 import type { SiteStatus } from "@/types/dashboard";
 
+/* ─── Alert Labels ─── */
+
+export const ALERT_LABELS: Record<string, string> = {
+  sync_failed: "Content sync failed",
+  in_review: "Too many articles in review",
+  tracking_off: "No analytics configured (GA4/GTM)",
+  monthly_creation_alert: "Below monthly article target",
+  zero_articles_14d: "No articles created in 14 days",
+};
+
+export const ALERT_CONDITION_IDS = Object.keys(ALERT_LABELS);
+
 /* ─── Types ─── */
 
 export interface OpsRow {
