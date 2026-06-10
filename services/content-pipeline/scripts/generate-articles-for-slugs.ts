@@ -177,7 +177,7 @@ async function main(): Promise<void> {
       let quality_score: number | undefined;
       let score_breakdown: QualityScoreBreakdown | undefined;
       let quality_note: string | undefined;
-      let articleStatus: "published" | "review" = "published";
+      let articleStatus: "approved" | "review" = "approved";
 
       try {
         await sleep(INTER_REQUEST_DELAY_MS);

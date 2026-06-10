@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { readFileContent, commitNetworkFiles } from "@/lib/github";
+import { readFileContent, commitNetworkFiles, invalidateSiteCaches } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -30,6 +31,8 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
       [{ path: "network.yaml", content: yamlContent }],
       "config: update network settings",
     );
+    invalidateSiteCaches("", "main");
+    revalidatePath("/settings");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[api/settings/network] write error:", error);

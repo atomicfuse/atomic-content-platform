@@ -28,7 +28,7 @@ export interface ArticleFrontmatter {
   title: string;
   description: string;
   type: ArticleType;
-  status: "draft" | "review" | "published";
+  status: "draft" | "review" | "approved" | "published";
   publishDate: Date | string;
   author: string;
   tags: string[];

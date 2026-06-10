@@ -210,13 +210,13 @@ export function ArticleUploadPanel({
             <div className="flex items-center justify-between">
               <span className="font-semibold">{preview.title || "(no title)"}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                preview.status === "published"
+                preview.status === "approved" || preview.status === "published"
                   ? "bg-green-500/10 text-green-400"
                   : preview.status === "review"
                     ? "bg-amber-500/10 text-amber-400"
                     : "bg-zinc-500/10 text-zinc-400"
               }`}>
-                {preview.status}
+                {preview.status === "published" || preview.status === "approved" ? "Approved" : preview.status}
               </span>
             </div>
             <div className="text-xs text-[var(--text-muted)] space-y-1">

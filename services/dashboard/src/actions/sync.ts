@@ -90,8 +90,8 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
       correctStatus = "Preview";
     }
 
-    // Only downgrade status (e.g. Ready→New if files deleted), never override WordPress
-    if (site.status !== "WordPress" && site.status !== correctStatus) {
+    // Only downgrade status (e.g. Ready→New if files deleted)
+    if (site.status !== correctStatus) {
       site.status = correctStatus;
       site.last_updated = now;
       updatedCount++;

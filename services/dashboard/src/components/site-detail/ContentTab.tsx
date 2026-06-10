@@ -90,6 +90,7 @@ function statusVariant(
   status: string
 ): "success" | "warning" | "error" | "default" {
   switch (status) {
+    case "approved":
     case "published":
       return "success";
     case "review":
@@ -99,6 +100,11 @@ function statusVariant(
     default:
       return "default";
   }
+}
+
+function statusLabel(status: string): string {
+  if (status === "published" || status === "approved") return "Approved";
+  return status;
 }
 
 export function ContentTab({
@@ -134,7 +140,13 @@ export function ContentTab({
       const q = filters.search.toLowerCase();
       result = result.filter((a) => a.title.toLowerCase().includes(q) || a.slug.includes(q));
     }
-    if (filters.status) result = result.filter((a) => a.status === filters.status);
+    if (filters.status) {
+      if (filters.status === "approved") {
+        result = result.filter((a) => a.status === "approved" || a.status === "published");
+      } else {
+        result = result.filter((a) => a.status === filters.status);
+      }
+    }
     if (filters.type) result = result.filter((a) => a.type === filters.type);
     if (filters.generalImage === "yes") result = result.filter((a) => isGeneralImage(a.featuredImage, domain));
     else if (filters.generalImage === "no") result = result.filter((a) => !isGeneralImage(a.featuredImage, domain));
@@ -331,7 +343,7 @@ export function ContentTab({
                 </td>
                 <td className="px-4 py-3">
                   <Badge
-                    label={article.status}
+                    label={statusLabel(article.status)}
                     variant={statusVariant(article.status)}
                   />
                 </td>

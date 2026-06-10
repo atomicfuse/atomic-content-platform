@@ -28,7 +28,7 @@ const GUIDE_PAGES = [
   { slug: "15-creating-a-site", title: "Creating a Site" },
   { slug: "16-error-handling", title: "Error Handling & Alerts" },
   { slug: "17-site-deletion", title: "Deleting a Site" },
-  { slug: "18-wordpress-import", title: "WordPress Import" },
+  { slug: "18-wordpress-import", title: "Import" },
   { slug: "19-bulk-image-api", title: "Bulk Image Generation API" },
   { slug: "20-bundles", title: "Content Bundles & Subscriptions" },
   { slug: "20-query-param-overrides", title: "Query-Param Overrides & Template Vars" },

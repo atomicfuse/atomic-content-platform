@@ -137,7 +137,7 @@ describe("integration: WP article → .md conversion pipeline", () => {
     expect(parsed.data.author).toBe("Taylor Winters");
     expect(parsed.data.tags).toEqual(["News"]);
     expect(parsed.data.publishDate).toBe("2026-05-11T11:36:54");
-    expect(parsed.data.status).toBe("published");
+    expect(parsed.data.status).toBe("approved");
     expect(parsed.data.type).toBe("standard");
     expect(parsed.data.imported_from).toBe("wordpress");
     expect(parsed.data.wp_original_id).toBe(24108);

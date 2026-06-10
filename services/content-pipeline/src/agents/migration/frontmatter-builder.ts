@@ -27,7 +27,7 @@ export interface ArticleMdInput {
   quality_score?: number;
   score_breakdown?: QualityScoreBreakdown;
   quality_note?: string;
-  articleStatus?: "published" | "review";
+  articleStatus?: "approved" | "review";
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ export function buildArticleMd(input: ArticleMdInput): string {
     title: input.title,
     description: input.description,
     type: "standard",
-    status: input.articleStatus ?? "published",
+    status: input.articleStatus ?? "approved",
     publishDate: input.publishDate,
     author: input.author,
     tags: input.tags,

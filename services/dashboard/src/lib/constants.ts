@@ -29,11 +29,6 @@ export const STATUS_CONFIG: Record<
     color: "text-green-700 dark:text-green-300",
     bgColor: "bg-green-100 dark:bg-green-500/20",
   },
-  WordPress: {
-    label: "WordPress",
-    color: "text-orange-700 dark:text-orange-300",
-    bgColor: "bg-orange-100 dark:bg-orange-500/20",
-  },
 };
 
 export const COMPANIES: Company[] = ["ATL", "NGC"];
@@ -56,7 +51,6 @@ export const STATUSES: SiteStatus[] = [
   "Preview",
   "Ready",
   "Live",
-  "WordPress",
 ];
 
 export const NETWORK_REPO_OWNER = "atomicfuse";

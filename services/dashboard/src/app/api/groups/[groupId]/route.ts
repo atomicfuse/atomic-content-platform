@@ -4,7 +4,9 @@ import {
   readFileContent,
   commitNetworkFiles,
   deleteNetworkFile,
+  invalidateSiteCaches,
 } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 
 export async function GET(
   _req: NextRequest,
@@ -42,6 +44,8 @@ export async function PUT(
       [{ path: `groups/${groupId}.yaml`, content: yamlContent }],
       `config(groups): update ${groupId}`,
     );
+    invalidateSiteCaches("", "main");
+    revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(`[api/groups/${groupId}] write error:`, error);
@@ -62,6 +66,8 @@ export async function DELETE(
       `groups/${groupId}.yaml`,
       `config(groups): delete ${groupId}`,
     );
+    invalidateSiteCaches("", "main");
+    revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error(`[api/groups/${groupId}] delete error:`, error);

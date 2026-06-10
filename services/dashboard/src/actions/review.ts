@@ -111,7 +111,7 @@ export async function applyReviewDecisions(decisions: {
         const frontmatter = parseYaml(fmMatch[1]!) as Record<string, unknown>;
         const body = fmMatch[2] ?? "";
 
-        frontmatter.status = "published";
+        frontmatter.status = "approved";
         frontmatter.reviewer_notes = "Approved via review queue.";
 
         const newFm = stringifyYaml(frontmatter, { lineWidth: 0 });

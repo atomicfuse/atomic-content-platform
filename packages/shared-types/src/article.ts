@@ -33,7 +33,7 @@ export interface ArticleFrontmatter {
   type: ArticleType;
 
   /** Editorial workflow status. */
-  status: "draft" | "review" | "published";
+  status: "draft" | "review" | "approved" | "published";
 
   /** Scheduled or actual publish date. */
   publishDate: Date | string;

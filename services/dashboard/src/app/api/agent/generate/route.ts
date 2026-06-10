@@ -1,5 +1,7 @@
 // services/dashboard/src/app/api/agent/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { invalidateSiteCaches } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 
 const REDIS_URL = process.env.REDIS_URL;
 
@@ -68,6 +70,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
       try {
         const result = await job.waitUntilFinished(queueEvents, 90_000);
+        const branch = body.branch ?? `staging/${body.siteDomain}`;
+        invalidateSiteCaches(body.siteDomain, branch);
+        revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
         return NextResponse.json(result as Record<string, unknown>, {
           status: 201,
         });
@@ -116,6 +121,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }),
     });
     const result = (await agentResponse.json()) as Record<string, unknown>;
+    if (agentResponse.ok) {
+      const branch = body.branch ?? `staging/${body.siteDomain}`;
+      invalidateSiteCaches(body.siteDomain, branch);
+      revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
+    }
     return NextResponse.json(result, { status: agentResponse.status });
   } catch (error) {
     const message =

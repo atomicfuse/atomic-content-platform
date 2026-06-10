@@ -212,9 +212,6 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       case "Live":
         router.push(`/sites/${encodeURIComponent(site.domain)}`);
         break;
-      case "WordPress":
-        // Tooltip handled inline
-        break;
     }
   }
 
@@ -358,11 +355,6 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={site.status} />
-                    {site.status === "WordPress" && (
-                      <span className="invisible group-hover:visible absolute z-10 ml-2 px-2 py-1 text-xs bg-[var(--bg-elevated)] border border-[var(--border-primary)] rounded-md shadow-lg whitespace-nowrap">
-                        Migration coming soon
-                      </span>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums">
                     {countsLoaded

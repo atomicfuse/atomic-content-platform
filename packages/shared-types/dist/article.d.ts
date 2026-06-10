@@ -28,7 +28,7 @@ export interface ArticleFrontmatter {
     /** Content format of the article. */
     type: ArticleType;
     /** Editorial workflow status. */
-    status: "draft" | "review" | "published";
+    status: "draft" | "review" | "approved" | "published";
     /** Scheduled or actual publish date. */
     publishDate: Date | string;
     /** Display name of the article author. */

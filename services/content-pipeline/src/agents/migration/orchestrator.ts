@@ -190,7 +190,7 @@ export async function runMigration(
       let qualityScore: number | undefined;
       let scoreBreakdown: QualityScoreBreakdown | undefined;
       let qualityNote: string | undefined;
-      let articleStatus: "published" | "review" = "published";
+      let articleStatus: "approved" | "review" = "approved";
 
       if (siteBrief) {
         try {
@@ -210,7 +210,7 @@ export async function runMigration(
           console.log(`[migration] Quality: ${qualityScore}/100 → ${articleStatus} (${slug})`);
         } catch (scoreErr) {
           const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
-          console.warn(`[migration] Quality scoring failed for ${slug}, defaulting to published: ${errMsg}`);
+          console.warn(`[migration] Quality scoring failed for ${slug}, defaulting to approved: ${errMsg}`);
         }
       }
 

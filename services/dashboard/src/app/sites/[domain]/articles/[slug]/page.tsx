@@ -35,9 +35,14 @@ interface ArticleVideo {
 }
 
 function statusColor(status: string): string {
-  if (status === "published") return "bg-green-500/10 text-green-400";
+  if (status === "approved" || status === "published") return "bg-green-500/10 text-green-400";
   if (status === "review") return "bg-amber-500/10 text-amber-400";
   return "bg-zinc-500/10 text-zinc-400";
+}
+
+function statusLabel(status: string): string {
+  if (status === "published" || status === "approved") return "Approved";
+  return status;
 }
 
 export default async function ArticleDetailPage({
@@ -100,7 +105,7 @@ export default async function ArticleDetailPage({
         <div className="flex items-start justify-between gap-4">
           <h1 className="text-xl font-bold">{title}</h1>
           <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusColor(status)}`}>
-            {status}
+            {statusLabel(status)}
           </span>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--text-muted)]">

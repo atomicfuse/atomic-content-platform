@@ -42,7 +42,7 @@ interface ArticleIndexEntry {
   featuredImage?: string;
   tags: string[];
   type: "listicle" | "how-to" | "review" | "standard";
-  status: "draft" | "review" | "published";
+  status: "draft" | "review" | "approved" | "published";
   featured?: ("hero" | "must-read")[];
   scripts?: unknown[];
   videos?: unknown[];
