@@ -94,7 +94,7 @@ export default function OpsDashboard({
   const [activeCard, setActiveCard] = useState<CardId | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "All">("All");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [alertFilter, setAlertFilter] = useState<Set<string>>(new Set());
 
   // Debounced search
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -179,12 +179,6 @@ export default function OpsDashboard({
     return computeCostStrip(costInputs, r2, schedules);
   }, [costs, r2, allRows]);
 
-  // Verticals for filter dropdown
-  const verticals = useMemo(
-    () => [...new Set(indexSites.map((s) => s.vertical).filter(Boolean))].sort(),
-    [indexSites],
-  );
-
   // Filter
   const filteredRows = useMemo(() => {
     let rows: OpsRow[] = allRows;
@@ -196,9 +190,13 @@ export default function OpsDashboard({
       );
     }
     if (statusFilter !== "All") rows = rows.filter((r) => r.status === statusFilter);
-    if (categoryFilter) rows = rows.filter((r) => r.vertical === categoryFilter);
+    if (alertFilter.size > 0) {
+      rows = rows.filter((r) =>
+        r.alerts.some((a) => alertFilter.has(a.condition)),
+      );
+    }
     return rows;
-  }, [allRows, activeCard, debouncedSearch, statusFilter, categoryFilter]);
+  }, [allRows, activeCard, debouncedSearch, statusFilter, alertFilter]);
 
   const secondsAgo = Math.round((Date.now() - lastRefreshed) / 1000);
 
@@ -209,7 +207,7 @@ export default function OpsDashboard({
   function handleReset(): void {
     setSearch("");
     setStatusFilter("All");
-    setCategoryFilter("");
+    setAlertFilter(new Set());
     setActiveCard(null);
   }
 
@@ -235,13 +233,12 @@ export default function OpsDashboard({
       <FilterCards rows={allRows} activeCard={activeCard} onCardClick={handleCardClick} />
       <CostStrip data={costStripData} />
       <FilterBar
-        verticals={verticals}
         search={search}
         onSearchChange={setSearch}
         statusFilter={statusFilter}
         onStatusChange={setStatusFilter}
-        categoryFilter={categoryFilter}
-        onCategoryChange={setCategoryFilter}
+        alertFilter={alertFilter}
+        onAlertFilterChange={setAlertFilter}
         onReset={handleReset}
       />
       <OpsTable rows={filteredRows} />
