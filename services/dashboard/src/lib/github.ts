@@ -7,6 +7,7 @@ import type {
   DashboardIndex,
   DashboardSiteEntry,
   DeletedSiteEntry,
+  HistoryEntry,
   ArticleEntry,
   ActivityEvent,
 } from "@/types/dashboard";
@@ -339,12 +340,20 @@ export async function restoreSiteInIndex(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { deleted_at, ...siteEntry } = restored!;
 
-  // Re-detect status: check if site.yaml still exists in Git
-  const siteConfig = await readSiteConfig(domain);
+  // Re-detect status: check if site.yaml exists on staging branch first
+  // (soft delete preserves staging but removes main), then fall back to main.
+  const stagingBranch = siteEntry.staging_branch ?? `staging/${domain}`;
+  const stagingConfig = await readSiteConfig(domain, stagingBranch);
   let newStatus = siteEntry.status;
-  if (!siteConfig) {
-    // No site.yaml → site files were deleted, reset to New
-    newStatus = "New";
+  if (stagingConfig) {
+    // Staging branch has config — site is restorable
+    newStatus = "Staging";
+  } else {
+    // Check main as fallback
+    const mainConfig = await readSiteConfig(domain);
+    if (!mainConfig) {
+      newStatus = "New";
+    }
   }
 
   index.sites.push({
@@ -362,12 +371,24 @@ export async function permanentlyRemoveFromTrash(
 ): Promise<DashboardIndex> {
   const index = await readDashboardIndex();
   index.deleted = index.deleted ?? [];
-  const before = index.deleted.length;
-  index.deleted = index.deleted.filter((s) => s.domain !== domain);
-  if (index.deleted.length === before) {
+  const trashIndex = index.deleted.findIndex((s) => s.domain === domain);
+  if (trashIndex === -1) {
     throw new Error(`Site ${domain} not found in trash`);
   }
-  await writeDashboardIndex(index, `dashboard: permanently remove ${domain}`);
+  const [removed] = index.deleted.splice(trashIndex, 1);
+
+  // Record in history for audit trail
+  index.history = index.history ?? [];
+  const historyEntry: HistoryEntry = {
+    domain: removed!.domain,
+    custom_domain: removed!.custom_domain,
+    company: removed!.company,
+    vertical: removed!.vertical,
+    permanently_deleted_at: new Date().toISOString(),
+  };
+  index.history.push(historyEntry);
+
+  await writeDashboardIndex(index, `dashboard: permanently delete ${domain}`);
   return index;
 }
 
