@@ -12,6 +12,8 @@ import {
   triggerWorkflowViaPush,
   invalidateSiteCaches,
   flushAllCaches,
+  branchExists,
+  deleteBranch,
 } from "@/lib/github";
 
 import {
@@ -268,36 +270,141 @@ export async function deleteArticlesFromStaging(
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Permanently delete a domain — remove from trash AND retry cleanup for anything
- *  the soft delete may have missed. Best-effort: swallows all cleanup errors. */
-export async function permanentlyDeleteSite(domain: string): Promise<void> {
-  // Retry site file + override file deletion (may already be gone from soft delete)
+/** Permanently delete a site from trash — destroys staging branch, all KV,
+ *  all R2 assets, and records a history entry. Returns cleanup log for UI. */
+export async function permanentlyDeleteSite(domain: string): Promise<{
+  steps: Array<{ label: string; success: boolean; error?: string }>;
+}> {
+  const steps: Array<{ label: string; success: boolean; error?: string }> = [];
+
+  // 1. Delete staging branch if it exists
+  {
+    const branchName = `staging/${domain}`;
+    try {
+      const exists = await branchExists(branchName);
+      if (exists) {
+        await deleteBranch(branchName);
+        steps.push({ label: `Deleted staging branch: ${branchName}`, success: true });
+      } else {
+        steps.push({ label: "Staging branch already gone", success: true });
+      }
+    } catch (err) {
+      steps.push({
+        label: `Delete staging branch: ${branchName}`,
+        success: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  }
+
+  // 2. Delete site files from Git main (safety retry — may already be gone from soft delete)
   try {
     await deleteSiteFilesFromRepo(domain);
+    steps.push({ label: "Deleted site files from Git main", success: true });
   } catch {
-    // Files may already be deleted — that's fine
+    steps.push({ label: "Site files already removed from Git", success: true });
   }
 
-  // Retry KV cleanup (all key patterns)
-  const kv = getKvNamespaces(domain);
-  for (const nsId of [kv.staging, kv.prod]) {
-    try { await deleteKVByPrefix(nsId, `article:${domain}:`, domain); } catch { /* best-effort */ }
-    try { await deleteKVByPrefix(nsId, `shared-page:${domain}:`, domain); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `site-config-prev:${domain}`, domain); } catch { /* best-effort */ }
-    // Also retry the known keys in case soft delete missed them
-    try { await deleteKVEntry(nsId, `site:${domain}`, domain); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `site-config:${domain}`, domain); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `article-index:${domain}`, domain); } catch { /* best-effort */ }
-    try { await deleteKVEntry(nsId, `sync-status:${domain}`, domain); } catch { /* best-effort */ }
+  // 3. Delete ALL KV entries (staging + prod)
+  {
+    const kv = getKvNamespaces(domain);
+    const namespaces = [
+      { id: kv.staging, label: "staging" },
+      { id: kv.prod, label: "prod" },
+    ];
+    let kvDeleted = 0;
+    const kvErrors: string[] = [];
+
+    for (const ns of namespaces) {
+      // Known keys
+      for (const key of [
+        `site:${domain}`,
+        `site-config:${domain}`,
+        `article-index:${domain}`,
+        `sync-status:${domain}`,
+        `site-config-prev:${domain}`,
+        `cond-overrides:${domain}`,
+      ]) {
+        try {
+          await deleteKVEntry(ns.id, key, domain);
+          kvDeleted++;
+        } catch {
+          // Key may not exist — that's fine
+        }
+      }
+      // Prefix-scanned keys
+      for (const prefix of [`article:${domain}:`, `shared-page:${domain}:`]) {
+        try {
+          const count = await deleteKVByPrefix(ns.id, prefix, domain);
+          kvDeleted += count;
+        } catch (err) {
+          kvErrors.push(`${ns.label}/${prefix}: ${err instanceof Error ? err.message : "Unknown"}`);
+        }
+      }
+    }
+
+    if (kvErrors.length === 0) {
+      steps.push({ label: `Cleaned ${kvDeleted} KV entries (staging + prod)`, success: true });
+    } else {
+      steps.push({
+        label: `KV cleanup: ${kvDeleted} deleted, ${kvErrors.length} errors`,
+        success: false,
+        error: kvErrors.join("; "),
+      });
+    }
   }
 
-  // Retry R2 cleanup
-  try { await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`, domain); } catch { /* best-effort */ }
+  // 4. Delete ALL R2 assets
+  try {
+    const count = await deleteR2ObjectsByPrefix(R2_BUCKET_PROD, `${domain}/`, domain);
+    if (count > 0) {
+      steps.push({ label: `Deleted ${count} R2 assets`, success: true });
+    } else {
+      steps.push({ label: "No R2 assets to clean up", success: true });
+    }
+  } catch (err) {
+    steps.push({
+      label: "R2 cleanup",
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
 
-  await permanentlyRemoveFromTrash(domain);
+  // 5. Delete CF Pages project if referenced in trash entry
+  // (Read from dashboard-index deleted array before we remove it)
+  {
+    const index = await readDashboardIndex();
+    const trashed = (index.deleted ?? []).find((s) => s.domain === domain);
+    if (trashed?.pages_project) {
+      try {
+        await deletePagesProject(trashed.pages_project, domain);
+        steps.push({ label: `Deleted CF Pages project: ${trashed.pages_project}`, success: true });
+      } catch {
+        steps.push({ label: "CF Pages project already gone", success: true });
+      }
+    }
+  }
+
+  // 6. Remove from trash + write history entry
+  try {
+    await permanentlyRemoveFromTrash(domain);
+    steps.push({ label: "Removed from trash, added to history", success: true });
+  } catch (err) {
+    steps.push({
+      label: "Remove from trash",
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+
+  // 7. Invalidate caches (landmine #45) — must come before revalidatePath
+  invalidateSiteCaches(domain, `staging/${domain}`);
+
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
+
+  return { steps };
 }
 
 export async function refreshSiteCache(domain: string, branch?: string): Promise<void> {
