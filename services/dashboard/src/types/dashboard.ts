@@ -76,9 +76,23 @@ export interface DeletedSiteEntry extends DashboardSiteEntry {
   deleted_at: string;
 }
 
+export interface HistoryEntry {
+  /** Site folder name (e.g. "rumorumor"). */
+  domain: string;
+  /** Custom domain that was connected (e.g. "rumorumor.com"), or null. */
+  custom_domain: string | null;
+  /** Display name / company for reference. */
+  company: Company | null;
+  /** Category for reference. */
+  vertical: Vertical;
+  /** ISO 8601 timestamp of when the site was permanently deleted. */
+  permanently_deleted_at: string;
+}
+
 export interface DashboardIndex {
   sites: DashboardSiteEntry[];
   deleted?: DeletedSiteEntry[];
+  history?: HistoryEntry[];
 }
 
 export interface ActivityEvent {
