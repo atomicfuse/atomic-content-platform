@@ -56,12 +56,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         userPrompt: body.userPrompt.trim(),
       }),
     });
-    const result = (await agentResponse.json()) as Record<string, unknown>;
+    const raw = (await agentResponse.json()) as Record<string, unknown>;
     if (agentResponse.ok) {
       invalidateSiteCaches(body.siteDomain, branch);
       revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
     }
-    return NextResponse.json(result, { status: agentResponse.status });
+
+    // The dedicated agent returns a flat result ({ status, slug, ... }).
+    // The UI expects the same shape as the regular generate endpoint:
+    // { siteDomain, results: [{ status, slug, ... }] }
+    // Wrap it so ContentGenerationPanel can handle both flows identically.
+    const wrapped = {
+      siteDomain: body.siteDomain,
+      results: [raw],
+    };
+    return NextResponse.json(wrapped, { status: agentResponse.status });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to reach content agent";
