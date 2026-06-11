@@ -575,73 +575,22 @@ export function ContentGenerationPanel({
 
       const stagingUrl = workerPreviewUrl(domain);
 
-      const stagingMessage = `Article committed to staging branch. The Worker preview will reflect it once sync-kv runs (~60s).`;
+      const completedState: PipelineState = {
+        step: "complete",
+        message: `Dedicated article committed to staging branch!`,
+        articleSlug: firstCreated?.slug,
+        articlePath: firstCreated?.path,
+        stagingUrl,
+        startedAt: startTime,
+        completedAt: Date.now(),
+        batchSummary,
+        batchResults: result.results,
+      };
 
-      const hasApproved = result.results.some(
-        (r) => r.status === "created" && (r.articleStatus === "approved" || r.articleStatus === "published"),
-      );
-
-      if (hasApproved) {
-        advancePipeline("deploying_production", `Deploying approved article to production...`, {
-          stagingUrl,
-        });
-
-        try {
-          const { publishStagingToProduction: publish } = await import("@/actions/wizard");
-          await publish(domain);
-
-          const productionUrl = `https://${domain}`;
-
-          const completedState: PipelineState = {
-            step: "complete",
-            message: `Article deployed to production!`,
-            articleSlug: firstCreated?.slug,
-            articlePath: firstCreated?.path,
-            stagingUrl,
-            productionUrl,
-            startedAt: startTime,
-            completedAt: Date.now(),
-            batchSummary,
-            batchResults: result.results,
-          };
-
-          setPipeline(completedState);
-          setHistory((prev) => [completedState, ...prev]);
-          setDedicatedPrompt("");
-          toast("Dedicated article deployed to production!", "success");
-        } catch (deployErr) {
-          const deployMsg = deployErr instanceof Error ? deployErr.message : "Auto-deploy failed";
-          console.error(`[dedicated-gen] Auto-deploy failed: ${deployMsg}`);
-
-          setPipeline((prev) => ({
-            ...prev,
-            step: "staging_live",
-            message: `Article staged successfully. Auto-deploy failed: ${deployMsg}`,
-            stagingUrl,
-            articleSlug: firstCreated?.slug,
-            articlePath: firstCreated?.path,
-            batchSummary,
-            batchResults: result.results,
-          }));
-
-          setDedicatedPrompt("");
-          toast(`Staged successfully but auto-deploy failed: ${deployMsg}`, "info");
-        }
-      } else {
-        setPipeline((prev) => ({
-          ...prev,
-          step: "staging_live",
-          message: stagingMessage,
-          stagingUrl,
-          articleSlug: firstCreated?.slug,
-          articlePath: firstCreated?.path,
-          batchSummary,
-          batchResults: result.results,
-        }));
-
-        setDedicatedPrompt("");
-        toast(`Dedicated article staged for ${domain} — review on staging`, "success");
-      }
+      setPipeline(completedState);
+      setHistory((prev) => [completedState, ...prev]);
+      setDedicatedPrompt("");
+      toast(`Dedicated article staged for ${domain}`, "success");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Generation failed";
