@@ -46,7 +46,6 @@ interface OpsDashboardProps {
   initialR2: R2Data;
 }
 
-const POLL_INTERVAL = 60_000;
 /** Consider data stale after 30s — only re-fetch on mount if older. */
 const STALE_THRESHOLD = 30_000;
 
@@ -136,11 +135,9 @@ export default function OpsDashboard({
   }, [initialStats, initialChecks, initialCosts, initialAttention, initialR2]);
 
   useEffect(() => {
-    // Only poll immediately if cached data is stale or missing
+    // Only fetch on mount if cached data is stale or missing — no periodic polling
     const age = Date.now() - (_cache?.lastRefreshed ?? 0);
     if (age > STALE_THRESHOLD) poll();
-    const id = setInterval(poll, POLL_INTERVAL);
-    return () => clearInterval(id);
   }, [poll]);
 
   // Index → filter to real sites
@@ -218,7 +215,7 @@ export default function OpsDashboard({
         <div>
           <h1 className="text-xl font-bold text-heading">Content Network</h1>
           <p className="text-secondary text-xs">
-            Last refreshed: {secondsAgo}s ago · Auto-refresh: 60s
+            Last refreshed: {secondsAgo}s ago
             {failCount >= 3 && <span className="text-warning ml-2">· Connection issues</span>}
           </p>
         </div>
