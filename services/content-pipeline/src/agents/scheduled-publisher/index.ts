@@ -31,6 +31,7 @@ import { createSchedulerFlow, buildRunId } from "../../queue/scheduler-flow.js";
 import type { SchedulerSite } from "../../queue/scheduler-flow.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { notifyError, notifySummary } from "../../lib/notifications.js";
+import { updateWeeklySummary } from "../../stats/weekly-summary.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -519,6 +520,21 @@ export async function runScheduledPublish(
 
   // 4. Final history flush — ensures any pending writes land before we return
   await history.finalize();
+
+  // Update weekly summary in MongoDB
+  const allSiteDomains = activeSites.map((s) => s.domain);
+  await updateWeeklySummary({
+    allSiteDomains,
+    siteResults: siteOutcomes
+      .filter((o): o is Extract<SiteOutcome, { kind: "triggered" }> => o.kind === "triggered")
+      .map((o) => ({
+        domain: o.domain,
+        articlesRequested: o.siteResult.articlesRequested,
+        articlesCreated: o.siteResult.articlesCreated,
+      })),
+    skipped: result.skipped,
+    timezone: schedCfg.timezone,
+  });
 
   return result;
 }
