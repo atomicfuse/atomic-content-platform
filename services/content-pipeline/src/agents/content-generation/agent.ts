@@ -118,8 +118,8 @@ export interface ContentGenerationResult {
   message?: string;
   /** Quality score 0-100 from the quality agent. */
   qualityScore?: number;
-  /** Whether the article was auto-approved or flagged for review. */
-  articleStatus?: "approved" | "review";
+  /** Whether the article was auto-published or flagged for review. */
+  articleStatus?: "published" | "review";
   /** Which model generated the article. */
   generatedBy?: "claude" | "openai";
   /** @internal Pending file data — used for batch commit, stripped before API response. */
@@ -674,7 +674,7 @@ async function processItem(
     let qualityScore: number | undefined;
     let scoreBreakdown: QualityScoreBreakdown | undefined;
     let qualityNote: string | undefined;
-    let articleStatus: "approved" | "review" = "approved";
+    let articleStatus: "published" | "review" = "published";
 
     try {
       console.log(`[agent] Scoring article: "${generated.title}"`);

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 export interface ContentFilterState {
   search: string;
-  status: string;   // "" = all, "approved" (includes legacy "published"), "review", "draft"
+  status: string;   // "" = all, "published" (includes legacy "approved"), "review", "draft"
   type: string;     // "" = all, "listicle", "how-to", "review", "standard"
   generalImage: string; // "" = all, "yes", "no"
   sortBy: string;   // "date-desc" (default), "date-asc", "score-desc", "score-asc"
@@ -59,7 +59,7 @@ export function ContentFilters({
         className={SELECT_STYLES}
       >
         <option value="">All statuses</option>
-        <option value="approved">Approved</option>
+        <option value="approved">Published</option>
         <option value="review">Review</option>
         <option value="draft">Draft</option>
       </select>

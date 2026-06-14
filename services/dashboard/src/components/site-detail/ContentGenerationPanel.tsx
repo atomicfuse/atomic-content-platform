@@ -360,7 +360,7 @@ export function ContentGenerationPanel({
 
       // Check if any articles are published (high quality) — auto-deploy those to production
       const hasApproved = result.results.some(
-        (r) => r.status === "created" && (r.articleStatus === "approved" || r.articleStatus === "published"),
+        (r) => r.status === "created" && (r.articleStatus === "published"),
       );
       const hasReviewOnly = result.results.some(
         (r) => r.status === "created" && r.articleStatus === "review",
@@ -368,7 +368,7 @@ export function ContentGenerationPanel({
 
       if (hasApproved) {
         // Auto-deploy to production — review articles are filtered out by the site builder
-        advancePipeline("deploying_production", `${batchSummary} — deploying approved articles to production...`, {
+        advancePipeline("deploying_production", `${batchSummary} — deploying published articles to production...`, {
           stagingUrl,
         });
 
@@ -377,7 +377,7 @@ export function ContentGenerationPanel({
 
           const productionUrl = `https://${domain}`;
           const completeMessage = hasReviewOnly
-            ? `${batchSummary} — approved articles deployed to production. Review-status articles are available on staging.`
+            ? `${batchSummary} — published articles deployed to production. Review-status articles are available on staging.`
             : `${batchSummary} — deployed to production!`;
 
           const completedState: PipelineState = {
