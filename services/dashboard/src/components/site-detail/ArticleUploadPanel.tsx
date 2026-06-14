@@ -216,7 +216,7 @@ export function ArticleUploadPanel({
                     ? "bg-amber-500/10 text-amber-400"
                     : "bg-zinc-500/10 text-zinc-400"
               }`}>
-                {preview.status === "published" || preview.status === "approved" ? "Approved" : preview.status}
+                {preview.status === "published" || preview.status === "approved" ? "Published" : preview.status}
               </span>
             </div>
             <div className="text-xs text-[var(--text-muted)] space-y-1">

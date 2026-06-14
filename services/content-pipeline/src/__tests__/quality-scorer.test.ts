@@ -172,12 +172,12 @@ describe("calculateWeightedScore", () => {
 });
 
 describe("resolveStatus", () => {
-  it("returns approved when score >= threshold", () => {
-    expect(resolveStatus(80, 75)).toBe("approved");
+  it("returns published when score >= threshold", () => {
+    expect(resolveStatus(80, 75)).toBe("published");
   });
 
-  it("returns approved when score equals threshold", () => {
-    expect(resolveStatus(75, 75)).toBe("approved");
+  it("returns published when score equals threshold", () => {
+    expect(resolveStatus(75, 75)).toBe("published");
   });
 
   it("returns review when score < threshold", () => {
@@ -185,17 +185,17 @@ describe("resolveStatus", () => {
   });
 
   it("uses default threshold of 40 when not provided", () => {
-    expect(resolveStatus(40)).toBe("approved");
+    expect(resolveStatus(40)).toBe("published");
     expect(resolveStatus(39)).toBe("review");
   });
 
   it("handles zero threshold (everything passes)", () => {
-    expect(resolveStatus(0, 0)).toBe("approved");
+    expect(resolveStatus(0, 0)).toBe("published");
   });
 
   it("handles 100 threshold (only perfect passes)", () => {
     expect(resolveStatus(99, 100)).toBe("review");
-    expect(resolveStatus(100, 100)).toBe("approved");
+    expect(resolveStatus(100, 100)).toBe("published");
   });
 });
 

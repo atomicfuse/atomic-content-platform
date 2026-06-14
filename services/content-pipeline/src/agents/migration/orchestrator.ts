@@ -190,7 +190,7 @@ export async function runMigration(
       let qualityScore: number | undefined;
       let scoreBreakdown: QualityScoreBreakdown | undefined;
       let qualityNote: string | undefined;
-      let articleStatus: "approved" | "review" = "approved";
+      let articleStatus: "published" | "review" = "published";
 
       if (siteBrief) {
         try {

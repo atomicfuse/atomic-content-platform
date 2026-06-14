@@ -48,7 +48,7 @@ export interface DedicatedGenerationResult {
   path?: string;
   message?: string;
   qualityScore?: number;
-  articleStatus?: "approved" | "review";
+  articleStatus?: "published" | "review";
   n8nImageTriggered: boolean;
 }
 
@@ -204,7 +204,7 @@ export async function runDedicatedGeneration(
   let qualityScore: number | undefined;
   let scoreBreakdown: QualityScoreBreakdown | undefined;
   let qualityNote: string | undefined;
-  let articleStatus: "approved" | "review" = "approved";
+  let articleStatus: "published" | "review" = "published";
 
   try {
     console.log(`[dedicated] Scoring article: "${generated.title}"`);

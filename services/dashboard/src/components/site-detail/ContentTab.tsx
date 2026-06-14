@@ -103,7 +103,7 @@ function statusVariant(
 }
 
 function statusLabel(status: string): string {
-  if (status === "published" || status === "approved") return "Approved";
+  if (status === "published" || status === "approved") return "Published";
   return status;
 }
 
