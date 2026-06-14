@@ -18,7 +18,7 @@ export interface SchedulerRunData {
   timezone: string;
   forced: boolean;
   /** Domains that were enqueued as child generate jobs. */
-  enqueuedDomains: string[];
+  enqueuedDomains: Array<{ domain: string; count: number }>;
   skipped: Array<{ domain: string; reason: string }>;
 }
 

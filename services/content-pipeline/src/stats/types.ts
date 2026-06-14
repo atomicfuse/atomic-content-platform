@@ -44,8 +44,27 @@ export interface ImageGenEvent {
   at: Date;
 }
 
+export interface DayCell {
+  expected: number;
+  created: number;
+}
+
+export interface WeeklySummary {
+  _id: string;                        // weekOf Sunday, YYYY-MM-DD
+  sites: Record<string, DayCell[]>;   // siteId -> 7-element array [Sun..Sat]
+  updatedAt: Date;
+}
+
+export interface ReviewCount {
+  _id: string;     // siteId
+  count: number;
+  updatedAt: Date;
+}
+
 export const COLLECTIONS = {
   generationEvents: "generation_events",
   siteStats: "site_stats",
   imageGenEvents: "image_gen_events",
+  weeklySummaries: "weekly_summaries",
+  reviewCounts: "review_counts",
 } as const;

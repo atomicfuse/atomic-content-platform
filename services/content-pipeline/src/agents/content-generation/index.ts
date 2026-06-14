@@ -60,6 +60,7 @@ import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
 import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 import { runBackfillR2 } from "../../stats/backfill-r2.js";
+import { getWeeklySummary, decrementReviewCount, getSchedulerTimezone } from "../../stats/weekly-summary.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -836,6 +837,55 @@ async function handleRequest(
       } catch (err) {
         sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
       }
+      return;
+    }
+  }
+
+
+  // Scheduler weekly summary — GET /scheduler-summary
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/scheduler-summary") {
+      try {
+        const timezone = await getSchedulerTimezone(config);
+        const summary = await getWeeklySummary(timezone);
+        sendJson(res, 200, summary as unknown as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        sendJson(res, 500, { error: message });
+      }
+      return;
+    }
+  }
+
+  // Review count decrement — POST /review-counts/decrement
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/review-counts/decrement") {
+      let rawBody: string;
+      try {
+        rawBody = await readBody(req);
+      } catch {
+        sendJson(res, 413, { status: "error", message: "Payload too large" });
+        return;
+      }
+
+      let payload: { domain?: string; count?: number };
+      try {
+        payload = JSON.parse(rawBody) as typeof payload;
+      } catch {
+        sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+        return;
+      }
+
+      const { domain, count } = payload;
+      if (!domain || typeof count !== "number" || count <= 0) {
+        sendJson(res, 400, { status: "error", message: "domain (string) and count (positive number) required" });
+        return;
+      }
+
+      await decrementReviewCount(domain, count);
+      sendJson(res, 200, { status: "ok" });
       return;
     }
   }

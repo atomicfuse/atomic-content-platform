@@ -101,7 +101,7 @@ describe("createSchedulerFlow", () => {
     const parentData = (flowDef.data as Record<string, unknown>);
     expect(parentData.runId).toBe("2026-05-03T14");
     expect(parentData.forced).toBe(false);
-    expect(parentData.enqueuedDomains).toEqual(["alpha.com", "beta.com"]);
+    expect(parentData.enqueuedDomains).toEqual([{ domain: "alpha.com", count: 3 }, { domain: "beta.com", count: 2 }]);
 
     // Children
     const children = flowDef.children as Array<Record<string, unknown>>;
@@ -190,7 +190,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T14",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["alpha.com", "beta.com"],
+        enqueuedDomains: [{ domain: "alpha.com", count: 3 }, { domain: "beta.com", count: 2 }],
         skipped: [{ domain: "gamma.com", reason: "no schedule" }],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -236,7 +236,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T16",
         timezone: "EST",
         forced: true,
-        enqueuedDomains: ["site-a.com", "site-b.com", "site-c.com"],
+        enqueuedDomains: [{ domain: "site-a.com", count: 1 }, { domain: "site-b.com", count: 1 }, { domain: "site-c.com", count: 1 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -276,7 +276,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T17",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["real.com"],
+        enqueuedDomains: [{ domain: "real.com", count: 1 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -314,7 +314,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T18",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["ok.com"],
+        enqueuedDomains: [{ domain: "ok.com", count: 1 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -357,7 +357,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T20",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["new.com"],
+        enqueuedDomains: [{ domain: "new.com", count: 1 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -391,7 +391,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T21",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["x.com"],
+        enqueuedDomains: [{ domain: "x.com", count: 1 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -425,7 +425,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T22",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["mixed.com"],
+        enqueuedDomains: [{ domain: "mixed.com", count: 5 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -459,7 +459,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T23",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["dupes.com"],
+        enqueuedDomains: [{ domain: "dupes.com", count: 3 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,
@@ -498,7 +498,7 @@ describe("processSchedulerRun", () => {
         runId: "2026-05-03T15",
         timezone: "UTC",
         forced: false,
-        enqueuedDomains: ["alpha.com", "delta.com"],
+        enqueuedDomains: [{ domain: "alpha.com", count: 2 }, { domain: "delta.com", count: 2 }],
         skipped: [],
       },
       getChildrenValues: mockGetChildrenValues,

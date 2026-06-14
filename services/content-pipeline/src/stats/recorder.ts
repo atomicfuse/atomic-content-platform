@@ -84,6 +84,7 @@ export function buildGenerationEvent(
  * Persists a generation run to MongoDB:
  *   1. Inserts a GenerationEvent document.
  *   2. Upserts the SiteStats rollup document.
+ *   3. Increments review_counts for articles flagged for review.
  *
  * Failure-isolated — any Mongo error is caught and logged; the caller
  * (scheduler, dashboard) never sees an exception from this function.
@@ -146,6 +147,18 @@ export async function recordGeneration(
       },
       { upsert: true },
     );
+
+    // 4. Increment review_counts for articles flagged for review
+    const reviewCount = result.results.filter(
+      (r) => r.status === "created" && r.articleStatus === "review",
+    ).length;
+    if (reviewCount > 0) {
+      await db.collection(COLLECTIONS.reviewCounts).updateOne(
+        { _id: event.siteDomain as any },
+        { $inc: { count: reviewCount }, $set: { updatedAt: event.finishedAt } },
+        { upsert: true },
+      );
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[stats] recordGeneration failed (non-fatal): ${msg}`);

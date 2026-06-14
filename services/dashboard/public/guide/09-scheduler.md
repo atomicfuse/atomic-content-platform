@@ -217,12 +217,18 @@ interface ScheduledPublishResult {
 ```
 services/dashboard/
   src/app/scheduler/page.tsx                -- UI (enabled toggle, hours picker, Run Now)
+  src/app/scheduler-summary/page.tsx        -- Weekly summary table UI
   src/app/api/scheduler/route.ts            -- GET / PUT config
   src/app/api/scheduler/run-now/route.ts    -- POST → triggers content-pipeline
+  src/app/api/scheduler-summary/route.ts    -- GET proxy → content-pipeline /scheduler-summary
   src/lib/scheduler.ts                      -- readSchedulerConfig / writeSchedulerConfig / triggerSchedulerRun
+  src/actions/review.ts                     -- fire-and-forget decrement on approve/reject
 
 services/content-pipeline/
   src/agents/scheduled-publisher/index.ts   -- runScheduledPublish(config, force?)
+  src/stats/weekly-summary.ts               -- updateWeeklySummary, getWeeklySummary, decrementReviewCount
+  src/stats/types.ts                        -- WeeklySummary, ReviewCount, DayCell interfaces
+  src/stats/recorder.ts                     -- increments review_counts on generation
   src/lib/site-brief.ts                     -- listActiveSites, readSiteBriefWithFallback
 
 cloudgrid.yaml
@@ -232,6 +238,48 @@ cloudgrid.yaml
 <network-repo>/sites/<domain>/site.yaml     -- per-site brief.schedule (on staging branch)
 <network-repo>/dashboard-index.yaml         -- authoritative site list
 ```
+
+## Weekly Summary
+
+The scheduler writes a **weekly summary** to MongoDB after every run. It tracks per-site daily article generation (actual vs expected) and cumulative review counts, giving a quick overview of the network's publishing health.
+
+### How data is collected
+
+After each scheduler run (cron or forced), `updateWeeklySummary()` writes a single MongoDB document keyed by the week's Sunday date (e.g. `2026-06-14`). Each site gets a 7-element array (Sun–Sat) of `{ expected, created }` cells. Sites that were skipped or not processed get `{ expected: 0, created: 0 }` for that day.
+
+Review counts are incremented in a separate `review_counts` collection whenever articles are generated with `status: "review"`. They are decremented (fire-and-forget) when the dashboard approves or rejects articles.
+
+### Dashboard page
+
+Open **`/scheduler-summary`** (or click "Weekly Summary →" on the Scheduler Log page). The page shows:
+
+- **Rows** — one per active site, sorted alphabetically.
+- **Columns** — Sun through Sat for the current week.
+- **Cells** — `created/expected`, color-coded:
+  - **Green** — met or exceeded (`created >= expected`).
+  - **Yellow** — partial (`created > 0` but `< expected`).
+  - **Red** — missed (`expected > 0`, `created = 0`).
+  - **Grey** — no activity (`0/0`).
+- **Review column** — number of articles pending review for each site.
+
+Data only appears after the scheduler runs. Until then the page shows "No data yet — scheduler hasn't run this week."
+
+### API endpoints
+
+See the [Ops Console API](#) guide for full details:
+
+- `GET /scheduler-summary` (content-pipeline) — returns the current week's summary with review counts merged in.
+- `POST /review-counts/decrement` (content-pipeline) — decrements a site's review count after approve/reject.
+- `GET /api/scheduler-summary` (dashboard proxy) — proxies the GET to content-pipeline.
+
+### Data storage
+
+| Collection | Key (`_id`) | Contents |
+|------------|-------------|----------|
+| `weekly_summaries` | Sunday date `YYYY-MM-DD` | `sites: { [domain]: DayCell[7] }` |
+| `review_counts` | Site domain | `count: number` |
+
+Both collections are failure-isolated — MongoDB errors are logged but never block the scheduler or dashboard.
 
 ## Operations
 

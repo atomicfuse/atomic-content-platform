@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useToast } from "@/components/ui/Toast";
+import Link from "next/link";
 
 interface SiteRunResult {
   domain: string;
@@ -163,7 +164,15 @@ export default function SchedulerLogPage(): React.ReactElement {
   return (
     <div className="max-w-3xl space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">Scheduler Log</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Scheduler Log</h2>
+          <Link
+            href="/scheduler-summary"
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Weekly Summary →
+          </Link>
+        </div>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
           History of scheduler runs with per-site article creation results.
         </p>

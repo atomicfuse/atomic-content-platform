@@ -15,6 +15,7 @@ import {
 } from "./types.js";
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
 import { notifyError, notifySummary } from "../lib/notifications.js";
+import { updateWeeklySummary } from "../stats/weekly-summary.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
@@ -94,7 +95,7 @@ export async function createSchedulerFlow(
       runId,
       timezone,
       forced,
-      enqueuedDomains: sites.map((s) => s.domain),
+      enqueuedDomains: sites.map((s) => ({ domain: s.domain, count: s.count })),
       skipped,
     } satisfies SchedulerRunData,
     opts: {
@@ -294,13 +295,13 @@ export async function processSchedulerRun(
   // parent's data. Any domain not in the completed set permanently failed.
   const { enqueuedDomains } = job.data;
   const completedDomains = new Set(sites.map((s) => s.domain));
-  for (const domain of enqueuedDomains) {
-    if (!completedDomains.has(domain)) {
+  for (const entry of enqueuedDomains) {
+    if (!completedDomains.has(entry.domain)) {
       sites.push({
-        domain,
+        domain: entry.domain,
         status: "error",
         articlesCreated: 0,
-        articlesRequested: 0,
+        articlesRequested: entry.count,
         message: "Child job failed (all retries exhausted)",
       });
     }
@@ -339,8 +340,22 @@ export async function processSchedulerRun(
     `[scheduler-run] History written: ${sites.length} site(s), ${skipped.length} skipped`,
   );
 
-  // Auto-publish: merge staging → main for Live sites with new articles
+  // Fetch all active sites (used by weekly summary + auto-publish)
   const activeSites = await listActiveSites(octokit, config.networkRepo);
+
+  // Update weekly summary in MongoDB
+  await updateWeeklySummary({
+    allSiteDomains: activeSites.map((s) => s.domain),
+    siteResults: sites.map((s) => ({
+      domain: s.domain,
+      articlesRequested: s.articlesRequested,
+      articlesCreated: s.articlesCreated,
+    })),
+    skipped,
+    timezone,
+  });
+
+  // Auto-publish: merge staging → main for Live sites with new articles
   const siteStatusMap = new Map(activeSites.map((s) => [s.domain, s.status]));
   const siteBranchMap = new Map(activeSites.map((s) => [s.domain, s.branch]));
 
