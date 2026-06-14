@@ -112,6 +112,83 @@ The engine evaluates on a daily cron (`/run-alerts`) and after every generation 
 
 ---
 
+## 5. Scheduler Weekly Summary — `/api/scheduler-summary`
+
+`GET /api/scheduler-summary` (dashboard proxy) returns the current week's per-site daily generation grid merged with review counts.
+
+The dashboard proxies to the content-pipeline's `GET /scheduler-summary` endpoint. Data is written by the scheduler after each run (cron or forced).
+
+### Response shape
+
+```json
+{
+  "weekOf": "2026-06-08",
+  "timezone": "EST",
+  "days": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+  "sites": [
+    {
+      "domain": "travelswire",
+      "days": [
+        { "expected": 0, "created": 0 },
+        { "expected": 3, "created": 3 },
+        { "expected": 0, "created": 0 },
+        { "expected": 3, "created": 2 },
+        { "expected": 0, "created": 0 },
+        { "expected": 3, "created": 3 },
+        { "expected": 0, "created": 0 }
+      ],
+      "needReview": 5
+    }
+  ]
+}
+```
+
+- `weekOf` — the Sunday that starts the current week (`YYYY-MM-DD`).
+- `days[7]` — `{ expected, created }` for Sun through Sat. `0/0` means the site was skipped or not scheduled that day.
+- `needReview` — cumulative articles pending review (incremented on generation, decremented on approve/reject). Floored to 0.
+
+```bash
+curl -s "$BASE/api/scheduler-summary" | jq '.sites[] | {domain, needReview, days: [.days[] | "\(.created)/\(.expected)"]}'
+```
+
+### Dashboard page
+
+The summary is also rendered at `/scheduler-summary` — a color-coded table with green (met), yellow (partial), red (missed), and grey (no activity) cells. Linked from the Scheduler Log page header ("Weekly Summary →").
+
+---
+
+## 6. Review Count Decrement — `POST /review-counts/decrement`
+
+`POST /review-counts/decrement` (content-pipeline, **not** a dashboard proxy) decrements the review count for a site after articles are approved or rejected.
+
+The dashboard calls this fire-and-forget from `applyReviewDecisions()` — you don't normally need to call it manually.
+
+### Request
+
+```bash
+curl -X POST http://localhost:5000/review-counts/decrement \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "travelswire", "count": 3}'
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `domain` | string | Yes | Site domain (folder name, e.g. `travelswire`) |
+| `count` | number | Yes | Positive integer to subtract from the review count |
+
+### Response
+
+```json
+{ "status": "ok" }
+```
+
+### Errors
+
+- `400` — missing `domain`, non-positive `count`, or invalid JSON.
+- `413` — payload too large.
+
+---
+
 ## Errors
 
 - `503` (stats / checks / costs / attention): MongoDB unreachable.
