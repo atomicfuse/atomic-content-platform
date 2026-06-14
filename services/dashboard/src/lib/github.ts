@@ -7,6 +7,7 @@ import type {
   DashboardIndex,
   DashboardSiteEntry,
   DeletedSiteEntry,
+  HistoryEntry,
   ArticleEntry,
   ActivityEvent,
 } from "@/types/dashboard";
@@ -339,12 +340,20 @@ export async function restoreSiteInIndex(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { deleted_at, ...siteEntry } = restored!;
 
-  // Re-detect status: check if site.yaml still exists in Git
-  const siteConfig = await readSiteConfig(domain);
+  // Re-detect status: check if site.yaml exists on staging branch first
+  // (soft delete preserves staging but removes main), then fall back to main.
+  const stagingBranch = siteEntry.staging_branch ?? `staging/${domain}`;
+  const stagingConfig = await readSiteConfig(domain, stagingBranch);
   let newStatus = siteEntry.status;
-  if (!siteConfig) {
-    // No site.yaml → site files were deleted, reset to New
-    newStatus = "New";
+  if (stagingConfig) {
+    // Staging branch has config — site is restorable
+    newStatus = "Staging";
+  } else {
+    // Check main as fallback
+    const mainConfig = await readSiteConfig(domain);
+    if (!mainConfig) {
+      newStatus = "New";
+    }
   }
 
   index.sites.push({
@@ -362,12 +371,24 @@ export async function permanentlyRemoveFromTrash(
 ): Promise<DashboardIndex> {
   const index = await readDashboardIndex();
   index.deleted = index.deleted ?? [];
-  const before = index.deleted.length;
-  index.deleted = index.deleted.filter((s) => s.domain !== domain);
-  if (index.deleted.length === before) {
+  const trashIndex = index.deleted.findIndex((s) => s.domain === domain);
+  if (trashIndex === -1) {
     throw new Error(`Site ${domain} not found in trash`);
   }
-  await writeDashboardIndex(index, `dashboard: permanently remove ${domain}`);
+  const [removed] = index.deleted.splice(trashIndex, 1);
+
+  // Record in history for audit trail
+  index.history = index.history ?? [];
+  const historyEntry: HistoryEntry = {
+    domain: removed!.domain,
+    custom_domain: removed!.custom_domain,
+    company: removed!.company,
+    vertical: removed!.vertical,
+    permanently_deleted_at: new Date().toISOString(),
+  };
+  index.history.push(historyEntry);
+
+  await writeDashboardIndex(index, `dashboard: permanently delete ${domain}`);
   return index;
 }
 
@@ -1119,6 +1140,93 @@ export async function countFailedBuilds(): Promise<number> {
 }
 
 // --- Generic network repo operations ---
+
+/**
+ * Copy a site's entire directory from one branch to another using the Git
+ * Tree API. This is O(1) API calls for the read phase (a single recursive
+ * tree fetch) instead of O(N) per-file reads, making it safe for sites
+ * with 100+ articles that would otherwise timeout on CloudGrid.
+ *
+ * The blob SHAs from the source branch are referenced directly in the new
+ * commit tree on the target branch — no content is re-read or re-uploaded.
+ */
+export async function copySiteTreeToMain(
+  domain: string,
+  sourceBranch: string,
+  commitMessage: string,
+): Promise<void> {
+  const octokit = getOctokit();
+  const prefix = `sites/${domain}/`;
+
+  // 1. Get the source branch's full recursive tree (single API call)
+  const { data: srcRef } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${sourceBranch}`,
+  });
+  const { data: srcTree } = await octokit.git.getTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    tree_sha: srcRef.object.sha,
+    recursive: "true",
+  });
+
+  // 2. Filter to only this site's files
+  const siteEntries = srcTree.tree.filter(
+    (e) => e.path?.startsWith(prefix) && e.type === "blob" && e.sha && e.mode,
+  );
+
+  if (siteEntries.length === 0) {
+    throw new Error(`No site files found on ${sourceBranch} for ${domain}`);
+  }
+
+  console.log(
+    `[github] copySiteTreeToMain: ${siteEntries.length} files from ${sourceBranch} → main for ${domain}`,
+  );
+
+  // 3. Get main's current HEAD
+  const { data: mainRef } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: "heads/main",
+  });
+  const mainHeadSha = mainRef.object.sha;
+  const { data: mainCommit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: mainHeadSha,
+  });
+
+  // 4. Create new tree on main with the source blob SHAs (no re-upload)
+  const treeItems = siteEntries.map((e) => ({
+    path: e.path!,
+    mode: e.mode as "100644" | "100755" | "040000" | "160000" | "120000",
+    type: "blob" as const,
+    sha: e.sha!,
+  }));
+
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: mainCommit.tree.sha,
+    tree: treeItems,
+  });
+
+  // 5. Commit and update ref
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message: commitMessage,
+    tree: newTree.sha,
+    parents: [mainHeadSha],
+  });
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: "heads/main",
+    sha: newCommit.sha,
+  });
+}
 
 /** Commit multiple files to the network repo atomically (generic, no domain prefix). */
 export async function commitNetworkFiles(

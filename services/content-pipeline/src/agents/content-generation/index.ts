@@ -1085,6 +1085,64 @@ async function handleRequest(
     return;
   }
 
+  // Dedicated article generation — user provides a prompt, Claude generates original content
+  if (req.method === "POST" && req.url === "/content-generate-dedicated") {
+    let rawBody: string;
+    try {
+      rawBody = await readBody(req);
+    } catch {
+      sendJson(res, 413, { status: "error", message: "Payload too large" });
+      return;
+    }
+
+    let payload: { siteDomain?: unknown; branch?: unknown; userPrompt?: unknown };
+    try {
+      payload = JSON.parse(rawBody) as typeof payload;
+    } catch {
+      sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+      return;
+    }
+
+    const { siteDomain, branch, userPrompt } = payload;
+
+    if (!siteDomain || typeof siteDomain !== "string") {
+      sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
+      return;
+    }
+
+    if (!userPrompt || typeof userPrompt !== "string" || !userPrompt.trim()) {
+      sendJson(res, 400, { status: "error", message: "userPrompt is required (non-empty string)" });
+      return;
+    }
+
+    const branchStr = typeof branch === "string" && branch.trim()
+      ? branch.trim()
+      : `staging/${siteDomain}`;
+
+    console.log(
+      `[server] POST /content-generate-dedicated — site: ${siteDomain}, branch: ${branchStr}`,
+    );
+
+    try {
+      const { runDedicatedGeneration } = await import("./dedicated-agent.js");
+      const result = await runDedicatedGeneration(
+        { siteDomain, branch: branchStr, userPrompt },
+        config,
+      );
+
+      if (result.status === "created") {
+        sendJson(res, 201, result as unknown as Record<string, unknown>);
+      } else {
+        sendJson(res, 500, result as unknown as Record<string, unknown>);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[server] Dedicated generation error:", message);
+      sendJson(res, 502, { status: "error", message });
+    }
+    return;
+  }
+
   if (req.method !== "POST" || req.url !== "/content-generate") {
     sendJson(res, 404, { status: "error", message: "Not found. Use POST /content-generate" });
     return;
@@ -1238,6 +1296,7 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 server.listen(config.port, () => {
   console.log(`[server] Content generation agent running on http://localhost:${config.port}`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate`);
+  console.log(`[server] POST http://localhost:${config.port}/content-generate-dedicated`);
   const effectiveAggregatorUrl = process.env.CONTENT_API_BASE_URL ?? config.contentAggregatorUrl;
   console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);

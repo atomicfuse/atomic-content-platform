@@ -13,9 +13,9 @@ import {
   branchExists,
   triggerWorkflowViaPush,
   readFileBase64,
-  listNetworkDirectory,
   readFileContent,
   commitNetworkFiles,
+  copySiteTreeToMain,
   invalidateSiteCaches,
 } from "@/lib/github";
 import {
@@ -388,75 +388,23 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   return { stagingUrl: previewUrl, siteFolder };
 }
 
-/** Binary file extensions that must be read as base64, not UTF-8. */
-const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
-  ".woff", ".woff2", ".ttf", ".eot", ".otf",
-  ".pdf", ".zip",
-]);
-
-function isBinaryFile(path: string): boolean {
-  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-  return BINARY_EXTENSIONS.has(ext);
-}
-
-/**
- * Read a file from the network repo, preserving binary content.
- * Text files are read as UTF-8 strings; binary files as Buffers.
- */
-async function readFilePreservingBinary(
-  path: string,
-  branch: string,
-): Promise<{ path: string; content: string | Buffer } | null> {
-  if (isBinaryFile(path)) {
-    const base64 = await readFileBase64(path, branch);
-    if (base64 === null) return null;
-    return { path, content: Buffer.from(base64, "base64") };
-  }
-  const text = await readFileContent(path, branch);
-  if (text === null) return null;
-  return { path, content: text };
-}
-
 /**
  * Publish a single site's files from staging to main.
  *
  * Instead of merging the entire staging branch (which drags in stale
- * copies of OTHER sites' files), we read only sites/{domain}/ from
- * the staging branch and commit those files directly to main.
+ * copies of OTHER sites' files), we copy only sites/{domain}/ from
+ * the staging branch's tree to main using blob SHA references.
  */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
 ): Promise<void> {
-  const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
-  const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
-
-  for (const entry of topLevel) {
-    if (entry.type === "file") {
-      const file = await readFilePreservingBinary(entry.path, stagingBranch);
-      if (file) siteFiles.push(file);
-    } else if (entry.type === "dir") {
-      const children = await listNetworkDirectory(entry.path, stagingBranch);
-      for (const child of children) {
-        if (child.type === "file") {
-          const file = await readFilePreservingBinary(child.path, stagingBranch);
-          if (file) siteFiles.push(file);
-        }
-      }
-    }
-  }
-
-  if (siteFiles.length === 0) {
-    throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
-  }
-
-  await commitNetworkFiles(
-    siteFiles,
-    commitMessage,
-    "main",
-  );
+  // Uses the Git Tree API: one recursive tree fetch to get all blob SHAs,
+  // then creates a new commit on main referencing those SHAs directly.
+  // This is O(1) reads instead of O(N) per-file reads, avoiding gateway
+  // timeouts on sites with 100+ articles.
+  await copySiteTreeToMain(domain, stagingBranch, commitMessage);
 }
 
 /**

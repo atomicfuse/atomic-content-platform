@@ -338,17 +338,9 @@ export default function QueuePage(): React.ReactElement {
   }, []);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-    void fetchJobs().then((result) => {
+    void fetchJobs().then(() => {
       setLoading(false);
-      // Only poll if the queue is reachable
-      if (!result.unavailable) {
-        interval = setInterval(() => void fetchJobs(), 10_000);
-      }
     });
-    return (): void => {
-      if (interval) clearInterval(interval);
-    };
   }, [fetchJobs]);
 
   const filtered =
@@ -370,12 +362,19 @@ export default function QueuePage(): React.ReactElement {
   return (
     <div className="max-w-4xl space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-lg font-semibold">Queue Monitor</h2>
-        <p className="text-sm text-[var(--text-secondary)] mt-1">
-          BullMQ job history — completed jobs retained 7 days, failed 30 days.
-          Auto-refreshes every 10s.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Queue Monitor</h2>
+          <p className="text-sm text-[var(--text-secondary)] mt-1">
+            BullMQ job history — completed jobs retained 7 days, failed 30 days.
+          </p>
+        </div>
+        <button
+          onClick={(): void => void fetchJobs()}
+          className="px-3.5 py-1.5 bg-[var(--bg-elevated)] border border-[var(--border-primary)] rounded-lg text-[var(--text-primary)] text-xs font-medium cursor-pointer hover:bg-[var(--bg-surface)] transition-colors"
+        >
+          ↻ Refresh
+        </button>
       </div>
 
       {/* Error banner */}
