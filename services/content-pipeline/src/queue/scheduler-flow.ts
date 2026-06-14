@@ -94,7 +94,7 @@ export async function createSchedulerFlow(
       runId,
       timezone,
       forced,
-      enqueuedDomains: sites.map((s) => s.domain),
+      enqueuedDomains: sites.map((s) => ({ domain: s.domain, count: s.count })),
       skipped,
     } satisfies SchedulerRunData,
     opts: {
@@ -294,13 +294,13 @@ export async function processSchedulerRun(
   // parent's data. Any domain not in the completed set permanently failed.
   const { enqueuedDomains } = job.data;
   const completedDomains = new Set(sites.map((s) => s.domain));
-  for (const domain of enqueuedDomains) {
-    if (!completedDomains.has(domain)) {
+  for (const entry of enqueuedDomains) {
+    if (!completedDomains.has(entry.domain)) {
       sites.push({
-        domain,
+        domain: entry.domain,
         status: "error",
         articlesCreated: 0,
-        articlesRequested: 0,
+        articlesRequested: entry.count,
         message: "Child job failed (all retries exhausted)",
       });
     }
