@@ -1,6 +1,9 @@
 import { getMongoDb } from "../lib/mongo.js";
 import { COLLECTIONS } from "./types.js";
 import type { DayCell } from "./types.js";
+import { parse as parseYaml } from "yaml";
+import { createOctokit, readFile } from "../lib/github.js";
+import type { AgentConfig } from "../lib/config.js";
 
 /**
  * Map common timezone abbreviations to IANA names.
@@ -140,7 +143,7 @@ export async function getWeeklySummary(
   ]);
 
   const reviewMap = new Map(
-    reviewDocs.map((d) => [d._id as string, Math.max(0, (d as any).count ?? 0)]),
+    reviewDocs.map((d) => [d._id as unknown as string, Math.max(0, (d as any).count ?? 0)]),
   );
 
   const sitesMap = (weekDoc as any)?.sites as Record<string, DayCell[]> | undefined;
@@ -176,5 +179,19 @@ export async function decrementReviewCount(domain: string, count: number): Promi
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[stats] decrementReviewCount failed (non-fatal): ${msg}`);
+  }
+}
+
+const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
+
+/** Read the scheduler timezone from the network repo. Falls back to "EST". */
+export async function getSchedulerTimezone(config: AgentConfig): Promise<string> {
+  try {
+    const octokit = createOctokit(config.github);
+    const raw = await readFile(octokit, config.networkRepo, SCHEDULER_CONFIG_PATH);
+    const parsed = parseYaml(raw) as { timezone?: string } | null;
+    return parsed?.timezone ?? "EST";
+  } catch {
+    return "EST";
   }
 }
