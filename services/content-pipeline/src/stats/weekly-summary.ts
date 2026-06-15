@@ -124,7 +124,6 @@ export interface SchedulerSummaryResponse {
   }>;
 }
 
-const EMPTY_WEEK: DayCell[] = Array.from({ length: 7 }, () => ({ expected: 0, created: 0 }));
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /**
@@ -154,7 +153,9 @@ export async function getWeeklySummary(
   const sites = Object.entries(sitesMap)
     .map(([domain, days]) => ({
       domain,
-      days: days.length === 7 ? days : EMPTY_WEEK,
+      // MongoDB sparse arrays may be shorter than 7 if the scheduler hasn't
+      // run every day this week yet — pad to 7, filling gaps with zeros.
+      days: Array.from({ length: 7 }, (_, i) => days[i] ?? { expected: 0, created: 0 }),
       needReview: reviewMap.get(domain) ?? 0,
     }))
     .sort((a, b) => a.domain.localeCompare(b.domain));
@@ -194,4 +195,85 @@ export async function getSchedulerTimezone(config: AgentConfig): Promise<string>
   } catch {
     return "EST";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Backfill from scheduler/history.json
+// ---------------------------------------------------------------------------
+
+interface HistoryEntry {
+  timestamp: string;
+  timezone: string;
+  forced: boolean;
+  sites: Array<{
+    domain: string;
+    status: string;
+    articlesCreated: number;
+    articlesRequested: number;
+  }>;
+  skipped?: Array<{ domain: string; reason: string }>;
+}
+
+export interface BackfillResult {
+  weeksWritten: number;
+  entriesProcessed: number;
+  weeks: Array<{ weekOf: string; runsProcessed: number }>;
+}
+
+/**
+ * Read scheduler/history.json from the network repo and backfill
+ * the weekly_summaries collection from it.
+ *
+ * Groups history entries by week, then for each week upserts a single
+ * document with every day's data merged. Safe to call repeatedly —
+ * uses $set so later values overwrite earlier ones for the same day.
+ */
+export async function backfillWeeklySummary(config: AgentConfig): Promise<BackfillResult> {
+  const octokit = createOctokit(config.github);
+  const raw = await readFile(octokit, config.networkRepo, "scheduler/history.json");
+  const history: HistoryEntry[] = JSON.parse(raw);
+
+  // Group entries by weekOf
+  const weekMap = new Map<string, Array<{ entry: HistoryEntry; dayIndex: number }>>();
+
+  for (const entry of history) {
+    const tz = entry.timezone || "EST";
+    const { dayIndex, weekOf } = getDayIndexAndWeekOf(tz, new Date(entry.timestamp));
+    if (!weekMap.has(weekOf)) weekMap.set(weekOf, []);
+    weekMap.get(weekOf)!.push({ entry, dayIndex });
+  }
+
+  const db = await getMongoDb();
+  const coll = db.collection(COLLECTIONS.weeklySummaries);
+  const weekResults: BackfillResult["weeks"] = [];
+
+  for (const [weekOf, runs] of weekMap) {
+    // Build a single $set for the whole week
+    const $set: Record<string, unknown> = { updatedAt: new Date() };
+
+    for (const { entry, dayIndex } of runs) {
+      // Collect all domains from both sites and skipped
+      const allDomains = new Set<string>();
+      for (const s of entry.sites) allDomains.add(s.domain);
+      for (const s of entry.skipped ?? []) allDomains.add(s.domain);
+
+      const resultMap = new Map(entry.sites.map((s) => [s.domain, s]));
+
+      for (const domain of allDomains) {
+        const result = resultMap.get(domain);
+        $set[`sites.${domain}.${dayIndex}`] = result
+          ? { expected: result.articlesRequested, created: result.articlesCreated }
+          : { expected: 0, created: 0 };
+      }
+    }
+
+    await coll.updateOne({ _id: weekOf as any }, { $set }, { upsert: true });
+    weekResults.push({ weekOf, runsProcessed: runs.length });
+  }
+
+  return {
+    weeksWritten: weekResults.length,
+    entriesProcessed: history.length,
+    weeks: weekResults.sort((a, b) => a.weekOf.localeCompare(b.weekOf)),
+  };
 }

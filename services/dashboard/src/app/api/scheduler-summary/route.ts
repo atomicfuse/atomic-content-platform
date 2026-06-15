@@ -34,3 +34,30 @@ export async function GET(): Promise<NextResponse> {
     );
   }
 }
+
+export async function POST(): Promise<NextResponse> {
+  try {
+    const url = `${getAgentUrl()}/backfill-weekly-summary`;
+    const resp = await fetch(url, {
+      method: "POST",
+      signal: AbortSignal.timeout(30_000),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      return NextResponse.json(
+        { error: `Backfill failed: ${resp.status} ${text}` },
+        { status: 502 },
+      );
+    }
+
+    const data = await resp.json();
+    return NextResponse.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      { error: `Backfill failed: ${message}` },
+      { status: 502 },
+    );
+  }
+}

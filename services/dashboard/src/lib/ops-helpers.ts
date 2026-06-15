@@ -58,7 +58,6 @@ export type CardId =
   | "FAILED_ARTICLES"
   | "SITES_DOWN"
   | "SYNC_FAILED"
-  | "PUBLISHED_TODAY"
   | "IN_REVIEW";
 
 export interface CostStripData {
@@ -100,8 +99,6 @@ export function cardPredicate(card: CardId): (row: OpsRow) => boolean {
       return (r) => r.uptime.state !== "n/a" && !r.uptime.ok;
     case "SYNC_FAILED":
       return (r) => r.sync.ok !== null && !r.sync.ok && within24h(r.sync.syncedAt);
-    case "PUBLISHED_TODAY":
-      return (r) => r.todayExpected > 0;
     case "IN_REVIEW":
       return (r) => r.reviewCount > 0;
   }
