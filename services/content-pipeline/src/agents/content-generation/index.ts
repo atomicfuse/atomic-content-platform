@@ -60,7 +60,7 @@ import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
 import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 import { runBackfillR2 } from "../../stats/backfill-r2.js";
-import { getWeeklySummary, decrementReviewCount, getSchedulerTimezone } from "../../stats/weekly-summary.js";
+import { getWeeklySummary, decrementReviewCount, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -853,6 +853,24 @@ async function handleRequest(
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         sendJson(res, 500, { error: message });
+      }
+      return;
+    }
+  }
+
+  // Backfill weekly summaries from scheduler/history.json — POST /backfill-weekly-summary
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-weekly-summary") {
+      try {
+        console.log("[backfill] Starting weekly summary backfill from history.json...");
+        const result = await backfillWeeklySummary(config);
+        console.log(`[backfill] Done: ${result.entriesProcessed} entries → ${result.weeksWritten} weeks`);
+        sendJson(res, 200, { status: "ok", ...result } as unknown as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[backfill] Failed: ${message}`);
+        sendJson(res, 500, { status: "error", message });
       }
       return;
     }
