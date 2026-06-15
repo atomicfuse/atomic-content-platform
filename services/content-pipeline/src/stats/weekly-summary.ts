@@ -124,7 +124,6 @@ export interface SchedulerSummaryResponse {
   }>;
 }
 
-const EMPTY_WEEK: DayCell[] = Array.from({ length: 7 }, () => ({ expected: 0, created: 0 }));
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /**
@@ -154,7 +153,9 @@ export async function getWeeklySummary(
   const sites = Object.entries(sitesMap)
     .map(([domain, days]) => ({
       domain,
-      days: days.length === 7 ? days : EMPTY_WEEK,
+      // MongoDB sparse arrays may be shorter than 7 if the scheduler hasn't
+      // run every day this week yet — pad to 7, filling gaps with zeros.
+      days: Array.from({ length: 7 }, (_, i) => days[i] ?? { expected: 0, created: 0 }),
       needReview: reviewMap.get(domain) ?? 0,
     }))
     .sort((a, b) => a.domain.localeCompare(b.domain));
