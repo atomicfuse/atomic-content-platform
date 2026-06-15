@@ -104,17 +104,30 @@ export async function applyReviewDecisions(decisions: {
     const site = index.sites.find((s) => s.domain === domain);
     const branch = site?.staging_branch ?? "main";
 
+    // Force fresh tree read — the tree cache (Infinity TTL) may be stale if
+    // content-pipeline committed new articles since the last dashboard tree
+    // fetch. Without this, readFileContent() returns null for articles that
+    // exist on Git but aren't in the cached tree, silently skipping them.
+    invalidateSiteCaches(domain, branch, { keepDashboardIndex: true });
+
     // 1. Update approved articles' frontmatter → status: published
+    let actualApproved = 0;
     if (approved.length > 0) {
       const fileUpdates: Array<{ path: string; content: string }> = [];
 
       for (const slug of approved) {
         const path = `sites/${domain}/articles/${slug}.md`;
         const content = await readFileContent(path, branch);
-        if (!content) continue;
+        if (!content) {
+          console.warn(`[review] Article not found on ${branch}: ${path}`);
+          continue;
+        }
 
         const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-        if (!fmMatch) continue;
+        if (!fmMatch) {
+          console.warn(`[review] Could not parse frontmatter: ${path}`);
+          continue;
+        }
 
         const frontmatter = parseYaml(fmMatch[1]!) as Record<string, unknown>;
         const body = fmMatch[2] ?? "";
@@ -126,6 +139,7 @@ export async function applyReviewDecisions(decisions: {
         fileUpdates.push({ path, content: `---\n${newFm}---\n${body}` });
       }
 
+      actualApproved = fileUpdates.length;
       if (fileUpdates.length > 0) {
         await commitSiteFiles(
           domain,
@@ -142,19 +156,24 @@ export async function applyReviewDecisions(decisions: {
       await deleteFilesFromBranch(filePaths, branch);
     }
 
+    // Only trigger build + merge if something actually changed
+    const hasChanges = actualApproved > 0 || rejected.length > 0;
+
     // 3. ONE build trigger per domain
-    if (site?.staging_branch) {
+    if (hasChanges && site?.staging_branch) {
       await triggerWorkflowViaPush(site.staging_branch, domain);
     }
 
     // 4. If site is Live or Ready → merge staging to main
-    if (site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
-      const mergeMsg = `review: merge ${domain} staging → main (${approved.length} approved, ${rejected.length} rejected)`;
+    if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
+      const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
       await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
     }
 
     const parts: string[] = [];
-    if (approved.length > 0) parts.push(`${approved.length} approved`);
+    if (actualApproved > 0) parts.push(`${actualApproved} approved`);
+    const skipped = approved.length - actualApproved;
+    if (skipped > 0) parts.push(`${skipped} not found on branch`);
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     summaryParts.push(`${domain}: ${parts.join(", ")}`);
 
