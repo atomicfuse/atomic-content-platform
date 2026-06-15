@@ -67,6 +67,21 @@ export default function SchedulerSummaryPage(): React.ReactElement {
       .finally(() => setLoading(false));
   }, []);
 
+  // useMemo MUST be called before any conditional returns (Rules of Hooks)
+  const filteredSites = useMemo(() => {
+    if (!data) return [];
+    const needle = search.toLowerCase().trim();
+    let sites = needle
+      ? data.sites.filter((s) => s.domain.toLowerCase().includes(needle))
+      : data.sites;
+    if (reviewSort !== "none") {
+      sites = [...sites].sort((a, b) =>
+        reviewSort === "asc" ? a.needReview - b.needReview : b.needReview - a.needReview,
+      );
+    }
+    return sites;
+  }, [data, search, reviewSort]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -83,20 +98,6 @@ export default function SchedulerSummaryPage(): React.ReactElement {
       </div>
     );
   }
-
-  const filteredSites = useMemo(() => {
-    if (!data) return [];
-    const needle = search.toLowerCase().trim();
-    let sites = needle
-      ? data.sites.filter((s) => s.domain.toLowerCase().includes(needle))
-      : data.sites;
-    if (reviewSort !== "none") {
-      sites = [...sites].sort((a, b) =>
-        reviewSort === "asc" ? a.needReview - b.needReview : b.needReview - a.needReview,
-      );
-    }
-    return sites;
-  }, [data, search, reviewSort]);
 
   if (!data) return <></>;
 
