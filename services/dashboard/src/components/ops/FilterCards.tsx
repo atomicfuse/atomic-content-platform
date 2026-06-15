@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { CardId, OpsRow } from "@/lib/ops-helpers";
 import { cardPredicate } from "@/lib/ops-helpers";
 
@@ -12,45 +13,59 @@ interface CardConfig {
 }
 
 const CARDS: CardConfig[] = [
-  { id: "ALL_LIVE", label: "All Sites (Live)", icon: "◉", colorClass: "text-primary", bgClass: "bg-primary-light" },
-  { id: "ATTENTION", label: "Needs Attention", icon: "⚠", colorClass: "text-warning", bgClass: "bg-warning-light" },
-  { id: "FAILED_ARTICLES", label: "Failed Articles (7d)", icon: "✕", colorClass: "text-error", bgClass: "bg-error-light" },
-  { id: "SITES_DOWN", label: "Sites Down", icon: "↓", colorClass: "text-error", bgClass: "bg-error-light" },
-  { id: "SYNC_FAILED", label: "Sync Failed (24h)", icon: "⟲", colorClass: "text-warning", bgClass: "bg-warning-light" },
-  { id: "PUBLISHED_TODAY", label: "Published Today", icon: "↑", colorClass: "text-success", bgClass: "bg-success-light" },
-  { id: "IN_REVIEW", label: "In Review", icon: "◎", colorClass: "text-primary", bgClass: "bg-primary-light" },
+  { id: "ALL_LIVE", label: "All Sites (Live)", icon: "\u25C9", colorClass: "text-primary", bgClass: "bg-primary-light" },
+  { id: "ATTENTION", label: "Needs Attention", icon: "\u26A0", colorClass: "text-warning", bgClass: "bg-warning-light" },
+  { id: "FAILED_ARTICLES", label: "Failed Articles (7d)", icon: "\u2715", colorClass: "text-error", bgClass: "bg-error-light" },
+  { id: "SITES_DOWN", label: "Sites Down", icon: "\u2193", colorClass: "text-error", bgClass: "bg-error-light" },
+  { id: "SYNC_FAILED", label: "Sync Failed (24h)", icon: "\u27F2", colorClass: "text-warning", bgClass: "bg-warning-light" },
+  { id: "IN_REVIEW", label: "In Review", icon: "\u25CE", colorClass: "text-primary", bgClass: "bg-primary-light" },
 ];
 
 interface FilterCardsProps {
   rows: OpsRow[];
   activeCard: CardId | null;
   onCardClick: (card: CardId) => void;
+  reviewTotal: number;
 }
 
-export function FilterCards({ rows, activeCard, onCardClick }: FilterCardsProps): React.ReactElement {
+export function FilterCards({ rows, activeCard, onCardClick, reviewTotal }: FilterCardsProps): React.ReactElement {
   return (
-    <div className="grid grid-cols-7 gap-2.5">
+    <div className="grid grid-cols-6 gap-2.5">
       {CARDS.map((card) => {
         const isActive = activeCard === card.id;
-        const count = computeCount(card.id, rows);
-        return (
-          <button
-            key={card.id}
-            onClick={() => onCardClick(card.id)}
-            className={`
-              rounded-xl p-3 text-center transition-all cursor-pointer
-              bg-card border shadow-card
-              ${isActive ? "border-primary border-2" : "border-card-border"}
-              hover:shadow-card-hover
-            `}
-          >
+        const count = computeCount(card.id, rows, reviewTotal);
+        const inner = (
+          <>
             <div className={`inline-flex w-7 h-7 rounded-lg ${card.bgClass} items-center justify-center mb-1.5`}>
               <span className={`${card.colorClass} text-sm`}>{card.icon}</span>
             </div>
             <div className="text-secondary text-[9px] uppercase tracking-wider mb-1">{card.label}</div>
-            <div className="text-2xl font-bold text-primary-text">
-              {typeof count === "string" ? count : count}
-            </div>
+            <div className="text-2xl font-bold text-primary-text">{count}</div>
+          </>
+        );
+
+        const classes = `
+          rounded-xl p-3 text-center transition-all cursor-pointer
+          bg-card border shadow-card
+          ${isActive ? "border-primary border-2" : "border-card-border"}
+          hover:shadow-card-hover
+        `;
+
+        if (card.id === "IN_REVIEW") {
+          return (
+            <Link key={card.id} href="/review" className={classes}>
+              {inner}
+            </Link>
+          );
+        }
+
+        return (
+          <button
+            key={card.id}
+            onClick={() => onCardClick(card.id)}
+            className={classes}
+          >
+            {inner}
           </button>
         );
       })}
@@ -58,14 +73,9 @@ export function FilterCards({ rows, activeCard, onCardClick }: FilterCardsProps)
   );
 }
 
-function computeCount(cardId: CardId, rows: OpsRow[]): string | number {
-  if (cardId === "PUBLISHED_TODAY") {
-    const created = rows.reduce((s, r) => s + r.todayCreated, 0);
-    const expected = rows.reduce((s, r) => s + r.todayExpected, 0);
-    return `${created} / ${expected}`;
-  }
+function computeCount(cardId: CardId, rows: OpsRow[], reviewTotal: number): number {
   if (cardId === "IN_REVIEW") {
-    return rows.reduce((s, r) => s + r.reviewCount, 0);
+    return reviewTotal;
   }
   return rows.filter(cardPredicate(cardId)).length;
 }

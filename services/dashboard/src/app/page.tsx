@@ -34,13 +34,14 @@ async function safeReadIndex(): Promise<DashboardIndex> {
 }
 
 export default async function DashboardPage(): Promise<React.ReactElement> {
-  const [index, stats, checks, costs, attention, r2] = await Promise.all([
+  const [index, stats, checks, costs, attention, r2, review] = await Promise.all([
     safeReadIndex(),
     fetchJson("/api/site-stats"),
     fetchJson("/api/site-checks"),
     fetchJson("/api/site-costs"),
     fetchJson("/api/attention"),
     fetchJson("/api/r2-usage"),
+    fetchJson("/api/review?pageSize=1"),
   ]);
 
   return (
@@ -51,6 +52,7 @@ export default async function DashboardPage(): Promise<React.ReactElement> {
       initialCosts={costs as never}
       initialAttention={attention as never}
       initialR2={r2 as never}
+      initialReviewTotal={typeof review.total === "number" ? review.total : 0}
     />
   );
 }

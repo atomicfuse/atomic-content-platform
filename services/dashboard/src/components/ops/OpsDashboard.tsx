@@ -44,6 +44,7 @@ interface OpsDashboardProps {
   initialCosts: { sites: CostSite[] };
   initialAttention: { sites: AttentionInput[] };
   initialR2: R2Data;
+  initialReviewTotal: number;
 }
 
 /** Consider data stale after 30s — only re-fetch on mount if older. */
@@ -80,6 +81,7 @@ export default function OpsDashboard({
   initialCosts,
   initialAttention,
   initialR2,
+  initialReviewTotal,
 }: OpsDashboardProps): React.ReactElement {
   // Prefer module cache (survives navigation) over server-provided initial data
   const [stats, setStats] = useState(_cache?.stats ?? initialStats);
@@ -89,6 +91,8 @@ export default function OpsDashboard({
   const [r2, setR2] = useState(_cache?.r2 ?? safeR2(initialR2));
   const [lastRefreshed, setLastRefreshed] = useState(_cache?.lastRefreshed ?? Date.now());
   const [failCount, setFailCount] = useState(0);
+
+  const [reviewTotal, setReviewTotal] = useState(initialReviewTotal);
 
   const [activeCard, setActiveCard] = useState<CardId | null>(null);
   const [search, setSearch] = useState("");
@@ -105,18 +109,20 @@ export default function OpsDashboard({
   // Polling — persists results to module cache so data survives navigation
   const poll = useCallback(async () => {
     try {
-      const [sResp, chResp, coResp, aResp, rResp] = await Promise.all([
+      const [sResp, chResp, coResp, aResp, rResp, revResp] = await Promise.all([
         fetch("/api/site-stats").then((r) => (r.ok ? r.json() : null)),
         fetch("/api/site-checks").then((r) => (r.ok ? r.json() : null)),
         fetch("/api/site-costs").then((r) => (r.ok ? r.json() : null)),
         fetch("/api/attention").then((r) => (r.ok ? r.json() : null)),
         fetch("/api/r2-usage").then((r) => (r.ok ? r.json() : null)),
+        fetch("/api/review?pageSize=1").then((r) => (r.ok ? r.json() : null)),
       ]);
       if (sResp) setStats(sResp as typeof initialStats);
       if (chResp) setChecks(chResp as typeof initialChecks);
       if (coResp) setCosts(coResp as typeof initialCosts);
       if (aResp) setAttention(aResp as typeof initialAttention);
       if (rResp) setR2(safeR2(rResp as R2Data));
+      if (revResp && typeof revResp.total === "number") setReviewTotal(revResp.total);
       const now = Date.now();
       setLastRefreshed(now);
       setFailCount(0);
@@ -227,7 +233,7 @@ export default function OpsDashboard({
         </button>
       </div>
 
-      <FilterCards rows={allRows} activeCard={activeCard} onCardClick={handleCardClick} />
+      <FilterCards rows={allRows} activeCard={activeCard} onCardClick={handleCardClick} reviewTotal={reviewTotal} />
       <CostStrip data={costStripData} />
       <FilterBar
         search={search}

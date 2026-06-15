@@ -88,12 +88,6 @@ describe("cardPredicate", () => {
     expect(fn(makeRow({ uptime: { state: "n/a", ok: false, statusCode: null, responseTimeMs: null } }))).toBe(false);
   });
 
-  it("PUBLISHED_TODAY filters to rows scheduled today", () => {
-    const fn = cardPredicate("PUBLISHED_TODAY");
-    expect(fn(makeRow({ todayExpected: 3 }))).toBe(true);
-    expect(fn(makeRow({ todayExpected: 0 }))).toBe(false);
-  });
-
   it("IN_REVIEW filters to rows with any review count", () => {
     const fn = cardPredicate("IN_REVIEW");
     expect(fn(makeRow({ reviewCount: 1 }))).toBe(true);
