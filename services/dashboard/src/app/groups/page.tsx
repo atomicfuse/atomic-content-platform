@@ -55,8 +55,9 @@ export default function GroupsPage(): React.ReactElement {
       )}
 
       <div className="overflow-hidden rounded-lg border border-[var(--border-primary)]">
+        <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-secondary)]">
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                 Name
@@ -109,6 +110,7 @@ export default function GroupsPage(): React.ReactElement {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

@@ -34,8 +34,9 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
   return (
     <div>
       <div className="bg-card border border-card-border rounded-xl overflow-hidden shadow-card">
+        <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-table-header border-b border-divider">
               {COLUMNS.map((col) => (
                 <th key={col} className="px-3.5 py-2.5 text-left text-[9px] uppercase tracking-wider text-secondary font-semibold">{col}</th>
@@ -56,6 +57,7 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}

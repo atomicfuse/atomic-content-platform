@@ -129,10 +129,10 @@ export default function SchedulerSummaryPage(): React.ReactElement {
         />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-700">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               <th className="text-left py-2 px-3 font-medium">Site</th>
               {DAY_SHORT.map((d) => (
                 <th key={d} className="text-center py-2 px-2 font-medium w-16">{d}</th>

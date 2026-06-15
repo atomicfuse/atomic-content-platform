@@ -193,9 +193,10 @@ export default function AdsTxtPage(): React.ReactElement {
       </p>
       {sites.length > 0 ? (
         <div className="bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-xl overflow-hidden">
+          <div className="overflow-auto max-h-[80vh]">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--border-secondary)]">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   Site
                 </th>
@@ -225,6 +226,7 @@ export default function AdsTxtPage(): React.ReactElement {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <p className="text-sm text-[var(--text-muted)]">No sites found. Add site domains in the assignments to get started.</p>

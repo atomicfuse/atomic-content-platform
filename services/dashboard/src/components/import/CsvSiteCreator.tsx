@@ -418,9 +418,9 @@ export function CsvSiteCreator(): React.ReactElement {
       {/* Preview table */}
       {sites.length > 0 && phase === "idle" && (
         <>
-          <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)]">
+          <div className="overflow-auto max-h-[80vh] rounded-lg border border-[var(--border-secondary)]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="bg-[var(--bg-primary)] text-[var(--text-secondary)]">
                   <th className="text-left px-3 py-2 font-medium">#</th>
                   <th className="text-left px-3 py-2 font-medium">Site Name</th>

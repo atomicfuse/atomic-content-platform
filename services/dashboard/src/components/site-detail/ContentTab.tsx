@@ -252,9 +252,10 @@ export function ContentTab({
       )}
 
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
+        <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border-secondary)]">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
               {stagingBranch && (
                 <th className="w-10 px-4 py-3">
                   <input
@@ -379,6 +380,7 @@ export function ContentTab({
             ))}
           </tbody>
         </table>
+        </div>
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
