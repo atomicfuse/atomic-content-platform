@@ -155,7 +155,7 @@ export async function runDedicatedGeneration(
   void recordTextUsage({
     siteDomain,
     source: "dashboard",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     estimated: usage.estimated,
@@ -231,7 +231,7 @@ export async function runDedicatedGeneration(
       void recordTextUsage({
         siteDomain,
         source: "dashboard",
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         inputTokens: qualityResult.usage.inputTokens,
         outputTokens: qualityResult.usage.outputTokens,
         estimated: qualityResult.usage.estimated,
