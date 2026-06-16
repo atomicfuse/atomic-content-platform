@@ -80,6 +80,9 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     } else if (site.staging_branch && (site.status === "Ready" || site.status === "Live")) {
       // Live/Ready sites keep their status even with a staging branch
       correctStatus = site.status;
+    } else if (site.custom_domain) {
+      // Sites with a custom domain attached should be Live
+      correctStatus = "Live";
     } else if (cfInfo) {
       correctStatus = await detectSiteStatus(cfInfo, siteConfig);
     } else if (!siteConfig) {
