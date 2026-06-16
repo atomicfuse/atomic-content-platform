@@ -8,19 +8,87 @@ interface OpsTableProps {
   rows: OpsRow[];
 }
 
-const COLUMNS = ["Site", "Status", "Failed 7d", "Img Fail", "Uptime", "Sync", "Review", "SSL", "Tracking", "Domain"];
+type SortKey = "site" | "status" | "failed7d" | "imgFail" | "uptime" | "sync" | "review" | "ssl" | "tracking" | "domain";
+type SortDir = "asc" | "desc";
+
+interface ColumnDef {
+  label: string;
+  key: SortKey;
+}
+
+const COLUMNS: ColumnDef[] = [
+  { label: "Site", key: "site" },
+  { label: "Status", key: "status" },
+  { label: "Failed 7d", key: "failed7d" },
+  { label: "Img Fail", key: "imgFail" },
+  { label: "Uptime", key: "uptime" },
+  { label: "Sync", key: "sync" },
+  { label: "Review", key: "review" },
+  { label: "SSL", key: "ssl" },
+  { label: "Tracking", key: "tracking" },
+  { label: "Domain", key: "domain" },
+];
+
 const PAGE_SIZES = [10, 25, 50, 100];
+
+function trackingScore(row: OpsRow): number {
+  if (row.tracking.state === "n/a" || row.tracking.state === "unknown") return 0;
+  return (row.tracking.ga4 ? 4 : 0) + (row.tracking.gtm ? 2 : 0) + (row.tracking.pixel ? 1 : 0);
+}
+
+function getSortValue(row: OpsRow, key: SortKey): string | number {
+  switch (key) {
+    case "site": return (row.customDomain ?? row.domain).toLowerCase();
+    case "status": return row.status;
+    case "failed7d": return row.failedArticles7d;
+    case "imgFail": return row.imageGenFailed7d;
+    case "uptime": return row.uptime.state === "n/a" ? -1 : row.uptime.ok ? 1 : 0;
+    case "sync": return row.sync.ok === null ? -1 : row.sync.ok ? 1 : 0;
+    case "review": return row.reviewCount;
+    case "ssl": return row.ssl.state === "n/a" ? -1 : row.ssl.status === "active" ? 1 : 0;
+    case "tracking": return trackingScore(row);
+    case "domain": return row.domainExpiry.daysLeft ?? 9999;
+  }
+}
 
 export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
-  const totalPages = Math.ceil(rows.length / pageSize);
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+    return [...rows].sort((a, b) => {
+      const aVal = getSortValue(a, sortKey);
+      const bVal = getSortValue(b, sortKey);
+      let cmp: number;
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        cmp = aVal.localeCompare(bVal);
+      } else {
+        cmp = (aVal as number) - (bVal as number);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sortKey, sortDir]);
+
+  const totalPages = Math.ceil(sortedRows.length / pageSize);
   const pageRows = useMemo(
-    () => rows.slice(page * pageSize, (page + 1) * pageSize),
-    [rows, page, pageSize],
+    () => sortedRows.slice(page * pageSize, (page + 1) * pageSize),
+    [sortedRows, page, pageSize],
   );
+
+  function handleSort(key: SortKey): void {
+    if (sortKey === key) {
+      if (sortDir === "asc") setSortDir("desc");
+      else { setSortKey(null); setSortDir("asc"); }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+    setPage(0);
+  }
 
   function toggleRow(domain: string): void {
     setExpandedRows((prev) => {
@@ -39,7 +107,19 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
           <thead className="sticky top-0 z-10">
             <tr className="bg-table-header border-b border-divider">
               {COLUMNS.map((col) => (
-                <th key={col} className="px-3.5 py-2.5 text-left text-[9px] uppercase tracking-wider text-secondary font-semibold">{col}</th>
+                <th
+                  key={col.key}
+                  onClick={() => handleSort(col.key)}
+                  className="px-3.5 py-2.5 text-left text-[9px] uppercase tracking-wider text-secondary font-semibold cursor-pointer select-none hover:text-heading transition-colors"
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {col.label}
+                    <span className="inline-flex flex-col leading-none text-[7px]">
+                      <span className={sortKey === col.key && sortDir === "asc" ? "text-primary" : "opacity-30"}>▲</span>
+                      <span className={sortKey === col.key && sortDir === "desc" ? "text-primary" : "opacity-30"}>▼</span>
+                    </span>
+                  </span>
+                </th>
               ))}
             </tr>
           </thead>
@@ -63,7 +143,7 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
       {/* Pagination */}
       <div className="flex justify-between items-center mt-3 text-secondary text-xs">
         <div>
-          {page * pageSize + 1}–{Math.min((page + 1) * pageSize, rows.length)} of {rows.length} sites
+          {page * pageSize + 1}–{Math.min((page + 1) * pageSize, sortedRows.length)} of {sortedRows.length} sites
           <select
             value={pageSize}
             onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
