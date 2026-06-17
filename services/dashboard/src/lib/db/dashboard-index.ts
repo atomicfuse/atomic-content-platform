@@ -1,5 +1,5 @@
-import { getMongoDb } from "../mongo.js";
-import { COLLECTIONS } from "./collections.js";
+import { getMongoDb } from "../mongo";
+import { COLLECTIONS } from "./collections";
 import type { DashboardIndex, DashboardSiteEntry, DeletedSiteEntry } from "@/types/dashboard";
 
 function useMongoReads(): boolean {
@@ -24,7 +24,7 @@ export async function getDashboardIndex(
   opts?: { fresh?: boolean },
 ): Promise<DashboardIndex> {
   if (!useMongoReads()) {
-    const { readDashboardIndex } = await import("../github.js");
+    const { readDashboardIndex } = await import("../github");
     return readDashboardIndex(opts);
   }
   const db = await getMongoDb();
@@ -52,7 +52,7 @@ export async function getDashboardIndex(
 
 export async function getDashboardEntry(domain: string): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
-    const { readDashboardIndex } = await import("../github.js");
+    const { readDashboardIndex } = await import("../github");
     const index = await readDashboardIndex();
     const site = index.sites.find((s) => s.domain === domain);
     if (site) return site as unknown as Record<string, unknown>;

@@ -1,5 +1,5 @@
-import { getMongoDb } from "../mongo.js";
-import { COLLECTIONS } from "./collections.js";
+import { getMongoDb } from "../mongo";
+import { COLLECTIONS } from "./collections";
 import type { ArticleEntry } from "@/types/dashboard";
 
 function useMongoReads(): boolean {
@@ -54,7 +54,7 @@ export async function getArticlesMeta(
   branch: string,
 ): Promise<ArticleMeta[]> {
   if (!useMongoReads()) {
-    const { readArticles } = await import("../github.js");
+    const { readArticles } = await import("../github");
     const entries = await readArticles(domain, branch);
     // Map ArticleEntry back to ArticleMeta shape for callers expecting it
     return entries.map((e) => ({
@@ -84,7 +84,7 @@ export async function getArticleMeta(
   branch: string,
 ): Promise<ArticleMeta | null> {
   if (!useMongoReads()) {
-    const { readArticles } = await import("../github.js");
+    const { readArticles } = await import("../github");
     const entries = await readArticles(domain, branch);
     const entry = entries.find((e) => e.slug === slug);
     if (!entry) return null;
@@ -113,7 +113,7 @@ export async function countArticlesByStatus(
   status: string,
 ): Promise<number> {
   if (!useMongoReads()) {
-    const { readArticles } = await import("../github.js");
+    const { readArticles } = await import("../github");
     const entries = await readArticles(domain, branch);
     return entries.filter((e) => e.status === status).length;
   }
@@ -128,7 +128,7 @@ export async function countArticles(
   branch: string,
 ): Promise<number> {
   if (!useMongoReads()) {
-    const { countArticles: gitCountArticles } = await import("../github.js");
+    const { countArticles: gitCountArticles } = await import("../github");
     return gitCountArticles(domain, branch);
   }
   const db = await getMongoDb();
@@ -147,8 +147,8 @@ export async function readArticlesFromDb(
   branch?: string,
 ): Promise<ArticleEntry[]> {
   if (!useMongoReads()) {
-    const { readArticles } = await import("../github.js");
-    const { readArticlesWithKVFallback } = await import("../kv-api.js");
+    const { readArticles } = await import("../github");
+    const { readArticlesWithKVFallback } = await import("../kv-api");
     return readArticlesWithKVFallback(domain, branch, readArticles);
   }
   const effectiveBranch = branch ?? "main";
@@ -170,7 +170,7 @@ export async function countArticlesForSites(
   sites: Array<{ domain: string; staging_branch: string | null }>,
 ): Promise<Record<string, number>> {
   if (!useMongoReads()) {
-    const { countArticlesForSites: gitCount } = await import("../github.js");
+    const { countArticlesForSites: gitCount } = await import("../github");
     return gitCount(sites);
   }
   const db = await getMongoDb();

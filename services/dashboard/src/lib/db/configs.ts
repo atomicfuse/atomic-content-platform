@@ -1,5 +1,5 @@
-import { getMongoDb } from "../mongo.js";
-import { COLLECTIONS } from "./collections.js";
+import { getMongoDb } from "../mongo";
+import { COLLECTIONS } from "./collections";
 
 function useMongoReads(): boolean {
   return process.env.USE_MONGO_READS === "true";
@@ -13,7 +13,7 @@ export async function getOrgConfig(): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
     // Git-based read: org.yaml on main
     try {
-      const { readFileContent } = await import("../github.js");
+      const { readFileContent } = await import("../github");
       const { parse } = await import("yaml");
       const content = await readFileContent("org.yaml", "main");
       if (!content) return null;
@@ -47,7 +47,7 @@ export async function upsertOrgConfig(config: Record<string, unknown>): Promise<
 export async function getGroupConfig(groupId: string): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
     try {
-      const { readFileContent } = await import("../github.js");
+      const { readFileContent } = await import("../github");
       const { parse } = await import("yaml");
       const content = await readFileContent(`groups/${groupId}.yaml`, "main");
       if (!content) return null;
@@ -101,7 +101,7 @@ export async function deleteGroupConfig(groupId: string): Promise<void> {
 export async function getOverrideConfig(overrideId: string): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
     try {
-      const { readFileContent } = await import("../github.js");
+      const { readFileContent } = await import("../github");
       const { parse } = await import("yaml");
       const content = await readFileContent(`overrides/config/${overrideId}.yaml`, "main");
       if (!content) return null;
@@ -154,7 +154,7 @@ export async function deleteOverrideConfig(overrideId: string): Promise<void> {
 export async function getSchedulerConfig(): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
     try {
-      const { readSchedulerConfig } = await import("../scheduler.js");
+      const { readSchedulerConfig } = await import("../scheduler");
       return await readSchedulerConfig() as unknown as Record<string, unknown> | null;
     } catch {
       return null;

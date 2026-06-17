@@ -1,5 +1,5 @@
-import { getMongoDb } from "../mongo.js";
-import { COLLECTIONS } from "./collections.js";
+import { getMongoDb } from "../mongo";
+import { COLLECTIONS } from "./collections";
 
 function useMongoReads(): boolean {
   return process.env.USE_MONGO_READS === "true";
@@ -21,7 +21,7 @@ export async function getSiteConfig(
   branch?: string,
 ): Promise<Record<string, unknown> | null> {
   if (!useMongoReads()) {
-    const { readSiteConfig } = await import("../github.js");
+    const { readSiteConfig } = await import("../github");
     return readSiteConfig(domain, branch);
   }
   const db = await getMongoDb();
