@@ -32,6 +32,7 @@ import {
 } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
+import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite } from "@/lib/db/articles";
 
 /** Update dashboard metadata for a site. */
 export async function updateSiteEntry(
@@ -243,6 +244,9 @@ export async function deleteArticleFromStaging(
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, [slug]);
 
+  // Dual-write: delete from MongoDB (soft-fail)
+  await deleteArticleMeta(domain, slug, site.staging_branch);
+
   invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
@@ -265,6 +269,9 @@ export async function deleteArticlesFromStaging(
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, slugs);
+
+  // Dual-write: delete from MongoDB (soft-fail)
+  await deleteArticlesMeta(domain, slugs, site.staging_branch);
 
   invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
@@ -397,7 +404,10 @@ export async function permanentlyDeleteSite(domain: string): Promise<{
     });
   }
 
-  // 7. Invalidate caches (landmine #45) — must come before revalidatePath
+  // 7. Delete all articles from MongoDB (soft-fail)
+  await deleteArticlesForSite(domain);
+
+  // 8. Invalidate caches (landmine #45) — must come before revalidatePath
   invalidateSiteCaches(domain, `staging/${domain}`);
 
   revalidatePath("/");

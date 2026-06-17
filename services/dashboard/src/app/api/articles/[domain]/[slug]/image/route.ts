@@ -8,6 +8,7 @@ import {
   buildImageR2Key,
   buildImageFrontmatterPath,
 } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
 
 /** Allowed image MIME types. */
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -149,6 +150,9 @@ export async function POST(
       `fix(content): replace image for ${slug} on ${decodedDomain}`,
       targetBranch,
     );
+
+    // Dual-write to MongoDB (soft-fail)
+    await upsertArticleMeta(decodedDomain, slug, targetBranch, { featured_image: imagePath });
 
     return NextResponse.json(
       {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml } from "yaml";
+import matter from "gray-matter";
 import { marked } from "marked";
 import {
   readDashboardIndex,
@@ -13,6 +14,7 @@ import {
 import { readFromR2, uploadToR2 } from "@/lib/r2-upload";
 import { bulkPutKV, getKVEntry } from "@/lib/cloudflare";
 import { getKvNamespaces } from "@/lib/constants";
+import { upsertArticlesMeta } from "@/lib/db/articles";
 
 interface CopyRequestBody {
   sourceDomain: string;
@@ -316,6 +318,32 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // Invalidate caches for both branches
       invalidateSiteCaches(targetDomain, targetBranch);
       invalidateSiteCaches(targetDomain, "main");
+
+      // Dual-write to MongoDB (soft-fail) — upsert for both target branches
+      const mongoDocs: Array<{ domain: string; slug: string; branch: string; frontmatter: Record<string, unknown> }> = [];
+      for (const slug of copied) {
+        const markdown = articleContents.get(slug);
+        if (!markdown) continue;
+        const parsed = matter(markdown);
+        const fm = parsed.data;
+        const frontmatter: Record<string, unknown> = {
+          title: fm.title,
+          description: fm.description,
+          status: fm.status,
+          type: fm.type,
+          publish_date: fm.publishDate ?? fm.publish_date,
+          author: fm.author,
+          tags: fm.tags,
+          featured_image: fm.featuredImage ?? fm.featured_image,
+          quality_score: fm.quality_score,
+          videos: fm.videos,
+          scripts: fm.scripts,
+          source_url: fm.source_url,
+        };
+        mongoDocs.push({ domain: targetDomain, slug, branch: targetBranch, frontmatter });
+        mongoDocs.push({ domain: targetDomain, slug, branch: "main", frontmatter });
+      }
+      await upsertArticlesMeta(mongoDocs);
     }
 
     // --- Write articles directly to KV for immediate live availability ---

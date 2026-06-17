@@ -15,6 +15,7 @@ import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import type { ArticleEntry } from "@/types/dashboard";
+import { upsertArticlesMeta, deleteArticlesMeta } from "@/lib/db/articles";
 
 /**
  * Fetch all articles flagged for review across all sites.
@@ -147,6 +148,18 @@ export async function applyReviewDecisions(decisions: {
           `review: approve ${fileUpdates.length} article${fileUpdates.length > 1 ? "s" : ""}`,
           branch,
         );
+
+        // Dual-write approved articles to MongoDB (soft-fail)
+        await upsertArticlesMeta(
+          approved
+            .filter((slug) => fileUpdates.some((f) => f.path.endsWith(`/${slug}.md`)))
+            .map((slug) => ({
+              domain,
+              slug,
+              branch,
+              frontmatter: { status: "published" },
+            })),
+        );
       }
     }
 
@@ -154,6 +167,9 @@ export async function applyReviewDecisions(decisions: {
     if (rejected.length > 0) {
       const filePaths = rejected.map((slug) => `sites/${domain}/articles/${slug}.md`);
       await deleteFilesFromBranch(filePaths, branch);
+
+      // Dual-write: delete rejected articles from MongoDB (soft-fail)
+      await deleteArticlesMeta(domain, rejected, branch);
     }
 
     // Only trigger build + merge if something actually changed

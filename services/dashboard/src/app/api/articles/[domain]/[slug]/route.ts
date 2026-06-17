@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import matter from "gray-matter";
 import { readFileContent, readDashboardIndex, commitNetworkFiles } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
 
 interface RouteParams {
   params: Promise<{ domain: string; slug: string }>;
@@ -84,6 +86,24 @@ export async function PATCH(
     `fix(content): edit article ${slug} for ${decodedDomain}`,
     branch,
   );
+
+  // Dual-write to MongoDB (soft-fail)
+  const parsed = matter(content);
+  const fm = parsed.data;
+  await upsertArticleMeta(decodedDomain, slug, branch, {
+    title: fm.title,
+    description: fm.description,
+    status: fm.status,
+    type: fm.type,
+    publish_date: fm.publishDate ?? fm.publish_date,
+    author: fm.author,
+    tags: fm.tags,
+    featured_image: fm.featuredImage ?? fm.featured_image,
+    quality_score: fm.quality_score,
+    videos: fm.videos,
+    scripts: fm.scripts,
+    source_url: fm.source_url,
+  });
 
   return NextResponse.json({ status: "updated", slug, branch });
 }

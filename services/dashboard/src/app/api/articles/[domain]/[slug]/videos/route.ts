@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
 import { readFileContent, readDashboardIndex, commitNetworkFiles } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
 
 interface RouteParams {
   params: Promise<{ domain: string; slug: string }>;
@@ -127,6 +128,9 @@ export async function PUT(
     `feat(content): update videos for ${slug} on ${decodedDomain}`,
     stagingBranch,
   );
+
+  // Dual-write to MongoDB (soft-fail)
+  await upsertArticleMeta(decodedDomain, slug, stagingBranch, { videos: fm.videos ?? [] });
 
   return NextResponse.json({
     status: "updated",
