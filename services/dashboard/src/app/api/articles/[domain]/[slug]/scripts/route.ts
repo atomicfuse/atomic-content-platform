@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
-import { readFileContent, readDashboardIndex, commitNetworkFiles } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readFileContent, commitNetworkFiles } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
 import { upsertArticleMeta } from "@/lib/db/articles";
 

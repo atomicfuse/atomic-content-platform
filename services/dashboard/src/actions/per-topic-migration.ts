@@ -2,12 +2,9 @@
 
 import { stringify as stringifyYaml } from "yaml";
 import type { TopicV2 } from "@/types/dashboard";
-import {
-  commitSiteFiles,
-  invalidateSiteCaches,
-  readDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
-} from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
+import { commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
 
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??

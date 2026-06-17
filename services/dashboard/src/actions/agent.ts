@@ -1,6 +1,7 @@
 "use server";
 
-import { readDashboardIndex, readFileContent, commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readFileContent, commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import { upsertSiteConfig } from "@/lib/db/site-configs";

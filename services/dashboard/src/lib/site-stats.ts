@@ -37,8 +37,8 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
-import { readArticles, readSiteConfig } from "@/lib/github";
-import { readArticlesWithKVFallback } from "@/lib/kv-api";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { readArticlesFromDb } from "@/lib/db/articles";
 import type { ArticleEntry } from "@/types/dashboard";
 
 // ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ async function buildRecentArticles(
   // If any of the selected articles lack a score (KV path), backfill from Git.
   if (top.some((a) => a.score === null)) {
     try {
-      const gitArticles = await readArticles(domain, branch);
+      const gitArticles = await readArticlesFromDb(domain, branch);
       const scoreBySlug = new Map<string, number | undefined>(
         gitArticles.map((g) => [g.slug, g.score]),
       );
@@ -150,7 +150,7 @@ export interface ArticleAggregates {
  * Resolve recentArticles + reviewCount + generalImages for a site from a SINGLE
  * article fetch.
  *
- * Enumeration goes through `readArticlesWithKVFallback` (cache → KV → Git) ONCE.
+ * Enumeration goes through `readArticlesFromDb` (MongoDB → KV → Git) ONCE.
  * `reviewCount`/`generalImages` are computed over the FULL list; `recentArticles`
  * is the top-N (with `quality_score` backfilled from Git when the KV path didn't
  * carry it — the Git read is only invoked if at least one of the top-N lacks a
@@ -163,7 +163,7 @@ export async function articleAggregates(
 ): Promise<ArticleAggregates> {
   let entries: ArticleEntry[];
   try {
-    entries = await readArticlesWithKVFallback(domain, branch, readArticles);
+    entries = await readArticlesFromDb(domain, branch);
   } catch {
     return { recentArticles: [], reviewCount: 0, generalImages: 0 };
   }

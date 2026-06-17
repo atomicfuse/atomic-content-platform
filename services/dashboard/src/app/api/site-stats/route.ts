@@ -5,7 +5,7 @@
 // timeouts so the route works even when GitHub is rate-limited or unavailable.
 import { NextResponse } from "next/server";
 
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
   computeNextRun,

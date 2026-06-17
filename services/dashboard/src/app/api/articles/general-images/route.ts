@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readArticleIndexFromKV } from "@/lib/kv-api";
 import { isGeneralImage } from "@/lib/general-image-utils";
 

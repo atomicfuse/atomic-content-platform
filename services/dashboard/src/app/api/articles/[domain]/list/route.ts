@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readArticles, readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readArticlesFromDb as readArticles } from "@/lib/db/articles";
 
 interface RouteParams {
   params: Promise<{ domain: string }>;

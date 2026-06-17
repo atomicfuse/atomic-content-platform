@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Enable MongoDB reads for these tests (otherwise feature flag falls back to Git)
+process.env.USE_MONGO_READS = "true";
+
 const mockToArray = vi.fn();
 const mockFindOne = vi.fn();
 const mockUpdateOne = vi.fn();
@@ -32,8 +35,10 @@ describe("dashboard-index DB helpers", () => {
     mockToArray.mockResolvedValueOnce(entries);
     const result = await getDashboardIndex();
     expect(mockCollection).toHaveBeenCalledWith("dashboard_index");
-    expect(mockFind).toHaveBeenCalledWith({ status: { $ne: "deleted" } });
-    expect(result).toEqual(entries);
+    expect(mockFind).toHaveBeenCalledWith({});
+    // Now returns DashboardIndex shape with sites/deleted arrays
+    expect(result.sites).toEqual(entries);
+    expect(result.deleted).toEqual([]);
   });
 
   it("getDashboardEntry returns a single entry or null", async () => {

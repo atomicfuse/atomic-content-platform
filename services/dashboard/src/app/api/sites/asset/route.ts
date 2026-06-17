@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readFromR2 } from "@/lib/r2-upload";
 
 const MIME_TYPES: Record<string, string> = {

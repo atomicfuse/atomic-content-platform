@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml } from "yaml";
 import matter from "gray-matter";
 import { marked } from "marked";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readArticlesFromDb as readArticles } from "@/lib/db/articles";
 import {
-  readDashboardIndex,
-  readArticles,
   readFileContent,
   commitNetworkFiles,
   branchExists,

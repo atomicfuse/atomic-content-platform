@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { uploadToR2 } from "@/lib/r2-upload";
-import { commitNetworkFiles, readFileContent, readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { commitNetworkFiles, readFileContent } from "@/lib/github";
 import {
   parseFrontmatter,
   buildArticlePath,

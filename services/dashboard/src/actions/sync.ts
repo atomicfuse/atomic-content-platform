@@ -1,7 +1,9 @@
 "use server";
 
 import { listDomainsWithPagesInfo, getAPOStatus } from "@/lib/cloudflare";
-import { readDashboardIndex, readSiteConfig, writeDashboardIndex, addSitesToIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { writeDashboardIndex, addSitesToIndex } from "@/lib/github";
 import type { DashboardSiteEntry, SiteStatus } from "@/types/dashboard";
 import type { CloudflareDomainInfo } from "@/lib/cloudflare";
 import { revalidatePath } from "next/cache";

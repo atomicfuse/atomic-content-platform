@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
-import { readDashboardIndex, readSiteConfig, readArticles } from "@/lib/github";
-import { readArticlesWithKVFallback } from "@/lib/kv-api";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { readArticlesFromDb as readArticlesWithKVFallback } from "@/lib/db/articles";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
@@ -27,7 +28,7 @@ export default async function SiteDetailPage({
 
   let [siteConfig, articles] = await Promise.all([
     readSiteConfig(decodedDomain, branch),
-    readArticlesWithKVFallback(decodedDomain, branch, readArticles),
+    readArticlesWithKVFallback(decodedDomain, branch),
   ]);
 
   // Fallback: if staging branch is gone (deleted), read config from main

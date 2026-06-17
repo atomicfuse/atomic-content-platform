@@ -1,22 +1,50 @@
 import { getMongoDb } from "../mongo.js";
 import { COLLECTIONS } from "./collections.js";
 
+function useMongoReads(): boolean {
+  return process.env.USE_MONGO_READS === "true";
+}
+
 // ---------------------------------------------------------------------------
-// Reads
+// Reads (feature-flagged: USE_MONGO_READS → MongoDB, else Git fallback)
 // ---------------------------------------------------------------------------
 
-export async function getSiteConfig(domain: string): Promise<Record<string, unknown> | null> {
+/**
+ * Read site config (site.yaml) for a domain.
+ *
+ * The `branch` parameter is respected by the Git fallback (staging vs main).
+ * MongoDB stores one config per domain — when USE_MONGO is true, `branch` is
+ * ignored (the dual-write layer always writes the latest config).
+ */
+export async function getSiteConfig(
+  domain: string,
+  branch?: string,
+): Promise<Record<string, unknown> | null> {
+  if (!useMongoReads()) {
+    const { readSiteConfig } = await import("../github.js");
+    return readSiteConfig(domain, branch);
+  }
   const db = await getMongoDb();
-  return db.collection(COLLECTIONS.siteConfigs).findOne({ domain }) as Promise<Record<string, unknown> | null>;
+  const doc = await db.collection(COLLECTIONS.siteConfigs).findOne({ domain });
+  if (!doc) return null;
+  // Strip MongoDB internals
+  const { _id, updatedAt, ...rest } = doc as Record<string, unknown>;
+  return rest as Record<string, unknown>;
 }
 
 export async function listSiteConfigs(): Promise<Array<Record<string, unknown>>> {
+  if (!useMongoReads()) {
+    // No direct Git equivalent for listing all configs — return empty.
+    // This function is only used by reconciliation/admin tooling.
+    return [];
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.siteConfigs).find({}).sort({ domain: 1 }).toArray();
 }
 
 // ---------------------------------------------------------------------------
 // Writes (soft-fail: log warning, never throw)
+// These ALWAYS write to MongoDB regardless of the feature flag.
 // ---------------------------------------------------------------------------
 
 export async function upsertSiteConfig(domain: string, config: Record<string, unknown>): Promise<void> {

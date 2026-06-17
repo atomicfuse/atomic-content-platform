@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
   invalidateSiteCaches,
-  readDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
   updateSiteInIndex,
 } from "@/lib/github";

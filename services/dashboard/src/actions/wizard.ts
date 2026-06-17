@@ -1,11 +1,11 @@
 "use server";
 
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  readDashboardIndex,
   writeDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   updateSiteInIndex,
   addSitesToIndex,
   createBranch,

@@ -1,7 +1,7 @@
 "use server";
 
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import {
-  readDashboardIndex,
   updateSiteInIndex,
   removeSiteFromIndex,
   restoreSiteInIndex,

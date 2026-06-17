@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { WizardFormData } from "@/types/dashboard";
 
+vi.mock("@/lib/db/dashboard-index", () => ({
+  getDashboardIndex: vi.fn().mockResolvedValue({ sites: [] }),
+  upsertDashboardIndexEntry: vi.fn().mockResolvedValue(undefined),
+  updateDashboardIndexEntry: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/db/site-configs", () => ({
+  getSiteConfig: vi.fn(),
+  upsertSiteConfig: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/github", () => ({
   commitSiteFiles: vi.fn().mockResolvedValue(undefined),
-  readDashboardIndex: vi.fn().mockResolvedValue({ sites: [] }),
   writeDashboardIndex: vi.fn().mockResolvedValue(undefined),
-  readSiteConfig: vi.fn(),
   updateSiteInIndex: vi.fn().mockResolvedValue(undefined),
   addSitesToIndex: vi.fn().mockResolvedValue(undefined),
   createBranch: vi.fn().mockResolvedValue(undefined),
@@ -14,6 +21,10 @@ vi.mock("@/lib/github", () => ({
   branchExists: vi.fn().mockResolvedValue(false),
   triggerWorkflowViaPush: vi.fn().mockResolvedValue(undefined),
   readFileBase64: vi.fn(),
+  readFileContent: vi.fn(),
+  commitNetworkFiles: vi.fn().mockResolvedValue(undefined),
+  copySiteTreeToMain: vi.fn().mockResolvedValue(undefined),
+  invalidateSiteCaches: vi.fn(),
 }));
 vi.mock("@/lib/cloudflare", () => ({
   listZones: vi.fn(),

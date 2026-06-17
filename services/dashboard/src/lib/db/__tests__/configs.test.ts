@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Enable MongoDB reads for these tests (otherwise feature flag falls back to Git)
+process.env.USE_MONGO_READS = "true";
+
 const mockToArray = vi.fn();
 const mockFindOne = vi.fn();
 const mockUpdateOne = vi.fn();

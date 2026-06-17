@@ -1,11 +1,27 @@
 import { getMongoDb } from "../mongo.js";
 import { COLLECTIONS } from "./collections.js";
 
+function useMongoReads(): boolean {
+  return process.env.USE_MONGO_READS === "true";
+}
+
 // ===========================================================================
 // Org config (singleton)
 // ===========================================================================
 
 export async function getOrgConfig(): Promise<Record<string, unknown> | null> {
+  if (!useMongoReads()) {
+    // Git-based read: org.yaml on main
+    try {
+      const { readFileContent } = await import("../github.js");
+      const { parse } = await import("yaml");
+      const content = await readFileContent("org.yaml", "main");
+      if (!content) return null;
+      return parse(content) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.orgConfig).findOne({ _id: "org" as any });
 }
@@ -29,11 +45,27 @@ export async function upsertOrgConfig(config: Record<string, unknown>): Promise<
 // ===========================================================================
 
 export async function getGroupConfig(groupId: string): Promise<Record<string, unknown> | null> {
+  if (!useMongoReads()) {
+    try {
+      const { readFileContent } = await import("../github.js");
+      const { parse } = await import("yaml");
+      const content = await readFileContent(`groups/${groupId}.yaml`, "main");
+      if (!content) return null;
+      return parse(content) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.groupConfigs).findOne({ groupId });
 }
 
 export async function listGroupConfigs(): Promise<Array<Record<string, unknown>>> {
+  if (!useMongoReads()) {
+    // No efficient Git equivalent for listing all groups — return empty.
+    // Callers that need the full list should use Git tree listing directly.
+    return [];
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.groupConfigs).find({}).sort({ groupId: 1 }).toArray();
 }
@@ -67,11 +99,26 @@ export async function deleteGroupConfig(groupId: string): Promise<void> {
 // ===========================================================================
 
 export async function getOverrideConfig(overrideId: string): Promise<Record<string, unknown> | null> {
+  if (!useMongoReads()) {
+    try {
+      const { readFileContent } = await import("../github.js");
+      const { parse } = await import("yaml");
+      const content = await readFileContent(`overrides/config/${overrideId}.yaml`, "main");
+      if (!content) return null;
+      return parse(content) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.overrideConfigs).findOne({ overrideId });
 }
 
 export async function listOverrideConfigs(): Promise<Array<Record<string, unknown>>> {
+  if (!useMongoReads()) {
+    // No efficient Git equivalent — return empty.
+    return [];
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.overrideConfigs).find({}).sort({ overrideId: 1 }).toArray();
 }
@@ -105,6 +152,14 @@ export async function deleteOverrideConfig(overrideId: string): Promise<void> {
 // ===========================================================================
 
 export async function getSchedulerConfig(): Promise<Record<string, unknown> | null> {
+  if (!useMongoReads()) {
+    try {
+      const { readSchedulerConfig } = await import("../scheduler.js");
+      return await readSchedulerConfig() as unknown as Record<string, unknown> | null;
+    } catch {
+      return null;
+    }
+  }
   const db = await getMongoDb();
   return db.collection(COLLECTIONS.schedulerConfig).findOne({ _id: "scheduler" as any });
 }

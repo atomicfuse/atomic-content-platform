@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Octokit } from "@octokit/rest";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { NETWORK_REPO_OWNER, NETWORK_REPO_NAME } from "@/lib/constants";
 
 export interface StagingDiffFile {

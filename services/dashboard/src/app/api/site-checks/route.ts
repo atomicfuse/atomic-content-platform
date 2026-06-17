@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { fetchAllDomains } from "@/lib/domains-dashboard";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import {
   mergeChecks,
   type AtlChecks,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { readDashboardIndex, readSiteConfig } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
 
 /**
  * GET /api/sites/groups

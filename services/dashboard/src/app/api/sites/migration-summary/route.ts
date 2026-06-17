@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex, readSiteConfig } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const domain = req.nextUrl.searchParams.get("domain");
