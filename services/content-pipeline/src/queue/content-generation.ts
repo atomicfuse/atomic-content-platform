@@ -14,6 +14,7 @@ import type { SiteBriefData } from "../lib/site-brief.js";
 import { runContentGeneration } from "../agents/content-generation/agent.js";
 import { writeArticleBatch } from "../lib/writer.js";
 import type { PendingArticle } from "../lib/writer.js";
+import { upsertArticlesBatch } from "../lib/db/articles.js";
 import { triggerN8nImage, trackPendingImage } from "../agents/content-generation/n8n-image.js";
 import { notifyImageDefaultFallback } from "../lib/notifications.js";
 import type { AgentConfig } from "../lib/config.js";
@@ -183,6 +184,18 @@ export async function processGenerateJob(
       commitMsg,
       [dedupIndexFile],
     );
+
+    // Dual-write to MongoDB (supplementary — never fails the pipeline)
+    const mongoArticles = pendingArticles.map((a) => {
+      const { data: fm } = matter(a.content);
+      return {
+        domain: a.siteDomain,
+        slug: a.slug,
+        branch,
+        frontmatter: fm as Record<string, unknown>,
+      };
+    });
+    await upsertArticlesBatch(mongoArticles);
   }
 
   // --- Phase 3: n8n image triggers ---

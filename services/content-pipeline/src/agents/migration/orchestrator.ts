@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import Anthropic from "@anthropic-ai/sdk";
+import matter from "gray-matter";
 import type {
   CsvSiteRow,
   MigrationProgress,
@@ -17,6 +18,7 @@ import { generateImageWithGemini } from "../../lib/gemini.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
+import { upsertArticlesBatch } from "../../lib/db/articles.js";
 import { triggerN8nImage } from "../content-generation/n8n-image.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
@@ -276,6 +278,20 @@ export async function runMigration(
       console.log(`[migration] Also committing to ${config.alsoCommitTo}`);
       await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.alsoCommitTo);
     }
+
+    // Dual-write to MongoDB (supplementary — never fails the pipeline)
+    const mongoArticles = files.map((f) => {
+      const { data: fm } = matter(f.content);
+      // Extract slug from path: sites/<domain>/articles/<slug>.md
+      const pathSlug = f.path.split("/").pop()?.replace(".md", "") ?? "";
+      return {
+        domain: siteId,
+        slug: pathSlug,
+        branch: config.branch,
+        frontmatter: fm as Record<string, unknown>,
+      };
+    });
+    await upsertArticlesBatch(mongoArticles);
   }
 
   // Step 5: Fire n8n image triggers (post-commit, fire-and-forget)
