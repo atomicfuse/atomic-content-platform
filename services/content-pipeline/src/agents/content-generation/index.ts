@@ -53,14 +53,15 @@ import {
 } from "./bulk-image.js";
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
-import { createOctokit, readFile } from "../../lib/github.js";
-import { readSiteBrief, readSiteBriefWithFallback } from "../../lib/site-brief.js";
+import { createOctokit, readFile, listFiles, clearTreeCache } from "../../lib/github.js";
+import { readSiteBrief, readSiteBriefWithFallback, listActiveSites } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
 import { runAlerts, runAfterRun } from "../../alerts/run.js";
 import { getAttention, getAllAttention } from "../../alerts/repo.js";
 import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 import { runBackfillR2 } from "../../stats/backfill-r2.js";
-import { getWeeklySummary, decrementReviewCount, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
+import { getWeeklySummary, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
+import { upsertArticlesBatch } from "../../lib/db/articles.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -876,38 +877,6 @@ async function handleRequest(
     }
   }
 
-  // Review count decrement — POST /review-counts/decrement
-  {
-    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
-    if (req.method === "POST" && pathname === "/review-counts/decrement") {
-      let rawBody: string;
-      try {
-        rawBody = await readBody(req);
-      } catch {
-        sendJson(res, 413, { status: "error", message: "Payload too large" });
-        return;
-      }
-
-      let payload: { domain?: string; count?: number };
-      try {
-        payload = JSON.parse(rawBody) as typeof payload;
-      } catch {
-        sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
-        return;
-      }
-
-      const { domain, count } = payload;
-      if (!domain || typeof count !== "number" || count <= 0) {
-        sendJson(res, 400, { status: "error", message: "domain (string) and count (positive number) required" });
-        return;
-      }
-
-      await decrementReviewCount(domain, count);
-      sendJson(res, 200, { status: "ok" });
-      return;
-    }
-  }
-
   // GET /r2-usage
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -982,7 +951,7 @@ async function handleRequest(
             },
             body: JSON.stringify({
               ref: "main",
-              inputs: { site_id: domain, force_all: "false" },
+              inputs: { site: domain, force_all: "false" },
             }),
           },
         );
@@ -1146,6 +1115,178 @@ async function handleRequest(
         return sendJson(res, 500, { ok: false, error: String(err) });
       }
     }
+  }
+
+  // ─── Reconcile MongoDB articles against Git ────────────────────────
+  if (req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/reconcile-mongo") {
+    const secret = process.env.CACHE_INVALIDATE_SECRET;
+    const authHeader = req.headers.authorization;
+    if (!secret || authHeader !== `Bearer ${secret}`) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    const start = Date.now();
+    const ARTICLES_COLLECTION = "articles";
+
+    interface MismatchEntry {
+      domain: string;
+      branch: string;
+      gitCount: number;
+      mongoCount: number;
+      resynced: boolean;
+      error?: string;
+    }
+
+    const mismatches: MismatchEntry[] = [];
+    const errors: Array<{ domain: string; branch: string; error: string }> = [];
+    let sitesChecked = 0;
+
+    try {
+      const octokit = createOctokit(config.github);
+      const repo = config.github.repo;
+      const db = await getMongoDb();
+      const coll = db.collection(ARTICLES_COLLECTION);
+
+      // 1. Get all active sites from Git
+      const activeSites = await listActiveSites(octokit, repo);
+
+      // 2. For each site, compare article counts on staging branch and main
+      for (const site of activeSites) {
+        const branches = [site.branch, "main"];
+        // Deduplicate branches (in case staging branch IS main)
+        const uniqueBranches = [...new Set(branches)];
+
+        for (const branch of uniqueBranches) {
+          try {
+            // Count articles in Git
+            let gitArticles: string[];
+            try {
+              gitArticles = await listFiles(octokit, repo, `sites/${site.domain}/articles`, branch);
+              gitArticles = gitArticles.filter((f) => f.endsWith(".md"));
+            } catch {
+              // Branch or directory doesn't exist — normal for unpublished sites on main
+              gitArticles = [];
+            }
+
+            // Count articles in MongoDB
+            const mongoCount = await coll.countDocuments({ domain: site.domain, branch });
+
+            sitesChecked++;
+
+            if (gitArticles.length !== mongoCount) {
+              console.log(
+                `[reconcile] Mismatch for ${site.domain}@${branch}: git=${gitArticles.length} mongo=${mongoCount}`,
+              );
+
+              // Re-backfill: read each article from Git, parse frontmatter, upsert to MongoDB
+              let resynced = false;
+              try {
+                const docs: Array<{ domain: string; slug: string; branch: string; frontmatter: Record<string, unknown> }> = [];
+
+                for (const fileName of gitArticles) {
+                  const slug = fileName.replace(/\.md$/, "");
+                  const filePath = `sites/${site.domain}/articles/${fileName}`;
+                  try {
+                    const content = await readFile(octokit, repo, filePath, branch);
+                    const { data: frontmatter } = matter(content);
+                    docs.push({ domain: site.domain, slug, branch, frontmatter });
+                  } catch (readErr) {
+                    const msg = readErr instanceof Error ? readErr.message : String(readErr);
+                    console.warn(`[reconcile] Skip ${filePath}@${branch}: ${msg}`);
+                  }
+                }
+
+                // Upsert all articles for this site+branch
+                if (docs.length > 0) {
+                  await upsertArticlesBatch(docs);
+                }
+
+                // Remove MongoDB docs for slugs not in Git
+                const gitSlugs = new Set(gitArticles.map((f) => f.replace(/\.md$/, "")));
+                const mongoDocs = await coll.find(
+                  { domain: site.domain, branch },
+                  { projection: { slug: 1 } },
+                ).toArray();
+                const orphanedSlugs = mongoDocs
+                  .map((d) => d.slug as string)
+                  .filter((s) => !gitSlugs.has(s));
+
+                if (orphanedSlugs.length > 0) {
+                  await coll.deleteMany({
+                    domain: site.domain,
+                    branch,
+                    slug: { $in: orphanedSlugs },
+                  });
+                  console.log(
+                    `[reconcile] Removed ${orphanedSlugs.length} orphaned docs for ${site.domain}@${branch}`,
+                  );
+                }
+
+                resynced = true;
+              } catch (syncErr) {
+                const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+                console.error(`[reconcile] Resync failed for ${site.domain}@${branch}: ${msg}`);
+                mismatches.push({
+                  domain: site.domain,
+                  branch,
+                  gitCount: gitArticles.length,
+                  mongoCount,
+                  resynced: false,
+                  error: msg,
+                });
+                continue;
+              }
+
+              mismatches.push({
+                domain: site.domain,
+                branch,
+                gitCount: gitArticles.length,
+                mongoCount,
+                resynced,
+              });
+            }
+          } catch (branchErr) {
+            const msg = branchErr instanceof Error ? branchErr.message : String(branchErr);
+            console.error(`[reconcile] Error checking ${site.domain}@${branch}: ${msg}`);
+            errors.push({ domain: site.domain, branch, error: msg });
+          }
+        }
+
+        // Clear tree cache between sites to avoid memory buildup
+        clearTreeCache();
+      }
+
+      // 3. Check for orphaned MongoDB domains (domains not in dashboard-index)
+      const activeDomains = new Set(activeSites.map((s) => s.domain));
+      const mongoDomains = await coll.distinct("domain") as string[];
+      const orphaned = mongoDomains.filter((d) => !activeDomains.has(d));
+
+      const duration_ms = Date.now() - start;
+      console.log(
+        `[reconcile] Done in ${duration_ms}ms: checked=${sitesChecked}, mismatches=${mismatches.length}, orphaned=${orphaned.length}`,
+      );
+
+      sendJson(res, 200, {
+        status: "ok",
+        sitesChecked,
+        mismatches,
+        orphaned,
+        errors: errors.length > 0 ? errors : undefined,
+        duration_ms,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[reconcile] Fatal error:", message);
+      sendJson(res, 500, {
+        status: "error",
+        message,
+        sitesChecked,
+        mismatches,
+        duration_ms: Date.now() - start,
+      });
+    }
+    return;
   }
 
   if (req.url === "/propose-filter") {

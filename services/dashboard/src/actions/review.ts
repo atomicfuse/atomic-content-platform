@@ -60,16 +60,6 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
   return reviewArticles;
 }
 
-const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
-const LOCAL_FALLBACK = "http://localhost:5000";
-
-function getAgentUrl(): string {
-  if (process.env.NODE_ENV === "development" && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
-    return LOCAL_FALLBACK;
-  }
-  return CONTENT_AGENT_URL;
-}
-
 /**
  * Apply all review decisions in one batch.
  *
@@ -198,20 +188,6 @@ export async function applyReviewDecisions(decisions: {
   }
 
 
-  // Fire-and-forget: decrement review counts in MongoDB
-  for (const [domain, { approved, rejected }] of byDomain) {
-    const decrementCount = approved.length + rejected.length;
-    if (decrementCount > 0) {
-      fetch(`${getAgentUrl()}/review-counts/decrement`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, count: decrementCount }),
-        signal: AbortSignal.timeout(5_000),
-      }).catch((err) =>
-        console.warn(`[review] Failed to update review count for ${domain}:`, err),
-      );
-    }
-  }
   revalidatePath("/review");
 
   return {
