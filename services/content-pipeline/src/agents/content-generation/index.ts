@@ -1510,12 +1510,18 @@ const server = http.createServer((req, res) => {
   });
 });
 
+const FALLBACK_PORT = 5111;
+
 server.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`[server] Port ${config.port} is already in use`);
-  } else {
-    console.error("[server] Server error:", err.message);
+    console.warn(`[server] Port ${config.port} already in use — retrying on ${FALLBACK_PORT}`);
+    server.listen(FALLBACK_PORT, () => {
+      console.log(`[server] Content generation agent running on http://localhost:${FALLBACK_PORT} (fallback)`);
+      ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
+    });
+    return;
   }
+  console.error("[server] Server error:", err.message);
   process.exit(1);
 });
 
