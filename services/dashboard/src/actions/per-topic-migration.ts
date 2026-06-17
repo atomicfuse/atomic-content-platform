@@ -4,7 +4,7 @@ import { stringify as stringifyYaml } from "yaml";
 import type { TopicV2 } from "@/types/dashboard";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
-import { commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
+import { commitSiteFiles } from "@/lib/github";
 
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
@@ -69,10 +69,6 @@ export async function migrateSiteToPerTopic(
     `feat: migrate ${args.domain} to per-topic filters`,
     site.staging_branch,
   );
-
-  // Drop stale in-memory caches so the site detail page re-reads the migrated
-  // config (siteConfigCache has an infinite TTL). See landmine #45.
-  invalidateSiteCaches(args.domain, site.staging_branch);
 
   // Best-effort delete orphan bundles on the aggregator.
   let bundlesDeleted = 0;

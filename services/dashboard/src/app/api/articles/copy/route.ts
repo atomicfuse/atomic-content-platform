@@ -9,7 +9,6 @@ import {
   commitNetworkFiles,
   branchExists,
   createBranch,
-  invalidateSiteCaches,
 } from "@/lib/github";
 import { readFromR2, uploadToR2 } from "@/lib/r2-upload";
 import { bulkPutKV, getKVEntry } from "@/lib/cloudflare";
@@ -314,10 +313,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         commitNetworkFiles(filesToCommit, commitMsg, targetBranch),
         commitNetworkFiles(filesToCommit, commitMsg, "main"),
       ]);
-
-      // Invalidate caches for both branches
-      invalidateSiteCaches(targetDomain, targetBranch);
-      invalidateSiteCaches(targetDomain, "main");
 
       // Dual-write to MongoDB (soft-fail) — upsert for both target branches
       const mongoDocs: Array<{ domain: string; slug: string; branch: string; frontmatter: Record<string, unknown> }> = [];

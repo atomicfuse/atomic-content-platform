@@ -4,7 +4,6 @@ import {
   readFileContent,
   commitNetworkFiles,
   deleteNetworkFile,
-  invalidateSiteCaches,
 } from "@/lib/github";
 import { revalidatePath } from "next/cache";
 import { upsertGroupConfig, deleteGroupConfig } from "@/lib/db/configs";
@@ -49,7 +48,6 @@ export async function PUT(
     // Dual-write: mirror group config to MongoDB (soft-fail)
     await upsertGroupConfig(groupId, body);
 
-    invalidateSiteCaches("", "main");
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -75,7 +73,6 @@ export async function DELETE(
     // Dual-write: remove group config from MongoDB (soft-fail)
     await deleteGroupConfig(groupId);
 
-    invalidateSiteCaches("", "main");
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {

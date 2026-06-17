@@ -4,7 +4,6 @@ import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-inde
 import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  invalidateSiteCaches,
   triggerWorkflowViaPush,
   updateSiteInIndex,
 } from "@/lib/github";
@@ -369,12 +368,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (configUpdates) {
       await upsertSiteConfig(domain, existing as Record<string, unknown>);
     }
-
-    // Clear in-memory caches (tree, articles, site config) so the next read of
-    // the site detail page reflects this save. siteConfigCache has an infinite
-    // TTL, so without this the dashboard serves the pre-save config forever and
-    // edits appear lost. See landmine #45.
-    invalidateSiteCaches(domain, site.staging_branch);
 
     // Propagate vertical (category label) to dashboard-index so the Sites grid
     // reflects category changes immediately. Compare against `site.vertical`

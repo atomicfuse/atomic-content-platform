@@ -8,7 +8,6 @@ vi.mock("@/lib/db/site-configs", () => ({
 }));
 vi.mock("@/lib/github", () => ({
   commitSiteFiles: vi.fn().mockResolvedValue(undefined),
-  invalidateSiteCaches: vi.fn(),
 }));
 
 const mockFetch = vi.fn();

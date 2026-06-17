@@ -10,8 +10,6 @@ import {
   deleteFileFromBranch,
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
-  invalidateSiteCaches,
-  flushAllCaches,
   branchExists,
   deleteBranch,
 } from "@/lib/github";
@@ -46,7 +44,6 @@ export async function updateSiteEntry(
   // Dual-write: mirror index updates to MongoDB (soft-fail)
   await updateDashboardIndexEntry(domain, updates as Record<string, unknown>);
 
-  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -200,9 +197,6 @@ export async function deleteSiteEntry(domain: string): Promise<{
   // Dual-write: mark as deleted in MongoDB (soft-fail)
   await updateDashboardIndexEntry(domain, { status: "deleted" });
 
-  // 6. Invalidate caches (landmine #45) — must come before revalidatePath
-  invalidateSiteCaches(domain, `staging/${domain}`);
-
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
@@ -260,7 +254,6 @@ export async function deleteArticleFromStaging(
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticleMeta(domain, slug, site.staging_branch);
 
-  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -286,7 +279,6 @@ export async function deleteArticlesFromStaging(
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticlesMeta(domain, slugs, site.staging_branch);
 
-  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -424,9 +416,6 @@ export async function permanentlyDeleteSite(domain: string): Promise<{
   await deleteSiteConfig(domain);
   await addToDeleteHistory(domain, { deletedAt: new Date().toISOString(), deletedBy: "dashboard" });
 
-  // 8. Invalidate caches (landmine #45) — must come before revalidatePath
-  invalidateSiteCaches(domain, `staging/${domain}`);
-
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
@@ -434,12 +423,8 @@ export async function permanentlyDeleteSite(domain: string): Promise<{
   return { steps };
 }
 
-export async function refreshSiteCache(domain: string, branch?: string): Promise<void> {
-  // Flush ALL in-memory caches (tree, dashboard-index, articles, site-config).
-  // Then actively fetch fresh dashboard index via the Contents API (bypasses
-  // the tree cache entirely) so the cache is pre-populated with verified-fresh
-  // data before router.refresh() triggers the page re-render.
-  flushAllCaches();
-  await readDashboardIndex({ fresh: true });
+export async function refreshSiteCache(domain: string, _branch?: string): Promise<void> {
+  // With MongoDB reads, no in-memory caches to flush. Just revalidate the
+  // Next.js page cache so the next render fetches fresh data from the DB.
   revalidatePath(`/sites/${domain}`);
 }

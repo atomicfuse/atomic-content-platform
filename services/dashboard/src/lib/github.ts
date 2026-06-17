@@ -2,7 +2,6 @@ import { Octokit } from "@octokit/rest";
 import { retry } from "@octokit/plugin-retry";
 import { throttling } from "@octokit/plugin-throttling";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { invalidateKVArticleCache } from "@/lib/kv-api";
 import type {
   DashboardIndex,
   DashboardSiteEntry,
@@ -18,35 +17,6 @@ import {
 } from "@/lib/constants";
 
 const RetryOctokit = Octokit.plugin(retry, throttling);
-
-// ---------------------------------------------------------------------------
-// TTL cache utility (no external dependencies)
-// ---------------------------------------------------------------------------
-interface CacheEntry<T> {
-  data: T;
-  expiresAt: number;
-}
-
-function createTtlCache<T>(ttlMs: number): {
-  get(): T | null;
-  set(data: T): void;
-  invalidate(): void;
-} {
-  let entry: CacheEntry<T> | null = null;
-  return {
-    get(): T | null {
-      if (entry && Date.now() < entry.expiresAt) return entry.data;
-      entry = null;
-      return null;
-    },
-    set(data: T): void {
-      entry = { data, expiresAt: Date.now() + ttlMs };
-    },
-    invalidate(): void {
-      entry = null;
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Concurrency limiter — caps parallel async work (replaces unbounded
@@ -101,8 +71,6 @@ function getOctokit(): Octokit {
   return _octokit;
 }
 
-const dashboardIndexCache = createTtlCache<DashboardIndex>(Infinity);
-
 // ---------------------------------------------------------------------------
 // Tree cache — single recursive tree fetch, shared across read helpers
 // ---------------------------------------------------------------------------
@@ -144,7 +112,7 @@ async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
   return tree.tree;
 }
 
-function invalidateTreeCache(branch?: string): void {
+export function invalidateTreeCache(branch?: string): void {
   if (branch) {
     treeCacheStore.delete(branch);
   } else {
@@ -153,25 +121,22 @@ function invalidateTreeCache(branch?: string): void {
 }
 
 /** Read and parse dashboard-index.yaml from the network repo.
- *  Pass `fresh: true` to bypass ALL caches — including the tree cache —
- *  and fetch directly via the Contents API. Use before uniqueness checks
- *  or after mutations where the tree cache may still hold a stale SHA. */
+ *  Pass `fresh: true` to bypass the tree cache and fetch directly via the
+ *  Contents API. Use before uniqueness checks or after mutations where the
+ *  tree cache may still hold a stale SHA.
+ *
+ *  NOTE: This function is the Git-read fallback for the DB helper
+ *  (`db/dashboard-index.ts`). In normal operation, reads go through MongoDB.
+ */
 export async function readDashboardIndex(
   opts?: { fresh?: boolean },
 ): Promise<DashboardIndex> {
-  if (!opts?.fresh) {
-    const cached = dashboardIndexCache.get();
-    if (cached) return cached;
-  }
-
   const octokit = getOctokit();
   try {
     let content: string;
 
     if (opts?.fresh) {
       // Direct Content API fetch — bypasses tree cache entirely.
-      // repos.getContent resolves the ref at call time, avoiding
-      // stale blob SHAs from a cached tree.
       const { data } = await octokit.repos.getContent({
         owner: NETWORK_REPO_OWNER,
         repo: NETWORK_REPO_NAME,
@@ -179,19 +144,15 @@ export async function readDashboardIndex(
         ref: "main",
       });
       if (Array.isArray(data) || !("content" in data)) {
-        const empty: DashboardIndex = { sites: [], deleted: [] };
-        dashboardIndexCache.set(empty);
-        return empty;
+        return { sites: [], deleted: [] };
       }
       content = Buffer.from(data.content, "base64").toString("utf-8");
     } else {
-      // Standard path: tree + blob (fast, uses Infinity TTL tree cache)
+      // Standard path: tree + blob
       const tree = await getTreeCached();
       const entry = tree.find((f) => f.path === DASHBOARD_INDEX_PATH && f.type === "blob");
       if (!entry?.sha) {
-        const empty: DashboardIndex = { sites: [], deleted: [] };
-        dashboardIndexCache.set(empty);
-        return empty;
+        return { sites: [], deleted: [] };
       }
       const { data: blobData } = await octokit.git.getBlob({
         owner: NETWORK_REPO_OWNER,
@@ -205,8 +166,6 @@ export async function readDashboardIndex(
     // Backfill new fields for entries written before pages_project/zone_id existed
     parsed.sites = parsed.sites.map((s) => {
       const partial = s as Partial<DashboardSiteEntry>;
-      // Derive pages_subdomain from preview_url when not explicitly set.
-      // preview_url format: https://<branch-slug>.<subdomain>.pages.dev
       let pagesSubdomain = partial.pages_subdomain ?? null;
       if (!pagesSubdomain && partial.preview_url) {
         const m = partial.preview_url.match(/\.([^.]+)\.pages\.dev/);
@@ -224,13 +183,10 @@ export async function readDashboardIndex(
       };
     });
     parsed.deleted = parsed.deleted ?? [];
-    dashboardIndexCache.set(parsed);
     return parsed;
   } catch (error: unknown) {
     if (isNotFoundError(error)) {
-      const empty: DashboardIndex = { sites: [], deleted: [] };
-      dashboardIndexCache.set(empty);
-      return empty;
+      return { sites: [], deleted: [] };
     }
     throw error;
   }
@@ -262,11 +218,9 @@ export async function writeDashboardIndex(
     sha,
   });
 
-  // Invalidate AFTER the write succeeds — avoids race condition where a
-  // concurrent request re-caches stale data from GitHub while the write
-  // is still in-flight.
+  // Invalidate tree cache AFTER the write succeeds so subsequent reads
+  // pick up the new SHA.
   invalidateTreeCache();
-  dashboardIndexCache.set(index);
 }
 
 /** Update a single site entry in the dashboard index.
@@ -640,26 +594,18 @@ export async function readFileBase64(
   }
 }
 
-/** Read a site's config YAML from the network repo. 5-minute cache. */
-const siteConfigCache = new Map<string, { data: Record<string, unknown> | null; expiresAt: number }>();
-const SITE_CONFIG_CACHE_TTL = Infinity;
-
+/** Read a site's config YAML from the network repo.
+ *  NOTE: This is the Git-read fallback for the DB helper
+ *  (`db/site-configs.ts`). In normal operation, reads go through MongoDB. */
 export async function readSiteConfig(
   domain: string,
   branch?: string
 ): Promise<Record<string, unknown> | null> {
-  const cacheKey = `${domain}@${branch ?? "main"}`;
-  const cached = siteConfigCache.get(cacheKey);
-  if (cached && Date.now() < cached.expiresAt) return cached.data;
-
   try {
     const tree = await getTreeCached(branch);
     const path = `sites/${domain}/site.yaml`;
     const entry = tree.find((f) => f.path === path && f.type === "blob");
-    if (!entry?.sha) {
-      siteConfigCache.set(cacheKey, { data: null, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
-      return null;
-    }
+    if (!entry?.sha) return null;
 
     const octokit = getOctokit();
     const { data } = await octokit.git.getBlob({
@@ -668,28 +614,20 @@ export async function readSiteConfig(
       file_sha: entry.sha,
     });
     const content = Buffer.from(data.content, "base64").toString("utf-8");
-    const parsed = parseYaml(content) as Record<string, unknown>;
-    siteConfigCache.set(cacheKey, { data: parsed, expiresAt: Date.now() + SITE_CONFIG_CACHE_TTL });
-    return parsed;
+    return parseYaml(content) as Record<string, unknown>;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return null;
     throw error;
   }
 }
 
-/** Count articles for a site — lightweight: 1 API call (directory listing only). */
-const articleCountCache = new Map<string, { count: number; expiresAt: number }>();
-const ARTICLE_COUNT_CACHE_TTL = Infinity;
-
+/** Count articles for a site — lightweight: uses the tree cache.
+ *  NOTE: Git-read fallback for `db/articles.ts`. */
 export async function countArticles(domain: string, branch?: string): Promise<number> {
-  const key = `${domain}@${branch ?? "main"}`;
-  const cached = articleCountCache.get(key);
-  if (cached && Date.now() < cached.expiresAt) return cached.count;
-
   try {
     const tree = await getTreeCached(branch);
     const prefix = `sites/${domain}/articles/`;
-    const count = tree.filter(
+    return tree.filter(
       (f) =>
         f.path?.startsWith(prefix) &&
         f.type === "blob" &&
@@ -697,8 +635,6 @@ export async function countArticles(domain: string, branch?: string): Promise<nu
         !f.path.endsWith(".gitkeep") &&
         !f.path.slice(prefix.length).includes("/"),
     ).length;
-    articleCountCache.set(key, { count, expiresAt: Date.now() + ARTICLE_COUNT_CACHE_TTL });
-    return count;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return 0;
     throw error;
@@ -724,105 +660,10 @@ export async function countArticlesForSites(
   return counts;
 }
 
-/** List articles for a site from the network repo. */
-// Per-site article cache — keyed by "domain@branch", 2-minute TTL.
-// readArticles makes 1 + N API calls (directory listing + 1 per article),
-// so caching here is the single biggest rate-limit saver.
-const articlesCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
-const ARTICLES_CACHE_TTL = Infinity;
-
-function getCachedArticles(domain: string, branch?: string): ArticleEntry[] | null {
-  const key = `${domain}@${branch ?? "main"}`;
-  const entry = articlesCache.get(key);
-  if (entry && Date.now() < entry.expiresAt) return entry.data;
-  articlesCache.delete(key);
-  return null;
-}
-
-function setCachedArticles(domain: string, branch: string | undefined, data: ArticleEntry[]): void {
-  const key = `${domain}@${branch ?? "main"}`;
-  articlesCache.set(key, { data, expiresAt: Date.now() + ARTICLES_CACHE_TTL });
-}
-
-/** Clear all cached articles — used by review queue refresh. */
-export function clearArticlesCache(): void {
-  articlesCache.clear();
-}
-
-/** Flush every in-memory cache — tree, dashboard-index, articles,
- *  article counts, site configs. Called via /api/cache-flush. */
-export function flushAllCaches(): void {
-  treeCacheStore.clear();
-  dashboardIndexCache.invalidate();
-  articlesCache.clear();
-  articleCountCache.clear();
-  siteConfigCache.clear();
-}
-
-/**
- * Invalidate caches for a specific site after a mutation (article delete,
- * config save, etc.). Clears: tree cache for the branch, article cache for
- * the domain, and site config cache for the domain.
- */
-export function invalidateSiteCaches(
-  domain: string,
-  branch?: string,
-  opts?: { keepDashboardIndex?: boolean },
-): void {
-  const ref = branch ?? "main";
-  treeCacheStore.delete(ref);
-  // Always clear the main tree too — dashboardIndexCache reads from the main
-  // tree, so a stale main tree SHA causes readDashboardIndex() to re-cache
-  // old blob content even after dashboardIndexCache.invalidate().
-  if (ref !== "main") treeCacheStore.delete("main");
-  const artKey = `${domain}@${ref}`;
-  articlesCache.delete(artKey);
-  articleCountCache.delete(artKey);
-  siteConfigCache.delete(artKey);
-  // When the caller just wrote the index via writeDashboardIndex(), the cache
-  // already holds the correct data. Invalidating it would force a re-fetch
-  // from GitHub whose API may still serve a stale tree/blob (CDN lag),
-  // re-caching old data. Pass keepDashboardIndex: true to preserve it.
-  if (!opts?.keepDashboardIndex) dashboardIndexCache.invalidate();
-  invalidateKVArticleCache(domain);
-}
-
-// ---------------------------------------------------------------------------
-// Periodic cache eviction — sweep ALL caches every 5 min to prevent OOM.
-// Module-level Maps (treeCacheStore, articlesCache, articleCountCache) only
-// evict entries on read; stale entries from branches/sites that aren't
-// re-accessed accumulate forever, reaching 100-200 MB over hours.
-// ---------------------------------------------------------------------------
-function sweepExpiredEntries(): void {
-  const now = Date.now();
-  let swept = 0;
-  for (const [key, entry] of treeCacheStore) {
-    if (now >= entry.expiresAt) { treeCacheStore.delete(key); swept++; }
-  }
-  for (const [key, entry] of articlesCache) {
-    if (now >= entry.expiresAt) { articlesCache.delete(key); swept++; }
-  }
-  for (const [key, entry] of articleCountCache) {
-    if (now >= entry.expiresAt) { articleCountCache.delete(key); swept++; }
-  }
-  for (const [key, entry] of siteConfigCache) {
-    if (now >= entry.expiresAt) { siteConfigCache.delete(key); swept++; }
-  }
-  if (swept > 0) {
-    console.log(`[github] Cache sweep: evicted ${swept} expired entries (tree=${treeCacheStore.size}, articles=${articlesCache.size}, counts=${articleCountCache.size})`);
-  }
-}
-
-// Start sweep timer. unref() so it doesn't keep the process alive on shutdown.
-const _evictionTimer = setInterval(sweepExpiredEntries, 5 * 60_000);
-if (typeof _evictionTimer === "object" && "unref" in _evictionTimer) {
-  (_evictionTimer as NodeJS.Timeout).unref();
-}
-
+/** List articles for a site from the network repo.
+ *  NOTE: Git-read fallback for `db/articles.ts`. In normal operation,
+ *  reads go through MongoDB. */
 export async function readArticles(domain: string, branch?: string): Promise<ArticleEntry[]> {
-  const cached = getCachedArticles(domain, branch);
-  if (cached) return cached;
-
   const octokit = getOctokit();
   try {
     const tree = await getTreeCached(branch);
@@ -867,7 +708,6 @@ export async function readArticles(domain: string, branch?: string): Promise<Art
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) articles.push(r.value);
     }
-    setCachedArticles(domain, branch, articles);
     return articles;
   } catch (error: unknown) {
     if (isNotFoundError(error)) return [];
@@ -1039,11 +879,10 @@ export async function deleteBranch(branchName: string): Promise<void> {
  * dashboard" — `sites/{site}/` on main only appears after publish-to-prod, so
  * we can't rely on the main tree for site enumeration.
  */
-const stagingSitesCache = createTtlCache<string[]>(5 * 60_000); // 5 min
+let _stagingSitesCache: { data: string[]; expiresAt: number } | null = null;
 
 export async function listStagingSites(): Promise<string[]> {
-  const cached = stagingSitesCache.get();
-  if (cached) return cached;
+  if (_stagingSitesCache && Date.now() < _stagingSitesCache.expiresAt) return _stagingSitesCache.data;
 
   const octokit = getOctokit();
   const { data } = await octokit.git.listMatchingRefs({
@@ -1054,7 +893,7 @@ export async function listStagingSites(): Promise<string[]> {
   const result = data
     .map((r) => r.ref.replace(/^refs\/heads\/staging\//, ""))
     .filter((s) => s.length > 0);
-  stagingSitesCache.set(result);
+  _stagingSitesCache = { data: result, expiresAt: Date.now() + 5 * 60_000 };
   return result;
 }
 

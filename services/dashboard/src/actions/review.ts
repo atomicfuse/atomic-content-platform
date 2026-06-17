@@ -8,7 +8,7 @@ import {
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
   copySiteTreeToMain,
-  invalidateSiteCaches,
+  invalidateTreeCache,
 } from "@/lib/github";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -98,7 +98,7 @@ export async function applyReviewDecisions(decisions: {
     // content-pipeline committed new articles since the last dashboard tree
     // fetch. Without this, readFileContent() returns null for articles that
     // exist on Git but aren't in the cached tree, silently skipping them.
-    invalidateSiteCaches(domain, branch, { keepDashboardIndex: true });
+    invalidateTreeCache(branch);
 
     // 1. Update approved articles' frontmatter → status: published
     let actualApproved = 0;
@@ -182,7 +182,6 @@ export async function applyReviewDecisions(decisions: {
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     summaryParts.push(`${domain}: ${parts.join(", ")}`);
 
-    invalidateSiteCaches(domain, branch);
     revalidatePath(`/sites/${domain}`);
   }
 

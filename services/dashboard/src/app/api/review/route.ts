@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readArticlesFromDb } from "@/lib/db/articles";
-import { clearArticlesCache } from "@/lib/github";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import type { ArticleEntry } from "@/types/dashboard";
 
@@ -34,7 +33,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const sort = params.get("sort") ?? "default"; // "default" | "newest" | "oldest"
     const fresh = params.get("fresh") === "true";
 
-    if (fresh) clearArticlesCache();
     const index = await readDashboardIndex({ fresh });
     const allReview: ReviewArticleDTO[] = [];
 

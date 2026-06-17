@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { readFileContent, commitNetworkFiles, invalidateSiteCaches } from "@/lib/github";
+import { readFileContent, commitNetworkFiles } from "@/lib/github";
 import { revalidatePath } from "next/cache";
 import { upsertOrgConfig } from "@/lib/db/configs";
 
@@ -36,7 +36,6 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
     // Dual-write: mirror org config to MongoDB (soft-fail)
     await upsertOrgConfig(body);
 
-    invalidateSiteCaches("", "main");
     revalidatePath("/settings");
     return NextResponse.json({ ok: true });
   } catch (error) {

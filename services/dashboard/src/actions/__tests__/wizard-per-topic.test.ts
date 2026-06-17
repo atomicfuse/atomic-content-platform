@@ -24,7 +24,6 @@ vi.mock("@/lib/github", () => ({
   readFileContent: vi.fn(),
   commitNetworkFiles: vi.fn().mockResolvedValue(undefined),
   copySiteTreeToMain: vi.fn().mockResolvedValue(undefined),
-  invalidateSiteCaches: vi.fn(),
 }));
 vi.mock("@/lib/cloudflare", () => ({
   listZones: vi.fn(),
