@@ -442,8 +442,10 @@ function parseArgs(): Phase[] {
   return [phaseArg as Phase];
 }
 
-async function main(): Promise<void> {
-  const phases = parseArgs();
+/** Run the backfill. Callable from HTTP endpoint or CLI. */
+export async function runBackfillMongo(
+  phases: Phase[] = ALL_PHASES,
+): Promise<BackfillSummary> {
   console.log(`[backfill] Starting backfill (phases: ${phases.join(", ")})`);
 
   const config = loadConfig();
@@ -488,6 +490,16 @@ async function main(): Promise<void> {
   }
 
   printSummary(summary);
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
+// CLI entry point (only runs when executed directly)
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const phases = parseArgs();
+  const summary = await runBackfillMongo(phases);
 
   await closeMongo();
 
@@ -496,7 +508,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("[backfill] Fatal error:", err);
-  process.exit(2);
-});
+// Only run as CLI when invoked directly (not when imported)
+const isDirectRun = process.argv[1]?.endsWith("backfill-mongo.ts") ||
+  process.argv[1]?.endsWith("backfill-mongo.js");
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error("[backfill] Fatal error:", err);
+    process.exit(2);
+  });
+}

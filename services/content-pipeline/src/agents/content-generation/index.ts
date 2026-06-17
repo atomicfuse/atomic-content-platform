@@ -1289,6 +1289,23 @@ async function handleRequest(
     return;
   }
 
+  // ─── Backfill MongoDB from Git ──────────────────────────────────
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-mongo") {
+      try {
+        const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
+        const summary = await runBackfillMongo();
+        sendJson(res, 200, { status: "ok", ...summary });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[backfill-mongo] Error:", message);
+        sendJson(res, 500, { status: "error", message });
+      }
+      return;
+    }
+  }
+
   if (req.url === "/propose-filter") {
     await handleProposeFilter(req, res);
     return;
