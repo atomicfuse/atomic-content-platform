@@ -13,6 +13,8 @@ import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
 import { uploadToR2 } from "@/lib/r2-upload";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 
 interface SaveRequestBody {
   domain: string;
@@ -363,6 +365,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
 
+    // Dual-write: mirror site config to MongoDB (soft-fail)
+    if (configUpdates) {
+      await upsertSiteConfig(domain, existing as Record<string, unknown>);
+    }
+
     // Clear in-memory caches (tree, articles, site config) so the next read of
     // the site detail page reflects this save. siteConfigCache has an infinite
     // TTL, so without this the dashboard serves the pre-save config forever and
@@ -379,6 +386,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ) {
       try {
         await updateSiteInIndex(domain, { vertical: configUpdates.vertical });
+        // Dual-write: mirror vertical to MongoDB dashboard index (soft-fail)
+        await updateDashboardIndexEntry(domain, { vertical: configUpdates.vertical });
       } catch (err) {
         console.warn(
           `[sites/save] Failed to update dashboard-index.vertical for ${domain}:`,

@@ -41,6 +41,8 @@ import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 
 interface StagingResult {
   stagingUrl: string;
@@ -382,6 +384,10 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     }
   }
 
+  // Dual-write: mirror site config + dashboard index entry to MongoDB (soft-fail)
+  await upsertSiteConfig(siteFolder, siteConfig as unknown as Record<string, unknown>);
+  await upsertDashboardIndexEntry(siteFolder, siteEntry as unknown as Record<string, unknown>);
+
   revalidatePath("/");
 
   // 10. Return result
@@ -436,6 +442,9 @@ export async function goLive(domain: string): Promise<void> {
   await updateSiteInIndex(domain, {
     status: "Ready",
   });
+
+  // Dual-write: mirror status to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, { status: "Ready" });
 
   invalidateSiteCaches(domain, stagingBranch);
   invalidateSiteCaches(domain);
@@ -501,6 +510,12 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   if (!exists) await createBranch(stagingBranch, "main");
 
   await updateSiteInIndex(domain, {
+    staging_branch: stagingBranch,
+    preview_url: workerPreviewUrl(domain),
+  });
+
+  // Dual-write: mirror staging branch info to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
     staging_branch: stagingBranch,
     preview_url: workerPreviewUrl(domain),
   });
@@ -682,6 +697,14 @@ export async function attachCustomDomain(
     `dashboard: attach ${customDomain} to ${domain}`,
   );
 
+  // Dual-write: mirror domain attachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: customDomain,
+    zone_id: resolvedZoneId,
+    status: "Live",
+    worker_pending_dns: false,
+  });
+
   // --- Step 2: Register custom domain on CF worker ---
   // For WordPress migration domains that already have DNS records (A/CNAME),
   // CF Custom Domain registration fails with "externally managed DNS records".
@@ -828,6 +851,13 @@ export async function detachCustomDomain(
     index,
     `dashboard: detach ${removedDomain} from ${domain}`,
   );
+
+  // Dual-write: mirror domain detachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: null,
+    status: "Ready",
+    worker_pending_dns: true,
+  });
 
   // --- Step 3: Deregister from CF worker (best-effort) ---
   try {

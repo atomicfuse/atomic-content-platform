@@ -33,6 +33,8 @@ import {
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite } from "@/lib/db/articles";
+import { deleteSiteConfig } from "@/lib/db/site-configs";
+import { updateDashboardIndexEntry, addToDeleteHistory } from "@/lib/db/dashboard-index";
 
 /** Update dashboard metadata for a site. */
 export async function updateSiteEntry(
@@ -40,6 +42,10 @@ export async function updateSiteEntry(
   updates: Partial<DashboardSiteEntry>
 ): Promise<void> {
   await updateSiteInIndex(domain, updates);
+
+  // Dual-write: mirror index updates to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, updates as Record<string, unknown>);
+
   invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
@@ -191,6 +197,9 @@ export async function deleteSiteEntry(domain: string): Promise<{
     });
   }
 
+  // Dual-write: mark as deleted in MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, { status: "deleted" });
+
   // 6. Invalidate caches (landmine #45) — must come before revalidatePath
   invalidateSiteCaches(domain, `staging/${domain}`);
 
@@ -204,6 +213,10 @@ export async function deleteSiteEntry(domain: string): Promise<{
 /** Restore a domain from trash back to the active dashboard. */
 export async function restoreSiteEntry(domain: string): Promise<void> {
   await restoreSiteInIndex(domain);
+
+  // Dual-write: mark as restored (Staging) in MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, { status: "Staging" });
+
   revalidatePath("/");
   revalidatePath("/sites");
   revalidatePath("/trash");
@@ -406,6 +419,10 @@ export async function permanentlyDeleteSite(domain: string): Promise<{
 
   // 7. Delete all articles from MongoDB (soft-fail)
   await deleteArticlesForSite(domain);
+
+  // 7b. Delete site config + mark permanently deleted in MongoDB (soft-fail)
+  await deleteSiteConfig(domain);
+  await addToDeleteHistory(domain, { deletedAt: new Date().toISOString(), deletedBy: "dashboard" });
 
   // 8. Invalidate caches (landmine #45) — must come before revalidatePath
   invalidateSiteCaches(domain, `staging/${domain}`);

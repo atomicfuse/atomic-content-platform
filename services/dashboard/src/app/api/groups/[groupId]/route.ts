@@ -7,6 +7,7 @@ import {
   invalidateSiteCaches,
 } from "@/lib/github";
 import { revalidatePath } from "next/cache";
+import { upsertGroupConfig, deleteGroupConfig } from "@/lib/db/configs";
 
 export async function GET(
   _req: NextRequest,
@@ -44,6 +45,10 @@ export async function PUT(
       [{ path: `groups/${groupId}.yaml`, content: yamlContent }],
       `config(groups): update ${groupId}`,
     );
+
+    // Dual-write: mirror group config to MongoDB (soft-fail)
+    await upsertGroupConfig(groupId, body);
+
     invalidateSiteCaches("", "main");
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });
@@ -66,6 +71,10 @@ export async function DELETE(
       `groups/${groupId}.yaml`,
       `config(groups): delete ${groupId}`,
     );
+
+    // Dual-write: remove group config from MongoDB (soft-fail)
+    await deleteGroupConfig(groupId);
+
     invalidateSiteCaches("", "main");
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });

@@ -3,6 +3,7 @@
 import { readDashboardIndex, readFileContent, commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import { revalidatePath } from "next/cache";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
 
 interface BriefUpdate {
   audience: string;
@@ -55,6 +56,9 @@ export async function updateSiteBrief(
     `update content brief`,
     branch ?? "main",
   );
+
+  // Dual-write: mirror updated config to MongoDB (soft-fail)
+  await upsertSiteConfig(domain, config);
 
   invalidateSiteCaches(domain, branch);
   revalidatePath(`/sites/${domain}`);
