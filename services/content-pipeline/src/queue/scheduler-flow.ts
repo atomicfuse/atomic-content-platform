@@ -179,7 +179,7 @@ export async function collectFilesForPublish(
  * Copy sites/<domain>/ from staging branch to main, then reset staging branch.
  * This is the content-pipeline equivalent of the dashboard's publishStagingToProduction.
  */
-async function autoPublishSite(
+export async function autoPublishSite(
   octokit: Octokit,
   repo: string,
   domain: string,
