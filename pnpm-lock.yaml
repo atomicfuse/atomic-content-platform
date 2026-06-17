@@ -183,12 +183,18 @@ importers:
       google-spreadsheet:
         specifier: ^5.2.0
         version: 5.2.0(google-auth-library@10.6.2)
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
       marked:
         specifier: ^14.1.4
         version: 14.1.4
+      mongodb:
+        specifier: ^7.2.0
+        version: 7.2.0
       next:
         specifier: ^15.1.0
         version: 15.5.14(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -250,10 +256,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(jsdom@29.0.2)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
-    optionalDependencies:
-      '@img/sharp-linux-x64':
-        specifier: ^0.34.0
-        version: 0.34.5
 
 packages:
 
