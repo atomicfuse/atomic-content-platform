@@ -16,6 +16,8 @@ import {
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
 import { notifyError, notifySummary } from "../lib/notifications.js";
 import { updateWeeklySummary } from "../stats/weekly-summary.js";
+import matter from "gray-matter";
+import { upsertArticlesBatch, deleteArticlesForSiteBranch } from "../lib/db/articles.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
@@ -209,6 +211,35 @@ async function autoPublishSite(
     "main",
   );
 
+  // Dual-write: copy article metadata to MongoDB under branch "main"
+  const articleFiles = files.filter((f) => f.path.includes("/articles/"));
+  if (articleFiles.length > 0) {
+    const articleDocs = articleFiles.map((f) => {
+      const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";
+      const parsed = matter(f.content);
+      return {
+        domain,
+        slug,
+        branch: "main",
+        frontmatter: {
+          title: parsed.data.title,
+          description: parsed.data.description,
+          status: parsed.data.status,
+          type: parsed.data.type,
+          publish_date: parsed.data.publishDate ?? parsed.data.publish_date,
+          author: parsed.data.author,
+          tags: parsed.data.tags,
+          featured_image: parsed.data.featuredImage ?? parsed.data.featured_image,
+          quality_score: parsed.data.quality_score,
+          videos: parsed.data.videos,
+          scripts: parsed.data.scripts,
+        },
+      };
+    });
+    await upsertArticlesBatch(articleDocs);
+    console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
+  }
+
   // Reset staging branch to main HEAD
   const { owner, repo: repoName } = parseRepo(repo);
   const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
@@ -225,6 +256,9 @@ async function autoPublishSite(
     ref: `refs/heads/${stagingBranch}`,
     sha: mainSha,
   });
+
+  // Dual-write: staging branch was reset — remove stale staging article docs
+  await deleteArticlesForSiteBranch(domain, stagingBranch);
 
   clearTreeCache(stagingBranch);
   clearTreeCache("main");
