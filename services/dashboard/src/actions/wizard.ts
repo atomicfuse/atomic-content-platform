@@ -21,6 +21,7 @@ import {
   listZones,
   registerWorkerCustomDomain,
   deregisterWorkerCustomDomain,
+  deleteConflictingDnsRecords,
   putKVEntry,
   deleteKVEntry,
   getKVEntry,
@@ -701,20 +702,46 @@ export async function attachCustomDomain(
   });
 
   // --- Step 2: Register custom domain on CF worker ---
-  // For WordPress migration domains that already have DNS records (A/CNAME),
+  // If the zone already has A/AAAA/CNAME records for the hostname,
   // CF Custom Domain registration fails with "externally managed DNS records".
-  // This is expected — those domains use Routes (not Custom Domains) to reach
-  // the manager worker. Skip registration and continue with KV seeding.
+  // Auto-delete conflicting records and retry once before giving up.
   try {
     await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isExternalDns = message.includes('externally managed DNS');
     if (isExternalDns) {
+      // Attempt auto-cleanup: delete conflicting A/AAAA/CNAME records and retry
       console.warn(
-        `[attachCustomDomain] Skipping CF Custom Domain registration for ${customDomain} — ` +
-        `domain has existing DNS records (WordPress migration). Traffic must reach the manager via Routes.`,
+        `[attachCustomDomain] CF Custom Domain registration failed for ${customDomain} — ` +
+        `zone has conflicting DNS records. Attempting auto-cleanup and retry…`,
       );
+      try {
+        const deleted = await deleteConflictingDnsRecords(resolvedZoneId, customDomain, domain);
+        console.log(
+          `[attachCustomDomain] Deleted ${deleted} conflicting DNS record(s) for ${customDomain}`,
+        );
+        await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
+        console.log(
+          `[attachCustomDomain] CF Custom Domain registration succeeded for ${customDomain} after DNS cleanup`,
+        );
+      } catch (retryErr) {
+        // Cleanup or retry failed — roll back
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        console.error('[attachCustomDomain] CF registration failed after DNS cleanup, rolling back index', retryErr);
+        site.custom_domain = previousCustomDomain;
+        site.status = previousStatus;
+        site.zone_id = previousZoneId;
+        site.worker_pending_dns = previousPendingDns;
+        site.last_updated = new Date().toISOString();
+        await writeDashboardIndex(
+          index,
+          `dashboard: rollback attach ${customDomain} from ${domain}`,
+        );
+        throw new Error(
+          `Failed to register ${customDomain} on Cloudflare after DNS cleanup: ${retryMsg}`,
+        );
+      }
     } else {
       // Unexpected error — roll back index write
       console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
