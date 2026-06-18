@@ -27,7 +27,7 @@ import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
 import { RunHistoryAccumulator } from "./history.js";
 import type { SiteRunResult } from "./history.js";
-import { createSchedulerFlow, buildRunId } from "../../queue/scheduler-flow.js";
+import { createSchedulerFlow, buildRunId, shouldAutoPublish, autoPublishSite } from "../../queue/scheduler-flow.js";
 import type { SchedulerSite } from "../../queue/scheduler-flow.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { notifyError, notifySummary } from "../../lib/notifications.js";
@@ -373,7 +373,7 @@ export async function runScheduledPublish(
 
   // 2. List all active sites (from dashboard-index.yaml, non-deleted)
   const octokit = createOctokit(config.github);
-  let activeSites: Array<{ domain: string; branch: string }>;
+  let activeSites: Array<{ domain: string; branch: string; status: string }>;
   try {
     activeSites = await listActiveSites(octokit, config.networkRepo);
   } catch (err) {
@@ -535,6 +535,35 @@ export async function runScheduledPublish(
     skipped: result.skipped,
     timezone: schedCfg.timezone,
   });
+
+  // 5. Auto-publish: merge staging → main for Live sites with new articles.
+  //    Mirrors the queue path logic in scheduler-flow.ts processSchedulerRun().
+  const siteStatusMap = new Map(activeSites.map((s) => [s.domain, s.status]));
+  const siteBranchMap = new Map(activeSites.map((s) => [s.domain, s.branch]));
+
+  const autoPublished: string[] = [];
+  for (const outcome of siteOutcomes) {
+    if (outcome.kind !== "triggered") continue;
+    const status = siteStatusMap.get(outcome.domain) ?? "";
+    if (!shouldAutoPublish(outcome.siteResult, status)) continue;
+
+    const branch = siteBranchMap.get(outcome.domain);
+    if (!branch) continue;
+
+    try {
+      await autoPublishSite(octokit, config.networkRepo, outcome.domain, branch);
+      autoPublished.push(outcome.domain);
+    } catch (pubErr) {
+      const msg = pubErr instanceof Error ? pubErr.message : String(pubErr);
+      console.error(`[auto-publish] Failed for ${outcome.domain}: ${msg}`);
+    }
+  }
+
+  if (autoPublished.length > 0) {
+    console.log(
+      `[scheduled-publisher] Auto-published ${autoPublished.length} site(s): ${autoPublished.join(", ")}`,
+    );
+  }
 
   return result;
 }

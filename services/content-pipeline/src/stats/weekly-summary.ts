@@ -127,7 +127,19 @@ export interface SchedulerSummaryResponse {
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /**
- * Read the weekly summary for the current week, merged with review counts.
+ * Day-of-week names (lowercase) indexed 0=Sun..6=Sat — used to match
+ * preferred_days strings from site schedules.
+ */
+const DAY_NAMES_LOWER = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
+
+/**
+ * Read the weekly summary for the current week, merged with review counts
+ * and enriched with expected article counts from each site's schedule.
+ *
+ * For days where the scheduler hasn't run yet, preferred days are pre-filled
+ * with the site's `articlesPerDay` from the schedule snapshot in `site_stats`.
  */
 export async function getWeeklySummary(
   timezone: string,
@@ -136,51 +148,82 @@ export async function getWeeklySummary(
   const { weekOf } = getDayIndexAndWeekOf(timezone, now);
   const db = await getMongoDb();
 
-  const [weekDoc, reviewDocs] = await Promise.all([
+  const [weekDoc, reviewDocs, statsDocs] = await Promise.all([
     db.collection(COLLECTIONS.weeklySummaries).findOne({ _id: weekOf as any }),
-    db.collection(COLLECTIONS.reviewCounts).find({}).toArray(),
+    db.collection("articles").aggregate([
+      { $match: { status: "review", branch: { $regex: /^staging\// } } },
+      { $group: { _id: "$domain", count: { $sum: 1 } } },
+    ]).toArray(),
+    db.collection(COLLECTIONS.siteStats).find(
+      { schedule: { $ne: null } },
+      { projection: { schedule: 1 } },
+    ).toArray(),
   ]);
 
   const reviewMap = new Map(
     reviewDocs.map((d) => [d._id as unknown as string, Math.max(0, (d as any).count ?? 0)]),
   );
 
+  const scheduleMap = new Map<string, { articlesPerDay: number; preferredDays: string[] }>(
+    statsDocs
+      .filter((d) => (d as any).schedule)
+      .map((d) => [d._id as unknown as string, (d as any).schedule]),
+  );
+
   const sitesMap = (weekDoc as any)?.sites as Record<string, DayCell[]> | undefined;
-  if (!sitesMap) {
+
+  // Merge domains from the weekly doc and from site_stats schedules so that
+  // sites which haven't been processed yet this week still appear with their
+  // expected schedule.
+  const allDomains = new Set<string>([
+    ...Object.keys(sitesMap ?? {}),
+    ...scheduleMap.keys(),
+  ]);
+
+  if (allDomains.size === 0) {
     return { weekOf, timezone, days: DAY_LABELS, sites: [] };
   }
 
-  const sites = Object.entries(sitesMap)
-    .map(([domain, days]) => ({
-      domain,
-      // MongoDB sparse arrays may be shorter than 7 if the scheduler hasn't
-      // run every day this week yet — pad to 7, filling gaps with zeros.
-      days: Array.from({ length: 7 }, (_, i) => days[i] ?? { expected: 0, created: 0 }),
-      needReview: reviewMap.get(domain) ?? 0,
-    }))
+  const sites = Array.from(allDomains)
+    .map((domain) => {
+      const rawDays = sitesMap?.[domain];
+      const paddedDays: DayCell[] = Array.from(
+        { length: 7 },
+        (_, i) => rawDays?.[i] ?? { expected: 0, created: 0 },
+      );
+
+      // Overlay expected from the site's schedule for days with no data yet.
+      // A cell of {expected:0, created:0} on a preferred day means the
+      // scheduler hasn't processed that day yet — fill in the expected count.
+      const schedule = scheduleMap.get(domain);
+      if (schedule && schedule.articlesPerDay > 0) {
+        const preferredSet = new Set(
+          (schedule.preferredDays ?? []).map((d) => d.toLowerCase()),
+        );
+        // Empty preferred_days means every day is valid
+        const allDaysPreferred = preferredSet.size === 0;
+
+        for (let i = 0; i < 7; i++) {
+          const cell = paddedDays[i]!;
+          if (cell.expected === 0 && cell.created === 0) {
+            const dayName = DAY_NAMES_LOWER[i]!;
+            const isPreferred = allDaysPreferred || preferredSet.has(dayName);
+            if (isPreferred) {
+              paddedDays[i] = { expected: schedule.articlesPerDay, created: 0 };
+            }
+          }
+        }
+      }
+
+      return {
+        domain,
+        days: paddedDays,
+        needReview: reviewMap.get(domain) ?? 0,
+      };
+    })
     .sort((a, b) => a.domain.localeCompare(b.domain));
 
   return { weekOf, timezone, days: DAY_LABELS, sites };
-}
-
-/**
- * Decrement the review count for a site. Used by dashboard after
- * approving or rejecting articles.
- *
- * Failure-isolated — catches and logs errors, never throws.
- */
-export async function decrementReviewCount(domain: string, count: number): Promise<void> {
-  try {
-    const db = await getMongoDb();
-    await db.collection(COLLECTIONS.reviewCounts).updateOne(
-      { _id: domain as any },
-      { $inc: { count: -count }, $set: { updatedAt: new Date() } },
-      { upsert: true },
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[stats] decrementReviewCount failed (non-fatal): ${msg}`);
-  }
 }
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";

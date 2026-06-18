@@ -1,5 +1,5 @@
 // services/dashboard/src/lib/queue.ts
-import { Queue, QueueEvents } from "bullmq";
+import { Queue, QueueEvents, type ConnectionOptions } from "bullmq";
 import { Redis } from "ioredis";
 
 const GENERATE_QUEUE = "content-generation";
@@ -39,7 +39,7 @@ function getConnection(): Redis {
 let _queue: Queue | null = null;
 export function getGenerateQueue(): Queue {
   if (!_queue) {
-    _queue = new Queue(GENERATE_QUEUE, { connection: getConnection() });
+    _queue = new Queue(GENERATE_QUEUE, { connection: getConnection() as unknown as ConnectionOptions });
   }
   return _queue;
 }
@@ -47,7 +47,7 @@ export function getGenerateQueue(): Queue {
 let _events: QueueEvents | null = null;
 export function getGenerateQueueEvents(): QueueEvents {
   if (!_events) {
-    _events = new QueueEvents(GENERATE_QUEUE, { connection: getConnection() });
+    _events = new QueueEvents(GENERATE_QUEUE, { connection: getConnection() as unknown as ConnectionOptions });
   }
   return _events;
 }

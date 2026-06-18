@@ -1,4 +1,4 @@
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { TrashList } from "@/components/trash/TrashList";
 import { HistoryList } from "@/components/trash/HistoryList";
 

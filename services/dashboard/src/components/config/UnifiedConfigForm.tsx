@@ -363,7 +363,7 @@ function MergeModeSelector({
       {showExplain && (
         <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-surface)] overflow-hidden">
           <table className="w-full text-xs">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-elevated)]">
                 <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Mode</th>
                 <th className="text-left px-3 py-2 font-semibold text-[var(--text-secondary)]">Inherited</th>

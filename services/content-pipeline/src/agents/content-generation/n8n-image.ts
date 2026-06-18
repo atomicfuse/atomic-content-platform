@@ -24,6 +24,7 @@ import type { NotificationConfig } from "../../lib/notifications.js";
 import { recordImageGenEvent } from "../../stats/recorder.js";
 import { recordImageUsage } from "../../costs/recorder.js";
 import { incrementR2Tally } from "../../stats/r2-tally.js";
+import { upsertArticleMeta, upsertArticlesBatch } from "../../lib/db/articles.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -373,6 +374,21 @@ async function flushBulkBuffer(): Promise<void> {
       console.log(
         `[n8n-image] Bulk commit OK → ${files.length} files on branch ${branch}`,
       );
+
+      // Dual-write to MongoDB (supplementary — never fails the pipeline)
+      const mongoDocs = files.map((f) => {
+        const parsed = matter(f.content);
+        // Extract siteDomain from path: sites/<domain>/articles/<slug>.md
+        const parts = f.path.split("/");
+        const domain = parts[1] ?? "";
+        return {
+          domain,
+          slug: f.slug,
+          branch,
+          frontmatter: { featuredImage: parsed.data["featuredImage"], image_alt: parsed.data["image_alt"] } as Record<string, unknown>,
+        };
+      });
+      await upsertArticlesBatch(mongoDocs);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
@@ -648,6 +664,13 @@ export async function processN8nImageResult(
         });
 
         console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
+
+        // Dual-write to MongoDB (supplementary — never fails the pipeline)
+        await upsertArticleMeta(siteDomain, slug, branch, {
+          featuredImage: imageUrl,
+          image_alt: altText,
+        });
+
         return; // success
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

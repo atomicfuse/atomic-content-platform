@@ -67,6 +67,21 @@ export default function SchedulerSummaryPage(): React.ReactElement {
       .finally(() => setLoading(false));
   }, []);
 
+  // useMemo MUST be called before any conditional returns (Rules of Hooks)
+  const filteredSites = useMemo(() => {
+    if (!data) return [];
+    const needle = search.toLowerCase().trim();
+    let sites = needle
+      ? data.sites.filter((s) => s.domain.toLowerCase().includes(needle))
+      : data.sites;
+    if (reviewSort !== "none") {
+      sites = [...sites].sort((a, b) =>
+        reviewSort === "asc" ? a.needReview - b.needReview : b.needReview - a.needReview,
+      );
+    }
+    return sites;
+  }, [data, search, reviewSort]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -83,20 +98,6 @@ export default function SchedulerSummaryPage(): React.ReactElement {
       </div>
     );
   }
-
-  const filteredSites = useMemo(() => {
-    if (!data) return [];
-    const needle = search.toLowerCase().trim();
-    let sites = needle
-      ? data.sites.filter((s) => s.domain.toLowerCase().includes(needle))
-      : data.sites;
-    if (reviewSort !== "none") {
-      sites = [...sites].sort((a, b) =>
-        reviewSort === "asc" ? a.needReview - b.needReview : b.needReview - a.needReview,
-      );
-    }
-    return sites;
-  }, [data, search, reviewSort]);
 
   if (!data) return <></>;
 
@@ -129,10 +130,10 @@ export default function SchedulerSummaryPage(): React.ReactElement {
         />
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-zinc-200 dark:border-zinc-700">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
               <th className="text-left py-2 px-3 font-medium">Site</th>
               {DAY_SHORT.map((d) => (
                 <th key={d} className="text-center py-2 px-2 font-medium w-16">{d}</th>

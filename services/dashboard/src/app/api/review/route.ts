@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex, readArticles, clearArticlesCache } from "@/lib/github";
-import { readArticlesWithKVFallback } from "@/lib/kv-api";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readArticlesFromDb } from "@/lib/db/articles";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import type { ArticleEntry } from "@/types/dashboard";
 
@@ -33,7 +33,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const sort = params.get("sort") ?? "default"; // "default" | "newest" | "oldest"
     const fresh = params.get("fresh") === "true";
 
-    if (fresh) clearArticlesCache();
     const index = await readDashboardIndex({ fresh });
     const allReview: ReviewArticleDTO[] = [];
 
@@ -41,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       index.sites.map(async (site) => {
         const branch = site.staging_branch ?? undefined;
         const stagingBaseUrl = site.staging_branch ? WORKER_STAGING_URL : null;
-        const articles = await readArticlesWithKVFallback(site.domain, branch, readArticles);
+        const articles = await readArticlesFromDb(site.domain, branch);
         for (const article of articles) {
           if (article.status !== "review") continue;
           allReview.push({

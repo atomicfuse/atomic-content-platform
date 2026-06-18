@@ -4,7 +4,6 @@ import {
   getDayIndexAndWeekOf,
   updateWeeklySummary,
   getWeeklySummary,
-  decrementReviewCount,
 } from "../stats/weekly-summary.js";
 
 // MongoDB mocks — single setup used by all describe blocks
@@ -12,10 +11,13 @@ const mockUpdateOne = vi.fn().mockResolvedValue({ acknowledged: true });
 const mockFindOne = vi.fn().mockResolvedValue(null);
 const mockToArray = vi.fn().mockResolvedValue([]);
 const mockFind = vi.fn().mockReturnValue({ toArray: mockToArray });
+const mockAggregateToArray = vi.fn().mockResolvedValue([]);
+const mockAggregate = vi.fn().mockReturnValue({ toArray: mockAggregateToArray });
 const mockCollection = vi.fn().mockReturnValue({
   updateOne: mockUpdateOne,
   findOne: mockFindOne,
   find: mockFind,
+  aggregate: mockAggregate,
 });
 vi.mock("../lib/mongo.js", () => ({
   getMongoDb: vi.fn().mockResolvedValue({
@@ -24,9 +26,12 @@ vi.mock("../lib/mongo.js", () => ({
 }));
 
 describe("COLLECTIONS", () => {
-  it("includes weekly_summaries and review_counts", () => {
+  it("includes weekly_summaries", () => {
     expect(COLLECTIONS.weeklySummaries).toBe("weekly_summaries");
-    expect(COLLECTIONS.reviewCounts).toBe("review_counts");
+  });
+
+  it("does not include reviewCounts (removed)", () => {
+    expect("reviewCounts" in COLLECTIONS).toBe(false);
   });
 });
 
@@ -109,7 +114,7 @@ describe("getWeeklySummary", () => {
     vi.clearAllMocks();
   });
 
-  it("returns sites from weekly_summaries merged with review_counts", async () => {
+  it("returns sites from weekly_summaries with review counts from articles aggregation", async () => {
     mockFindOne.mockResolvedValueOnce({
       _id: "2026-06-14",
       sites: {
@@ -125,7 +130,8 @@ describe("getWeeklySummary", () => {
       },
       updatedAt: new Date(),
     });
-    mockToArray.mockResolvedValueOnce([{ _id: "site-a", count: 3 }]);
+    // articles aggregation returns review counts grouped by domain
+    mockAggregateToArray.mockResolvedValueOnce([{ _id: "site-a", count: 3 }]);
 
     const result = await getWeeklySummary("UTC", new Date("2026-06-15T12:00:00Z"));
     expect(result.weekOf).toBe("2026-06-14");
@@ -133,11 +139,18 @@ describe("getWeeklySummary", () => {
     expect(result.sites[0]!.domain).toBe("site-a");
     expect(result.sites[0]!.needReview).toBe(3);
     expect(result.sites[0]!.days[1]).toEqual({ expected: 2, created: 2 });
+
+    // Verify it queries the articles collection with aggregation
+    expect(mockCollection).toHaveBeenCalledWith("articles");
+    expect(mockAggregate).toHaveBeenCalledWith([
+      { $match: { status: "review", branch: { $regex: /^staging\// } } },
+      { $group: { _id: "$domain", count: { $sum: 1 } } },
+    ]);
   });
 
   it("returns empty sites array when no document exists", async () => {
     mockFindOne.mockResolvedValueOnce(null);
-    mockToArray.mockResolvedValueOnce([]);
+    mockAggregateToArray.mockResolvedValueOnce([]);
 
     const result = await getWeeklySummary("UTC", new Date("2026-06-15T12:00:00Z"));
     expect(result.sites).toEqual([]);
@@ -149,7 +162,9 @@ describe("getWeeklySummary", () => {
       _id: "2026-06-14",
       sites: { "site-a": Array(7).fill({ expected: 0, created: 0 }) },
     });
-    mockToArray.mockResolvedValueOnce([{ _id: "site-a", count: -2 }]);
+    // Aggregation won't produce negative counts in practice, but test
+    // the floor behavior for robustness
+    mockAggregateToArray.mockResolvedValueOnce([{ _id: "site-a", count: -2 }]);
 
     const result = await getWeeklySummary("UTC", new Date("2026-06-15T12:00:00Z"));
     expect(result.sites[0]!.needReview).toBe(0);
@@ -164,30 +179,9 @@ describe("getWeeklySummary", () => {
         "mike": Array(7).fill({ expected: 0, created: 0 }),
       },
     });
-    mockToArray.mockResolvedValueOnce([]);
+    mockAggregateToArray.mockResolvedValueOnce([]);
 
     const result = await getWeeklySummary("UTC", new Date("2026-06-15T12:00:00Z"));
     expect(result.sites.map((s) => s.domain)).toEqual(["alpha", "mike", "zebra"]);
-  });
-});
-
-describe("decrementReviewCount", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("calls updateOne with $inc negative count", async () => {
-    await decrementReviewCount("site-a", 3);
-    expect(mockCollection).toHaveBeenCalledWith("review_counts");
-    expect(mockUpdateOne).toHaveBeenCalledWith(
-      { _id: "site-a" },
-      { $inc: { count: -3 }, $set: { updatedAt: expect.any(Date) } },
-      { upsert: true },
-    );
-  });
-
-  it("does not throw on MongoDB error (failure-isolated)", async () => {
-    mockUpdateOne.mockRejectedValueOnce(new Error("Mongo down"));
-    await expect(decrementReviewCount("site-a", 1)).resolves.toBeUndefined();
   });
 });

@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("@/lib/db/dashboard-index", () => ({
+  getDashboardIndex: vi.fn(),
+}));
+vi.mock("@/lib/db/site-configs", () => ({
+  getSiteConfig: vi.fn(),
+}));
 vi.mock("@/lib/github", () => ({
   commitSiteFiles: vi.fn().mockResolvedValue(undefined),
-  readDashboardIndex: vi.fn(),
-  readSiteConfig: vi.fn(),
-  invalidateSiteCaches: vi.fn(),
 }));
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 import { migrateSiteToPerTopic } from "../per-topic-migration";
-import { commitSiteFiles, readDashboardIndex, readSiteConfig } from "@/lib/github";
+import { commitSiteFiles } from "@/lib/github";
+import { getDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig } from "@/lib/db/site-configs";
 
 const SITE_INDEX = {
   sites: [{ domain: "travelnights", staging_branch: "staging/travelnights", status: "Live" }],
@@ -46,8 +51,8 @@ const TOPICS_V2 = [
 describe("migrateSiteToPerTopic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(readDashboardIndex).mockResolvedValue(SITE_INDEX as unknown as Awaited<ReturnType<typeof readDashboardIndex>>);
-    vi.mocked(readSiteConfig).mockResolvedValue(JSON.parse(JSON.stringify(LEGACY_CONFIG)));
+    vi.mocked(getDashboardIndex).mockResolvedValue(SITE_INDEX as unknown as Awaited<ReturnType<typeof getDashboardIndex>>);
+    vi.mocked(getSiteConfig).mockResolvedValue(JSON.parse(JSON.stringify(LEGACY_CONFIG)));
   });
 
   it("writes topics_v2 + theme and strips legacy fields", async () => {

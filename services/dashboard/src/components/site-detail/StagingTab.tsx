@@ -283,9 +283,10 @@ export function StagingTab({
             </h3>
           </div>
           {savedPreviews && savedPreviews.length > 0 ? (
+            <div className="overflow-auto max-h-[80vh]">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border-secondary)]">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                     Label
                   </th>
@@ -323,6 +324,7 @@ export function StagingTab({
                 ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <div className="px-4 py-8 text-center text-[var(--text-muted)]">
               No saved previews yet.

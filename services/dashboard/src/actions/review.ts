@@ -1,20 +1,20 @@
 "use server";
 
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readArticlesFromDb } from "@/lib/db/articles";
 import {
-  readDashboardIndex,
-  readArticles,
   readFileContent,
   commitSiteFiles,
   deleteFilesFromBranch,
   triggerWorkflowViaPush,
   copySiteTreeToMain,
-  invalidateSiteCaches,
+  invalidateTreeCache,
 } from "@/lib/github";
-import { readArticlesWithKVFallback } from "@/lib/kv-api";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import type { ArticleEntry } from "@/types/dashboard";
+import { upsertArticlesMeta, deleteArticlesMeta } from "@/lib/db/articles";
 
 /**
  * Fetch all articles flagged for review across all sites.
@@ -44,7 +44,7 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
     // is appended by the consumer (per-article path).
     const stagingBaseUrl = site.staging_branch ? WORKER_STAGING_URL : null;
 
-    const articles = await readArticlesWithKVFallback(site.domain, branch, readArticles);
+    const articles = await readArticlesFromDb(site.domain, branch);
     for (const article of articles) {
       if (article.status !== "review") continue;
       reviewArticles.push({
@@ -57,16 +57,6 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
   }
 
   return reviewArticles;
-}
-
-const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
-const LOCAL_FALLBACK = "http://localhost:5000";
-
-function getAgentUrl(): string {
-  if (process.env.NODE_ENV === "development" && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
-    return LOCAL_FALLBACK;
-  }
-  return CONTENT_AGENT_URL;
 }
 
 /**
@@ -104,17 +94,30 @@ export async function applyReviewDecisions(decisions: {
     const site = index.sites.find((s) => s.domain === domain);
     const branch = site?.staging_branch ?? "main";
 
+    // Force fresh tree read — the tree cache (Infinity TTL) may be stale if
+    // content-pipeline committed new articles since the last dashboard tree
+    // fetch. Without this, readFileContent() returns null for articles that
+    // exist on Git but aren't in the cached tree, silently skipping them.
+    invalidateTreeCache(branch);
+
     // 1. Update approved articles' frontmatter → status: published
+    let actualApproved = 0;
     if (approved.length > 0) {
       const fileUpdates: Array<{ path: string; content: string }> = [];
 
       for (const slug of approved) {
         const path = `sites/${domain}/articles/${slug}.md`;
         const content = await readFileContent(path, branch);
-        if (!content) continue;
+        if (!content) {
+          console.warn(`[review] Article not found on ${branch}: ${path}`);
+          continue;
+        }
 
         const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-        if (!fmMatch) continue;
+        if (!fmMatch) {
+          console.warn(`[review] Could not parse frontmatter: ${path}`);
+          continue;
+        }
 
         const frontmatter = parseYaml(fmMatch[1]!) as Record<string, unknown>;
         const body = fmMatch[2] ?? "";
@@ -126,12 +129,25 @@ export async function applyReviewDecisions(decisions: {
         fileUpdates.push({ path, content: `---\n${newFm}---\n${body}` });
       }
 
+      actualApproved = fileUpdates.length;
       if (fileUpdates.length > 0) {
         await commitSiteFiles(
           domain,
           fileUpdates,
           `review: approve ${fileUpdates.length} article${fileUpdates.length > 1 ? "s" : ""}`,
           branch,
+        );
+
+        // Dual-write approved articles to MongoDB (soft-fail)
+        await upsertArticlesMeta(
+          approved
+            .filter((slug) => fileUpdates.some((f) => f.path.endsWith(`/${slug}.md`)))
+            .map((slug) => ({
+              domain,
+              slug,
+              branch,
+              frontmatter: { status: "published" },
+            })),
         );
       }
     }
@@ -140,43 +156,36 @@ export async function applyReviewDecisions(decisions: {
     if (rejected.length > 0) {
       const filePaths = rejected.map((slug) => `sites/${domain}/articles/${slug}.md`);
       await deleteFilesFromBranch(filePaths, branch);
+
+      // Dual-write: delete rejected articles from MongoDB (soft-fail)
+      await deleteArticlesMeta(domain, rejected, branch);
     }
 
+    // Only trigger build + merge if something actually changed
+    const hasChanges = actualApproved > 0 || rejected.length > 0;
+
     // 3. ONE build trigger per domain
-    if (site?.staging_branch) {
+    if (hasChanges && site?.staging_branch) {
       await triggerWorkflowViaPush(site.staging_branch, domain);
     }
 
     // 4. If site is Live or Ready → merge staging to main
-    if (site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
-      const mergeMsg = `review: merge ${domain} staging → main (${approved.length} approved, ${rejected.length} rejected)`;
+    if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
+      const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
       await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
     }
 
     const parts: string[] = [];
-    if (approved.length > 0) parts.push(`${approved.length} approved`);
+    if (actualApproved > 0) parts.push(`${actualApproved} approved`);
+    const skipped = approved.length - actualApproved;
+    if (skipped > 0) parts.push(`${skipped} not found on branch`);
     if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
     summaryParts.push(`${domain}: ${parts.join(", ")}`);
 
-    invalidateSiteCaches(domain, branch);
     revalidatePath(`/sites/${domain}`);
   }
 
 
-  // Fire-and-forget: decrement review counts in MongoDB
-  for (const [domain, { approved, rejected }] of byDomain) {
-    const decrementCount = approved.length + rejected.length;
-    if (decrementCount > 0) {
-      fetch(`${getAgentUrl()}/review-counts/decrement`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, count: decrementCount }),
-        signal: AbortSignal.timeout(5_000),
-      }).catch((err) =>
-        console.warn(`[review] Failed to update review count for ${domain}:`, err),
-      );
-    }
-  }
   revalidatePath("/review");
 
   return {

@@ -8,6 +8,7 @@
 
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { readFileContent, commitNetworkFiles } from "@/lib/github";
+import { upsertSchedulerConfig } from "@/lib/db/configs";
 
 export const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -48,6 +49,9 @@ export async function writeSchedulerConfig(cfg: SchedulerConfig): Promise<void> 
     "scheduler: update config",
     "main",
   );
+
+  // Dual-write: mirror scheduler config to MongoDB (soft-fail)
+  await upsertSchedulerConfig(cfg as unknown as Record<string, unknown>);
 }
 
 /**

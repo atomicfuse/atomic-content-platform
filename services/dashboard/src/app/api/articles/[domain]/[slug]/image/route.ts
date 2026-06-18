@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { uploadToR2 } from "@/lib/r2-upload";
-import { commitNetworkFiles, readFileContent, readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { commitNetworkFiles, readFileContent } from "@/lib/github";
 import {
   parseFrontmatter,
   buildArticlePath,
   buildImageR2Key,
   buildImageFrontmatterPath,
 } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
 
 /** Allowed image MIME types. */
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -149,6 +151,9 @@ export async function POST(
       `fix(content): replace image for ${slug} on ${decodedDomain}`,
       targetBranch,
     );
+
+    // Dual-write to MongoDB (soft-fail)
+    await upsertArticleMeta(decodedDomain, slug, targetBranch, { featured_image: imagePath });
 
     return NextResponse.json(
       {

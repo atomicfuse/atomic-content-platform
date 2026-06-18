@@ -1,7 +1,7 @@
 "use server";
 
 import { listZones } from "@/lib/cloudflare";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 
 export interface DomainEntry {
   domain: string;

@@ -629,7 +629,7 @@ async function processItem(
     // fallback path can flip Claude↔OpenAI). Fire-and-forget; failure-isolated.
     if (generated.usage) {
       const generatorModelId =
-        actualGenerator === "claude" ? "claude-sonnet-4-20250514" : "gpt-4o-mini";
+        actualGenerator === "claude" ? "claude-sonnet-4-6" : "gpt-4o-mini";
       void recordTextUsage({
         siteDomain,
         source: opts.source,
@@ -701,7 +701,7 @@ async function processItem(
         void recordTextUsage({
           siteDomain,
           source: opts.source,
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           inputTokens: qualityResult.usage.inputTokens,
           outputTokens: qualityResult.usage.outputTokens,
           estimated: qualityResult.usage.estimated,

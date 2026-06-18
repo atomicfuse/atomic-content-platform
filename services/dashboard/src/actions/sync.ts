@@ -1,7 +1,9 @@
 "use server";
 
 import { listDomainsWithPagesInfo, getAPOStatus } from "@/lib/cloudflare";
-import { readDashboardIndex, readSiteConfig, writeDashboardIndex, addSitesToIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { writeDashboardIndex, addSitesToIndex } from "@/lib/github";
 import type { DashboardSiteEntry, SiteStatus } from "@/types/dashboard";
 import type { CloudflareDomainInfo } from "@/lib/cloudflare";
 import { revalidatePath } from "next/cache";
@@ -80,6 +82,9 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     } else if (site.staging_branch && (site.status === "Ready" || site.status === "Live")) {
       // Live/Ready sites keep their status even with a staging branch
       correctStatus = site.status;
+    } else if (site.custom_domain) {
+      // Sites with a custom domain attached should be Live
+      correctStatus = "Live";
     } else if (cfInfo) {
       correctStatus = await detectSiteStatus(cfInfo, siteConfig);
     } else if (!siteConfig) {

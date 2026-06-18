@@ -1,8 +1,10 @@
 "use server";
 
-import { readDashboardIndex, readFileContent, commitSiteFiles, invalidateSiteCaches } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readFileContent, commitSiteFiles } from "@/lib/github";
 import { stringify as stringifyYaml, parse as parseYaml } from "yaml";
 import { revalidatePath } from "next/cache";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
 
 interface BriefUpdate {
   audience: string;
@@ -56,6 +58,8 @@ export async function updateSiteBrief(
     branch ?? "main",
   );
 
-  invalidateSiteCaches(domain, branch);
+  // Dual-write: mirror updated config to MongoDB (soft-fail)
+  await upsertSiteConfig(domain, config);
+
   revalidatePath(`/sites/${domain}`);
 }

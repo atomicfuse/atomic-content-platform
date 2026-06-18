@@ -1,6 +1,5 @@
 // services/dashboard/src/app/api/agent/generate-dedicated/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { invalidateSiteCaches } from "@/lib/github";
 import { revalidatePath } from "next/cache";
 
 const CONTENT_AGENT_URL =
@@ -58,7 +57,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     const raw = (await agentResponse.json()) as Record<string, unknown>;
     if (agentResponse.ok) {
-      invalidateSiteCaches(body.siteDomain, branch);
       revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
     }
 

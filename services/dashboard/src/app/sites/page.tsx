@@ -1,4 +1,4 @@
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { SitesTable } from "@/components/dashboard/SitesTable";
 
 export const dynamic = "force-dynamic";

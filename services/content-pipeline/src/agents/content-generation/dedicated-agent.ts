@@ -23,6 +23,7 @@ import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateContent } from "../../lib/ai.js";
 import { writeArticleBatch } from "../../lib/writer.js";
+import { upsertArticleMeta } from "../../lib/db/articles.js";
 import { parseGeneratedArticle } from "./generators/base-generator.js";
 import { validateArticleBody, ensureTopicTag } from "./agent.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
@@ -155,7 +156,7 @@ export async function runDedicatedGeneration(
   void recordTextUsage({
     siteDomain,
     source: "dashboard",
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     estimated: usage.estimated,
@@ -231,7 +232,7 @@ export async function runDedicatedGeneration(
       void recordTextUsage({
         siteDomain,
         source: "dashboard",
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         inputTokens: qualityResult.usage.inputTokens,
         outputTokens: qualityResult.usage.outputTokens,
         estimated: qualityResult.usage.estimated,
@@ -296,6 +297,24 @@ export async function runDedicatedGeneration(
       `feat(content): add dedicated article "${generated.title}" for ${siteDomain}`,
     );
     console.log(`[dedicated] Committed article ${slug} to ${branch}`);
+
+    // Dual-write to MongoDB (supplementary — never fails the pipeline)
+    await upsertArticleMeta(siteDomain, slug, branch, {
+      title: frontmatter.title,
+      description: frontmatter.description,
+      type: frontmatter.type,
+      status: frontmatter.status,
+      publishDate: frontmatter.publishDate,
+      author: frontmatter.author,
+      tags: frontmatter.tags,
+      slug: frontmatter.slug,
+      featuredImage: frontmatter.featuredImage,
+      generated_by: frontmatter.generated_by,
+      quality_score: frontmatter.quality_score,
+      score_breakdown: frontmatter.score_breakdown,
+      quality_note: frontmatter.quality_note,
+      reading_time: frontmatter.reading_time,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[dedicated] Git commit failed for ${siteDomain}/${slug}: ${message}`);

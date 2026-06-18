@@ -9,7 +9,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { estimateTokens } from "../costs/estimate.js";
 import type { TokenUsage } from "../costs/usage.js";
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 
 export type { TokenUsage } from "../costs/usage.js";
 

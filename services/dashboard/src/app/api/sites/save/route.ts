@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  invalidateSiteCaches,
-  readDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
   updateSiteInIndex,
 } from "@/lib/github";
@@ -13,6 +12,8 @@ import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
 import { uploadToR2 } from "@/lib/r2-upload";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 
 interface SaveRequestBody {
   domain: string;
@@ -363,11 +364,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
 
-    // Clear in-memory caches (tree, articles, site config) so the next read of
-    // the site detail page reflects this save. siteConfigCache has an infinite
-    // TTL, so without this the dashboard serves the pre-save config forever and
-    // edits appear lost. See landmine #45.
-    invalidateSiteCaches(domain, site.staging_branch);
+    // Dual-write: mirror site config to MongoDB (soft-fail)
+    if (configUpdates) {
+      await upsertSiteConfig(domain, existing as Record<string, unknown>);
+    }
 
     // Propagate vertical (category label) to dashboard-index so the Sites grid
     // reflects category changes immediately. Compare against `site.vertical`
@@ -379,6 +379,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ) {
       try {
         await updateSiteInIndex(domain, { vertical: configUpdates.vertical });
+        // Dual-write: mirror vertical to MongoDB dashboard index (soft-fail)
+        await updateDashboardIndexEntry(domain, { vertical: configUpdates.vertical });
       } catch (err) {
         console.warn(
           `[sites/save] Failed to update dashboard-index.vertical for ${domain}:`,

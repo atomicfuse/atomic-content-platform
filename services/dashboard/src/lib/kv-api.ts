@@ -22,7 +22,7 @@ export interface KVArticleIndexEntry {
 // ---------------------------------------------------------------------------
 // In-memory cache for KV article index — avoids ~700ms CF REST API call on
 // every page load. Keyed by "domain@namespace". Cleared by
-// invalidateSiteCaches() in github.ts via invalidateKVArticleCache().
+// NOTE: This KV cache is a legacy holdover from the pre-MongoDB era.
 // ---------------------------------------------------------------------------
 const KV_CACHE_TTL = Infinity;
 const kvArticleCache = new Map<string, { data: ArticleEntry[]; expiresAt: number }>();
@@ -106,7 +106,7 @@ export function kvEntriesToArticles(entries: KVArticleIndexEntry[]): ArticleEntr
  * then Git fallback (N+1 calls).
  *
  * The in-memory cache (15min TTL) eliminates the ~700ms CF REST API latency
- * on repeat visits. Cleared by invalidateSiteCaches() after mutations.
+ * on repeat visits.
  */
 export async function readArticlesWithKVFallback(
   domain: string,

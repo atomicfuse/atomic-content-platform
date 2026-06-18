@@ -183,12 +183,18 @@ importers:
       google-spreadsheet:
         specifier: ^5.2.0
         version: 5.2.0(google-auth-library@10.6.2)
+      gray-matter:
+        specifier: ^4.0.3
+        version: 4.0.3
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
       marked:
         specifier: ^14.1.4
         version: 14.1.4
+      mongodb:
+        specifier: ^7.2.0
+        version: 7.2.0
       next:
         specifier: ^15.1.0
         version: 15.5.14(@babel/core@7.29.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)

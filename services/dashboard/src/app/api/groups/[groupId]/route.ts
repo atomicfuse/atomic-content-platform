@@ -4,9 +4,9 @@ import {
   readFileContent,
   commitNetworkFiles,
   deleteNetworkFile,
-  invalidateSiteCaches,
 } from "@/lib/github";
 import { revalidatePath } from "next/cache";
+import { upsertGroupConfig, deleteGroupConfig } from "@/lib/db/configs";
 
 export async function GET(
   _req: NextRequest,
@@ -44,7 +44,10 @@ export async function PUT(
       [{ path: `groups/${groupId}.yaml`, content: yamlContent }],
       `config(groups): update ${groupId}`,
     );
-    invalidateSiteCaches("", "main");
+
+    // Dual-write: mirror group config to MongoDB (soft-fail)
+    await upsertGroupConfig(groupId, body);
+
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -66,7 +69,10 @@ export async function DELETE(
       `groups/${groupId}.yaml`,
       `config(groups): delete ${groupId}`,
     );
-    invalidateSiteCaches("", "main");
+
+    // Dual-write: remove group config from MongoDB (soft-fail)
+    await deleteGroupConfig(groupId);
+
     revalidatePath("/groups");
     return NextResponse.json({ ok: true });
   } catch (error) {

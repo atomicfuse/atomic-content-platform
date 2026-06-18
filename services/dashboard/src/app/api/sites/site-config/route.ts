@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml } from "yaml";
-import { readDashboardIndex, readSiteConfig, readFileContent } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { readFileContent } from "@/lib/github";
 
 /**
  * GET /api/sites/site-config?domain=<domain>

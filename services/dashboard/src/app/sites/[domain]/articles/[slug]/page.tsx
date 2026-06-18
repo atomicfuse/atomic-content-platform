@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { readDashboardIndex, readFileContent } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { readFileContent } from "@/lib/github";
 import { parseFrontmatter, buildArticlePath } from "@/lib/article-upload";
 import { ArticleScriptsPanel } from "@/components/site-detail/ArticleScriptsPanel";
 import { ArticleVideosPanel } from "@/components/site-detail/ArticleVideosPanel";

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
 import sharp from "sharp";
-import { commitNetworkFiles, readFileContent, invalidateSiteCaches } from "@/lib/github";
+import { commitNetworkFiles, readFileContent } from "@/lib/github";
 import { revalidatePath } from "next/cache";
 import { uploadToR2 } from "@/lib/r2-upload";
 import {
@@ -12,6 +12,7 @@ import {
   buildImageR2Key,
   buildImageFrontmatterPath,
 } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
 const isLocalDev = process.env.NODE_ENV === "development";
@@ -184,7 +185,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `feat(content): upload article ${slug} for ${domain}`,
       targetBranch,
     );
-    invalidateSiteCaches(domain, targetBranch);
+
+    // Dual-write to MongoDB (soft-fail)
+    await upsertArticleMeta(domain, slug, targetBranch, {
+      title: fm.title,
+      description: fm.description,
+      status: fm.status,
+      type: fm.type,
+      publish_date: fm.publishDate ?? fm.publish_date,
+      author: fm.author,
+      tags: fm.tags,
+      featured_image: fm.featuredImage ?? fm.featured_image,
+      quality_score: fm.quality_score,
+      videos: fm.videos,
+      scripts: fm.scripts,
+      source_url: fm.source_url,
+    });
+
     revalidatePath(`/sites/${domain}`);
 
     return NextResponse.json(

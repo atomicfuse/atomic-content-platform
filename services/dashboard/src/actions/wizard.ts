@@ -1,11 +1,11 @@
 "use server";
 
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  readDashboardIndex,
   writeDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   updateSiteInIndex,
   addSitesToIndex,
   createBranch,
@@ -16,12 +16,12 @@ import {
   readFileContent,
   commitNetworkFiles,
   copySiteTreeToMain,
-  invalidateSiteCaches,
 } from "@/lib/github";
 import {
   listZones,
   registerWorkerCustomDomain,
   deregisterWorkerCustomDomain,
+  deleteConflictingDnsRecords,
   putKVEntry,
   deleteKVEntry,
   getKVEntry,
@@ -41,6 +41,8 @@ import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 
 interface StagingResult {
   stagingUrl: string;
@@ -382,6 +384,10 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     }
   }
 
+  // Dual-write: mirror site config + dashboard index entry to MongoDB (soft-fail)
+  await upsertSiteConfig(siteFolder, siteConfig as unknown as Record<string, unknown>);
+  await upsertDashboardIndexEntry(siteFolder, siteEntry as unknown as Record<string, unknown>);
+
   revalidatePath("/");
 
   // 10. Return result
@@ -437,8 +443,9 @@ export async function goLive(domain: string): Promise<void> {
     status: "Ready",
   });
 
-  invalidateSiteCaches(domain, stagingBranch);
-  invalidateSiteCaches(domain);
+  // Dual-write: mirror status to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, { status: "Ready" });
+
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -468,8 +475,6 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
   await deleteBranch(stagingBranch);
   await createBranch(stagingBranch, "main");
 
-  invalidateSiteCaches(domain, stagingBranch);
-  invalidateSiteCaches(domain);
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
 }
@@ -501,6 +506,12 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   if (!exists) await createBranch(stagingBranch, "main");
 
   await updateSiteInIndex(domain, {
+    staging_branch: stagingBranch,
+    preview_url: workerPreviewUrl(domain),
+  });
+
+  // Dual-write: mirror staging branch info to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
     staging_branch: stagingBranch,
     preview_url: workerPreviewUrl(domain),
   });
@@ -682,21 +693,55 @@ export async function attachCustomDomain(
     `dashboard: attach ${customDomain} to ${domain}`,
   );
 
+  // Dual-write: mirror domain attachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: customDomain,
+    zone_id: resolvedZoneId,
+    status: "Live",
+    worker_pending_dns: false,
+  });
+
   // --- Step 2: Register custom domain on CF worker ---
-  // For WordPress migration domains that already have DNS records (A/CNAME),
+  // If the zone already has A/AAAA/CNAME records for the hostname,
   // CF Custom Domain registration fails with "externally managed DNS records".
-  // This is expected — those domains use Routes (not Custom Domains) to reach
-  // the manager worker. Skip registration and continue with KV seeding.
+  // Auto-delete conflicting records and retry once before giving up.
   try {
     await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isExternalDns = message.includes('externally managed DNS');
     if (isExternalDns) {
+      // Attempt auto-cleanup: delete conflicting A/AAAA/CNAME records and retry
       console.warn(
-        `[attachCustomDomain] Skipping CF Custom Domain registration for ${customDomain} — ` +
-        `domain has existing DNS records (WordPress migration). Traffic must reach the manager via Routes.`,
+        `[attachCustomDomain] CF Custom Domain registration failed for ${customDomain} — ` +
+        `zone has conflicting DNS records. Attempting auto-cleanup and retry…`,
       );
+      try {
+        const deleted = await deleteConflictingDnsRecords(resolvedZoneId, customDomain, domain);
+        console.log(
+          `[attachCustomDomain] Deleted ${deleted} conflicting DNS record(s) for ${customDomain}`,
+        );
+        await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
+        console.log(
+          `[attachCustomDomain] CF Custom Domain registration succeeded for ${customDomain} after DNS cleanup`,
+        );
+      } catch (retryErr) {
+        // Cleanup or retry failed — roll back
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        console.error('[attachCustomDomain] CF registration failed after DNS cleanup, rolling back index', retryErr);
+        site.custom_domain = previousCustomDomain;
+        site.status = previousStatus;
+        site.zone_id = previousZoneId;
+        site.worker_pending_dns = previousPendingDns;
+        site.last_updated = new Date().toISOString();
+        await writeDashboardIndex(
+          index,
+          `dashboard: rollback attach ${customDomain} from ${domain}`,
+        );
+        throw new Error(
+          `Failed to register ${customDomain} on Cloudflare after DNS cleanup: ${retryMsg}`,
+        );
+      }
     } else {
       // Unexpected error — roll back index write
       console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
@@ -792,13 +837,6 @@ export async function attachCustomDomain(
     }
   }
 
-  // Flush stale in-memory caches so the dashboard reflects the new
-  // custom_domain / status immediately — covers tree, site-config,
-  // articles, and dashboard-index caches for this site.
-  // keepDashboardIndex: writeDashboardIndex already cached the correct index;
-  // invalidating it would force a re-fetch that may return stale GitHub data.
-  invalidateSiteCaches(domain, `staging/${domain}`, { keepDashboardIndex: true });
-
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
 
@@ -829,6 +867,13 @@ export async function detachCustomDomain(
     `dashboard: detach ${removedDomain} from ${domain}`,
   );
 
+  // Dual-write: mirror domain detachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: null,
+    status: "Ready",
+    worker_pending_dns: true,
+  });
+
   // --- Step 3: Deregister from CF worker (best-effort) ---
   try {
     await deregisterWorkerCustomDomain(removedDomain, domain);
@@ -854,12 +899,6 @@ export async function detachCustomDomain(
   } catch (err) {
     console.warn('[detachCustomDomain] config.domain revert failed', err);
   }
-
-  // keepDashboardIndex: writeDashboardIndex (step 2) already cached the correct
-  // index with custom_domain=null. Invalidating it forces a re-fetch from GitHub
-  // whose API may still serve stale tree/blob data (CDN lag), re-caching the old
-  // custom_domain value.
-  invalidateSiteCaches(domain, `staging/${domain}`, { keepDashboardIndex: true });
 
   revalidatePath('/');
   revalidatePath(`/sites/${domain}`);
@@ -1054,7 +1093,6 @@ export async function updateStagingSite(
   await commitSiteFiles(domain, files, "update site config", site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
-  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -1246,7 +1284,6 @@ export async function uploadStagingLogo(
     await triggerWorkflowViaPush(site.staging_branch, domain);
   }
 
-  invalidateSiteCaches(domain, site.staging_branch);
   revalidatePath(`/sites/${domain}`);
 }
 

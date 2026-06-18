@@ -4,9 +4,9 @@ import {
   readFileContent,
   commitNetworkFiles,
   deleteNetworkFile,
-  invalidateSiteCaches,
 } from "@/lib/github";
 import { revalidatePath } from "next/cache";
+import { upsertOverrideConfig, deleteOverrideConfig } from "@/lib/db/configs";
 
 export async function GET(
   _req: NextRequest,
@@ -44,7 +44,10 @@ export async function PUT(
       [{ path: `overrides/config/${id}.yaml`, content: yamlContent }],
       `config(overrides): update ${id}`,
     );
-    invalidateSiteCaches("", "main");
+
+    // Dual-write: mirror override config to MongoDB (soft-fail)
+    await upsertOverrideConfig(id, body);
+
     revalidatePath("/overrides");
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -66,7 +69,10 @@ export async function DELETE(
       `overrides/config/${id}.yaml`,
       `config(overrides): delete ${id}`,
     );
-    invalidateSiteCaches("", "main");
+
+    // Dual-write: remove override config from MongoDB (soft-fail)
+    await deleteOverrideConfig(id);
+
     revalidatePath("/overrides");
     return NextResponse.json({ ok: true });
   } catch (error) {

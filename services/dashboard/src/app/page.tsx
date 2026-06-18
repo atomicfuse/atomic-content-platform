@@ -1,4 +1,4 @@
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import type { DashboardIndex } from "@/types/dashboard";
 import OpsDashboard from "@/components/ops/OpsDashboard";
 

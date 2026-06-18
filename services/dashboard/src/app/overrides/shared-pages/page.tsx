@@ -47,9 +47,10 @@ export default function OverridesSharedPagesPage(): React.ReactElement {
         <div className="text-[var(--text-secondary)] text-sm">Loading...</div>
       ) : (
         <div className="bg-[var(--bg-surface)] border border-[var(--border-primary)] rounded-xl overflow-hidden">
+          <div className="overflow-auto max-h-[80vh]">
           <table className="w-full">
-            <thead>
-              <tr className="border-b border-[var(--border-secondary)]">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                   Page Name
                 </th>
@@ -97,6 +98,7 @@ export default function OverridesSharedPagesPage(): React.ReactElement {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { readDashboardIndex, countArticlesForSites } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { countArticlesForSites } from "@/lib/db/articles";
 
 export async function GET(): Promise<NextResponse> {
   try {

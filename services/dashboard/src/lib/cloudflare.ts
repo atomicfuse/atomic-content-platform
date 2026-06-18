@@ -529,6 +529,50 @@ export async function deleteDnsTxtRecord(
   );
 }
 
+/** Delete A, AAAA and CNAME records for a hostname so the Workers Custom
+ *  Domains API can create its own managed records. Returns the number of
+ *  records deleted. Throws on list failure; individual deletes are
+ *  best-effort. */
+export async function deleteConflictingDnsRecords(
+  zoneId: string,
+  hostname: string,
+  domain?: string,
+): Promise<number> {
+  const headers = headersFromCreds(getCredentials(domain));
+
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?name=${encodeURIComponent(hostname)}`,
+    { headers },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list DNS records for ${hostname}: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  const conflicting = listData.result.filter((r) =>
+    r.type === "A" || r.type === "AAAA" || r.type === "CNAME",
+  );
+  if (conflicting.length === 0) return 0;
+
+  let deleted = 0;
+  for (const record of conflicting) {
+    const delResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records/${record.id}`,
+      { method: "DELETE", headers },
+    );
+    const delData = (await delResp.json()) as CloudflareResponse<null>;
+    if (delData.success) deleted++;
+    else {
+      console.warn(
+        `[deleteConflictingDnsRecords] Failed to delete ${record.type} record ${record.id} for ${hostname}`,
+      );
+    }
+  }
+  return deleted;
+}
+
 // --- KV Direct Write API ---
 
 /** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).

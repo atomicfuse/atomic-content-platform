@@ -810,6 +810,7 @@ describe("runScheduledPublish — multi-site integration", () => {
   // -----------------------------------------------------------------------
   it("uses default run_at_hours [14] when config has empty array", async () => {
     mockReadFile.mockResolvedValue("enabled: true\nrun_at_hours: []\ntimezone: UTC\n");
+    mockListActiveSites.mockResolvedValue([]);
     // Don't force — let it go through hour gating with the defaulted [14]
     const result = await runScheduledPublish(makeConfig(), false);
     // Current hour is probably not 14, so this should skip

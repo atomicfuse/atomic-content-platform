@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { invalidateSiteCaches } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 
 const SECRET = process.env.CACHE_INVALIDATE_SECRET;
 
@@ -14,8 +14,10 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "domain required" }, { status: 400 });
   }
 
-  invalidateSiteCaches(body.domain, body.branch ?? undefined);
-  console.log(`[cache/invalidate] Cleared caches for ${body.domain}${body.branch ? ` (${body.branch})` : ""}`);
+  // With MongoDB reads, no in-memory caches to invalidate.
+  // Revalidate Next.js page cache so subsequent renders fetch fresh data.
+  revalidatePath(`/sites/${body.domain}`);
+  console.log(`[cache/invalidate] Revalidated path for ${body.domain}`);
 
   return NextResponse.json({ ok: true });
 }

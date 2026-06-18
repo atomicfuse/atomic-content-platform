@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  readDashboardIndex,
-  triggerWorkflowViaPush,
-} from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { triggerWorkflowViaPush } from "@/lib/github";
 
 const PRODUCTION_ELIGIBLE_STATUSES = new Set(["Live"]);
 
