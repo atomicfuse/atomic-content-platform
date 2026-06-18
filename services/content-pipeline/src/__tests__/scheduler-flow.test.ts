@@ -34,7 +34,29 @@ vi.mock("../lib/github.js", () => ({
   createGitHubClient: (...args: unknown[]): unknown =>
     mockCreateOctokit(...args),
   readFile: (...args: unknown[]): unknown => mockReadHistory(...args),
+  readFileBase64: vi.fn().mockResolvedValue(""),
   commitFile: (...args: unknown[]): unknown => mockCommitFile(...args),
+  commitBatch: vi.fn().mockResolvedValue("sha-ok"),
+  listFilesRecursive: vi.fn().mockResolvedValue([]),
+  clearTreeCache: vi.fn(),
+  parseRepo: vi.fn().mockReturnValue({ owner: "owner", repo: "repo" }),
+}));
+
+// Mock site-brief (listActiveSites) — return no active sites so auto-publish is a no-op
+vi.mock("../lib/site-brief.js", () => ({
+  listActiveSites: vi.fn().mockResolvedValue([]),
+  readSiteBriefWithFallback: vi.fn(),
+}));
+
+// Mock stats — updateWeeklySummary uses MongoDB
+vi.mock("../stats/weekly-summary.js", () => ({
+  updateWeeklySummary: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock notifications — fire-and-forget
+vi.mock("../lib/notifications.js", () => ({
+  notifyError: vi.fn().mockResolvedValue(undefined),
+  notifySummary: vi.fn().mockResolvedValue(undefined),
 }));
 
 import {
@@ -211,7 +233,8 @@ describe("processSchedulerRun", () => {
       timestamp: string;
     }>;
     expect(written).toHaveLength(1);
-    expect(written[0]!.timestamp).toBe("2026-05-03T14");
+    // timestamp is new Date().toISOString() — verify it's a valid ISO string
+    expect(written[0]!.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
     expect(written[0]!.sites).toHaveLength(2);
     // alpha.com: 3 created, 0 errors → "success"
     expect(written[0]!.sites[0]!.domain).toBe("alpha.com");
@@ -369,8 +392,8 @@ describe("processSchedulerRun", () => {
     const written = JSON.parse(commitArg.content) as unknown[];
     // Should still be 50, not 51 — oldest entry dropped
     expect(written).toHaveLength(50);
-    // First entry should be the new one
-    expect((written[0] as Record<string, unknown>).timestamp).toBe("2026-05-03T20");
+    // First entry should be the new one (timestamp is new Date().toISOString())
+    expect((written[0] as Record<string, unknown>).timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
   it("propagates commitFile failure (parent job fails, BullMQ retries)", async () => {
