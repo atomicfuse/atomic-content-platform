@@ -250,7 +250,7 @@ The request payload includes `callback_url`, `site_domain`, `slug`, and `branch`
 
 The content-pipeline is an **internal-only CloudGrid service** with no public URL. n8n cannot reach it directly. Callbacks are routed through the dashboard:
 
-1. n8n POSTs to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`
+1. n8n POSTs to `https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback`
 2. Dashboard API route (`/api/agent/image-callback`) proxies to `http://content-pipeline-app/image-callback`
 3. The dashboard middleware excludes `/api/` from auth, so n8n's unauthenticated callbacks work
 

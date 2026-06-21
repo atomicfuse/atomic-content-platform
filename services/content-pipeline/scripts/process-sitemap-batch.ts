@@ -525,7 +525,7 @@ async function main(): Promise<void> {
   const networkPath = process.env.LOCAL_NETWORK_PATH;
   const n8nUrl = process.env.N8N_IMAGE_WEBHOOK_URL;
   const callbackUrl = process.env.IMAGE_CALLBACK_URL
-    ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   if (!githubToken) { console.error("Missing GITHUB_TOKEN"); process.exit(1); }
   if (!args.dryRun && !anthropicApiKey) { console.error("Missing ANTHROPIC_API_KEY"); process.exit(1); }

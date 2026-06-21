@@ -27,8 +27,10 @@ import {
   getKVEntry,
   listKVKeys,
   bulkPutKV,
+  bulkDeleteKV,
+  deleteR2Objects,
 } from "@/lib/cloudflare";
-import { workerPreviewUrl, getKvNamespaces } from "@/lib/constants";
+import { workerPreviewUrl, getKvNamespaces, R2_BUCKET_PROD } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry, TopicV2 } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
@@ -43,6 +45,7 @@ import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
+import { deleteArticlesMeta } from "@/lib/db/articles";
 
 interface StagingResult {
   stagingUrl: string;
@@ -401,16 +404,67 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
  * copies of OTHER sites' files), we copy only sites/{domain}/ from
  * the staging branch's tree to main using blob SHA references.
  */
+/** Returns the slugs of articles that were deleted on staging (and now removed from main). */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
-): Promise<void> {
+): Promise<string[]> {
   // Uses the Git Tree API: one recursive tree fetch to get all blob SHAs,
   // then creates a new commit on main referencing those SHAs directly.
   // This is O(1) reads instead of O(N) per-file reads, avoiding gateway
   // timeouts on sites with 100+ articles.
-  await copySiteTreeToMain(domain, stagingBranch, commitMessage);
+  return copySiteTreeToMain(domain, stagingBranch, commitMessage);
+}
+
+/** Best-effort cleanup of deleted articles after publishing to production.
+ *  Order: prod KV → MongoDB → R2 images (R2 last so the live site never
+ *  shows broken images if an earlier step fails). */
+async function cleanupDeletedArticles(
+  domain: string,
+  deletedSlugs: string[],
+  stagingBranch?: string,
+): Promise<void> {
+  if (deletedSlugs.length === 0) return;
+
+  console.log(
+    `[wizard] Cleaning up ${deletedSlugs.length} deleted articles for ${domain}`,
+  );
+
+  // Step 4: Delete from production KV (article stops being served)
+  let prodKvOk = true;
+  try {
+    const kv = getKvNamespaces(domain);
+    const kvKeys = deletedSlugs.map((slug) => `article:${domain}:${slug}`);
+    await bulkDeleteKV(kv.prod, kvKeys, domain);
+  } catch (err) {
+    prodKvOk = false;
+    console.warn(
+      `[wizard] Failed to delete prod KV entries for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // If prod KV deletion failed the articles are still being served —
+  // skip MongoDB + R2 to avoid broken images on the live site.
+  if (!prodKvOk) return;
+
+  // Step 5: Delete from MongoDB — both main and staging branch records (soft-fail)
+  await deleteArticlesMeta(domain, deletedSlugs, "main");
+  if (stagingBranch) {
+    await deleteArticlesMeta(domain, deletedSlugs, stagingBranch);
+  }
+
+  // Step 6: Delete R2 images last
+  try {
+    const keys = deletedSlugs.map((s) => `${domain}/assets/images/${s}.webp`);
+    await deleteR2Objects(R2_BUCKET_PROD, keys, domain);
+  } catch (err) {
+    console.warn(
+      `[wizard] Failed to delete R2 images for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /**
@@ -431,7 +485,10 @@ export async function goLive(domain: string): Promise<void> {
   }
 
   // 3. Merge staging branch to main (with conflict fallback)
-  await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
+  const deletedSlugs = await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
+
+  // 3b. Clean up any articles that were deleted on staging before go-live
+  await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
 
   // 4. Delete and recreate staging branch from the new main HEAD
   // This resets it to be in sync with production, ready for future edits
@@ -464,12 +521,15 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // Merge staging → main with conflict fallback (triggers production deploy via GitHub Actions)
-  await mergeOrCopySiteToMain(
+  // Step 3: Merge staging → main (handles additions + deletions via tree copy)
+  const deletedSlugs = await mergeOrCopySiteToMain(
     domain,
     stagingBranch,
     `site(${domain}): publish staging edits to production`,
   );
+
+  // Steps 4-6: Clean up deleted articles (prod KV → MongoDB → R2 images)
+  await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
 
   // Reset staging branch to match main (clean slate for next edit cycle)
   await deleteBranch(stagingBranch);

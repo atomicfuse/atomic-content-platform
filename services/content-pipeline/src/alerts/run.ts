@@ -86,7 +86,7 @@ async function cleanupOrphanedConditions(db: Db): Promise<void> {
 }
 
 export const DASHBOARD_URL =
-  process.env.DASHBOARD_URL ?? "https://sites-platform-e297.atomic.cloudgrid.io";
+  process.env.DASHBOARD_URL ?? "https://sites-platform-e297--atomic.cloudgrid.io";
 
 export interface RunAlertsOptions {
   /** Scope the run to a single site (used by runAfterRun). */

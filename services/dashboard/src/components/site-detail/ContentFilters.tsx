@@ -62,6 +62,7 @@ export function ContentFilters({
         <option value="approved">Published</option>
         <option value="review">Review</option>
         <option value="draft">Draft</option>
+        <option value="deleted">Deleted</option>
       </select>
 
       <select

@@ -24,7 +24,7 @@ services:
     path: /pipeline
     env:
       NETWORK_REPO: atomicfuse/atomic-labs-network
-      CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
+      CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd--atomic.cloudgrid.io
 
   scheduled-publisher:
     type: cron
@@ -36,17 +36,20 @@ services:
 ## Services
 
 ### Dashboard (`dashboard`)
+
 - **Type:** `nextjs`
 - **Purpose:** Management UI, site CRUD, article review, subscriber API
 - **Public URL:** `https://atomic-content-platform.apps.cloudgrid.io`
 
 ### Content Pipeline (`content-pipeline`)
+
 - **Type:** `node` (TypeScript)
 - **Purpose:** AI content generation, quality scoring
 - **Endpoints:** `POST /content-generate`, `GET /health`
 - **Internal URL:** `http://content-pipeline-app`
 
 ### Scheduled Publisher (`scheduled-publisher`)
+
 - **Type:** `cron`
 - **Schedule:** Every 4 hours (`0 */4 * * *` EST)
 - **Action:** HTTP request to `http://content-pipeline-app/scheduled-publish`
@@ -114,13 +117,13 @@ cloudgrid env set atomic-content-platform KEY=value
 
 ### Key Variables
 
-| Variable | Service | Description |
-|----------|---------|-------------|
-| `CONTENT_AGENT_URL` | dashboard | URL to reach the content pipeline |
-| `NEXTAUTH_URL` | dashboard | Base URL for NextAuth callbacks |
-| `GOOGLE_SHEET_ID` | dashboard | Spreadsheet for subscriber storage |
-| `NETWORK_REPO` | content-pipeline | GitHub repo path (owner/name) |
-| `CONTENT_AGGREGATOR_URL` | content-pipeline | Content Aggregator API base URL |
+| Variable                 | Service          | Description                        |
+| ------------------------ | ---------------- | ---------------------------------- |
+| `CONTENT_AGENT_URL`      | dashboard        | URL to reach the content pipeline  |
+| `NEXTAUTH_URL`           | dashboard        | Base URL for NextAuth callbacks    |
+| `GOOGLE_SHEET_ID`        | dashboard        | Spreadsheet for subscriber storage |
+| `NETWORK_REPO`           | content-pipeline | GitHub repo path (owner/name)      |
+| `CONTENT_AGGREGATOR_URL` | content-pipeline | Content Aggregator API base URL    |
 
 ## Secrets
 
@@ -133,16 +136,16 @@ cloudgrid secrets set atomic-content-platform KEY=value
 
 ### Required Secrets
 
-| Secret | Service | Purpose |
-|--------|---------|---------|
-| `NEXTAUTH_SECRET` | dashboard | NextAuth session encryption |
-| `GOOGLE_CLIENT_ID` | dashboard | Google OAuth for dashboard login |
-| `GOOGLE_CLIENT_SECRET` | dashboard | Google OAuth for dashboard login |
-| `GITHUB_TOKEN` | dashboard, content-pipeline | GitHub API access for network repo |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard | Google Sheets API (subscriber storage) |
-| `GEMINI_API_KEY` | dashboard, content-pipeline | Gemini for logos and topic suggestions |
-| `CLOUDFLARE_API_TOKEN` | dashboard | Cloudflare API for Pages/DNS management |
-| `CLOUDFLARE_ACCOUNT_ID` | dashboard | Cloudflare account identifier |
+| Secret                       | Service                     | Purpose                                 |
+| ---------------------------- | --------------------------- | --------------------------------------- |
+| `NEXTAUTH_SECRET`            | dashboard                   | NextAuth session encryption             |
+| `GOOGLE_CLIENT_ID`           | dashboard                   | Google OAuth for dashboard login        |
+| `GOOGLE_CLIENT_SECRET`       | dashboard                   | Google OAuth for dashboard login        |
+| `GITHUB_TOKEN`               | dashboard, content-pipeline | GitHub API access for network repo      |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard                   | Google Sheets API (subscriber storage)  |
+| `GEMINI_API_KEY`             | dashboard, content-pipeline | Gemini for logos and topic suggestions  |
+| `CLOUDFLARE_API_TOKEN`       | dashboard                   | Cloudflare API for Pages/DNS management |
+| `CLOUDFLARE_ACCOUNT_ID`      | dashboard                   | Cloudflare account identifier           |
 
 Note: `ANTHROPIC_API_KEY` is not needed for the content pipeline when running on CloudGrid -- the CloudGrid AI Gateway handles Claude API access automatically via `@cloudgrid-io/ai`.
 
@@ -162,7 +165,8 @@ Cron      -> http://content-pipeline-app/scheduled-publish
 Services fall back to `localhost` with default ports:
 
 ```typescript
-const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:8080";
+const CONTENT_AGENT_URL =
+  process.env.CONTENT_AGENT_URL ?? "http://localhost:8080";
 ```
 
 Always read the URL from an environment variable with a localhost fallback.
@@ -183,7 +187,7 @@ The `scheduled-publisher` service is a cron type that fires an HTTP request on a
 ```yaml
 scheduled-publisher:
   type: cron
-  schedule: "0 */4 * * *"   # every 4 hours
+  schedule: "0 */4 * * *" # every 4 hours
   timezone: EST
   run: http://content-pipeline-app/scheduled-publish
 ```

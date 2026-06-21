@@ -531,7 +531,7 @@ Add a `before_footer` entry to travelswire's site.yaml (on a staging branch) or 
 scripts:
   before_footer:
     - id: test-feed
-      src: https://ob-mock-ad-tester-9116.atomic.cloudgrid.io/feed-widget.js
+      src: https://ob-mock-ad-tester-9116--atomic.cloudgrid.io/feed-widget.js
       async: true
 ```
 

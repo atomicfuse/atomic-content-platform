@@ -993,9 +993,10 @@ export async function copySiteTreeToMain(
   domain: string,
   sourceBranch: string,
   commitMessage: string,
-): Promise<void> {
+): Promise<string[]> {
   const octokit = getOctokit();
   const prefix = `sites/${domain}/`;
+  const articlesPrefix = `sites/${domain}/articles/`;
 
   // 1. Get the source branch's full recursive tree (single API call)
   const { data: srcRef } = await octokit.git.getRef({
@@ -1036,13 +1037,51 @@ export async function copySiteTreeToMain(
     commit_sha: mainHeadSha,
   });
 
-  // 4. Create new tree on main with the source blob SHAs (no re-upload)
-  const treeItems = siteEntries.map((e) => ({
-    path: e.path!,
-    mode: e.mode as "100644" | "100755" | "040000" | "160000" | "120000",
-    type: "blob" as const,
-    sha: e.sha!,
-  }));
+  // 3b. Get main's full tree to detect files deleted on staging
+  const { data: mainTree } = await octokit.git.getTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    tree_sha: mainCommit.tree.sha,
+    recursive: "true",
+  });
+
+  const mainSiteFiles = new Set(
+    mainTree.tree
+      .filter((e) => e.path?.startsWith(prefix) && e.type === "blob")
+      .map((e) => e.path!),
+  );
+  const stagingSiteFiles = new Set(siteEntries.map((e) => e.path!));
+
+  // Files on main but not on staging = deleted on staging
+  const deletedPaths = [...mainSiteFiles].filter((p) => !stagingSiteFiles.has(p));
+
+  // Extract article slugs from deleted article paths (for caller cleanup)
+  const deletedArticleSlugs = deletedPaths
+    .filter((p) => p.startsWith(articlesPrefix) && p.endsWith(".md"))
+    .map((p) => p.slice(articlesPrefix.length, -3));
+
+  if (deletedPaths.length > 0) {
+    console.log(
+      `[github] copySiteTreeToMain: deleting ${deletedPaths.length} files from main for ${domain}`,
+    );
+  }
+
+  // 4. Create new tree on main with the source blob SHAs + deletions (no re-upload)
+  const treeItems = [
+    ...siteEntries.map((e) => ({
+      path: e.path!,
+      mode: e.mode as "100644" | "100755" | "040000" | "160000" | "120000",
+      type: "blob" as const,
+      sha: e.sha!,
+    })),
+    // Delete files that exist on main but were removed from staging
+    ...deletedPaths.map((path) => ({
+      path,
+      mode: "100644" as const,
+      type: "blob" as const,
+      sha: null as unknown as string,
+    })),
+  ];
 
   const { data: newTree } = await octokit.git.createTree({
     owner: NETWORK_REPO_OWNER,
@@ -1065,6 +1104,8 @@ export async function copySiteTreeToMain(
     ref: "heads/main",
     sha: newCommit.sha,
   });
+
+  return deletedArticleSlugs;
 }
 
 /** Commit multiple files to the network repo atomically (generic, no domain prefix). */

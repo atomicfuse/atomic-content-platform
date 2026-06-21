@@ -528,7 +528,7 @@ export async function processGenerateJob(
     if (imageRequests.length > 0) {
       n8nImagesTriggered = imageRequests.length;
       const webhookUrl = config.n8nImageWebhookUrl;
-      const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+      const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
       for (const req of imageRequests) {
         void triggerN8nImage(webhookUrl, {

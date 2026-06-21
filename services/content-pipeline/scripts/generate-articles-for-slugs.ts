@@ -118,7 +118,7 @@ async function main(): Promise<void> {
   const n8nUrl = process.env.N8N_IMAGE_WEBHOOK_URL;
   const callbackUrl =
     process.env.IMAGE_CALLBACK_URL ??
-    "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   if (!githubToken || !anthropicApiKey) {
     console.error("Missing required env: GITHUB_TOKEN, ANTHROPIC_API_KEY");

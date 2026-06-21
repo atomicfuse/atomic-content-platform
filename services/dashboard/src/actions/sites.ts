@@ -23,6 +23,7 @@ import {
   deregisterWorkerCustomDomain,
   getKVEntry,
   putKVEntry,
+  bulkDeleteKV,
 } from "@/lib/cloudflare";
 import {
   R2_BUCKET_PROD,
@@ -30,7 +31,7 @@ import {
 } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
-import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite } from "@/lib/db/articles";
+import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite, upsertArticleMeta, upsertArticlesMeta } from "@/lib/db/articles";
 import { deleteSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry, addToDeleteHistory } from "@/lib/db/dashboard-index";
 
@@ -234,7 +235,9 @@ async function deleteArticleImages(domain: string, slugs: string[]): Promise<voi
   }
 }
 
-/** Delete a single article from the staging branch and clean up its R2 image. */
+/** Delete a single article from the staging branch.
+ *  R2 images and production cleanup happen later in publishStagingToProduction
+ *  so the live site never shows broken images. */
 export async function deleteArticleFromStaging(
   domain: string,
   slug: string
@@ -246,18 +249,28 @@ export async function deleteArticleFromStaging(
     throw new Error(`No staging branch found for ${domain}`);
   }
 
+  // 1. Delete from staging branch in Git
   const filePath = `sites/${domain}/articles/${slug}.md`;
   await deleteFileFromBranch(filePath, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-  await deleteArticleImages(domain, [slug]);
 
-  // Dual-write: delete from MongoDB (soft-fail)
-  await deleteArticleMeta(domain, slug, site.staging_branch);
+  // 2. Immediately delete the staging KV entry so the preview site reflects the deletion
+  try {
+    const kv = getKvNamespaces(domain);
+    await deleteKVEntry(kv.staging, `article:${domain}:${slug}`, domain);
+  } catch (err) {
+    console.warn(`[sites] Failed to delete staging KV entry for ${domain}:${slug} (non-fatal):`, err);
+  }
+
+  // Mark as "deleted" in MongoDB so the dashboard shows the pending deletion
+  await upsertArticleMeta(domain, slug, site.staging_branch, { status: "deleted" });
 
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Delete multiple articles from the staging branch and clean up their R2 images. */
+/** Delete multiple articles from the staging branch.
+ *  R2 images and production cleanup happen later in publishStagingToProduction
+ *  so the live site never shows broken images. */
 export async function deleteArticlesFromStaging(
   domain: string,
   slugs: string[]
@@ -269,15 +282,31 @@ export async function deleteArticlesFromStaging(
     throw new Error(`No staging branch found for ${domain}`);
   }
 
+  // 1. Delete from staging branch in Git
   const filePaths = slugs.map(
     (slug) => `sites/${domain}/articles/${slug}.md`
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-  await deleteArticleImages(domain, slugs);
 
-  // Dual-write: delete from MongoDB (soft-fail)
-  await deleteArticlesMeta(domain, slugs, site.staging_branch);
+  // 2. Immediately delete the staging KV entries so the preview site reflects the deletions
+  try {
+    const kv = getKvNamespaces(domain);
+    const keys = slugs.map((slug) => `article:${domain}:${slug}`);
+    await bulkDeleteKV(kv.staging, keys, domain);
+  } catch (err) {
+    console.warn(`[sites] Failed to bulk delete staging KV entries for ${domain} (non-fatal):`, err);
+  }
+
+  // Mark as "deleted" in MongoDB so the dashboard shows the pending deletions
+  await upsertArticlesMeta(
+    slugs.map((slug) => ({
+      domain,
+      slug,
+      branch: site.staging_branch!,
+      frontmatter: { status: "deleted" },
+    })),
+  );
 
   revalidatePath(`/sites/${domain}`);
 }

@@ -302,7 +302,7 @@ export async function runMigration(
 
     const webhookUrl = config.n8nImageWebhookUrl!;
     const callbackUrl = config.imageCallbackUrl
-      ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+      ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
     console.log(`[migration] Triggering ${pendingImageRequests.length} n8n image request(s) → ${webhookUrl}`);
 

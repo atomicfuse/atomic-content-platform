@@ -9,6 +9,7 @@
 **Tech Stack:** Next.js 15 App Router, React 19, TypeScript strict, Tailwind CSS v4. Content Aggregator REST API for taxonomy data.
 
 **Specs:**
+
 - `docs/specs/site-builder-v2-plan.md` — Full feature spec
 - `services/content-pipeline/content-aggr-API.md` — Content Aggregator API reference
 
@@ -18,30 +19,31 @@
 
 ### New files
 
-| File | Responsibility |
-|------|---------------|
+| File                                                              | Responsibility                                                                                              |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `services/dashboard/src/components/wizard/StepNicheTargeting.tsx` | The new wizard step UI: vertical dropdown, category multi-select, tag multi-select + create, bundle preview |
-| `services/dashboard/src/app/api/categories/route.ts` | Proxy → aggregator `GET /api/categories?vertical_id=X&active=true&page_size=100` |
-| `services/dashboard/src/app/api/tags/route.ts` | Proxy → aggregator `GET /api/tags` and `POST /api/tags` |
-| `services/dashboard/src/app/api/bundles/route.ts` | Proxy → aggregator `POST /api/bundles` and `POST /api/bundles/preview` |
+| `services/dashboard/src/app/api/categories/route.ts`              | Proxy → aggregator `GET /api/categories?vertical_id=X&active=true&page_size=100`                            |
+| `services/dashboard/src/app/api/tags/route.ts`                    | Proxy → aggregator `GET /api/tags` and `POST /api/tags`                                                     |
+| `services/dashboard/src/app/api/bundles/route.ts`                 | Proxy → aggregator `POST /api/bundles` and `POST /api/bundles/preview`                                      |
 
 ### Modified files
 
-| File | Changes |
-|------|---------|
-| `services/dashboard/src/types/dashboard.ts` | Add niche fields to `WizardFormData`: `categoryIds`, `tagIds`, `iabVerticalCode`, `iabCategoryCodes` (no `bundleId` — created server-side only) |
-| `services/dashboard/src/components/wizard/WizardShell.tsx` | Insert "Niche Targeting" into STEPS array at index 1 (8 steps total) |
-| `services/dashboard/src/app/wizard/page.tsx` | Add `StepNicheTargeting` at case 1, shift all subsequent cases +1, update DEFAULT_FORM |
-| `services/dashboard/src/components/wizard/StepIdentity.tsx` | Remove the Vertical dropdown (it moves to Niche Targeting step) |
-| `services/dashboard/src/actions/wizard.ts` | Add bundle creation logic in `createSiteAndBuildStaging()`: resolve tags → POST /api/bundles → store `bundle_id` on site.yaml. Also store `category_ids`, `tag_ids`, `iab_vertical_code`, `iab_category_codes` |
-| `services/dashboard/src/lib/reference-data.ts` | Add `getCategories(verticalId)` and `getTags(verticalId)` functions |
-| `services/dashboard/src/hooks/useReferenceData.ts` | Add `useCategories(verticalId)` and `useTags(verticalId)` hooks |
+| File                                                        | Changes                                                                                                                                                                                                        |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/dashboard/src/types/dashboard.ts`                 | Add niche fields to `WizardFormData`: `categoryIds`, `tagIds`, `iabVerticalCode`, `iabCategoryCodes` (no `bundleId` — created server-side only)                                                                |
+| `services/dashboard/src/components/wizard/WizardShell.tsx`  | Insert "Niche Targeting" into STEPS array at index 1 (8 steps total)                                                                                                                                           |
+| `services/dashboard/src/app/wizard/page.tsx`                | Add `StepNicheTargeting` at case 1, shift all subsequent cases +1, update DEFAULT_FORM                                                                                                                         |
+| `services/dashboard/src/components/wizard/StepIdentity.tsx` | Remove the Vertical dropdown (it moves to Niche Targeting step)                                                                                                                                                |
+| `services/dashboard/src/actions/wizard.ts`                  | Add bundle creation logic in `createSiteAndBuildStaging()`: resolve tags → POST /api/bundles → store `bundle_id` on site.yaml. Also store `category_ids`, `tag_ids`, `iab_vertical_code`, `iab_category_codes` |
+| `services/dashboard/src/lib/reference-data.ts`              | Add `getCategories(verticalId)` and `getTags(verticalId)` functions                                                                                                                                            |
+| `services/dashboard/src/hooks/useReferenceData.ts`          | Add `useCategories(verticalId)` and `useTags(verticalId)` hooks                                                                                                                                                |
 
 ---
 
 ## Task 1: Extend WizardFormData types
 
 **Files:**
+
 - Modify: `services/dashboard/src/types/dashboard.ts:77-105`
 
 - [ ] **Step 1: Add niche targeting fields to WizardFormData**
@@ -77,6 +79,7 @@ git commit -m "feat(wizard): add niche targeting fields to WizardFormData"
 ## Task 2: Create API proxy routes
 
 **Files:**
+
 - Create: `services/dashboard/src/app/api/categories/route.ts`
 - Create: `services/dashboard/src/app/api/tags/route.ts`
 - Create: `services/dashboard/src/app/api/bundles/route.ts`
@@ -92,7 +95,7 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -110,7 +113,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
     const data: unknown = await res.json();
     return NextResponse.json(data, {
-      headers: { "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400" },
+      headers: {
+        "Cache-Control": "private, max-age=3600, stale-while-revalidate=86400",
+      },
     });
   } catch (error) {
     console.error("[categories] error:", error);
@@ -128,7 +133,7 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -156,14 +161,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body = await request.json();
     const res = await fetch(`${AGGREGATOR_URL}/api/tags`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify(body),
     });
     const data: unknown = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error("[tags] POST error:", error);
-    return NextResponse.json({ error: "Failed to create tag" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create tag" },
+      { status: 500 },
+    );
   }
 }
 ```
@@ -177,21 +188,27 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json();
     const res = await fetch(`${AGGREGATOR_URL}/api/bundles`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify(body),
     });
     const data: unknown = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error("[bundles] POST error:", error);
-    return NextResponse.json({ error: "Failed to create bundle" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create bundle" },
+      { status: 500 },
+    );
   }
 }
 ```
@@ -207,14 +224,17 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json();
     const res = await fetch(`${AGGREGATOR_URL}/api/bundles/preview`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
       body: JSON.stringify(body),
     });
     const data: unknown = await res.json();
@@ -246,6 +266,7 @@ git commit -m "feat(wizard): add API proxy routes for categories, tags, bundles"
 ## Task 3: Add reference data hooks for categories and tags
 
 **Files:**
+
 - Modify: `services/dashboard/src/lib/reference-data.ts`
 - Modify: `services/dashboard/src/hooks/useReferenceData.ts`
 
@@ -269,7 +290,9 @@ export interface TagItem {
 }
 
 /** Fetch categories for a vertical. No localStorage cache — depends on verticalId param. */
-export async function getCategories(verticalId: string): Promise<CategoryItem[]> {
+export async function getCategories(
+  verticalId: string,
+): Promise<CategoryItem[]> {
   if (!verticalId) return [];
   const res = await fetch(`/api/categories?vertical_id=${verticalId}`);
   if (!res.ok) return [];
@@ -277,9 +300,19 @@ export async function getCategories(verticalId: string): Promise<CategoryItem[]>
   if (!Array.isArray(data.items)) return [];
   return data.items
     .map((d: unknown) => {
-      const obj = d as { id?: string; name?: string; iab_code?: string; vertical_id?: string };
+      const obj = d as {
+        id?: string;
+        name?: string;
+        iab_code?: string;
+        vertical_id?: string;
+      };
       if (obj.id && obj.name) {
-        return { id: obj.id, name: obj.name, iab_code: obj.iab_code ?? "", vertical_id: obj.vertical_id ?? "" };
+        return {
+          id: obj.id,
+          name: obj.name,
+          iab_code: obj.iab_code ?? "",
+          vertical_id: obj.vertical_id ?? "",
+        };
       }
       return null;
     })
@@ -295,9 +328,19 @@ export async function getTags(verticalId: string): Promise<TagItem[]> {
   if (!Array.isArray(data.items)) return [];
   return data.items
     .map((d: unknown) => {
-      const obj = d as { id?: string; name?: string; vertical_id?: string; usage_count?: number };
+      const obj = d as {
+        id?: string;
+        name?: string;
+        vertical_id?: string;
+        usage_count?: number;
+      };
       if (obj.id && obj.name) {
-        return { id: obj.id, name: obj.name, vertical_id: obj.vertical_id, usage_count: obj.usage_count };
+        return {
+          id: obj.id,
+          name: obj.name,
+          vertical_id: obj.vertical_id,
+          usage_count: obj.usage_count,
+        };
       }
       return null;
     })
@@ -310,9 +353,17 @@ export async function getTags(verticalId: string): Promise<TagItem[]> {
 Append to `services/dashboard/src/hooks/useReferenceData.ts`:
 
 ```typescript
-import { getCategories, getTags, type CategoryItem, type TagItem } from "@/lib/reference-data";
+import {
+  getCategories,
+  getTags,
+  type CategoryItem,
+  type TagItem,
+} from "@/lib/reference-data";
 
-export function useCategories(verticalId: string): { categories: CategoryItem[]; loading: boolean } {
+export function useCategories(verticalId: string): {
+  categories: CategoryItem[];
+  loading: boolean;
+} {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -331,7 +382,11 @@ export function useCategories(verticalId: string): { categories: CategoryItem[];
   return { categories, loading };
 }
 
-export function useTags(verticalId: string): { tags: TagItem[]; loading: boolean; refetch: () => void } {
+export function useTags(verticalId: string): {
+  tags: TagItem[];
+  loading: boolean;
+  refetch: () => void;
+} {
   const [tags, setTags] = useState<TagItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
@@ -373,6 +428,7 @@ git commit -m "feat(wizard): add categories/tags reference data hooks"
 ## Task 4: Build StepNicheTargeting component
 
 **Files:**
+
 - Create: `services/dashboard/src/components/wizard/StepNicheTargeting.tsx`
 
 This is the largest task. The component has four sections: Vertical dropdown, Category multi-select, Tag multi-select with create, and Content Preview.
@@ -380,6 +436,7 @@ This is the largest task. The component has four sections: Vertical dropdown, Ca
 - [ ] **Step 1: Create the component file**
 
 Key behaviors:
+
 - **Vertical dropdown**: Uses `useVerticals()` (extended in Task 7 to return `iab_code`). Selecting a vertical shows confirmation if categories are already selected, then clears categories and tags. Stores `verticalId`, `vertical` (name), `iabVerticalCode` on formData.
 - **Category multi-select**: Uses `useCategories(formData.verticalId)`. Searchable checkbox list (client-side filter). Each shows IAB code badge. Stores `selectedCategories: Array<{ id, name, iabCode }>`.
 - **Tag multi-select + create**: Uses `useTags(formData.verticalId)`. Chip input with search. "Create new" option when typing non-existing name. `POST /api/tags` to create inline. Stores `selectedTags: Array<{ id, name }>`.
@@ -781,6 +838,7 @@ export function StepNicheTargeting({
 ```
 
 **Implementation notes:**
+
 - Uses `selectedCategories: Array<{ id, name, iabCode }>` and `selectedTags: Array<{ id, name }>` instead of parallel arrays — eliminates desync bugs.
 - IAB vertical code is resolved client-side from extended `useVerticals()` hook (Task 7 extends it to return `iab_code`).
 - Vertical change shows `window.confirm()` per spec when categories/tags are already selected.
@@ -803,6 +861,7 @@ git commit -m "feat(wizard): add StepNicheTargeting component with category/tag/
 ## Task 5: Wire into wizard flow
 
 **Files:**
+
 - Modify: `services/dashboard/src/components/wizard/WizardShell.tsx:5`
 - Modify: `services/dashboard/src/app/wizard/page.tsx`
 - Modify: `services/dashboard/src/components/wizard/StepIdentity.tsx`
@@ -813,10 +872,27 @@ Change line 5:
 
 ```typescript
 // Before:
-const STEPS = ["Create Site", "Groups", "Theme", "Content Brief", "Script Vars", "Preview", "Review"] as const;
+const STEPS = [
+  "Create Site",
+  "Groups",
+  "Theme",
+  "Content Brief",
+  "Script Vars",
+  "Preview",
+  "Review",
+] as const;
 
 // After:
-const STEPS = ["Create Site", "Niche Targeting", "Groups", "Theme", "Content Brief", "Script Vars", "Preview", "Review"] as const;
+const STEPS = [
+  "Create Site",
+  "Niche Targeting",
+  "Groups",
+  "Theme",
+  "Content Brief",
+  "Script Vars",
+  "Preview",
+  "Review",
+] as const;
 ```
 
 - [ ] **Step 2: Update wizard/page.tsx**
@@ -848,6 +924,7 @@ iabVerticalCode: "",
 Remove the `useVerticals` import and the Vertical `<Select>` component. The "Company" field should take the full width (change from `grid-cols-2` to single column or keep the grid with company alone).
 
 Specifically:
+
 - Remove: `import { useVerticals } from "@/hooks/useReferenceData";`
 - Remove: `const { verticals } = useVerticals();`
 - Remove: The Vertical `<Select>` block (lines ~137-145)
@@ -872,6 +949,7 @@ git commit -m "feat(wizard): wire NicheTargeting step into wizard flow at positi
 ## Task 6: Add bundle auto-creation to wizard submit
 
 **Files:**
+
 - Modify: `services/dashboard/src/actions/wizard.ts`
 
 This is the critical backend change. On wizard submit, after creating the site, we auto-create a bundle via the Content Aggregator API.
@@ -884,7 +962,7 @@ Add at the top of `wizard.ts`:
 const AGGREGATOR_URL =
   process.env.CONTENT_AGGREGATOR_URL ??
   process.env.CONTENT_API_BASE_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 ```
 
 Add a new helper function:
@@ -944,12 +1022,19 @@ async function createBundle(
 // Derive ID arrays from the object arrays on WizardFormData
 const categoryIds = data.selectedCategories.map((c) => c.id);
 const tagIds = data.selectedTags.map((t) => t.id);
-const iabCategoryCodes = data.selectedCategories.map((c) => c.iabCode).filter(Boolean);
+const iabCategoryCodes = data.selectedCategories
+  .map((c) => c.iabCode)
+  .filter(Boolean);
 
 // Create bundle BEFORE first commit (so bundle_id can be included in site.yaml)
 let bundleId: string | undefined;
 if (data.verticalId && categoryIds.length > 0) {
-  const bundle = await createBundle(data.siteName, data.verticalId, categoryIds, tagIds);
+  const bundle = await createBundle(
+    data.siteName,
+    data.verticalId,
+    categoryIds,
+    tagIds,
+  );
   if (bundle) bundleId = bundle.id;
 }
 
@@ -958,7 +1043,8 @@ const siteConfig = {
   // ... existing fields ...
   bundle_id: bundleId || undefined,
   iab_vertical_code: data.iabVerticalCode || undefined,
-  iab_category_codes: iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
+  iab_category_codes:
+    iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
   brief: {
     // ... existing brief fields ...
     vertical_id: data.verticalId || undefined,
@@ -989,6 +1075,7 @@ git commit -m "feat(wizard): auto-create content bundle on site creation submit"
 ## Task 7: Extend verticals API proxy to include iab_code
 
 **Files:**
+
 - Modify: `services/dashboard/src/app/api/verticals/route.ts` (no change needed — already forwards full response)
 - Modify: `services/dashboard/src/lib/reference-data.ts` — extend `ReferenceItem` or add `iab_code` to vertical items
 
@@ -1037,7 +1124,10 @@ export async function getVerticals(): Promise<VerticalItem[]> {
 - [ ] **Step 2: Update useVerticals hook return type**
 
 ```typescript
-export function useVerticals(): { verticals: VerticalItem[]; loading: boolean } {
+export function useVerticals(): {
+  verticals: VerticalItem[];
+  loading: boolean;
+} {
   const [verticals, setVerticals] = useState<VerticalItem[]>([]);
   // ... rest stays the same
 }
@@ -1065,11 +1155,14 @@ function handleVerticalChange(id: string): void {
 Also update the Vertical `<Select>` to show IAB code as hint text below it:
 
 ```tsx
-{data.verticalId && data.iabVerticalCode && (
-  <p className="text-xs text-[var(--text-muted)] -mt-1">
-    IAB: {verticals.find(v => v.id === data.verticalId)?.name} ({data.iabVerticalCode})
-  </p>
-)}
+{
+  data.verticalId && data.iabVerticalCode && (
+    <p className="text-xs text-[var(--text-muted)] -mt-1">
+      IAB: {verticals.find((v) => v.id === data.verticalId)?.name} (
+      {data.iabVerticalCode})
+    </p>
+  );
+}
 ```
 
 - [ ] **Step 4: Update StepIdentity to use VerticalItem type (if still importing useVerticals)**
@@ -1102,6 +1195,7 @@ Expected: PASS across all packages
 - [ ] **Step 2: Manual smoke test checklist**
 
 If `cloudgrid dev` is available, verify:
+
 1. Navigate to `/wizard`
 2. Fill step 1 (Create Site) — Vertical dropdown should be GONE
 3. Click Next → Step 2 "Niche Targeting" appears
@@ -1135,6 +1229,7 @@ Task 3 (hooks) ──┘──────────────────�
 ```
 
 **Execution order:**
+
 - Tasks 1, 2, 3 can run in **parallel** (no dependencies between them).
 - Task 7 depends on Tasks 1 + 3 (modifies types and reference-data).
 - Task 4 depends on Tasks 2, 3, 7 (needs API routes, hooks, and extended verticals type).

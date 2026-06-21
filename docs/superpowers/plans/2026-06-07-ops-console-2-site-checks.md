@@ -4,7 +4,7 @@
 
 **Goal:** Expose a per-site `checks` block — Uptime · SSL · Domain-expiry (from the existing Domains Dashboard API) plus Sync (KV `sync-status`) and Tracking (config-presence) built in-house — served by content-pipeline (sync/tracking) and merged by the dashboard.
 
-**Architecture:** No new prober, cron, or Mongo collection. The dashboard `/api/site-checks` fetches the **Domains Dashboard API** (`https://domains-dashboard-53a6.atomic.cloudgrid.io`, no auth) for uptime/SSL/domain and proxies content-pipeline `GET /site-checks` for the two ATL-specific checks. content-pipeline reads `sync-status:<id>` and `site-config:<id>` from CONFIG_KV via the Cloudflare KV REST API (new credentials added), with dual-account routing.
+**Architecture:** No new prober, cron, or Mongo collection. The dashboard `/api/site-checks` fetches the **Domains Dashboard API** (`https://domains-dashboard-53a6--atomic.cloudgrid.io`, no auth) for uptime/SSL/domain and proxies content-pipeline `GET /site-checks` for the two ATL-specific checks. content-pipeline reads `sync-status:<id>` and `site-config:<id>` from CONFIG_KV via the Cloudflare KV REST API (new credentials added), with dual-account routing.
 
 **Tech Stack:** TypeScript (strict), Cloudflare KV REST (mirroring dashboard `cloudflare.ts` `getKVEntry`), Vitest. Builds on Plan 1 (`lib/mongo.ts` not needed here; reuses the `/site-stats` route + dashboard proxy conventions).
 
@@ -166,7 +166,7 @@ git commit -m "feat(content-pipeline): GET /site-checks (sync+tracking)"
 
 - [ ] **Step 2: Run → FAIL.**
 
-- [ ] **Step 3: Implement** `fetchAllDomains()` (`GET /api/domains`, indexed by `domain`), `fetchDomain(domain)` (`GET /api/domains/:domain`), and the pure `mapSnapshotToChecks`. Base URL from env `DOMAINS_DASHBOARD_URL ?? "https://domains-dashboard-53a6.atomic.cloudgrid.io"`. Short timeout (5s); on fetch error/404 return `unknown` blocks.
+- [ ] **Step 3: Implement** `fetchAllDomains()` (`GET /api/domains`, indexed by `domain`), `fetchDomain(domain)` (`GET /api/domains/:domain`), and the pure `mapSnapshotToChecks`. Base URL from env `DOMAINS_DASHBOARD_URL ?? "https://domains-dashboard-53a6--atomic.cloudgrid.io"`. Short timeout (5s); on fetch error/404 return `unknown` blocks.
 
 - [ ] **Step 4: Run → PASS. Step 5: Commit**
 ```bash

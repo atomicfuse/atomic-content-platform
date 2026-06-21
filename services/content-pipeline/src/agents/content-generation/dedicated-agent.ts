@@ -325,7 +325,7 @@ export async function runDedicatedGeneration(
   let n8nImageTriggered = false;
   const webhookUrl = config.n8nImageWebhookUrl;
   if (webhookUrl) {
-    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
     const requestId = `img_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
 
     n8nImageTriggered = await triggerN8nImage(webhookUrl, {

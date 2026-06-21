@@ -4,7 +4,7 @@ Per-site operational data for the content network: **generation stats, health ch
 
 ## Base URL & conventions
 
-- **Prod:** `https://sites-platform-e297.atomic.cloudgrid.io`
+- **Prod:** `https://sites-platform-e297--atomic.cloudgrid.io`
 - **Local (`cloudgrid dev`):** `http://localhost:3001`
 - All endpoints are `GET`, return JSON, and are **not auth-gated** (`/api/*` is excluded from auth).
 - `:domain` is the **site folder name** (e.g. `travelswire`), not the custom domain.
