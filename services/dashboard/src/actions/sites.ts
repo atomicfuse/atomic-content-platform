@@ -23,6 +23,7 @@ import {
   deregisterWorkerCustomDomain,
   getKVEntry,
   putKVEntry,
+  bulkDeleteKV,
 } from "@/lib/cloudflare";
 import {
   R2_BUCKET_PROD,
@@ -251,6 +252,14 @@ export async function deleteArticleFromStaging(
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, [slug]);
 
+  // Immediately delete the staging KV entry to provide instant feedback
+  try {
+    const kv = getKvNamespaces(domain);
+    await deleteKVEntry(kv.staging, `article:${domain}:${slug}`, domain);
+  } catch (err) {
+    console.warn(`[sites] Failed to delete staging KV entry for ${domain}:${slug} (non-fatal):`, err);
+  }
+
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticleMeta(domain, slug, site.staging_branch);
 
@@ -275,6 +284,15 @@ export async function deleteArticlesFromStaging(
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
   await deleteArticleImages(domain, slugs);
+
+  // Immediately delete the staging KV entries to provide instant feedback
+  try {
+    const kv = getKvNamespaces(domain);
+    const keys = slugs.map((slug) => `article:${domain}:${slug}`);
+    await bulkDeleteKV(kv.staging, keys, domain);
+  } catch (err) {
+    console.warn(`[sites] Failed to bulk delete staging KV entries for ${domain} (non-fatal):`, err);
+  }
 
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticlesMeta(domain, slugs, site.staging_branch);

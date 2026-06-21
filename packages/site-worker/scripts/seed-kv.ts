@@ -612,6 +612,84 @@ async function main(): Promise<void> {
 
   console.log(`[seed-kv] entries=${entries.length} (1 config + ${index.length} articles + ${sharedPages.length} shared pages + ${hostnames.length} hostnames + 1 sync-status)`);
   await bulkPut(entries);
+
+  // Prune stale article and shared-page keys in KV.
+  // Because `wrangler kv bulk put` is an upsert operation, keys of deleted
+  // articles/pages remain in KV forever. We must explicitly list the keys in
+  // KV and bulk delete the stale ones.
+  try {
+    console.log(`[seed-kv] Scanning KV for stale keys for siteId="${siteId}"...`);
+    const staleKeys: string[] = [];
+
+    // List all existing article keys in KV
+    const listArticleArgs = [
+      'kv',
+      'key',
+      'list',
+      `--namespace-id=${KV_NAMESPACE_ID}`,
+      `--prefix=article:${siteId}:`,
+      KV_REMOTE ? '--remote' : '--local',
+    ];
+    const articleStdout = execFileSync('wrangler', listArticleArgs, { encoding: 'utf-8' });
+    const parsedArticles = JSON.parse(articleStdout) as Array<{ name: string }>;
+    const existingArticleKeys = parsedArticles.map((k) => k.name);
+
+    // Compute active article keys we expect to keep
+    const activeArticleKeys = new Set(index.map((entry) => articleKey(siteId, entry.slug)));
+
+    for (const key of existingArticleKeys) {
+      if (!activeArticleKeys.has(key)) {
+        staleKeys.push(key);
+      }
+    }
+
+    // List all existing shared-page keys in KV
+    const listPageArgs = [
+      'kv',
+      'key',
+      'list',
+      `--namespace-id=${KV_NAMESPACE_ID}`,
+      `--prefix=shared-page:${siteId}:`,
+      KV_REMOTE ? '--remote' : '--local',
+    ];
+    const pageStdout = execFileSync('wrangler', listPageArgs, { encoding: 'utf-8' });
+    const parsedPages = JSON.parse(pageStdout) as Array<{ name: string }>;
+    const existingPageKeys = parsedPages.map((k) => k.name);
+
+    // Compute active shared page keys
+    const activePageKeys = new Set(sharedPages.map((page) => `shared-page:${siteId}:${page.slug}`));
+
+    for (const key of existingPageKeys) {
+      if (!activePageKeys.has(key)) {
+        staleKeys.push(key);
+      }
+    }
+
+    if (staleKeys.length > 0) {
+      console.log(`[seed-kv] Found ${staleKeys.length} stale keys to delete:`, staleKeys);
+      const tmp = await mkdtemp(join(tmpdir(), 'site-worker-delete-'));
+      const delPath = join(tmp, 'kv-delete.json');
+      await writeFile(delPath, JSON.stringify(staleKeys), 'utf-8');
+      const deleteArgs = [
+        'kv',
+        'bulk',
+        'delete',
+        delPath,
+        `--namespace-id=${KV_NAMESPACE_ID}`,
+        '--force',
+        KV_REMOTE ? '--remote' : '--local',
+      ];
+      console.log('[seed-kv] wrangler', deleteArgs.join(' '));
+      execFileSync('wrangler', deleteArgs, { stdio: 'inherit' });
+      await rm(tmp, { recursive: true, force: true });
+      console.log(`[seed-kv] Successfully deleted ${staleKeys.length} stale keys from KV`);
+    } else {
+      console.log('[seed-kv] No stale article/shared-page keys found in KV.');
+    }
+  } catch (pruneErr) {
+    console.warn('[seed-kv] Warning: stale key pruning failed (non-fatal):', pruneErr);
+  }
+
   console.log('[seed-kv] done');
 }
 
