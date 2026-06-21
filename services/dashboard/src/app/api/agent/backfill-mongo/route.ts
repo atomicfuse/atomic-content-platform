@@ -17,7 +17,7 @@ export async function POST(): Promise<NextResponse> {
     const res = await fetch(`${getAgentUrl()}/backfill-mongo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(600_000), // 10 min — backfill reads every article from Git
+      signal: AbortSignal.timeout(30_000), // Pipeline returns 202 immediately
     });
     const body = await res.json();
     return NextResponse.json(body, { status: res.status });
