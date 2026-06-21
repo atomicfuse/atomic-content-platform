@@ -31,7 +31,7 @@ import {
 } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
-import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite } from "@/lib/db/articles";
+import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite, upsertArticleMeta, upsertArticlesMeta } from "@/lib/db/articles";
 import { deleteSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry, addToDeleteHistory } from "@/lib/db/dashboard-index";
 
@@ -235,7 +235,9 @@ async function deleteArticleImages(domain: string, slugs: string[]): Promise<voi
   }
 }
 
-/** Delete a single article from the staging branch and clean up its R2 image. */
+/** Delete a single article from the staging branch.
+ *  R2 images and production cleanup happen later in publishStagingToProduction
+ *  so the live site never shows broken images. */
 export async function deleteArticleFromStaging(
   domain: string,
   slug: string
@@ -247,11 +249,12 @@ export async function deleteArticleFromStaging(
     throw new Error(`No staging branch found for ${domain}`);
   }
 
+  // 1. Delete from staging branch in Git
   const filePath = `sites/${domain}/articles/${slug}.md`;
   await deleteFileFromBranch(filePath, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
-  // Immediately delete the staging KV entry to provide instant feedback
+  // 2. Immediately delete the staging KV entry so the preview site reflects the deletion
   try {
     const kv = getKvNamespaces(domain);
     await deleteKVEntry(kv.staging, `article:${domain}:${slug}`, domain);
@@ -259,16 +262,15 @@ export async function deleteArticleFromStaging(
     console.warn(`[sites] Failed to delete staging KV entry for ${domain}:${slug} (non-fatal):`, err);
   }
 
-  // Dual-write: delete from MongoDB (soft-fail)
-  await deleteArticleMeta(domain, slug, site.staging_branch);
-
-  // Delete the image only after the article has been successfully deleted from Git/KV/Mongo
-  await deleteArticleImages(domain, [slug]);
+  // Mark as "deleted" in MongoDB so the dashboard shows the pending deletion
+  await upsertArticleMeta(domain, slug, site.staging_branch, { status: "deleted" });
 
   revalidatePath(`/sites/${domain}`);
 }
 
-/** Delete multiple articles from the staging branch and clean up their R2 images. */
+/** Delete multiple articles from the staging branch.
+ *  R2 images and production cleanup happen later in publishStagingToProduction
+ *  so the live site never shows broken images. */
 export async function deleteArticlesFromStaging(
   domain: string,
   slugs: string[]
@@ -280,13 +282,14 @@ export async function deleteArticlesFromStaging(
     throw new Error(`No staging branch found for ${domain}`);
   }
 
+  // 1. Delete from staging branch in Git
   const filePaths = slugs.map(
     (slug) => `sites/${domain}/articles/${slug}.md`
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
 
-  // Immediately delete the staging KV entries to provide instant feedback
+  // 2. Immediately delete the staging KV entries so the preview site reflects the deletions
   try {
     const kv = getKvNamespaces(domain);
     const keys = slugs.map((slug) => `article:${domain}:${slug}`);
@@ -295,11 +298,15 @@ export async function deleteArticlesFromStaging(
     console.warn(`[sites] Failed to bulk delete staging KV entries for ${domain} (non-fatal):`, err);
   }
 
-  // Dual-write: delete from MongoDB (soft-fail)
-  await deleteArticlesMeta(domain, slugs, site.staging_branch);
-
-  // Delete the images only after the articles have been successfully deleted from Git/KV/Mongo
-  await deleteArticleImages(domain, slugs);
+  // Mark as "deleted" in MongoDB so the dashboard shows the pending deletions
+  await upsertArticlesMeta(
+    slugs.map((slug) => ({
+      domain,
+      slug,
+      branch: site.staging_branch!,
+      frontmatter: { status: "deleted" },
+    })),
+  );
 
   revalidatePath(`/sites/${domain}`);
 }

@@ -33,7 +33,7 @@ vi.mock("@/lib/github", () => ({
   readFileBase64: vi.fn(),
   readFileContent: vi.fn(),
   commitNetworkFiles: vi.fn().mockResolvedValue(undefined),
-  copySiteTreeToMain: vi.fn().mockResolvedValue(undefined),
+  copySiteTreeToMain: vi.fn().mockResolvedValue([]),
 }));
 
 const mockRegisterWorkerCustomDomain = vi.fn();

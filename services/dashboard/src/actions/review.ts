@@ -10,7 +10,8 @@ import {
   copySiteTreeToMain,
   invalidateTreeCache,
 } from "@/lib/github";
-import { WORKER_STAGING_URL } from "@/lib/constants";
+import { WORKER_STAGING_URL, R2_BUCKET_PROD, getKvNamespaces } from "@/lib/constants";
+import { bulkDeleteKV, deleteR2Objects } from "@/lib/cloudflare";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { revalidatePath } from "next/cache";
 import type { ArticleEntry } from "@/types/dashboard";
@@ -169,10 +170,11 @@ export async function applyReviewDecisions(decisions: {
       await triggerWorkflowViaPush(site.staging_branch, domain);
     }
 
-    // 4. If site is Live or Ready → merge staging to main
+    // 4. If site is Live or Ready → merge staging to main + clean up deleted articles
     if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
       const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
-      await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
+      const deletedSlugs = await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
+      await cleanupDeletedArticles(domain, deletedSlugs, site.staging_branch);
     }
 
     const parts: string[] = [];
@@ -197,14 +199,65 @@ export async function applyReviewDecisions(decisions: {
 // Publish helpers — scoped tree copy (never merges entire branch)
 // ---------------------------------------------------------------------------
 
+/** Returns the slugs of articles that were deleted on staging (and now removed from main). */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
-): Promise<void> {
+): Promise<string[]> {
   // Uses the Git Tree API: one recursive tree fetch to get all blob SHAs,
   // then creates a new commit on main referencing those SHAs directly.
   // This is O(1) reads instead of O(N) per-file reads, avoiding gateway
   // timeouts on sites with 100+ articles.
-  await copySiteTreeToMain(domain, stagingBranch, commitMessage);
+  return copySiteTreeToMain(domain, stagingBranch, commitMessage);
+}
+
+/** Best-effort cleanup of deleted articles after publishing to production.
+ *  Order: prod KV → MongoDB → R2 images (R2 last so the live site never
+ *  shows broken images if an earlier step fails). */
+async function cleanupDeletedArticles(
+  domain: string,
+  deletedSlugs: string[],
+  stagingBranch?: string,
+): Promise<void> {
+  if (deletedSlugs.length === 0) return;
+
+  console.log(
+    `[review] Cleaning up ${deletedSlugs.length} deleted articles for ${domain}`,
+  );
+
+  // Delete from production KV (article stops being served)
+  let prodKvOk = true;
+  try {
+    const kv = getKvNamespaces(domain);
+    const kvKeys = deletedSlugs.map((slug) => `article:${domain}:${slug}`);
+    await bulkDeleteKV(kv.prod, kvKeys, domain);
+  } catch (err) {
+    prodKvOk = false;
+    console.warn(
+      `[review] Failed to delete prod KV entries for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // If prod KV deletion failed the articles are still being served —
+  // skip MongoDB + R2 to avoid broken images on the live site.
+  if (!prodKvOk) return;
+
+  // Delete from MongoDB — both main and staging branch records (soft-fail)
+  await deleteArticlesMeta(domain, deletedSlugs, "main");
+  if (stagingBranch) {
+    await deleteArticlesMeta(domain, deletedSlugs, stagingBranch);
+  }
+
+  // Delete R2 images last
+  try {
+    const keys = deletedSlugs.map((s) => `${domain}/assets/images/${s}.webp`);
+    await deleteR2Objects(R2_BUCKET_PROD, keys, domain);
+  } catch (err) {
+    console.warn(
+      `[review] Failed to delete R2 images for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
