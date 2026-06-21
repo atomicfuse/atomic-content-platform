@@ -250,7 +250,6 @@ export async function deleteArticleFromStaging(
   const filePath = `sites/${domain}/articles/${slug}.md`;
   await deleteFileFromBranch(filePath, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-  await deleteArticleImages(domain, [slug]);
 
   // Immediately delete the staging KV entry to provide instant feedback
   try {
@@ -262,6 +261,9 @@ export async function deleteArticleFromStaging(
 
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticleMeta(domain, slug, site.staging_branch);
+
+  // Delete the image only after the article has been successfully deleted from Git/KV/Mongo
+  await deleteArticleImages(domain, [slug]);
 
   revalidatePath(`/sites/${domain}`);
 }
@@ -283,7 +285,6 @@ export async function deleteArticlesFromStaging(
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
   await triggerWorkflowViaPush(site.staging_branch, domain);
-  await deleteArticleImages(domain, slugs);
 
   // Immediately delete the staging KV entries to provide instant feedback
   try {
@@ -296,6 +297,9 @@ export async function deleteArticlesFromStaging(
 
   // Dual-write: delete from MongoDB (soft-fail)
   await deleteArticlesMeta(domain, slugs, site.staging_branch);
+
+  // Delete the images only after the articles have been successfully deleted from Git/KV/Mongo
+  await deleteArticleImages(domain, slugs);
 
   revalidatePath(`/sites/${domain}`);
 }
