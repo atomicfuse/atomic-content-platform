@@ -9,7 +9,7 @@ import { commitSiteFiles } from "@/lib/github";
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 export interface MigrateSiteToPerTopicArgs {

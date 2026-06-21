@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 > **HARD GATE — read this before running any commit step:**
-> Asaf tests every chunk locally before committing. **Do NOT run any `git add` / `git commit` / `git push` / `cloudgrid plug` / `wrangler deploy*` / `pnpm deploy:*` step until Asaf explicitly says "ok commit"** for the chunk in question. Tests, typechecks, and `cloudgrid dev` are fine. The commit steps below describe *what* to commit when the time comes; they are not authorization to commit.
+> Asaf tests every chunk locally before committing. **Do NOT run any `git add` / `git commit` / `git push` / `cloudgrid plug` / `wrangler deploy*` / `pnpm deploy:*` step until Asaf explicitly says "ok commit"** for the chunk in question. Tests, typechecks, and `cloudgrid dev` are fine. The commit steps below describe _what_ to commit when the time comes; they are not authorization to commit.
 
 **Goal:** Introduce a per-topic content filter model so each topic (menu section) carries its own filter (raw `category_ids`/`tag_ids` OR a linked aggregator bundle) plus its own schedule. New sites and migrated sites use this model; legacy multi-bundle sites keep working unchanged.
 
@@ -18,11 +18,13 @@
 ## File Map
 
 **Types:**
+
 - [packages/shared-types/src/config.ts](../../../packages/shared-types/src/config.ts) — add `SiteBrief.theme`, `SiteBrief.topics_v2`, `TopicV2`, `TopicV2Source`
 - [packages/shared-types/src/article.ts](../../../packages/shared-types/src/article.ts) — add `ArticleFrontmatter.topics?: string[]`
 - [services/content-pipeline/src/types.ts](../../../services/content-pipeline/src/types.ts) — mirror
 
 **Server-side:**
+
 - [services/content-pipeline/src/agents/content-generation/index.ts](../../../services/content-pipeline/src/agents/content-generation/index.ts) — new POST `/propose-filter` route
 - [services/content-pipeline/src/agents/content-generation/propose-filter.ts](../../../services/content-pipeline/src/agents/content-generation/propose-filter.ts) — new file: Claude call + taxonomy validation
 - [services/dashboard/src/app/api/ai/propose-filter/route.ts](../../../services/dashboard/src/app/api/ai/propose-filter/route.ts) — new file: dashboard proxy to content-pipeline
@@ -30,26 +32,32 @@
 - [services/dashboard/src/actions/per-topic-migration.ts](../../../services/dashboard/src/actions/per-topic-migration.ts) — new file: `migrateSiteToPerTopic` server action
 
 **Content pipeline (fetch path):**
+
 - [services/content-pipeline/src/agents/content-generation/per-topic-fetch.ts](../../../services/content-pipeline/src/agents/content-generation/per-topic-fetch.ts) — new file: per-topic fetch helpers, schedule eligibility, cross-topic membership
 - [services/content-pipeline/src/agents/content-generation/agent.ts](../../../services/content-pipeline/src/agents/content-generation/agent.ts) — dispatcher checks `topics_v2`; on present, calls per-topic path; on absent, takes legacy path
 
 **Site-worker (rendering):**
+
 - [packages/site-worker/src/pages/category/[topic].astro](../../../packages/site-worker/src/pages/category/%5Btopic%5D.astro) — read `frontmatter.topics` array if present, fall back to tag-based filter
 - [packages/site-worker/src/pages/[slug]/index.astro](../../../packages/site-worker/src/pages/%5Bslug%5D/index.astro) — same fallback for sidebar category lists
 
 **Dashboard UI — shared:**
+
 - [services/dashboard/src/components/topic-review/PerTopicReviewScreen.tsx](../../../services/dashboard/src/components/topic-review/PerTopicReviewScreen.tsx) — new file: list-of-topics-with-AI-proposals review UI; hosted by both migration page and wizard step
 
 **Dashboard UI — site detail:**
+
 - [services/dashboard/src/components/site-detail/TopicsListPanel.tsx](../../../services/dashboard/src/components/site-detail/TopicsListPanel.tsx) — new file
 - [services/dashboard/src/components/site-detail/TopicEditModal.tsx](../../../services/dashboard/src/components/site-detail/TopicEditModal.tsx) — new file
 - [services/dashboard/src/components/site-detail/ContentAgentTab.tsx](../../../services/dashboard/src/components/site-detail/ContentAgentTab.tsx) — conditionally render TopicsListPanel when `brief.topics_v2` present
 
 **Dashboard UI — migration:**
+
 - [services/dashboard/src/app/sites/[domain]/migrate-per-topic/page.tsx](../../../services/dashboard/src/app/sites/%5Bdomain%5D/migrate-per-topic/page.tsx) — new file: full-page migration screen
 - [services/dashboard/src/components/site-detail/MigrateToPerTopicToggle.tsx](../../../services/dashboard/src/components/site-detail/MigrateToPerTopicToggle.tsx) — new file: toggle on Identity tab (only on legacy sites)
 
 **Dashboard UI — wizard:**
+
 - [services/dashboard/src/components/wizard/StepTopicFilters.tsx](../../../services/dashboard/src/components/wizard/StepTopicFilters.tsx) — new file: replaces StepNicheTargeting
 - [services/dashboard/src/components/wizard/StepNicheTargeting.tsx](../../../services/dashboard/src/components/wizard/StepNicheTargeting.tsx) — deleted
 - [services/dashboard/src/components/wizard/StepIdentity.tsx](../../../services/dashboard/src/components/wizard/StepIdentity.tsx) — adds Site Theme textarea
@@ -58,12 +66,14 @@
 - [services/dashboard/src/actions/wizard.ts](../../../services/dashboard/src/actions/wizard.ts) — `createSiteAndBuildStaging` writes `topics_v2`; never writes legacy bundle fields for new sites
 
 **Tests (new):**
-- [services/content-pipeline/src/__tests__/propose-filter.test.ts](../../../services/content-pipeline/src/__tests__/propose-filter.test.ts) — taxonomy validation + Claude mock
-- [services/content-pipeline/src/__tests__/per-topic-fetch.test.ts](../../../services/content-pipeline/src/__tests__/per-topic-fetch.test.ts) — schedule eligibility, cross-topic membership, dispatcher
-- [services/content-pipeline/src/__tests__/legacy-path-regression.test.ts](../../../services/content-pipeline/src/__tests__/legacy-path-regression.test.ts) — verify legacy sites still go through legacy fan-out unchanged
-- [services/dashboard/src/actions/__tests__/per-topic-migration.test.ts](../../../services/dashboard/src/actions/__tests__/per-topic-migration.test.ts) — migration server action
+
+- [services/content-pipeline/src/**tests**/propose-filter.test.ts](../../../services/content-pipeline/src/__tests__/propose-filter.test.ts) — taxonomy validation + Claude mock
+- [services/content-pipeline/src/**tests**/per-topic-fetch.test.ts](../../../services/content-pipeline/src/__tests__/per-topic-fetch.test.ts) — schedule eligibility, cross-topic membership, dispatcher
+- [services/content-pipeline/src/**tests**/legacy-path-regression.test.ts](../../../services/content-pipeline/src/__tests__/legacy-path-regression.test.ts) — verify legacy sites still go through legacy fan-out unchanged
+- [services/dashboard/src/actions/**tests**/per-topic-migration.test.ts](../../../services/dashboard/src/actions/__tests__/per-topic-migration.test.ts) — migration server action
 
 **Docs:**
+
 - [services/dashboard/public/guide/21-per-topic-filters.md](../../../services/dashboard/public/guide/21-per-topic-filters.md) — new guide page
 - [services/dashboard/src/app/guide/page.tsx](../../../services/dashboard/src/app/guide/page.tsx) — register new page
 
@@ -74,6 +84,7 @@
 Pure type addition. No logic. Keeps the spec's data model in the type layer first so subsequent tasks compile cleanly.
 
 **Files:**
+
 - Modify: `packages/shared-types/src/config.ts` (insert after the existing `bundle_ids` field on `SiteBrief`)
 - Modify: `services/content-pipeline/src/types.ts` (mirror)
 - Modify: `packages/shared-types/src/article.ts` (add `topics?: string[]` to `ArticleFrontmatter`)
@@ -176,6 +187,7 @@ A new POST endpoint on the content-pipeline server that calls Claude to propose 
 The endpoint receives the site theme + topic name + topic description + the aggregator's full taxonomy (categories + tags) and returns a validated `{category_ids, tag_ids, rationale}` payload. IDs not present in the supplied taxonomy are dropped before returning.
 
 **Files:**
+
 - Create: `services/content-pipeline/src/agents/content-generation/propose-filter.ts`
 - Modify: `services/content-pipeline/src/agents/content-generation/index.ts` (add `/propose-filter` route)
 - Create: `services/content-pipeline/src/__tests__/propose-filter.test.ts`
@@ -242,7 +254,8 @@ export async function proposeFilter(
   const categoriesList = req.categories
     .map((c) => {
       const parent = c.parent_id
-        ? req.categories.find((p) => p.id === c.parent_id)?.name ?? "(unknown)"
+        ? (req.categories.find((p) => p.id === c.parent_id)?.name ??
+          "(unknown)")
         : "tier-1";
       return `${c.id} | ${c.name} (${parent})`;
     })
@@ -299,16 +312,25 @@ Return JSON only, no surrounding prose:
   if (!jsonMatch) {
     throw new Error(`Claude returned no JSON object: ${text.slice(0, 200)}`);
   }
-  let parsed: { category_ids?: unknown; tag_ids?: unknown; rationale?: unknown };
+  let parsed: {
+    category_ids?: unknown;
+    tag_ids?: unknown;
+    rationale?: unknown;
+  };
   try {
     parsed = JSON.parse(jsonMatch[0]);
   } catch {
-    throw new Error(`Claude returned invalid JSON: ${jsonMatch[0].slice(0, 200)}`);
+    throw new Error(
+      `Claude returned invalid JSON: ${jsonMatch[0].slice(0, 200)}`,
+    );
   }
 
-  const rawCategoryIds = Array.isArray(parsed.category_ids) ? parsed.category_ids : [];
+  const rawCategoryIds = Array.isArray(parsed.category_ids)
+    ? parsed.category_ids
+    : [];
   const rawTagIds = Array.isArray(parsed.tag_ids) ? parsed.tag_ids : [];
-  const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "";
+  const rationale =
+    typeof parsed.rationale === "string" ? parsed.rationale : "";
 
   const validatedCategoryIds: string[] = [];
   const validatedTagIds: string[] = [];
@@ -349,7 +371,7 @@ Return JSON only, no surrounding prose:
 
 Create `services/content-pipeline/src/__tests__/propose-filter.test.ts`:
 
-```ts
+````ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the Anthropic SDK so tests don't make real API calls
@@ -364,9 +386,14 @@ vi.mock("@anthropic-ai/sdk", () => {
 });
 
 import Anthropic from "@anthropic-ai/sdk";
-import { proposeFilter, type ProposeFilterRequest } from "../agents/content-generation/propose-filter.js";
+import {
+  proposeFilter,
+  type ProposeFilterRequest,
+} from "../agents/content-generation/propose-filter.js";
 
-function makeRequest(overrides: Partial<ProposeFilterRequest> = {}): ProposeFilterRequest {
+function makeRequest(
+  overrides: Partial<ProposeFilterRequest> = {},
+): ProposeFilterRequest {
   return {
     siteTheme: "Travel and eating while traveling",
     topicName: "Wine & Beer",
@@ -388,20 +415,25 @@ function mockClaudeResponse(jsonStr: string): void {
   const mockCreate = vi.fn().mockResolvedValue({
     content: [{ type: "text", text: jsonStr }],
   });
-  vi.mocked(Anthropic).mockImplementation((): unknown => ({
-    messages: { create: mockCreate },
-  }) as unknown as InstanceType<typeof Anthropic>);
+  vi.mocked(Anthropic).mockImplementation(
+    (): unknown =>
+      ({
+        messages: { create: mockCreate },
+      }) as unknown as InstanceType<typeof Anthropic>,
+  );
 }
 
 describe("proposeFilter", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns validated category_ids and tag_ids when Claude returns valid IDs", async () => {
-    mockClaudeResponse(JSON.stringify({
-      category_ids: ["cat-alc"],
-      tag_ids: ["tag-wine-tourism", "tag-culinary-travel"],
-      rationale: "Wine/beer with travel context",
-    }));
+    mockClaudeResponse(
+      JSON.stringify({
+        category_ids: ["cat-alc"],
+        tag_ids: ["tag-wine-tourism", "tag-culinary-travel"],
+        rationale: "Wine/beer with travel context",
+      }),
+    );
 
     const result = await proposeFilter(makeRequest(), "test-key");
 
@@ -412,11 +444,13 @@ describe("proposeFilter", () => {
   });
 
   it("drops unknown IDs that Claude hallucinates", async () => {
-    mockClaudeResponse(JSON.stringify({
-      category_ids: ["cat-alc", "cat-doesnt-exist"],
-      tag_ids: ["tag-wine-tourism", "tag-fake-hallucination"],
-      rationale: "...",
-    }));
+    mockClaudeResponse(
+      JSON.stringify({
+        category_ids: ["cat-alc", "cat-doesnt-exist"],
+        tag_ids: ["tag-wine-tourism", "tag-fake-hallucination"],
+        rationale: "...",
+      }),
+    );
 
     const result = await proposeFilter(makeRequest(), "test-key");
 
@@ -430,8 +464,12 @@ describe("proposeFilter", () => {
   it("extracts JSON when Claude wraps it in markdown code fences", async () => {
     mockClaudeResponse(
       "Here's my proposal:\n```json\n" +
-      JSON.stringify({ category_ids: ["cat-alc"], tag_ids: [], rationale: "..." }) +
-      "\n```\nHope that helps!"
+        JSON.stringify({
+          category_ids: ["cat-alc"],
+          tag_ids: [],
+          rationale: "...",
+        }) +
+        "\n```\nHope that helps!",
     );
 
     const result = await proposeFilter(makeRequest(), "test-key");
@@ -440,12 +478,16 @@ describe("proposeFilter", () => {
 
   it("throws when Claude returns no JSON at all", async () => {
     mockClaudeResponse("Sorry, I cannot help with that request.");
-    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(/no JSON/);
+    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(
+      /no JSON/,
+    );
   });
 
   it("throws when Claude returns malformed JSON", async () => {
     mockClaudeResponse('{ "category_ids": [bad json');
-    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(/invalid JSON/);
+    await expect(proposeFilter(makeRequest(), "test-key")).rejects.toThrow(
+      /invalid JSON/,
+    );
   });
 
   it("throws when siteTheme is empty", async () => {
@@ -454,7 +496,7 @@ describe("proposeFilter", () => {
     ).rejects.toThrow(/siteTheme is required/);
   });
 });
-```
+````
 
 - [ ] **Step 2.3: Run the new tests**
 
@@ -497,13 +539,19 @@ async function handleProposeFilter(
 
   const p = payload as Record<string, unknown>;
   if (typeof p.siteTheme !== "string" || typeof p.topicName !== "string") {
-    sendJson(res, 400, { status: "error", message: "siteTheme and topicName are required strings" });
+    sendJson(res, 400, {
+      status: "error",
+      message: "siteTheme and topicName are required strings",
+    });
     return;
   }
 
   const apiKey = config.anthropicApiKey;
   if (!apiKey) {
-    sendJson(res, 500, { status: "error", message: "ANTHROPIC_API_KEY not configured" });
+    sendJson(res, 500, {
+      status: "error",
+      message: "ANTHROPIC_API_KEY not configured",
+    });
     return;
   }
 
@@ -513,9 +561,16 @@ async function handleProposeFilter(
       {
         siteTheme: p.siteTheme,
         topicName: p.topicName,
-        topicDescription: typeof p.topicDescription === "string" ? p.topicDescription : undefined,
-        categories: Array.isArray(p.categories) ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"]) : [],
-        tags: Array.isArray(p.tags) ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"]) : [],
+        topicDescription:
+          typeof p.topicDescription === "string"
+            ? p.topicDescription
+            : undefined,
+        categories: Array.isArray(p.categories)
+          ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"])
+          : [],
+        tags: Array.isArray(p.tags)
+          ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"])
+          : [],
       },
       apiKey,
     );
@@ -564,6 +619,7 @@ Expected: no errors.
 Thin Next.js route that forwards a request to the content-pipeline's `/propose-filter` endpoint. Uses the same `CONTENT_AGENT_URL` + local-dev fallback pattern as `/api/agent/generate`.
 
 **Files:**
+
 - Create: `services/dashboard/src/app/api/ai/propose-filter/route.ts`
 
 - [ ] **Step 3.1: Write the route file**
@@ -606,7 +662,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const data = (await resp.json()) as Record<string, unknown>;
     return NextResponse.json(data, { status: resp.status });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to reach content agent";
+    const message =
+      err instanceof Error ? err.message : "Failed to reach content agent";
     return NextResponse.json(
       { status: "error", message: `Content agent unavailable: ${message}` },
       { status: 502 },
@@ -632,6 +689,7 @@ Expected: no errors.
 Pure-function helpers extracted into a new file so they're easy to unit-test. The dispatcher and the per-topic fetch path (Task 5) will call into these.
 
 **Files:**
+
 - Create: `services/content-pipeline/src/agents/content-generation/per-topic-fetch.ts`
 - Create: `services/content-pipeline/src/__tests__/per-topic-fetch.test.ts`
 
@@ -775,7 +833,11 @@ import type { ContentItem } from "../agents/content-generation/types.js";
 function makeTopic(overrides: Partial<TopicV2> = {}): TopicV2 {
   return {
     name: "Wine & Beer",
-    source: { type: "filter", category_ids: ["cat-alc"], tag_ids: ["tag-wine"] },
+    source: {
+      type: "filter",
+      category_ids: ["cat-alc"],
+      tag_ids: ["tag-wine"],
+    },
     schedule: { articles_per_week: 1, preferred_days: ["Tuesday"] },
     ...overrides,
   };
@@ -805,17 +867,36 @@ function makeItem(overrides: Partial<ContentItem> = {}): ContentItem {
 
 describe("computePerRunTarget", () => {
   it("returns ceil(articles_per_week / preferred_days.length)", () => {
-    expect(computePerRunTarget({ articles_per_week: 3, preferred_days: ["Mon", "Wed", "Fri"] })).toBe(1);
-    expect(computePerRunTarget({ articles_per_week: 2, preferred_days: ["Tue", "Thu"] })).toBe(1);
-    expect(computePerRunTarget({ articles_per_week: 5, preferred_days: ["Mon", "Wed"] })).toBe(3);
+    expect(
+      computePerRunTarget({
+        articles_per_week: 3,
+        preferred_days: ["Mon", "Wed", "Fri"],
+      }),
+    ).toBe(1);
+    expect(
+      computePerRunTarget({
+        articles_per_week: 2,
+        preferred_days: ["Tue", "Thu"],
+      }),
+    ).toBe(1);
+    expect(
+      computePerRunTarget({
+        articles_per_week: 5,
+        preferred_days: ["Mon", "Wed"],
+      }),
+    ).toBe(3);
   });
 
   it("returns 0 when articles_per_week is 0", () => {
-    expect(computePerRunTarget({ articles_per_week: 0, preferred_days: ["Mon"] })).toBe(0);
+    expect(
+      computePerRunTarget({ articles_per_week: 0, preferred_days: ["Mon"] }),
+    ).toBe(0);
   });
 
   it("returns 0 when preferred_days is empty", () => {
-    expect(computePerRunTarget({ articles_per_week: 5, preferred_days: [] })).toBe(0);
+    expect(
+      computePerRunTarget({ articles_per_week: 5, preferred_days: [] }),
+    ).toBe(0);
   });
 });
 
@@ -825,36 +906,62 @@ describe("isTopicEligibleToday", () => {
   const WEDNESDAY = new Date("2026-06-03T12:00:00Z");
 
   it("returns true when today is in preferred_days", () => {
-    expect(isTopicEligibleToday({ articles_per_week: 1, preferred_days: ["Tuesday"] }, TUESDAY)).toBe(true);
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["Tuesday"] },
+        TUESDAY,
+      ),
+    ).toBe(true);
   });
 
   it("returns false when today is not in preferred_days", () => {
-    expect(isTopicEligibleToday({ articles_per_week: 1, preferred_days: ["Tuesday"] }, WEDNESDAY)).toBe(false);
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["Tuesday"] },
+        WEDNESDAY,
+      ),
+    ).toBe(false);
   });
 
   it("returns false when articles_per_week is 0 even on preferred day", () => {
-    expect(isTopicEligibleToday({ articles_per_week: 0, preferred_days: ["Tuesday"] }, TUESDAY)).toBe(false);
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 0, preferred_days: ["Tuesday"] },
+        TUESDAY,
+      ),
+    ).toBe(false);
   });
 });
 
 describe("articleMatchesTopicFilter", () => {
   it("matches when item categories include any topic category AND item tags include any topic tag", () => {
-    const item = makeItem({ category_ids: ["cat-alc"], tag_ids: ["tag-wine", "tag-other"] });
+    const item = makeItem({
+      category_ids: ["cat-alc"],
+      tag_ids: ["tag-wine", "tag-other"],
+    });
     expect(articleMatchesTopicFilter(item, makeTopic())).toBe(true);
   });
 
   it("does NOT match when categories overlap but tags don't (AND across)", () => {
-    const item = makeItem({ category_ids: ["cat-alc"], tag_ids: ["tag-other"] });
+    const item = makeItem({
+      category_ids: ["cat-alc"],
+      tag_ids: ["tag-other"],
+    });
     expect(articleMatchesTopicFilter(item, makeTopic())).toBe(false);
   });
 
   it("does NOT match when tags overlap but categories don't", () => {
-    const item = makeItem({ category_ids: ["cat-other"], tag_ids: ["tag-wine"] });
+    const item = makeItem({
+      category_ids: ["cat-other"],
+      tag_ids: ["tag-wine"],
+    });
     expect(articleMatchesTopicFilter(item, makeTopic())).toBe(false);
   });
 
   it("ignores empty dimensions (tag_ids empty → no tag constraint)", () => {
-    const topic = makeTopic({ source: { type: "filter", category_ids: ["cat-alc"], tag_ids: [] } });
+    const topic = makeTopic({
+      source: { type: "filter", category_ids: ["cat-alc"], tag_ids: [] },
+    });
     const item = makeItem({ category_ids: ["cat-alc"], tag_ids: [] });
     expect(articleMatchesTopicFilter(item, topic)).toBe(true);
   });
@@ -875,12 +982,20 @@ describe("resolveArticleTopics", () => {
       primary,
       {
         name: "Food around the world",
-        source: { type: "filter", category_ids: ["cat-alc", "cat-dining"], tag_ids: ["tag-wine", "tag-food"] },
+        source: {
+          type: "filter",
+          category_ids: ["cat-alc", "cat-dining"],
+          tag_ids: ["tag-wine", "tag-food"],
+        },
         schedule: { articles_per_week: 2, preferred_days: [] },
       },
       {
         name: "Tech News",
-        source: { type: "filter", category_ids: ["cat-tech"], tag_ids: ["tag-ai"] },
+        source: {
+          type: "filter",
+          category_ids: ["cat-tech"],
+          tag_ids: ["tag-ai"],
+        },
         schedule: { articles_per_week: 1, preferred_days: [] },
       },
     ];
@@ -986,6 +1101,7 @@ Wire the per-topic helpers into the content-generation agent. The dispatcher che
 The new path iterates `brief.topics_v2`. For each eligible topic (today is a preferred day): fetch from the topic's source (raw filter or bundle), respect per-topic target, and after items are picked, call `resolveArticleTopics()` to compute the article's `topics: string[]` frontmatter array (primary + secondaries from cross-topic matching).
 
 **Files:**
+
 - Modify: `services/content-pipeline/src/agents/content-generation/agent.ts`
 
 - [ ] **Step 5.1: Find the dispatcher**
@@ -1043,11 +1159,8 @@ async function runPerTopicGeneration(args: {
   const { brief, siteDomain, config, existing } = args;
   const topics = brief.topics_v2 ?? [];
 
-  const {
-    isTopicEligibleToday,
-    computePerRunTarget,
-    resolveArticleTopics,
-  } = await import("./per-topic-fetch.js");
+  const { isTopicEligibleToday, computePerRunTarget, resolveArticleTopics } =
+    await import("./per-topic-fetch.js");
 
   const settings = await getSettings();
 
@@ -1081,15 +1194,29 @@ async function runPerTopicGeneration(args: {
           limit: PAGE_SIZE,
           page,
           language: brief.language ?? "EN",
-          category_ids: topic.source.category_ids.length > 0 ? topic.source.category_ids : undefined,
-          tag_ids: topic.source.tag_ids.length > 0 ? topic.source.tag_ids : undefined,
+          category_ids:
+            topic.source.category_ids.length > 0
+              ? topic.source.category_ids
+              : undefined,
+          tag_ids:
+            topic.source.tag_ids.length > 0 ? topic.source.tag_ids : undefined,
         });
         totalSourced += response.items.length;
         if (response.items.length === 0) break;
         for (const item of response.items) {
-          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
-          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
-          if (seenIds.has(item.id) || seenUrls.has(normalizeUrl(item.url)) || seenTitles.has(normalizeTitleKey(item.title))) {
+          if (existing.urls.has(normalizeUrl(item.url))) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.titles.has(normalizeTitleKey(item.title))) {
+            duplicateCount++;
+            continue;
+          }
+          if (
+            seenIds.has(item.id) ||
+            seenUrls.has(normalizeUrl(item.url)) ||
+            seenTitles.has(normalizeTitleKey(item.title))
+          ) {
             duplicateCount++;
             continue;
           }
@@ -1117,9 +1244,19 @@ async function runPerTopicGeneration(args: {
         totalSourced += response.items.length;
         if (response.items.length === 0) break;
         for (const item of response.items) {
-          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
-          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
-          if (seenIds.has(item.id) || seenUrls.has(normalizeUrl(item.url)) || seenTitles.has(normalizeTitleKey(item.title))) {
+          if (existing.urls.has(normalizeUrl(item.url))) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.titles.has(normalizeTitleKey(item.title))) {
+            duplicateCount++;
+            continue;
+          }
+          if (
+            seenIds.has(item.id) ||
+            seenUrls.has(normalizeUrl(item.url)) ||
+            seenTitles.has(normalizeTitleKey(item.title))
+          ) {
             duplicateCount++;
             continue;
           }
@@ -1135,13 +1272,20 @@ async function runPerTopicGeneration(args: {
     }
 
     if (perTopicItems.length === 0) {
-      console.log(`[agent] [per-topic] topic="${topic.name}" — no new items this run`);
+      console.log(
+        `[agent] [per-topic] topic="${topic.name}" — no new items this run`,
+      );
       continue;
     }
 
     // Generate articles for each item; tag with cross-topic membership.
     for (const item of perTopicItems) {
-      const topicNames = resolveArticleTopics(item, topic, topics, fetchedFromBundleId);
+      const topicNames = resolveArticleTopics(
+        item,
+        topic,
+        topics,
+        fetchedFromBundleId,
+      );
       const result = await generateOneArticle({
         item,
         siteDomain,
@@ -1159,7 +1303,9 @@ async function runPerTopicGeneration(args: {
 
   return {
     siteDomain,
-    requested: args.count ?? eligibleTopics.reduce((s, t) => s + computePerRunTarget(t.schedule), 0),
+    requested:
+      args.count ??
+      eligibleTopics.reduce((s, t) => s + computePerRunTarget(t.schedule), 0),
     totalSourced,
     duplicateCount,
     availableNew: allResults.length,
@@ -1179,7 +1325,8 @@ In the per-item generation block (whether refactored into `generateOneArticle` o
 
 ```ts
 if (topicsArray && topicsArray.length > 0) {
-  (frontmatter as ArticleFrontmatterWithExtras & { topics?: string[] }).topics = topicsArray;
+  (frontmatter as ArticleFrontmatterWithExtras & { topics?: string[] }).topics =
+    topicsArray;
 }
 ```
 
@@ -1208,6 +1355,7 @@ Expected: existing tests still pass (the same set that passed before Task 5 — 
 A test that proves a site WITHOUT `topics_v2` still goes through the legacy flat-bundle fan-out path. This is the live-sites-must-not-be-touched invariant in code form.
 
 **Files:**
+
 - Create: `services/content-pipeline/src/__tests__/legacy-path-regression.test.ts`
 
 - [ ] **Step 6.1: Write the regression test**
@@ -1282,6 +1430,7 @@ Expected: 4/4 pass.
 Update the topic page (and the sidebar category lists on `/[slug]/index.astro`) to prefer the new `frontmatter.topics` array. If absent (legacy site), fall back to today's tag-based slug matching.
 
 **Files:**
+
 - Modify: `packages/site-worker/src/pages/category/[topic].astro` (around line 39)
 - Modify: `packages/site-worker/src/pages/[slug]/index.astro` (around line 93)
 
@@ -1292,6 +1441,7 @@ grep -n "filter((a) => a.tags.some" /Users/asafcohen/Desktop/ATL-Content-Network
 ```
 
 You'll see a line like:
+
 ```ts
 .filter((a) => a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()))
 ```
@@ -1301,16 +1451,23 @@ You'll see a line like:
 Just above the `.filter(...)` line, add a helper:
 
 ```ts
-function articleBelongsToTopic(a: ArticleIndexEntry, slug: string, displayName: string): boolean {
+function articleBelongsToTopic(
+  a: ArticleIndexEntry,
+  slug: string,
+  displayName: string,
+): boolean {
   // New model: article frontmatter carries an explicit `topics` array.
   if (Array.isArray(a.topics) && a.topics.length > 0) {
     return a.topics.some(
-      (n) => n.toLowerCase().replace(/\s+/g, "-") === slug.toLowerCase() ||
-             n.toLowerCase() === displayName.toLowerCase(),
+      (n) =>
+        n.toLowerCase().replace(/\s+/g, "-") === slug.toLowerCase() ||
+        n.toLowerCase() === displayName.toLowerCase(),
     );
   }
   // Legacy model: tag-slug match.
-  return a.tags.some((t) => t.toLowerCase().replace(/\s+/g, "-") === slug.toLowerCase());
+  return a.tags.some(
+    (t) => t.toLowerCase().replace(/\s+/g, "-") === slug.toLowerCase(),
+  );
 }
 ```
 
@@ -1379,6 +1536,7 @@ Expected: all existing tests still pass.
 When the dashboard sends a save with `topics_v2` populated, the route writes the new shape to `site.yaml` and removes the legacy `bundle_ids` / `category_ids` / `tag_ids` fields. When `theme` is provided (alone or with `topics_v2`), it's persisted on the brief.
 
 **Files:**
+
 - Modify: `services/dashboard/src/app/api/sites/save/route.ts`
 - Modify: `services/dashboard/src/actions/wizard.ts` (extend `StagingSiteConfig`)
 
@@ -1400,31 +1558,31 @@ Edit `services/dashboard/src/actions/wizard.ts`. Find the `StagingSiteConfig` in
 Edit `services/dashboard/src/app/api/sites/save/route.ts`. Find the existing `if (configUpdates.bundleIds !== undefined) { ... }` block in the niche-targeting section (around line 220). Add a new block immediately AFTER it:
 
 ```ts
-      // Per-topic-filter model. When topics_v2 is provided (non-empty array),
-      // this site is on the new model — write `brief.theme` and `brief.topics_v2`
-      // and strip every legacy niche-targeting field (bundle_ids, category_ids,
-      // tag_ids, plus the singular legacy bundle_id at top level and brief level).
-      if (configUpdates.topics_v2 !== undefined) {
-        if (configUpdates.topics_v2.length > 0) {
-          brief.topics_v2 = configUpdates.topics_v2;
-        } else {
-          delete (brief as Record<string, unknown>).topics_v2;
-        }
-        // Legacy fields are out on per-topic sites.
-        delete (brief as Record<string, unknown>).bundle_ids;
-        delete (brief as Record<string, unknown>).bundle_id;
-        delete (brief as Record<string, unknown>).category_ids;
-        delete (brief as Record<string, unknown>).tag_ids;
-        delete (existing as Record<string, unknown>).bundle_id;
-      }
+// Per-topic-filter model. When topics_v2 is provided (non-empty array),
+// this site is on the new model — write `brief.theme` and `brief.topics_v2`
+// and strip every legacy niche-targeting field (bundle_ids, category_ids,
+// tag_ids, plus the singular legacy bundle_id at top level and brief level).
+if (configUpdates.topics_v2 !== undefined) {
+  if (configUpdates.topics_v2.length > 0) {
+    brief.topics_v2 = configUpdates.topics_v2;
+  } else {
+    delete (brief as Record<string, unknown>).topics_v2;
+  }
+  // Legacy fields are out on per-topic sites.
+  delete (brief as Record<string, unknown>).bundle_ids;
+  delete (brief as Record<string, unknown>).bundle_id;
+  delete (brief as Record<string, unknown>).category_ids;
+  delete (brief as Record<string, unknown>).tag_ids;
+  delete (existing as Record<string, unknown>).bundle_id;
+}
 
-      if (configUpdates.theme !== undefined) {
-        if (configUpdates.theme.trim().length > 0) {
-          brief.theme = configUpdates.theme;
-        } else {
-          delete (brief as Record<string, unknown>).theme;
-        }
-      }
+if (configUpdates.theme !== undefined) {
+  if (configUpdates.theme.trim().length > 0) {
+    brief.theme = configUpdates.theme;
+  } else {
+    delete (brief as Record<string, unknown>).theme;
+  }
+}
 ```
 
 - [ ] **Step 8.3: Typecheck**
@@ -1450,11 +1608,13 @@ Expected: all existing 169 dashboard tests still pass.
 ## Task 9: Migration server action
 
 A server action `migrateSiteToPerTopic(domain, theme, topics_v2, deleteOrphanBundleIds[])` that:
+
 1. Reads the current site.yaml from the staging branch
 2. Writes the new shape (theme + topics_v2; strips bundle_ids/category_ids/tag_ids)
 3. Optionally deletes the listed orphan bundles via the aggregator API
 
 **Files:**
+
 - Create: `services/dashboard/src/actions/per-topic-migration.ts`
 - Create: `services/dashboard/src/actions/__tests__/per-topic-migration.test.ts`
 
@@ -1476,7 +1636,7 @@ import {
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 export interface MigrateSiteToPerTopicArgs {
@@ -1497,21 +1657,44 @@ export async function migrateSiteToPerTopic(
   args: MigrateSiteToPerTopicArgs,
 ): Promise<MigrateSiteToPerTopicResult> {
   if (!args.theme.trim()) {
-    return { status: "error", message: "Theme is required", bundlesDeleted: 0, bundlesFailedToDelete: [] };
+    return {
+      status: "error",
+      message: "Theme is required",
+      bundlesDeleted: 0,
+      bundlesFailedToDelete: [],
+    };
   }
   if (args.topics_v2.length === 0) {
-    return { status: "error", message: "At least one topic is required", bundlesDeleted: 0, bundlesFailedToDelete: [] };
+    return {
+      status: "error",
+      message: "At least one topic is required",
+      bundlesDeleted: 0,
+      bundlesFailedToDelete: [],
+    };
   }
 
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === args.domain);
   if (!site?.staging_branch) {
-    return { status: "error", message: "No staging branch for this site", bundlesDeleted: 0, bundlesFailedToDelete: [] };
+    return {
+      status: "error",
+      message: "No staging branch for this site",
+      bundlesDeleted: 0,
+      bundlesFailedToDelete: [],
+    };
   }
 
-  const existing = await readSiteConfigFromGit(args.domain, site.staging_branch);
+  const existing = await readSiteConfigFromGit(
+    args.domain,
+    site.staging_branch,
+  );
   if (!existing) {
-    return { status: "error", message: "Could not read site config", bundlesDeleted: 0, bundlesFailedToDelete: [] };
+    return {
+      status: "error",
+      message: "Could not read site config",
+      bundlesDeleted: 0,
+      bundlesFailedToDelete: [],
+    };
   }
 
   // Rewrite the brief to the new shape.
@@ -1539,12 +1722,16 @@ export async function migrateSiteToPerTopic(
   const bundlesFailedToDelete: string[] = [];
   for (const bundleId of args.deleteOrphanBundleIds) {
     try {
-      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`, { method: "DELETE" });
+      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`, {
+        method: "DELETE",
+      });
       if (res.ok || res.status === 404) {
         bundlesDeleted++;
       } else {
         bundlesFailedToDelete.push(bundleId);
-        console.warn(`[migrate] DELETE /api/bundles/${bundleId} -> ${res.status}`);
+        console.warn(
+          `[migrate] DELETE /api/bundles/${bundleId} -> ${res.status}`,
+        );
       }
     } catch (err) {
       bundlesFailedToDelete.push(bundleId);
@@ -1573,10 +1760,20 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 import { migrateSiteToPerTopic } from "../per-topic-migration";
-import { commitSiteFiles, readDashboardIndex, readSiteConfig } from "@/lib/github";
+import {
+  commitSiteFiles,
+  readDashboardIndex,
+  readSiteConfig,
+} from "@/lib/github";
 
 const SITE_INDEX = {
-  sites: [{ domain: "travelnights", staging_branch: "staging/travelnights", status: "Live" }],
+  sites: [
+    {
+      domain: "travelnights",
+      staging_branch: "staging/travelnights",
+      status: "Live",
+    },
+  ],
 };
 
 const LEGACY_CONFIG = {
@@ -1595,12 +1792,23 @@ const LEGACY_CONFIG = {
 const TOPICS_V2 = [
   {
     name: "Destinations",
-    source: { type: "filter" as const, category_ids: ["cat-travel"], tag_ids: ["tag-dest"] },
-    schedule: { articles_per_week: 3, preferred_days: ["Monday", "Wednesday", "Friday"] },
+    source: {
+      type: "filter" as const,
+      category_ids: ["cat-travel"],
+      tag_ids: ["tag-dest"],
+    },
+    schedule: {
+      articles_per_week: 3,
+      preferred_days: ["Monday", "Wednesday", "Friday"],
+    },
   },
   {
     name: "Wine & Beer",
-    source: { type: "filter" as const, category_ids: ["cat-alc"], tag_ids: ["tag-wine"] },
+    source: {
+      type: "filter" as const,
+      category_ids: ["cat-alc"],
+      tag_ids: ["tag-wine"],
+    },
     schedule: { articles_per_week: 1, preferred_days: ["Tuesday"] },
   },
 ];
@@ -1608,8 +1816,12 @@ const TOPICS_V2 = [
 describe("migrateSiteToPerTopic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(readDashboardIndex).mockResolvedValue(SITE_INDEX as unknown as Awaited<ReturnType<typeof readDashboardIndex>>);
-    vi.mocked(readSiteConfig).mockResolvedValue(JSON.parse(JSON.stringify(LEGACY_CONFIG)));
+    vi.mocked(readDashboardIndex).mockResolvedValue(
+      SITE_INDEX as unknown as Awaited<ReturnType<typeof readDashboardIndex>>,
+    );
+    vi.mocked(readSiteConfig).mockResolvedValue(
+      JSON.parse(JSON.stringify(LEGACY_CONFIG)),
+    );
   });
 
   it("writes topics_v2 + theme and strips legacy fields", async () => {
@@ -1626,7 +1838,9 @@ describe("migrateSiteToPerTopic", () => {
     expect(files[0]!.path).toBe("sites/travelnights/site.yaml");
 
     const { parse: parseYaml } = await import("yaml");
-    const parsed = parseYaml(files[0]!.content) as { brief: Record<string, unknown> };
+    const parsed = parseYaml(files[0]!.content) as {
+      brief: Record<string, unknown>;
+    };
     expect(parsed.brief.theme).toBe("Travel and eating while traveling");
     expect(parsed.brief.topics_v2).toEqual(TOPICS_V2);
     expect(parsed.brief.bundle_ids).toBeUndefined();
@@ -1731,6 +1945,7 @@ A reusable React component that drives both the migration screen and the wizard'
 Length warning: this component is ~250 lines. The full code is in this task because the implementer needs it verbatim.
 
 **Files:**
+
 - Create: `services/dashboard/src/components/topic-review/PerTopicReviewScreen.tsx`
 
 - [ ] **Step 10.1: Write the component**
@@ -1741,13 +1956,25 @@ Create `services/dashboard/src/components/topic-review/PerTopicReviewScreen.tsx`
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { TopicV2, TopicV2Schedule, TopicV2Source } from "@atomic-platform/shared-types";
+import type {
+  TopicV2,
+  TopicV2Schedule,
+  TopicV2Source,
+} from "@atomic-platform/shared-types";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useAllCategories, useTags } from "@/hooks/useReferenceData";
 
 const DEFAULT_PREFERRED_DAYS = ["Monday", "Wednesday", "Friday"];
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 export interface PerTopicReviewItem {
   /** The user-facing topic name. */
@@ -1805,36 +2032,75 @@ export function PerTopicReviewScreen({
   );
   const [saving, setSaving] = useState(false);
 
-  const proposeForIndex = useCallback(async (idx: number) => {
-    const topicName = items[idx]?.name;
-    const topicDescription = items[idx]?.description;
-    if (!topicName) return;
-    setItems((prev) => prev.map((p, i) => i === idx ? { ...p, loading: true, error: undefined } : p));
-    try {
-      const res = await fetch("/api/ai/propose-filter", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          siteTheme,
-          topicName,
-          topicDescription,
-          categories: allCategories.map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id })),
-          tags: allTags.map((t) => ({ id: t.id, name: t.name, usage_count: t.usage_count })),
-        }),
-      });
-      if (!res.ok) throw new Error(`Propose-filter returned ${res.status}`);
-      const data = (await res.json()) as { category_ids?: string[]; tag_ids?: string[]; rationale?: string };
-      setItems((prev) => prev.map((p, i) => i === idx ? {
-        ...p,
-        source: { type: "filter", category_ids: data.category_ids ?? [], tag_ids: data.tag_ids ?? [] },
-        rationale: data.rationale,
-        loading: false,
-        error: undefined,
-      } : p));
-    } catch (err) {
-      setItems((prev) => prev.map((p, i) => i === idx ? { ...p, loading: false, error: err instanceof Error ? err.message : "Proposal failed" } : p));
-    }
-  }, [items, siteTheme, allCategories, allTags]);
+  const proposeForIndex = useCallback(
+    async (idx: number) => {
+      const topicName = items[idx]?.name;
+      const topicDescription = items[idx]?.description;
+      if (!topicName) return;
+      setItems((prev) =>
+        prev.map((p, i) =>
+          i === idx ? { ...p, loading: true, error: undefined } : p,
+        ),
+      );
+      try {
+        const res = await fetch("/api/ai/propose-filter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            siteTheme,
+            topicName,
+            topicDescription,
+            categories: allCategories.map((c) => ({
+              id: c.id,
+              name: c.name,
+              parent_id: c.parent_id,
+            })),
+            tags: allTags.map((t) => ({
+              id: t.id,
+              name: t.name,
+              usage_count: t.usage_count,
+            })),
+          }),
+        });
+        if (!res.ok) throw new Error(`Propose-filter returned ${res.status}`);
+        const data = (await res.json()) as {
+          category_ids?: string[];
+          tag_ids?: string[];
+          rationale?: string;
+        };
+        setItems((prev) =>
+          prev.map((p, i) =>
+            i === idx
+              ? {
+                  ...p,
+                  source: {
+                    type: "filter",
+                    category_ids: data.category_ids ?? [],
+                    tag_ids: data.tag_ids ?? [],
+                  },
+                  rationale: data.rationale,
+                  loading: false,
+                  error: undefined,
+                }
+              : p,
+          ),
+        );
+      } catch (err) {
+        setItems((prev) =>
+          prev.map((p, i) =>
+            i === idx
+              ? {
+                  ...p,
+                  loading: false,
+                  error: err instanceof Error ? err.message : "Proposal failed",
+                }
+              : p,
+          ),
+        );
+      }
+    },
+    [items, siteTheme, allCategories, allTags],
+  );
 
   // Initial AI proposals — kick off once when categories + tags have loaded.
   const [didInitialPropose, setDidInitialPropose] = useState(false);
@@ -1847,10 +2113,18 @@ export function PerTopicReviewScreen({
       void proposeForIndex(i);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allCategories.length, allTags.length, siteTheme, didInitialPropose, items.length]);
+  }, [
+    allCategories.length,
+    allTags.length,
+    siteTheme,
+    didInitialPropose,
+    items.length,
+  ]);
 
   function updateItem(idx: number, patch: Partial<PerTopicReviewItem>): void {
-    setItems((prev) => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+    setItems((prev) =>
+      prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    );
   }
 
   function toggleDay(idx: number, day: string): void {
@@ -1862,7 +2136,11 @@ export function PerTopicReviewScreen({
     updateItem(idx, { schedule: { ...item.schedule, preferred_days: next } });
   }
 
-  function removeFilterId(idx: number, kind: "category_ids" | "tag_ids", id: string): void {
+  function removeFilterId(
+    idx: number,
+    kind: "category_ids" | "tag_ids",
+    id: string,
+  ): void {
     const item = items[idx];
     if (!item || item.source.type !== "filter") return;
     const next = item.source[kind].filter((x) => x !== id);
@@ -1897,43 +2175,86 @@ export function PerTopicReviewScreen({
         <h1 className="text-2xl font-bold">{title}</h1>
         {banner && <div className="mt-3">{banner}</div>}
         <p className="text-sm text-[var(--text-muted)] mt-2">
-          AI proposed a filter for each topic based on this site's theme. Review and edit before saving.
+          AI proposed a filter for each topic based on this site's theme. Review
+          and edit before saving.
         </p>
       </header>
 
       <div className="space-y-3">
         {items.map((item, idx) => (
-          <div key={`${idx}-${item.name}`} className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4 space-y-3">
+          <div
+            key={`${idx}-${item.name}`}
+            className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-4 space-y-3"
+          >
             <div className="flex items-baseline justify-between">
               <h3 className="text-base font-semibold">{item.name}</h3>
-              {item.loading && <span className="text-xs text-[var(--text-muted)]">Proposing filter…</span>}
+              {item.loading && (
+                <span className="text-xs text-[var(--text-muted)]">
+                  Proposing filter…
+                </span>
+              )}
             </div>
 
             {item.error && (
-              <p className="text-xs text-red-400">AI proposal failed: {item.error}. <button type="button" onClick={(): void => void proposeForIndex(idx)} className="underline">Retry</button></p>
+              <p className="text-xs text-red-400">
+                AI proposal failed: {item.error}.{" "}
+                <button
+                  type="button"
+                  onClick={(): void => void proposeForIndex(idx)}
+                  className="underline"
+                >
+                  Retry
+                </button>
+              </p>
             )}
 
             {item.source.type === "filter" && (
               <>
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Categories ({item.source.category_ids.length})</div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Categories ({item.source.category_ids.length})
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {item.source.category_ids.map((id) => (
-                      <span key={id} className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold">
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                      >
                         {nameForCategory(id)}
-                        <button type="button" onClick={(): void => removeFilterId(idx, "category_ids", id)} className="hover:text-red-400">×</button>
+                        <button
+                          type="button"
+                          onClick={(): void =>
+                            removeFilterId(idx, "category_ids", id)
+                          }
+                          className="hover:text-red-400"
+                        >
+                          ×
+                        </button>
                       </span>
                     ))}
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Tags ({item.source.tag_ids.length})</div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Tags ({item.source.tag_ids.length})
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {item.source.tag_ids.map((id) => (
-                      <span key={id} className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold">
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                      >
                         {nameForTag(id)}
-                        <button type="button" onClick={(): void => removeFilterId(idx, "tag_ids", id)} className="hover:text-red-400">×</button>
+                        <button
+                          type="button"
+                          onClick={(): void =>
+                            removeFilterId(idx, "tag_ids", id)
+                          }
+                          className="hover:text-red-400"
+                        >
+                          ×
+                        </button>
                       </span>
                     ))}
                   </div>
@@ -1945,7 +2266,10 @@ export function PerTopicReviewScreen({
                   </div>
                 )}
 
-                <Button variant="ghost" onClick={(): void => void proposeForIndex(idx)}>
+                <Button
+                  variant="ghost"
+                  onClick={(): void => void proposeForIndex(idx)}
+                >
                   ✨ Re-propose with AI
                 </Button>
               </>
@@ -1953,19 +2277,31 @@ export function PerTopicReviewScreen({
 
             <div className="flex items-end gap-4 pt-2 border-t border-[var(--border-primary)]">
               <div>
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Articles / week</div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                  Articles / week
+                </div>
                 <Input
                   type="number"
                   min="0"
                   value={String(item.schedule.articles_per_week)}
-                  onChange={(e): void => updateItem(idx, {
-                    schedule: { ...item.schedule, articles_per_week: Math.max(0, Number(e.target.value) || 0) },
-                  })}
+                  onChange={(e): void =>
+                    updateItem(idx, {
+                      schedule: {
+                        ...item.schedule,
+                        articles_per_week: Math.max(
+                          0,
+                          Number(e.target.value) || 0,
+                        ),
+                      },
+                    })
+                  }
                   style={{ width: "70px", textAlign: "center" }}
                 />
               </div>
               <div className="flex-1">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Preferred days</div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                  Preferred days
+                </div>
                 <div className="flex gap-1">
                   {DAYS.map((day) => (
                     <button
@@ -1989,7 +2325,11 @@ export function PerTopicReviewScreen({
       </div>
 
       <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border-primary)]">
-        {onCancel && <Button variant="ghost" onClick={onCancel}>Cancel</Button>}
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button onClick={(): void => void handleSave()} disabled={saving}>
           {saving ? "Saving…" : saveLabel}
         </Button>
@@ -2019,6 +2359,7 @@ Expected: no errors.
 A full-page Next.js route at `/sites/[domain]/migrate-per-topic`. Hosts `PerTopicReviewScreen` in migration mode. On save, calls `migrateSiteToPerTopic` and redirects back to the site detail.
 
 **Files:**
+
 - Create: `services/dashboard/src/app/sites/[domain]/migrate-per-topic/page.tsx`
 
 - [ ] **Step 11.1: Write the page**
@@ -2068,10 +2409,15 @@ export default function MigratePerTopicPage(): React.ReactElement {
       domain,
       theme,
       topics_v2: topics,
-      deleteOrphanBundleIds: deleteOrphans ? (summary?.orphan_bundle_ids ?? []) : [],
+      deleteOrphanBundleIds: deleteOrphans
+        ? (summary?.orphan_bundle_ids ?? [])
+        : [],
     });
     if (result.status === "ok") {
-      toast("Migration complete — next scheduled run will use per-topic filters", "success");
+      toast(
+        "Migration complete — next scheduled run will use per-topic filters",
+        "success",
+      );
       router.push(`/sites/${domain}`);
     } else {
       toast(result.message ?? "Migration failed", "error");
@@ -2084,7 +2430,8 @@ export default function MigratePerTopicPage(): React.ReactElement {
         <header>
           <h1 className="text-2xl font-bold">Migrate to per-topic filters</h1>
           <p className="text-sm text-[var(--text-muted)] mt-2">
-            Step 1 of 2 — describe the site's editorial theme in 1–2 lines. The AI uses this to propose a filter for each topic.
+            Step 1 of 2 — describe the site's editorial theme in 1–2 lines. The
+            AI uses this to propose a filter for each topic.
           </p>
         </header>
         <textarea
@@ -2094,8 +2441,16 @@ export default function MigratePerTopicPage(): React.ReactElement {
           className="w-full min-h-[80px] rounded border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 text-sm"
         />
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={(): void => router.push(`/sites/${domain}`)}>Cancel</Button>
-          <Button onClick={(): void => setStep("review")} disabled={!theme.trim() || !summary}>
+          <Button
+            variant="ghost"
+            onClick={(): void => router.push(`/sites/${domain}`)}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={(): void => setStep("review")}
+            disabled={!theme.trim() || !summary}
+          >
             Continue
           </Button>
         </div>
@@ -2109,7 +2464,13 @@ export default function MigratePerTopicPage(): React.ReactElement {
     <PerTopicReviewScreen
       siteTheme={theme}
       initialTopicNames={summary.topics}
-      defaultSchedule={{ articles_per_week: Math.max(1, Math.ceil(7 / Math.max(1, summary.topics.length))), preferred_days: ["Monday", "Wednesday", "Friday"] }}
+      defaultSchedule={{
+        articles_per_week: Math.max(
+          1,
+          Math.ceil(7 / Math.max(1, summary.topics.length)),
+        ),
+        preferred_days: ["Monday", "Wednesday", "Friday"],
+      }}
       onSave={handleSave}
       saveLabel="Confirm migration"
       onCancel={(): void => router.push(`/sites/${domain}`)}
@@ -2118,8 +2479,16 @@ export default function MigratePerTopicPage(): React.ReactElement {
         summary.orphan_bundle_ids.length > 0 && (
           <div className="rounded border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={deleteOrphans} onChange={(e): void => setDeleteOrphans(e.target.checked)} />
-              <span>Also delete this site's <strong>{summary.orphan_bundle_ids.length}</strong> orphan bundles on the aggregator</span>
+              <input
+                type="checkbox"
+                checked={deleteOrphans}
+                onChange={(e): void => setDeleteOrphans(e.target.checked)}
+              />
+              <span>
+                Also delete this site's{" "}
+                <strong>{summary.orphan_bundle_ids.length}</strong> orphan
+                bundles on the aggregator
+              </span>
             </label>
           </div>
         )
@@ -2140,21 +2509,25 @@ import { readDashboardIndex, readSiteConfig } from "@/lib/github";
 const RAW_AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const domain = req.nextUrl.searchParams.get("domain");
-  if (!domain) return NextResponse.json({ error: "domain required" }, { status: 400 });
+  if (!domain)
+    return NextResponse.json({ error: "domain required" }, { status: 400 });
 
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
-  if (!site?.staging_branch) return NextResponse.json({ error: "no staging branch" }, { status: 404 });
+  if (!site?.staging_branch)
+    return NextResponse.json({ error: "no staging branch" }, { status: 404 });
 
   const config = await readSiteConfig(domain, site.staging_branch);
   const brief = (config?.brief ?? {}) as Record<string, unknown>;
   const topics = Array.isArray(brief.topics) ? (brief.topics as string[]) : [];
-  const bundle_ids = Array.isArray(brief.bundle_ids) ? (brief.bundle_ids as string[]) : [];
+  const bundle_ids = Array.isArray(brief.bundle_ids)
+    ? (brief.bundle_ids as string[])
+    : [];
 
   // Determine which bundles are only used by this site by reading every other
   // site's brief.bundle_ids.
@@ -2163,8 +2536,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     if (otherSite.domain === domain) continue;
     if (!otherSite.staging_branch) continue;
     try {
-      const otherConfig = await readSiteConfig(otherSite.domain, otherSite.staging_branch);
-      const otherBundleIds = (otherConfig?.brief as Record<string, unknown> | undefined)?.bundle_ids;
+      const otherConfig = await readSiteConfig(
+        otherSite.domain,
+        otherSite.staging_branch,
+      );
+      const otherBundleIds = (
+        otherConfig?.brief as Record<string, unknown> | undefined
+      )?.bundle_ids;
       if (Array.isArray(otherBundleIds)) {
         for (const id of otherBundleIds) {
           if (typeof id === "string") otherSitesBundleIds.add(id);
@@ -2175,7 +2553,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const orphan_bundle_ids = bundle_ids.filter((id) => !otherSitesBundleIds.has(id));
+  const orphan_bundle_ids = bundle_ids.filter(
+    (id) => !otherSitesBundleIds.has(id),
+  );
 
   // Suppress unused-variable warning for AGGREGATOR_URL — reserved for future use
   // (e.g. hitting aggregator to confirm bundle existence).
@@ -2202,6 +2582,7 @@ Expected: no errors.
 A small toggle on the site detail's Identity panel (only on legacy sites — sites without `brief.topics_v2`). Clicking it navigates to `/sites/{domain}/migrate-per-topic`.
 
 **Files:**
+
 - Create: `services/dashboard/src/components/site-detail/MigrateToPerTopicToggle.tsx`
 - Modify: the existing Identity tab/panel to render this toggle
 
@@ -2221,13 +2602,20 @@ interface Props {
   isPerTopic: boolean;
 }
 
-export function MigrateToPerTopicToggle({ domain, isPerTopic }: Props): React.ReactElement {
+export function MigrateToPerTopicToggle({
+  domain,
+  isPerTopic,
+}: Props): React.ReactElement {
   if (isPerTopic) {
     return (
       <div className="rounded-lg border border-cyan/30 bg-cyan/5 px-4 py-3 flex items-center gap-2">
         <span className="text-cyan">✓</span>
-        <span className="text-sm font-semibold text-cyan">Per-topic filters active</span>
-        <span className="text-xs text-[var(--text-muted)] ml-auto">Reverting requires a git revert of the migration commit.</span>
+        <span className="text-sm font-semibold text-cyan">
+          Per-topic filters active
+        </span>
+        <span className="text-xs text-[var(--text-muted)] ml-auto">
+          Reverting requires a git revert of the migration commit.
+        </span>
       </div>
     );
   }
@@ -2236,9 +2624,13 @@ export function MigrateToPerTopicToggle({ domain, isPerTopic }: Props): React.Re
       href={`/sites/${domain}/migrate-per-topic`}
       className="block rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-4 py-3 hover:border-cyan/50 transition-colors"
     >
-      <div className="text-sm font-semibold">Migrate to per-topic filters →</div>
+      <div className="text-sm font-semibold">
+        Migrate to per-topic filters →
+      </div>
       <div className="text-xs text-[var(--text-muted)] mt-1">
-        Replace the site-level bundle subscriptions with per-topic filters. Each topic gets its own filter and schedule. One-way; reverting requires a git revert.
+        Replace the site-level bundle subscriptions with per-topic filters. Each
+        topic gets its own filter and schedule. One-way; reverting requires a
+        git revert.
       </div>
     </Link>
   );
@@ -2256,7 +2648,15 @@ Locate the Identity sub-tab's render block in `ContentAgentTab.tsx` (search for 
 ```tsx
 <MigrateToPerTopicToggle
   domain={domain}
-  isPerTopic={Array.isArray((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2) && ((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2 as unknown[])?.length > 0}
+  isPerTopic={
+    Array.isArray(
+      (siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2,
+    ) &&
+    (
+      (siteConfig?.brief as Record<string, unknown> | undefined)
+        ?.topics_v2 as unknown[]
+    )?.length > 0
+  }
 />
 ```
 
@@ -2283,6 +2683,7 @@ Expected: no errors.
 The modal that opens for + Add Topic and Edit Topic actions on the topics list (TopicsListPanel, next task). Contains topic name + optional description + filter source (default AI-proposed; small "Use shared bundle instead →" link toggles to bundle mode) + schedule.
 
 **Files:**
+
 - Create: `services/dashboard/src/components/site-detail/TopicEditModal.tsx`
 
 - [ ] **Step 13.1: Write the modal**
@@ -2293,12 +2694,29 @@ Create the file. (~200 lines; see [PerTopicReviewScreen](services/dashboard/src/
 "use client";
 
 import { useState } from "react";
-import type { TopicV2, TopicV2Source, TopicV2Schedule } from "@atomic-platform/shared-types";
+import type {
+  TopicV2,
+  TopicV2Source,
+  TopicV2Schedule,
+} from "@atomic-platform/shared-types";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { useAllCategories, useTags, useTagSearch, useBundles } from "@/hooks/useReferenceData";
+import {
+  useAllCategories,
+  useTags,
+  useTagSearch,
+  useBundles,
+} from "@/hooks/useReferenceData";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
 
 interface Props {
   /** When provided, edit mode. When undefined, add-new mode. */
@@ -2311,21 +2729,35 @@ interface Props {
   onSave: (topic: TopicV2) => void;
 }
 
-export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onSave }: Props): React.ReactElement {
+export function TopicEditModal({
+  initial,
+  siteTheme,
+  existingNames,
+  onClose,
+  onSave,
+}: Props): React.ReactElement {
   const { categories: allCategories } = useAllCategories();
   const { tags: allTags } = useTags();
   const { bundles } = useBundles();
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [source, setSource] = useState<TopicV2Source>(initial?.source ?? { type: "filter", category_ids: [], tag_ids: [] });
-  const [schedule, setSchedule] = useState<TopicV2Schedule>(initial?.schedule ?? { articles_per_week: 1, preferred_days: ["Monday"] });
+  const [source, setSource] = useState<TopicV2Source>(
+    initial?.source ?? { type: "filter", category_ids: [], tag_ids: [] },
+  );
+  const [schedule, setSchedule] = useState<TopicV2Schedule>(
+    initial?.schedule ?? { articles_per_week: 1, preferred_days: ["Monday"] },
+  );
   const [aiRationale, setAiRationale] = useState<string | undefined>();
   const [aiLoading, setAiLoading] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
   const { results: tagSearchResults } = useTagSearch(tagSearch);
 
-  function nameForCategory(id: string): string { return allCategories.find((c) => c.id === id)?.name ?? id; }
-  function nameForTag(id: string): string { return allTags.find((t) => t.id === id)?.name ?? id; }
+  function nameForCategory(id: string): string {
+    return allCategories.find((c) => c.id === id)?.name ?? id;
+  }
+  function nameForTag(id: string): string {
+    return allTags.find((t) => t.id === id)?.name ?? id;
+  }
 
   async function proposeWithAI(): Promise<void> {
     if (!name.trim()) return;
@@ -2338,13 +2770,29 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
           siteTheme,
           topicName: name,
           topicDescription: description,
-          categories: allCategories.map((c) => ({ id: c.id, name: c.name, parent_id: c.parent_id })),
-          tags: allTags.map((t) => ({ id: t.id, name: t.name, usage_count: t.usage_count })),
+          categories: allCategories.map((c) => ({
+            id: c.id,
+            name: c.name,
+            parent_id: c.parent_id,
+          })),
+          tags: allTags.map((t) => ({
+            id: t.id,
+            name: t.name,
+            usage_count: t.usage_count,
+          })),
         }),
       });
       if (!res.ok) throw new Error(`Propose returned ${res.status}`);
-      const data = (await res.json()) as { category_ids?: string[]; tag_ids?: string[]; rationale?: string };
-      setSource({ type: "filter", category_ids: data.category_ids ?? [], tag_ids: data.tag_ids ?? [] });
+      const data = (await res.json()) as {
+        category_ids?: string[];
+        tag_ids?: string[];
+        rationale?: string;
+      };
+      setSource({
+        type: "filter",
+        category_ids: data.category_ids ?? [],
+        tag_ids: data.tag_ids ?? [],
+      });
       setAiRationale(data.rationale);
     } catch (err) {
       console.error(err);
@@ -2357,104 +2805,224 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
     const trimmedName = name.trim();
     if (!trimmedName) return;
     const lowerName = trimmedName.toLowerCase();
-    const conflict = existingNames.some((n) => n.toLowerCase() === lowerName && n !== initial?.name);
+    const conflict = existingNames.some(
+      (n) => n.toLowerCase() === lowerName && n !== initial?.name,
+    );
     if (conflict) {
       alert(`A topic named "${trimmedName}" already exists on this site.`);
       return;
     }
-    if (source.type === "filter" && source.category_ids.length === 0 && source.tag_ids.length === 0) {
+    if (
+      source.type === "filter" &&
+      source.category_ids.length === 0 &&
+      source.tag_ids.length === 0
+    ) {
       // Allowed but warned — empty filter = empty topic. UX-only check.
     }
-    onSave({ name: trimmedName, description: description.trim() || undefined, source, schedule });
+    onSave({
+      name: trimmedName,
+      description: description.trim() || undefined,
+      source,
+      schedule,
+    });
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div onClick={(e): void => e.stopPropagation()} className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-[var(--border-primary)] bg-[var(--bg-surface)] p-5 space-y-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e): void => e.stopPropagation()}
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl border border-[var(--border-primary)] bg-[var(--bg-surface)] p-5 space-y-4"
+      >
         <header className="flex items-center justify-between">
-          <h2 className="text-lg font-bold">{initial ? "Edit topic" : "Add topic"}</h2>
-          <button type="button" onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xl">×</button>
+          <h2 className="text-lg font-bold">
+            {initial ? "Edit topic" : "Add topic"}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[var(--text-muted)] hover:text-[var(--text-primary)] text-xl"
+          >
+            ×
+          </button>
         </header>
 
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Topic name *</div>
-          <Input value={name} onChange={(e): void => setName(e.target.value)} placeholder="e.g. Wine & Beer" />
+          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+            Topic name *
+          </div>
+          <Input
+            value={name}
+            onChange={(e): void => setName(e.target.value)}
+            placeholder="e.g. Wine & Beer"
+          />
         </div>
 
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Brief description (optional — helps AI)</div>
-          <Input value={description} onChange={(e): void => setDescription(e.target.value)} placeholder="Wine and brewery culture for travelers" />
+          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+            Brief description (optional — helps AI)
+          </div>
+          <Input
+            value={description}
+            onChange={(e): void => setDescription(e.target.value)}
+            placeholder="Wine and brewery culture for travelers"
+          />
         </div>
 
         {/* Filter section */}
         <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-3 space-y-3">
           {source.type === "filter" ? (
             <>
-              {source.category_ids.length === 0 && source.tag_ids.length === 0 && (
-                <Button onClick={(): void => void proposeWithAI()} disabled={!name.trim() || aiLoading || !siteTheme.trim()}>
-                  {aiLoading ? "Proposing…" : "✨ Propose filter with AI"}
-                </Button>
-              )}
-              {(source.category_ids.length > 0 || source.tag_ids.length > 0) && (
+              {source.category_ids.length === 0 &&
+                source.tag_ids.length === 0 && (
+                  <Button
+                    onClick={(): void => void proposeWithAI()}
+                    disabled={!name.trim() || aiLoading || !siteTheme.trim()}
+                  >
+                    {aiLoading ? "Proposing…" : "✨ Propose filter with AI"}
+                  </Button>
+                )}
+              {(source.category_ids.length > 0 ||
+                source.tag_ids.length > 0) && (
                 <>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Categories ({source.category_ids.length})</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                      Categories ({source.category_ids.length})
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {source.category_ids.map((id) => (
-                        <span key={id} className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold">
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 rounded-md bg-violet-500/15 text-violet-400 px-2 py-0.5 text-xs font-semibold"
+                        >
                           {nameForCategory(id)}
-                          <button type="button" onClick={(): void => setSource({ ...source, category_ids: source.category_ids.filter((x) => x !== id) })} className="hover:text-red-400">×</button>
+                          <button
+                            type="button"
+                            onClick={(): void =>
+                              setSource({
+                                ...source,
+                                category_ids: source.category_ids.filter(
+                                  (x) => x !== id,
+                                ),
+                              })
+                            }
+                            className="hover:text-red-400"
+                          >
+                            ×
+                          </button>
                         </span>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Tags ({source.tag_ids.length})</div>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                      Tags ({source.tag_ids.length})
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {source.tag_ids.map((id) => (
-                        <span key={id} className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold">
+                        <span
+                          key={id}
+                          className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                        >
                           {nameForTag(id)}
-                          <button type="button" onClick={(): void => setSource({ ...source, tag_ids: source.tag_ids.filter((x) => x !== id) })} className="hover:text-red-400">×</button>
+                          <button
+                            type="button"
+                            onClick={(): void =>
+                              setSource({
+                                ...source,
+                                tag_ids: source.tag_ids.filter((x) => x !== id),
+                              })
+                            }
+                            className="hover:text-red-400"
+                          >
+                            ×
+                          </button>
                         </span>
                       ))}
                     </div>
                     <div className="mt-2 relative">
-                      <Input placeholder="Search and add a tag…" value={tagSearch} onChange={(e): void => setTagSearch(e.target.value)} />
+                      <Input
+                        placeholder="Search and add a tag…"
+                        value={tagSearch}
+                        onChange={(e): void => setTagSearch(e.target.value)}
+                      />
                       {tagSearch.trim() && tagSearchResults.length > 0 && (
                         <div className="absolute z-10 mt-1 w-full max-h-40 overflow-y-auto rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
-                          {tagSearchResults.filter((t) => !source.tag_ids.includes(t.id)).slice(0, 10).map((t) => (
-                            <button key={t.id} type="button" onClick={(): void => { setSource({ ...source, tag_ids: [...source.tag_ids, t.id] }); setTagSearch(""); }} className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)]">
-                              {t.name}
-                            </button>
-                          ))}
+                          {tagSearchResults
+                            .filter((t) => !source.tag_ids.includes(t.id))
+                            .slice(0, 10)
+                            .map((t) => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={(): void => {
+                                  setSource({
+                                    ...source,
+                                    tag_ids: [...source.tag_ids, t.id],
+                                  });
+                                  setTagSearch("");
+                                }}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-[var(--bg-primary)]"
+                              >
+                                {t.name}
+                              </button>
+                            ))}
                         </div>
                       )}
                     </div>
                   </div>
                   {aiRationale && (
-                    <div className="rounded border-l-2 border-cyan/50 pl-3 py-1 text-xs text-[var(--text-muted)] italic">✨ {aiRationale}</div>
+                    <div className="rounded border-l-2 border-cyan/50 pl-3 py-1 text-xs text-[var(--text-muted)] italic">
+                      ✨ {aiRationale}
+                    </div>
                   )}
-                  <Button variant="ghost" onClick={(): void => void proposeWithAI()} disabled={aiLoading}>
+                  <Button
+                    variant="ghost"
+                    onClick={(): void => void proposeWithAI()}
+                    disabled={aiLoading}
+                  >
                     ✨ Re-propose with AI
                   </Button>
                 </>
               )}
-              <button type="button" className="text-xs text-cyan hover:underline" onClick={(): void => setSource({ type: "bundle", bundle_id: "" })}>
+              <button
+                type="button"
+                className="text-xs text-cyan hover:underline"
+                onClick={(): void =>
+                  setSource({ type: "bundle", bundle_id: "" })
+                }
+              >
                 Use a shared bundle instead →
               </button>
             </>
           ) : (
             <>
-              <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Linked bundle</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                Linked bundle
+              </div>
               <select
                 value={source.bundle_id}
-                onChange={(e): void => setSource({ type: "bundle", bundle_id: e.target.value })}
+                onChange={(e): void =>
+                  setSource({ type: "bundle", bundle_id: e.target.value })
+                }
                 className="w-full rounded border border-[var(--border-primary)] bg-[var(--bg-surface)] px-2 py-1.5 text-sm"
               >
                 <option value="">— pick a bundle —</option>
-                {bundles.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.content_count ?? "?"} articles)</option>)}
+                {bundles.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} ({b.content_count ?? "?"} articles)
+                  </option>
+                ))}
               </select>
-              <button type="button" className="text-xs text-cyan hover:underline" onClick={(): void => setSource({ type: "filter", category_ids: [], tag_ids: [] })}>
+              <button
+                type="button"
+                className="text-xs text-cyan hover:underline"
+                onClick={(): void =>
+                  setSource({ type: "filter", category_ids: [], tag_ids: [] })
+                }
+              >
                 ← Back to AI-proposed filter
               </button>
             </>
@@ -2463,17 +3031,46 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
 
         {/* Schedule */}
         <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Schedule</div>
+          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+            Schedule
+          </div>
           <div className="flex items-end gap-4">
             <div>
-              <div className="text-[10px] text-[var(--text-muted)] mb-1">Articles/week</div>
-              <Input type="number" min="0" value={String(schedule.articles_per_week)} onChange={(e): void => setSchedule({ ...schedule, articles_per_week: Math.max(0, Number(e.target.value) || 0) })} style={{ width: "70px", textAlign: "center" }} />
+              <div className="text-[10px] text-[var(--text-muted)] mb-1">
+                Articles/week
+              </div>
+              <Input
+                type="number"
+                min="0"
+                value={String(schedule.articles_per_week)}
+                onChange={(e): void =>
+                  setSchedule({
+                    ...schedule,
+                    articles_per_week: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+                style={{ width: "70px", textAlign: "center" }}
+              />
             </div>
             <div className="flex-1">
-              <div className="text-[10px] text-[var(--text-muted)] mb-1">Preferred days</div>
+              <div className="text-[10px] text-[var(--text-muted)] mb-1">
+                Preferred days
+              </div>
               <div className="flex gap-1">
                 {DAYS.map((day) => (
-                  <button key={day} type="button" onClick={(): void => setSchedule({ ...schedule, preferred_days: schedule.preferred_days.includes(day) ? schedule.preferred_days.filter((d) => d !== day) : [...schedule.preferred_days, day] })} className={`px-2 py-1 rounded text-[11px] font-medium border ${schedule.preferred_days.includes(day) ? "bg-cyan/20 border-cyan text-cyan" : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-secondary)]"}`}>
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={(): void =>
+                      setSchedule({
+                        ...schedule,
+                        preferred_days: schedule.preferred_days.includes(day)
+                          ? schedule.preferred_days.filter((d) => d !== day)
+                          : [...schedule.preferred_days, day],
+                      })
+                    }
+                    className={`px-2 py-1 rounded text-[11px] font-medium border ${schedule.preferred_days.includes(day) ? "bg-cyan/20 border-cyan text-cyan" : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-secondary)]"}`}
+                  >
                     {day.slice(0, 3)}
                   </button>
                 ))}
@@ -2483,8 +3080,12 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
         </div>
 
         <footer className="flex justify-end gap-2 pt-2 border-t border-[var(--border-primary)]">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>{initial ? "Save changes" : "Add topic"}</Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave}>
+            {initial ? "Save changes" : "Add topic"}
+          </Button>
         </footer>
       </div>
     </div>
@@ -2509,6 +3110,7 @@ Expected: no errors.
 The topics list in Content Brief. Renders one row per topic with name, filter summary, schedule summary, edit/× buttons, drag handle. Above the list: site theme textarea + primary category (read-only display). Below: + Add Topic button. Opens TopicEditModal for add/edit.
 
 **Files:**
+
 - Create: `services/dashboard/src/components/site-detail/TopicsListPanel.tsx`
 - Modify: `services/dashboard/src/components/site-detail/ContentAgentTab.tsx` (conditional render)
 
@@ -2529,7 +3131,12 @@ Create `services/dashboard/src/components/site-detail/TopicsListPanel.tsx`:
 
 import { useState } from "react";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { TopicV2 } from "@atomic-platform/shared-types";
 import { Button } from "@/components/ui/Button";
@@ -2542,7 +3149,11 @@ interface Props {
   onChange: (next: TopicV2[]) => void;
 }
 
-export function TopicsListPanel({ topics, siteTheme, onChange }: Props): React.ReactElement {
+export function TopicsListPanel({
+  topics,
+  siteTheme,
+  onChange,
+}: Props): React.ReactElement {
   const { categories: allCategories } = useAllCategories();
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [addingNew, setAddingNew] = useState(false);
@@ -2556,25 +3167,48 @@ export function TopicsListPanel({ topics, siteTheme, onChange }: Props): React.R
     onChange(arrayMove(topics, oldIdx, newIdx));
   }
 
-  function summarize(t: TopicV2): { cats: number; tags: number; firstFew: string } {
-    if (t.source.type === "bundle") return { cats: 0, tags: 0, firstFew: `🔗 ${t.source.bundle_id}` };
-    const catNames = t.source.category_ids.slice(0, 3).map((id) => allCategories.find((c) => c.id === id)?.name ?? id).join(", ");
-    return { cats: t.source.category_ids.length, tags: t.source.tag_ids.length, firstFew: catNames };
+  function summarize(t: TopicV2): {
+    cats: number;
+    tags: number;
+    firstFew: string;
+  } {
+    if (t.source.type === "bundle")
+      return { cats: 0, tags: 0, firstFew: `🔗 ${t.source.bundle_id}` };
+    const catNames = t.source.category_ids
+      .slice(0, 3)
+      .map((id) => allCategories.find((c) => c.id === id)?.name ?? id)
+      .join(", ");
+    return {
+      cats: t.source.category_ids.length,
+      tags: t.source.tag_ids.length,
+      firstFew: catNames,
+    };
   }
 
   function isEmptyFilter(t: TopicV2): boolean {
-    return t.source.type === "filter" && t.source.category_ids.length === 0 && t.source.tag_ids.length === 0;
+    return (
+      t.source.type === "filter" &&
+      t.source.category_ids.length === 0 &&
+      t.source.tag_ids.length === 0
+    );
   }
 
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
-        <h3 className="text-sm uppercase tracking-wider font-semibold text-[var(--text-secondary)]">Topics ({topics.length})</h3>
-        <Button variant="ghost" onClick={(): void => setAddingNew(true)}>+ Add Topic</Button>
+        <h3 className="text-sm uppercase tracking-wider font-semibold text-[var(--text-secondary)]">
+          Topics ({topics.length})
+        </h3>
+        <Button variant="ghost" onClick={(): void => setAddingNew(true)}>
+          + Add Topic
+        </Button>
       </div>
 
       <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={topics.map((t) => t.name)} strategy={verticalListSortingStrategy}>
+        <SortableContext
+          items={topics.map((t) => t.name)}
+          strategy={verticalListSortingStrategy}
+        >
           <ul className="space-y-2">
             {topics.map((t, idx) => (
               <SortableTopicRow
@@ -2612,7 +3246,7 @@ export function TopicsListPanel({ topics, siteTheme, onChange }: Props): React.R
           existingNames={topics.map((t) => t.name)}
           onClose={(): void => setEditingIdx(null)}
           onSave={(topic): void => {
-            onChange(topics.map((t, i) => i === editingIdx ? topic : t));
+            onChange(topics.map((t, i) => (i === editingIdx ? topic : t)));
             setEditingIdx(null);
           }}
         />
@@ -2622,7 +3256,11 @@ export function TopicsListPanel({ topics, siteTheme, onChange }: Props): React.R
 }
 
 function SortableTopicRow({
-  topic, summary, isEmpty, onEdit, onRemove,
+  topic,
+  summary,
+  isEmpty,
+  onEdit,
+  onRemove,
 }: {
   topic: TopicV2;
   summary: { cats: number; tags: number; firstFew: string };
@@ -2630,7 +3268,8 @@ function SortableTopicRow({
   onEdit: () => void;
   onRemove: () => void;
 }): React.ReactElement {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: topic.name });
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id: topic.name });
   const style = { transform: CSS.Transform.toString(transform), transition };
   return (
     <li
@@ -2638,23 +3277,61 @@ function SortableTopicRow({
       style={style}
       className={`flex items-start gap-3 rounded-lg border ${isEmpty ? "border-amber-500/40 bg-amber-500/5" : "border-[var(--border-primary)] bg-[var(--bg-elevated)]"} px-3 py-2`}
     >
-      <button type="button" {...attributes} {...listeners} className="text-[var(--text-muted)] cursor-grab pt-1" title="Drag to reorder">⠿</button>
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="text-[var(--text-muted)] cursor-grab pt-1"
+        title="Drag to reorder"
+      >
+        ⠿
+      </button>
       <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm">{topic.name}{isEmpty && <span className="ml-2 text-[10px] text-amber-400 font-normal">⚠ filter not set</span>}</div>
+        <div className="font-semibold text-sm">
+          {topic.name}
+          {isEmpty && (
+            <span className="ml-2 text-[10px] text-amber-400 font-normal">
+              ⚠ filter not set
+            </span>
+          )}
+        </div>
         <div className="text-xs text-[var(--text-muted)] mt-1">
           {!isEmpty && (
             <>
-              <span className="bg-violet-500/10 text-violet-400 px-1.5 py-0.5 rounded text-[10px] mr-1">{summary.cats} cats</span>
-              <span className="bg-cyan/10 text-cyan px-1.5 py-0.5 rounded text-[10px]">{summary.tags} tags</span>
-              <span className="ml-2">{topic.schedule.articles_per_week}/week · {topic.schedule.preferred_days.map((d) => d.slice(0, 3)).join(", ")}</span>
+              <span className="bg-violet-500/10 text-violet-400 px-1.5 py-0.5 rounded text-[10px] mr-1">
+                {summary.cats} cats
+              </span>
+              <span className="bg-cyan/10 text-cyan px-1.5 py-0.5 rounded text-[10px]">
+                {summary.tags} tags
+              </span>
+              <span className="ml-2">
+                {topic.schedule.articles_per_week}/week ·{" "}
+                {topic.schedule.preferred_days
+                  .map((d) => d.slice(0, 3))
+                  .join(", ")}
+              </span>
             </>
           )}
-          {isEmpty && <span>Topic has no filter — no articles will be fetched.</span>}
+          {isEmpty && (
+            <span>Topic has no filter — no articles will be fetched.</span>
+          )}
         </div>
       </div>
       <div className="flex gap-1">
-        <button type="button" onClick={onEdit} className="text-xs px-2 py-1 rounded border border-[var(--border-primary)] hover:border-cyan">Edit</button>
-        <button type="button" onClick={onRemove} className="text-[var(--text-muted)] hover:text-red-400 px-1">×</button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="text-xs px-2 py-1 rounded border border-[var(--border-primary)] hover:border-cyan"
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-[var(--text-muted)] hover:text-red-400 px-1"
+        >
+          ×
+        </button>
       </div>
     </li>
   );
@@ -2666,19 +3343,23 @@ function SortableTopicRow({
 Edit `services/dashboard/src/components/site-detail/ContentAgentTab.tsx`. Find the Content Brief sub-tab's render section (the `contentBriefContent` variable). At the very top of that section, add a conditional:
 
 ```tsx
-const isPerTopic = Array.isArray(briefRaw?.topics_v2) && (briefRaw?.topics_v2 as unknown[])?.length > 0;
+const isPerTopic =
+  Array.isArray(briefRaw?.topics_v2) &&
+  (briefRaw?.topics_v2 as unknown[])?.length > 0;
 ```
 
 Where `briefRaw` is the existing reference to the brief object. Then wrap the existing legacy Content Brief content (Niche Targeting + BundleSubscriptionsPanel + Tags + everything) in `{!isPerTopic && (...)}`. Above that legacy block (still inside `contentBriefContent`), add:
 
 ```tsx
-{isPerTopic && (
-  <PerTopicContentBriefSection
-    domain={domain}
-    initialTheme={(briefRaw?.theme as string | undefined) ?? ""}
-    initialTopics={(briefRaw?.topics_v2 as TopicV2[] | undefined) ?? []}
-  />
-)}
+{
+  isPerTopic && (
+    <PerTopicContentBriefSection
+      domain={domain}
+      initialTheme={(briefRaw?.theme as string | undefined) ?? ""}
+      initialTopics={(briefRaw?.topics_v2 as TopicV2[] | undefined) ?? []}
+    />
+  );
+}
 ```
 
 Then in the same file, define the `PerTopicContentBriefSection` component (or extract it to its own file `PerTopicContentBriefSection.tsx`). It holds local state for theme + topics, renders the theme textarea, the Primary Category indicator, the TopicsListPanel, and a Save button that POSTs to `/api/sites/save` with `configUpdates: { theme, topics_v2 }`.
@@ -2722,8 +3403,13 @@ function PerTopicContentBriefSection({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">Site Theme</h3>
-        <p className="text-xs text-[var(--text-muted)] mb-2">1–2 lines describing the editorial angle. Used by AI to propose filters for new topics.</p>
+        <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
+          Site Theme
+        </h3>
+        <p className="text-xs text-[var(--text-muted)] mb-2">
+          1–2 lines describing the editorial angle. Used by AI to propose
+          filters for new topics.
+        </p>
         <textarea
           value={theme}
           onChange={(e): void => setTheme(e.target.value)}
@@ -2732,7 +3418,9 @@ function PerTopicContentBriefSection({
       </div>
       <TopicsListPanel topics={topics} siteTheme={theme} onChange={setTopics} />
       <div className="flex justify-end">
-        <Button onClick={(): void => void save()} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+        <Button onClick={(): void => void save()} disabled={saving}>
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
       </div>
     </div>
   );
@@ -2766,6 +3454,7 @@ Expected: all existing tests still pass.
 The wizard's form data drops the legacy bundle fields and gains `theme` + `topics_v2`. DEFAULT_FORM is updated. This task touches types only — UI changes follow in Task 16.
 
 **Files:**
+
 - Modify: `services/dashboard/src/types/dashboard.ts` (WizardFormData)
 - Modify: `services/dashboard/src/app/wizard/page.tsx` (DEFAULT_FORM)
 
@@ -2826,6 +3515,7 @@ Expected: errors in `StepNicheTargeting.tsx` and `actions/wizard.ts` (both refer
 The wizard's existing Identity step (where site name, audiences, tone are collected) gains a "Site Theme" textarea. Then `StepNicheTargeting.tsx` is deleted and replaced with `StepTopicFilters.tsx`, which hosts `PerTopicReviewScreen` in wizard mode.
 
 **Files:**
+
 - Modify: `services/dashboard/src/components/wizard/StepIdentity.tsx` (add theme field)
 - Delete: `services/dashboard/src/components/wizard/StepNicheTargeting.tsx`
 - Create: `services/dashboard/src/components/wizard/StepTopicFilters.tsx`
@@ -2841,8 +3531,13 @@ The Identity step file may be named `StepIdentity.tsx`, `StepCreateSite.tsx`, or
 
 ```tsx
 <div className="space-y-1.5">
-  <label className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Site theme *</label>
-  <p className="text-xs text-[var(--text-muted)]">1–2 lines describing the editorial angle. AI uses this to propose filters for each topic.</p>
+  <label className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">
+    Site theme *
+  </label>
+  <p className="text-xs text-[var(--text-muted)]">
+    1–2 lines describing the editorial angle. AI uses this to propose filters
+    for each topic.
+  </p>
   <textarea
     value={data.theme}
     onChange={(e): void => onChange({ theme: e.target.value })}
@@ -2873,7 +3568,12 @@ interface Props {
   onBack: () => void;
 }
 
-export function StepTopicFilters({ data, onChange, onNext, onBack }: Props): React.ReactElement {
+export function StepTopicFilters({
+  data,
+  onChange,
+  onNext,
+  onBack,
+}: Props): React.ReactElement {
   // The wizard collects topics in an earlier step (or here we may need to ask
   // first). We assume `data.topics` (a string[] of topic names) is populated.
   const topicNames = data.topics ?? [];
@@ -2887,8 +3587,12 @@ export function StepTopicFilters({ data, onChange, onNext, onBack }: Props): Rea
     return (
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Topic Filters</h2>
-        <p className="text-sm text-[var(--text-muted)]">No topics defined yet. Go back and add topics first.</p>
-        <Button variant="ghost" onClick={onBack}>← Back</Button>
+        <p className="text-sm text-[var(--text-muted)]">
+          No topics defined yet. Go back and add topics first.
+        </p>
+        <Button variant="ghost" onClick={onBack}>
+          ← Back
+        </Button>
       </div>
     );
   }
@@ -2898,8 +3602,13 @@ export function StepTopicFilters({ data, onChange, onNext, onBack }: Props): Rea
       siteTheme={data.theme}
       initialTopicNames={topicNames}
       defaultSchedule={{
-        articles_per_week: Math.max(1, Math.ceil(7 / Math.max(1, topicNames.length))),
-        preferred_days: data.preferredDays?.length ? data.preferredDays : ["Monday", "Wednesday", "Friday"],
+        articles_per_week: Math.max(
+          1,
+          Math.ceil(7 / Math.max(1, topicNames.length)),
+        ),
+        preferred_days: data.preferredDays?.length
+          ? data.preferredDays
+          : ["Monday", "Wednesday", "Friday"],
       }}
       onSave={async (topics): Promise<void> => handleSave(topics)}
       saveLabel="Next →"
@@ -2937,6 +3646,7 @@ Errors in `actions/wizard.ts` (still references removed fields) are expected. Ta
 `createSiteAndBuildStaging` is rewritten to write `theme` + `topics_v2` directly into `site.yaml`. The legacy bundle creation logic is removed. The existing `wizard-bundle.test.ts` is rewritten (or partially deleted) since the per-topic wizard no longer creates bundles.
 
 **Files:**
+
 - Modify: `services/dashboard/src/actions/wizard.ts`
 - Modify or partially rewrite: `services/dashboard/src/actions/__tests__/wizard-bundle.test.ts`
 
@@ -2945,12 +3655,12 @@ Errors in `actions/wizard.ts` (still references removed fields) are expected. Ta
 Edit `services/dashboard/src/actions/wizard.ts`. Locate the block in `createSiteAndBuildStaging` that resolves niche targeting (the section starting `// 0. Resolve niche targeting…`). Replace the entire block (down to and including the assignments to `categoryIds`/`tagIds` and the starter-bundle creation if-statement) with:
 
 ```ts
-  // 0. Per-topic model — the wizard writes brief.topics_v2 directly.
-  // No bundle is created from the wizard anymore; topics carry raw filters.
-  const topics_v2 = data.topics_v2;
-  const iabCategoryCodes: string[] = []; // No subcategory picks at site level on per-topic sites.
-  const categoryIds: string[] = [];
-  const tagIds: string[] = [];
+// 0. Per-topic model — the wizard writes brief.topics_v2 directly.
+// No bundle is created from the wizard anymore; topics carry raw filters.
+const topics_v2 = data.topics_v2;
+const iabCategoryCodes: string[] = []; // No subcategory picks at site level on per-topic sites.
+const categoryIds: string[] = [];
+const tagIds: string[] = [];
 ```
 
 Then find the `siteConfig` object literal and update its `brief: {…}` block:
@@ -3034,13 +3744,18 @@ vi.mock("@/lib/cloudflare", () => ({
   bulkPutKV: vi.fn(),
 }));
 vi.mock("@/lib/constants", () => ({
-  workerPreviewUrl: vi.fn((f: string) => `https://staging.workers.dev/?_atl_site=${f}`),
+  workerPreviewUrl: vi.fn(
+    (f: string) => `https://staging.workers.dev/?_atl_site=${f}`,
+  ),
   KV_NAMESPACE_PROD: "prod",
   KV_NAMESPACE_STAGING: "staging",
 }));
 vi.mock("@/lib/remove-background", () => ({ removeBackground: vi.fn() }));
 vi.mock("@/lib/favicon-extractor", () => ({ extractFaviconFromLogo: vi.fn() }));
-vi.mock("@/lib/email-routing", () => ({ enableEmailRouting: vi.fn(), createEmailRoutingRule: vi.fn() }));
+vi.mock("@/lib/email-routing", () => ({
+  enableEmailRouting: vi.fn(),
+  createEmailRoutingRule: vi.fn(),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import { createSiteAndBuildStaging } from "../wizard";
@@ -3058,12 +3773,23 @@ function makeFormData(overrides: Partial<WizardFormData> = {}): WizardFormData {
     groups: [],
     themePreset: "default",
     themeColors: {},
-    themeLayout: { hero: { enabled: true, count: 3 }, must_reads: { enabled: true, count: 4 }, whats_new: { enabled: true, count: 4 }, more_on: { enabled: true, page_size: 8 }, sidebar_topics: { auto: true, explicit: [] }, load_more: { page_size: 12 } },
+    themeLayout: {
+      hero: { enabled: true, count: 3 },
+      must_reads: { enabled: true, count: 4 },
+      whats_new: { enabled: true, count: 4 },
+      more_on: { enabled: true, page_size: 8 },
+      sidebar_topics: { auto: true, explicit: [] },
+      load_more: { page_size: 12 },
+    },
     audiences: ["Travelers"],
     audienceIds: [],
     theme: "Travel and food tourism",
     topics_v2: [
-      { name: "Destinations", source: { type: "filter", category_ids: ["c1"], tag_ids: ["t1"] }, schedule: { articles_per_week: 2, preferred_days: ["Mon"] } },
+      {
+        name: "Destinations",
+        source: { type: "filter", category_ids: ["c1"], tag_ids: ["t1"] },
+        schedule: { articles_per_week: 2, preferred_days: ["Mon"] },
+      },
     ],
     tone: "informative",
     topics: ["Destinations"],
@@ -3089,12 +3815,18 @@ describe("createSiteAndBuildStaging — per-topic wizard", () => {
     expect(result).toHaveProperty("stagingUrl");
 
     const { commitSiteFiles } = await import("@/lib/github");
-    const files = vi.mocked(commitSiteFiles).mock.calls[0]![1] as Array<{ path: string; content: string }>;
+    const files = vi.mocked(commitSiteFiles).mock.calls[0]![1] as Array<{
+      path: string;
+      content: string;
+    }>;
     const siteYaml = files.find((f) => f.path.endsWith("site.yaml"));
     expect(siteYaml).toBeDefined();
 
     const { parse: parseYaml } = await import("yaml");
-    const parsed = parseYaml(siteYaml!.content) as { brief: Record<string, unknown>; bundle_id?: string };
+    const parsed = parseYaml(siteYaml!.content) as {
+      brief: Record<string, unknown>;
+      bundle_id?: string;
+    };
     expect(parsed.brief.theme).toBe("Travel and food tourism");
     expect(parsed.brief.topics_v2).toBeDefined();
     expect((parsed.brief.topics_v2 as unknown[]).length).toBe(1);
@@ -3107,10 +3839,15 @@ describe("createSiteAndBuildStaging — per-topic wizard", () => {
     const data = makeFormData({ topics_v2: [] });
     await createSiteAndBuildStaging(data);
     const { commitSiteFiles } = await import("@/lib/github");
-    const files = vi.mocked(commitSiteFiles).mock.calls[0]![1] as Array<{ path: string; content: string }>;
+    const files = vi.mocked(commitSiteFiles).mock.calls[0]![1] as Array<{
+      path: string;
+      content: string;
+    }>;
     const siteYaml = files.find((f) => f.path.endsWith("site.yaml"));
     const { parse: parseYaml } = await import("yaml");
-    const parsed = parseYaml(siteYaml!.content) as { brief: Record<string, unknown> };
+    const parsed = parseYaml(siteYaml!.content) as {
+      brief: Record<string, unknown>;
+    };
     expect(parsed.brief.topics_v2).toBeUndefined();
   });
 });
@@ -3141,6 +3878,7 @@ Expected: no errors.
 Add an in-app guide page covering the per-topic model and migration.
 
 **Files:**
+
 - Create: `services/dashboard/public/guide/21-per-topic-filters.md`
 - Modify: `services/dashboard/src/app/guide/page.tsx` (register the new page)
 

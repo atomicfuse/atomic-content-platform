@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function GET(): Promise<NextResponse> {
   try {

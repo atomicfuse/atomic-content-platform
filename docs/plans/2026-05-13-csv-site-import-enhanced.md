@@ -13,10 +13,12 @@
 ### Task 1: Add category resolution + bundle creation to content-pipeline
 
 **Files:**
+
 - Create: `services/content-pipeline/src/agents/migration/category-resolver.ts`
 - Test: `services/content-pipeline/src/__tests__/migration/category-resolver.test.ts`
 
 **Context:** The content aggregator API at `CONTENT_API_BASE_URL ?? CONTENT_AGGREGATOR_URL` (with `/api` suffix) has these endpoints:
+
 - `GET /api/categories?parent_id=null` — list verticals (tier-1 categories)
 - `GET /api/categories?parent_id={id}` — list subcategories under a vertical
 - `POST /api/bundles` — create content bundle
@@ -51,7 +53,7 @@ function getAggregatorUrl(): string {
   const raw =
     process.env.CONTENT_API_BASE_URL ??
     process.env.CONTENT_AGGREGATOR_URL ??
-    "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+    "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
   return raw.replace(/\/api\/?$/, "");
 }
 
@@ -62,7 +64,9 @@ export async function fetchVerticals(): Promise<AggregatorCategory[]> {
   const url = `${getAggregatorUrl()}/api/categories?parent_id=null&active=true&page_size=200`;
   const res = await fetch(url);
   if (!res.ok) {
-    console.warn(`[category-resolver] Failed to fetch verticals: ${res.status}`);
+    console.warn(
+      `[category-resolver] Failed to fetch verticals: ${res.status}`,
+    );
     return [];
   }
   const data = (await res.json()) as { results?: AggregatorCategory[] };
@@ -72,7 +76,9 @@ export async function fetchVerticals(): Promise<AggregatorCategory[]> {
 /**
  * Fetch subcategories under a vertical.
  */
-export async function fetchSubcategories(parentId: string): Promise<AggregatorCategory[]> {
+export async function fetchSubcategories(
+  parentId: string,
+): Promise<AggregatorCategory[]> {
   const url = `${getAggregatorUrl()}/api/categories?parent_id=${parentId}&active=true&page_size=200`;
   const res = await fetch(url);
   if (!res.ok) return [];
@@ -94,7 +100,9 @@ export function matchVertical(
   if (exact) return exact;
   // Partial match
   const partial = verticals.find(
-    (v) => v.name.toLowerCase().includes(lower) || lower.includes(v.name.toLowerCase()),
+    (v) =>
+      v.name.toLowerCase().includes(lower) ||
+      lower.includes(v.name.toLowerCase()),
   );
   return partial ?? null;
 }
@@ -110,9 +118,10 @@ export function matchSubcategories(
   for (const name of names) {
     const lower = name.trim().toLowerCase();
     const match = available.find(
-      (c) => c.name.toLowerCase() === lower ||
-             c.name.toLowerCase().includes(lower) ||
-             lower.includes(c.name.toLowerCase()),
+      (c) =>
+        c.name.toLowerCase() === lower ||
+        c.name.toLowerCase().includes(lower) ||
+        lower.includes(c.name.toLowerCase()),
     );
     if (match) ids.push(match._id);
   }
@@ -128,7 +137,10 @@ export async function createBundle(
   verticalId: string,
   categoryIds: string[],
 ): Promise<string | null> {
-  const allCategoryIds = [verticalId, ...categoryIds.filter((id) => id !== verticalId)];
+  const allCategoryIds = [
+    verticalId,
+    ...categoryIds.filter((id) => id !== verticalId),
+  ];
   const payload = {
     name,
     description: `Auto-created content bundle for ${name}`,
@@ -178,15 +190,23 @@ export async function resolveCategories(
   const vertical = matchVertical(websiteCategory, verticals);
 
   if (!vertical) {
-    console.warn(`[category-resolver] No vertical match for "${websiteCategory}"`);
-    return { verticalId: null, verticalName: null, categoryIds: [], bundleId: null };
+    console.warn(
+      `[category-resolver] No vertical match for "${websiteCategory}"`,
+    );
+    return {
+      verticalId: null,
+      verticalName: null,
+      categoryIds: [],
+      bundleId: null,
+    };
   }
 
   const subcategories = await fetchSubcategories(vertical._id);
   const categoryIds = matchSubcategories(subCategoryNames, subcategories);
 
   // If no subcategories matched, use all available subcategory IDs
-  const finalCategoryIds = categoryIds.length > 0 ? categoryIds : subcategories.map((c) => c._id);
+  const finalCategoryIds =
+    categoryIds.length > 0 ? categoryIds : subcategories.map((c) => c._id);
 
   let bundleId: string | null = null;
   if (finalCategoryIds.length > 0) {
@@ -208,7 +228,11 @@ export async function resolveCategories(
 // services/content-pipeline/src/__tests__/migration/category-resolver.test.ts
 
 import { describe, it, expect } from "vitest";
-import { matchVertical, matchSubcategories, domainToSiteId } from "../../agents/migration/category-resolver.js";
+import {
+  matchVertical,
+  matchSubcategories,
+  domainToSiteId,
+} from "../../agents/migration/category-resolver.js";
 
 const MOCK_VERTICALS = [
   { _id: "v1", name: "Style & Fashion", parent_id: null },
@@ -242,7 +266,10 @@ describe("matchVertical", () => {
 
 describe("matchSubcategories", () => {
   it("matches multiple subcategories by name", () => {
-    const ids = matchSubcategories(["Hair Care", "Skin Care"], MOCK_SUBCATEGORIES);
+    const ids = matchSubcategories(
+      ["Hair Care", "Skin Care"],
+      MOCK_SUBCATEGORIES,
+    );
     expect(ids).toEqual(["c1", "c4"]);
   });
 
@@ -272,6 +299,7 @@ git commit -m "feat(migration): add category resolver for CSV site import"
 ### Task 2: Add theme color expansion utility
 
 **Files:**
+
 - Create: `services/content-pipeline/src/agents/migration/theme-builder.ts`
 - Test: `services/content-pipeline/src/__tests__/migration/theme-builder.test.ts`
 
@@ -309,9 +337,15 @@ function adjustBrightness(hex: string, factor: number): string {
     return Math.round(v * (1 + factor));
   };
 
-  const rr = Math.min(255, Math.max(0, adjust(r))).toString(16).padStart(2, "0");
-  const gg = Math.min(255, Math.max(0, adjust(g))).toString(16).padStart(2, "0");
-  const bb = Math.min(255, Math.max(0, adjust(b))).toString(16).padStart(2, "0");
+  const rr = Math.min(255, Math.max(0, adjust(r)))
+    .toString(16)
+    .padStart(2, "0");
+  const gg = Math.min(255, Math.max(0, adjust(g)))
+    .toString(16)
+    .padStart(2, "0");
+  const bb = Math.min(255, Math.max(0, adjust(b)))
+    .toString(16)
+    .padStart(2, "0");
 
   return `#${rr}${gg}${bb}`;
 }
@@ -328,9 +362,15 @@ function mixColors(hex1: string, hex2: string, ratio: number): string {
   const r2 = parseInt(c2.slice(0, 2), 16);
   const g2 = parseInt(c2.slice(2, 4), 16);
   const b2 = parseInt(c2.slice(4, 6), 16);
-  const r = Math.round(r1 + (r2 - r1) * ratio).toString(16).padStart(2, "0");
-  const g = Math.round(g1 + (g2 - g1) * ratio).toString(16).padStart(2, "0");
-  const b = Math.round(b1 + (b2 - b1) * ratio).toString(16).padStart(2, "0");
+  const r = Math.round(r1 + (r2 - r1) * ratio)
+    .toString(16)
+    .padStart(2, "0");
+  const g = Math.round(g1 + (g2 - g1) * ratio)
+    .toString(16)
+    .padStart(2, "0");
+  const b = Math.round(b1 + (b2 - b1) * ratio)
+    .toString(16)
+    .padStart(2, "0");
   return `#${r}${g}${b}`;
 }
 
@@ -355,8 +395,12 @@ export function expandThemeColors(csv: CsvColors): Record<string, string> {
 
   const bgIsDark = isDark(background);
   const muted = mixColors(text, background, 0.5);
-  const surface = bgIsDark ? adjustBrightness(background, 0.1) : adjustBrightness(background, -0.03);
-  const border = bgIsDark ? adjustBrightness(background, 0.2) : adjustBrightness(background, -0.1);
+  const surface = bgIsDark
+    ? adjustBrightness(background, 0.1)
+    : adjustBrightness(background, -0.03);
+  const border = bgIsDark
+    ? adjustBrightness(background, 0.2)
+    : adjustBrightness(background, -0.1);
 
   return {
     primary,
@@ -448,11 +492,13 @@ git commit -m "feat(migration): add theme color expansion for CSV import"
 ### Task 3: Rewrite `handleCreateSites` as SSE endpoint with full wizard flow
 
 **Files:**
+
 - Modify: `services/content-pipeline/src/agents/migration/handler.ts` — rewrite `handleCreateSites`
 - Modify: `services/content-pipeline/src/agents/migration/site-scaffolder.ts` — add `buildFullSiteConfig`, `buildSkillMd`
 - Modify: `services/content-pipeline/src/agents/migration/csv-parser.ts` — add `domain` field to `CsvSiteRow`
 
 **Context:** The current `handleCreateSites` creates bare site.yaml files in a batch commit. The new version must:
+
 1. Stream SSE progress events per site
 2. For each site: resolve categories, create bundle, expand theme, fetch logo/favicon, build full site.yaml + skill.md, create staging branch, commit all files, update dashboard-index on main, trigger KV sync
 3. Match the exact structure of `wizard.ts:createSiteAndBuildStaging`
@@ -492,7 +538,12 @@ interface FullSiteConfig {
   brief: {
     audiences: string[];
     tone: string;
-    article_types: { listicle: number; standard: number; "how-to": number; review: number };
+    article_types: {
+      listicle: number;
+      standard: number;
+      "how-to": number;
+      review: number;
+    };
     topics: string[];
     seo_keywords_focus: string[];
     content_guidelines: string[];
@@ -544,19 +595,36 @@ export function buildFullSiteConfig(
       audiences: [`${row.websiteCategory} enthusiasts`],
       tone: "Engaging, informative, conversational",
       article_types: { listicle: 40, standard: 30, "how-to": 20, review: 10 },
-      topics: row.menuItems.length > 0 ? row.menuItems : [row.websiteCategory || "General"],
+      topics:
+        row.menuItems.length > 0
+          ? row.menuItems
+          : [row.websiteCategory || "General"],
       seo_keywords_focus: [],
-      content_guidelines: [`Focus on ${row.websiteCategory} content`, "Maintain an engaging, reader-friendly tone"],
+      content_guidelines: [
+        `Focus on ${row.websiteCategory} content`,
+        "Maintain an engaging, reader-friendly tone",
+      ],
       vertical: resolved.verticalName ?? row.websiteCategory ?? undefined,
       vertical_id: resolved.verticalId ?? undefined,
       category_ids: resolved.verticalId
-        ? [resolved.verticalId, ...resolved.categoryIds.filter((id) => id !== resolved.verticalId)]
-        : resolved.categoryIds.length > 0 ? resolved.categoryIds : undefined,
+        ? [
+            resolved.verticalId,
+            ...resolved.categoryIds.filter((id) => id !== resolved.verticalId),
+          ]
+        : resolved.categoryIds.length > 0
+          ? resolved.categoryIds
+          : undefined,
       tag_ids: [],
       review_percentage: 5,
       schedule: {
         articles_per_day: 2,
-        preferred_days: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+        preferred_days: [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+        ],
         preferred_time: "10:00",
       },
     },
@@ -587,7 +655,11 @@ export function buildFullSiteConfig(
   return config;
 }
 
-export function buildSkillMd(siteName: string, topics: string[], category: string): string {
+export function buildSkillMd(
+  siteName: string,
+  topics: string[],
+  category: string,
+): string {
   return `# Content Agent Instructions for ${siteName}
 
 ## Target Audiences
@@ -614,6 +686,7 @@ Focus on ${category} content. Maintain an engaging, reader-friendly tone.
 **Step 3: Rewrite `handleCreateSites` in `handler.ts`**
 
 The new handler:
+
 - Accepts same `{ rows, branch }` body
 - Responds with SSE (`text/event-stream`)
 - Processes sites sequentially, emitting events:
@@ -624,6 +697,7 @@ The new handler:
 Phases per site: `resolving-categories` → `creating-bundle` → `fetching-assets` → `building-config` → `creating-branch` → `committing` → `updating-index` → `triggering-sync` → `done`
 
 Key implementation details:
+
 - Use `commitBatch` with `BatchBinaryEntry` for logo/favicon (binary files)
 - Create branch via Octokit `git.createRef` (content-pipeline doesn't have the dashboard's `createBranch` helper — use Octokit directly)
 - Update dashboard-index on main: read it, add entry, commitBatch to main
@@ -656,26 +730,68 @@ export async function handleCreateSites(req, res): Promise<void> {
 
     try {
       // 1. Resolve categories
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "resolving-categories" });
-      const resolved = await resolveCategories(site.websiteCategory, site.subCategories, site.name);
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "resolving-categories",
+      });
+      const resolved = await resolveCategories(
+        site.websiteCategory,
+        site.subCategories,
+        site.name,
+      );
 
       // 2. Fetch logo/favicon
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "fetching-assets" });
-      const { logoBase64, faviconBase64, warnings } = await fetchAssets(site.logoUrl, site.faviconUrl);
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "fetching-assets",
+      });
+      const { logoBase64, faviconBase64, warnings } = await fetchAssets(
+        site.logoUrl,
+        site.faviconUrl,
+      );
 
       // 3. Build config
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "building-config" });
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "building-config",
+      });
       const author = generateAuthorName();
-      const config = buildFullSiteConfig(site, resolved, author, !!logoBase64, !!faviconBase64);
-      const skillMd = buildSkillMd(site.name, config.brief.topics, site.websiteCategory);
+      const config = buildFullSiteConfig(
+        site,
+        resolved,
+        author,
+        !!logoBase64,
+        !!faviconBase64,
+      );
+      const skillMd = buildSkillMd(
+        site.name,
+        config.brief.topics,
+        site.websiteCategory,
+      );
 
       // 4. Create staging branch
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "creating-branch" });
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "creating-branch",
+      });
       const stagingBranch = `staging/${siteId}`;
       // Create branch from main via Octokit git.createRef (catch 422 = already exists)
 
       // 5. Commit files
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "committing" });
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "committing",
+      });
       const files = [
         { path: `sites/${siteId}/site.yaml`, content: stringify(config) },
         { path: `sites/${siteId}/skill.md`, content: skillMd },
@@ -683,24 +799,73 @@ export async function handleCreateSites(req, res): Promise<void> {
         { path: `sites/${siteId}/articles/.gitkeep`, content: "" },
       ];
       const binaryFiles = [];
-      if (logoBase64) binaryFiles.push({ path: `sites/${siteId}/assets/logo.png`, base64: logoBase64 });
-      if (faviconBase64) binaryFiles.push({ path: `sites/${siteId}/assets/favicon.png`, base64: faviconBase64 });
-      await commitBatch(octokit, networkRepo, files, binaryFiles, commitMsg, stagingBranch);
+      if (logoBase64)
+        binaryFiles.push({
+          path: `sites/${siteId}/assets/logo.png`,
+          base64: logoBase64,
+        });
+      if (faviconBase64)
+        binaryFiles.push({
+          path: `sites/${siteId}/assets/favicon.png`,
+          base64: faviconBase64,
+        });
+      await commitBatch(
+        octokit,
+        networkRepo,
+        files,
+        binaryFiles,
+        commitMsg,
+        stagingBranch,
+      );
 
       // 6. Update dashboard-index on main
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "updating-index" });
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "updating-index",
+      });
       // Read dashboard-index.yaml from main, parse, add entry, commitBatch to main
 
       // 7. Trigger KV sync
-      emit({ type: "site-progress", domain: site.name, siteId, phase: "triggering-sync" });
+      emit({
+        type: "site-progress",
+        domain: site.name,
+        siteId,
+        phase: "triggering-sync",
+      });
       // Push .build-trigger via Contents API to staging branch
 
       const previewUrl = `https://atomic-site-worker-staging.dev1-953.workers.dev/?_atl_site=${siteId}`;
-      emit({ type: "site-complete", domain: site.name, siteId, status: "created", previewUrl, warnings });
-      results.push({ domain: site.name, siteId, status: "created", previewUrl, warnings });
+      emit({
+        type: "site-complete",
+        domain: site.name,
+        siteId,
+        status: "created",
+        previewUrl,
+        warnings,
+      });
+      results.push({
+        domain: site.name,
+        siteId,
+        status: "created",
+        previewUrl,
+        warnings,
+      });
     } catch (err) {
-      emit({ type: "site-complete", domain: site.name, siteId, status: "error", error: err.message });
-      results.push({ domain: site.name, siteId, status: "error", error: err.message });
+      emit({
+        type: "site-complete",
+        domain: site.name,
+        siteId,
+        status: "error",
+        error: err.message,
+      });
+      results.push({
+        domain: site.name,
+        siteId,
+        status: "error",
+        error: err.message,
+      });
     }
   }
 
@@ -730,6 +895,7 @@ git commit -m "feat(migration): full wizard-equivalent site creation via SSE"
 ### Task 4: Update dashboard proxy to stream SSE
 
 **Files:**
+
 - Modify: `services/dashboard/src/app/api/agent/wp-migrate/create-sites/route.ts`
 
 **Context:** The current proxy route returns JSON. The new backend streams SSE. The proxy must forward the SSE stream to the browser, same pattern as the existing `services/dashboard/src/app/api/agent/wp-migrate/route.ts`.
@@ -743,7 +909,8 @@ Reference the existing SSE proxy at `services/dashboard/src/app/api/agent/wp-mig
 
 import { NextRequest } from "next/server";
 
-const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
+const CONTENT_AGENT_URL =
+  process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
 const LOCAL_FALLBACK = "http://localhost:5000";
 const isLocalDev = process.env.NODE_ENV === "development";
 
@@ -792,9 +959,11 @@ git commit -m "feat(dashboard): stream SSE from create-sites proxy"
 ### Task 5: Rewrite `CsvSiteCreator.tsx` for SSE progress + article import
 
 **Files:**
+
 - Modify: `services/dashboard/src/components/import/CsvSiteCreator.tsx`
 
 **Context:** The current component does a simple POST and shows results. The new version must:
+
 1. Parse CSV (keep existing logic)
 2. Show preview table (keep)
 3. On "Create Sites": POST to create-sites, consume SSE, show per-site progress
@@ -828,6 +997,7 @@ IDLE → CREATING (SSE progress per site) → RESULTS (per-site cards with Impor
 **Step 1: Implement the component**
 
 Major changes:
+
 - Replace `handleCreate` with SSE-consuming version
 - Add `SiteResult` interface with `previewUrl`, `warnings`, `postsApiUrl`
 - Add per-site "Import Articles" button + inline SSE progress
@@ -847,6 +1017,7 @@ git commit -m "feat(dashboard): CSV site creator with SSE progress + article imp
 **Files:** None (manual testing)
 
 **Steps:**
+
 1. Start both services: `cloudgrid dev` (or manual: dashboard on 3000, content-pipeline on 5000)
 2. Navigate to `/import`
 3. Upload the CSV: `/Users/michal/Downloads/site-import-template new - site-import-template.csv`
@@ -865,14 +1036,14 @@ git commit -m "feat(dashboard): CSV site creator with SSE progress + article imp
 
 ## Summary of files touched
 
-| File | Action | Purpose |
-|------|--------|---------|
-| `content-pipeline/src/agents/migration/category-resolver.ts` | Create | Category matching + bundle creation via aggregator API |
-| `content-pipeline/src/agents/migration/theme-builder.ts` | Create | 5→19 color expansion |
-| `content-pipeline/src/agents/migration/handler.ts` | Modify | Rewrite `handleCreateSites` as SSE with full wizard flow |
-| `content-pipeline/src/agents/migration/site-scaffolder.ts` | Modify | Add `buildFullSiteConfig`, `buildSkillMd` |
-| `content-pipeline/src/agents/migration/csv-parser.ts` | Modify | Add `domain` field |
-| `content-pipeline/src/agents/migration/types.ts` | Modify | Add `domain` to `CsvSiteRow` |
-| `dashboard/src/app/api/agent/wp-migrate/create-sites/route.ts` | Modify | SSE streaming proxy |
-| `dashboard/src/components/import/CsvSiteCreator.tsx` | Modify | SSE progress + article import UI |
-| Tests: `category-resolver.test.ts`, `theme-builder.test.ts` | Create | Unit tests |
+| File                                                           | Action | Purpose                                                  |
+| -------------------------------------------------------------- | ------ | -------------------------------------------------------- |
+| `content-pipeline/src/agents/migration/category-resolver.ts`   | Create | Category matching + bundle creation via aggregator API   |
+| `content-pipeline/src/agents/migration/theme-builder.ts`       | Create | 5→19 color expansion                                     |
+| `content-pipeline/src/agents/migration/handler.ts`             | Modify | Rewrite `handleCreateSites` as SSE with full wizard flow |
+| `content-pipeline/src/agents/migration/site-scaffolder.ts`     | Modify | Add `buildFullSiteConfig`, `buildSkillMd`                |
+| `content-pipeline/src/agents/migration/csv-parser.ts`          | Modify | Add `domain` field                                       |
+| `content-pipeline/src/agents/migration/types.ts`               | Modify | Add `domain` to `CsvSiteRow`                             |
+| `dashboard/src/app/api/agent/wp-migrate/create-sites/route.ts` | Modify | SSE streaming proxy                                      |
+| `dashboard/src/components/import/CsvSiteCreator.tsx`           | Modify | SSE progress + article import UI                         |
+| Tests: `category-resolver.test.ts`, `theme-builder.test.ts`    | Create | Unit tests                                               |
