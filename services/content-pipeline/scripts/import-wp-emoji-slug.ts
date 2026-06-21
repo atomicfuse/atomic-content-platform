@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY!;
   const n8nUrl = process.env.N8N_IMAGE_WEBHOOK_URL;
   const callbackUrl = process.env.IMAGE_CALLBACK_URL
-    ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   // 1. Fetch the WP article by ID
   const fetchUrl = `${wpUrl.replace(/\/$/, "")}/${wpId}`;

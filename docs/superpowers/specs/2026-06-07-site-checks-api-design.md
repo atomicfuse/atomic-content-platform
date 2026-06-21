@@ -13,7 +13,7 @@ For each site, the ops console needs a **Checks** block:
 
 ## Key decision: reuse the existing Domains Dashboard, don't rebuild
 
-An existing internal service — the **Domains Dashboard** (`https://domains-dashboard-53a6.atomic.cloudgrid.io`,
+An existing internal service — the **Domains Dashboard** (`https://domains-dashboard-53a6--atomic.cloudgrid.io`,
 JSON, no auth) — already monitors **uptime, SSL, domain registration/expiry, DNS/DNSSEC, and nameservers** for our
 domains, with health checks every 2h and a daily registrar/SSL sync. **All our live custom-domains are covered.**
 
@@ -118,5 +118,5 @@ Merges into the per-site aggregate as `checks`:
 
 - `GET /api/domains/:domain` → `latestSnapshot.{health,ssl,renewal,overallStatus}` (primary read, per site).
 - `GET /api/domains` → bulk variant (all monitored domains) for the all-sites listing.
-- No auth required. Base URL `https://domains-dashboard-53a6.atomic.cloudgrid.io`. Health every 2h; SSL/registrar
+- No auth required. Base URL `https://domains-dashboard-53a6--atomic.cloudgrid.io`. Health every 2h; SSL/registrar
   daily. Reference: `/Users/michal/domains-dashboard/services/web/docs/API.md`.

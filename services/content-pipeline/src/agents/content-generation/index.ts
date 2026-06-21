@@ -525,7 +525,7 @@ async function handleRequest(
       // Use defaults if article or brief can't be read
     }
 
-    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
     const accepted = await triggerN8nImage(webhookUrl, {
       request_id: randomUUID(),

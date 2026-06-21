@@ -7,7 +7,7 @@ This doc is for **manually QA-ing** the endpoints built across the four ops-cons
 
 | Surface | URL | Notes |
 |---|---|---|
-| **Dashboard API (QA here)** | `https://sites-platform-e297.atomic.cloudgrid.io` (prod) · `http://localhost:3001` (`cloudgrid dev`) | Public — `/api/*` is **not** auth-gated (middleware excludes `/api/`). This is the surface external consumers + you use. |
+| **Dashboard API (QA here)** | `https://sites-platform-e297--atomic.cloudgrid.io` (prod) · `http://localhost:3001` (`cloudgrid dev`) | Public — `/api/*` is **not** auth-gated (middleware excludes `/api/`). This is the surface external consumers + you use. |
 | content-pipeline (internal) | `http://content-pipeline-app` (cluster) · `http://localhost:5000` (`cloudgrid dev`) | Internal only — the dashboard proxies it. You only hit it directly for the alerts cron (`/run-alerts`), which has no dashboard proxy. |
 
 All responses are JSON. All `GET`. `:domain` is the **site folder name** (e.g. `travelswire`), *not* the custom domain.
@@ -77,8 +77,8 @@ What it answers (the 6 original requirements + extras):
 }
 ```
 ```bash
-curl -s https://sites-platform-e297.atomic.cloudgrid.io/api/site-stats | jq
-curl -s https://sites-platform-e297.atomic.cloudgrid.io/api/site-stats/travelswire | jq
+curl -s https://sites-platform-e297--atomic.cloudgrid.io/api/site-stats | jq
+curl -s https://sites-platform-e297--atomic.cloudgrid.io/api/site-stats/travelswire | jq
 ```
 **QA tip:** trigger a dashboard "Generate" for a site → within seconds `lastAdded.source` should read `"dashboard"` and `lastAdded.count` should match what you generated. Run the scheduler (or wait for its cron) → `source` reads `"scheduler"`.
 
@@ -104,7 +104,7 @@ Uptime · SSL · Domain-expiry (from the **Domains Dashboard**) + Sync · Tracki
 - `state`: `"ok"` (data present) · `"n/a"` (staging-only site, no custom domain → uptime/ssl/domain) · `"unknown"` (source unreachable).
 - `not_live` (HTTP 429, WordPress not-yet-migrated): `uptime.ok=false`, `uptime.overallStatus="not_live"`.
 ```bash
-curl -s https://sites-platform-e297.atomic.cloudgrid.io/api/site-checks/travelswire | jq
+curl -s https://sites-platform-e297--atomic.cloudgrid.io/api/site-checks/travelswire | jq
 ```
 **QA tip:** a Live site with a custom domain should show `uptime`/`ssl`/`domain` from the Domains Dashboard; a staging-only site shows those as `state:"n/a"`. `sync.ok=false` indicates the last `sync-kv` for that site failed.
 
@@ -136,7 +136,7 @@ Per-site AI spend by model (text tokens + image generation).
 - **`estimated: true`** = token counts were estimated (Claude via the CloudGrid AI Gateway returns no usage, so we estimate ~4 chars/token). `false` = exact (OpenAI, local Anthropic SDK). Image cost is always `count × per-image`.
 - `costForToken` is the static rate (USD/MTok for text, per-image for images).
 ```bash
-curl -s https://sites-platform-e297.atomic.cloudgrid.io/api/site-costs/travelswire | jq
+curl -s https://sites-platform-e297--atomic.cloudgrid.io/api/site-costs/travelswire | jq
 ```
 **QA tip:** generate a few articles, then check `byModel` — Claude text shows `estimated:true` in prod; `totalCostUsd` should be the sum of the per-model `costUsd`.
 

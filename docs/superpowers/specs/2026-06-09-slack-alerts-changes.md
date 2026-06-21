@@ -129,7 +129,7 @@ Keep as-is: fires once when KV sync fails for a site.
 
 **Slack message:**
 ```
-📷 There are {totalGeneralImages} articles using a general image — review it here: https://sites-platform-e297.atomic.cloudgrid.io/articles/general-images
+📷 There are {totalGeneralImages} articles using a general image — review it here: https://sites-platform-e297--atomic.cloudgrid.io/articles/general-images
 ```
 
 **Data needed:**
@@ -146,7 +146,7 @@ reminders: {
 }
 ```
 
-**Dashboard page needed:** The link `https://sites-platform-e297.atomic.cloudgrid.io/articles/general-images` — need to confirm this route exists or create it. This is outside the scope of the alerts change but the link will be hardcoded in the message.
+**Dashboard page needed:** The link `https://sites-platform-e297--atomic.cloudgrid.io/articles/general-images` — need to confirm this route exists or create it. This is outside the scope of the alerts change but the link will be hardcoded in the message.
 
 **Files to change:**
 - `alerts/config.ts` — add `reminders.generalImages` config field
@@ -184,23 +184,23 @@ No new alert conditions (site down, SSL expiring, domain expiring). These are vi
 
 **New:** Append a dashboard link to each message so the recipient can click through directly.
 
-**Dashboard base URL:** `https://sites-platform-e297.atomic.cloudgrid.io`
+**Dashboard base URL:** `https://sites-platform-e297--atomic.cloudgrid.io`
 
 **Updated message templates:**
 
 | Condition | Message |
 |-----------|---------|
-| `tracking_off` | `⚠ {siteName}: no analytics provider (GA4/GTM) configured\nhttps://sites-platform-e297.atomic.cloudgrid.io/sites/{domain}` |
-| `monthly_creation_alert` | `⚠ Article creation alert: {siteName} — only {createdLast30d} articles created this month out of {expectedMonthly} expected\nhttps://sites-platform-e297.atomic.cloudgrid.io/sites/{domain}` |
-| `zero_articles_14d` | `🔴 Article creation alert: {siteName} — 0 articles created in the last 14 days\nhttps://sites-platform-e297.atomic.cloudgrid.io/sites/{domain}` |
-| `sync_failed` | `🔴 {siteName}: content sync failed — visitors see old content\nhttps://sites-platform-e297.atomic.cloudgrid.io/sites/{domain}` |
-| `in_review` | `⚠ {siteName}: {n} articles in review (limit 15)\nhttps://sites-platform-e297.atomic.cloudgrid.io/sites/{domain}` |
-| `general_images` (reminder) | `📷 There are {totalGeneralImages} articles using a general image — review it here:\nhttps://sites-platform-e297.atomic.cloudgrid.io/articles/general-images` |
-| `create_new_site` (reminder) | `Time to create a new site\nhttps://sites-platform-e297.atomic.cloudgrid.io/wizard` |
+| `tracking_off` | `⚠ {siteName}: no analytics provider (GA4/GTM) configured\nhttps://sites-platform-e297--atomic.cloudgrid.io/sites/{domain}` |
+| `monthly_creation_alert` | `⚠ Article creation alert: {siteName} — only {createdLast30d} articles created this month out of {expectedMonthly} expected\nhttps://sites-platform-e297--atomic.cloudgrid.io/sites/{domain}` |
+| `zero_articles_14d` | `🔴 Article creation alert: {siteName} — 0 articles created in the last 14 days\nhttps://sites-platform-e297--atomic.cloudgrid.io/sites/{domain}` |
+| `sync_failed` | `🔴 {siteName}: content sync failed — visitors see old content\nhttps://sites-platform-e297--atomic.cloudgrid.io/sites/{domain}` |
+| `in_review` | `⚠ {siteName}: {n} articles in review (limit 15)\nhttps://sites-platform-e297--atomic.cloudgrid.io/sites/{domain}` |
+| `general_images` (reminder) | `📷 There are {totalGeneralImages} articles using a general image — review it here:\nhttps://sites-platform-e297--atomic.cloudgrid.io/articles/general-images` |
+| `create_new_site` (reminder) | `Time to create a new site\nhttps://sites-platform-e297--atomic.cloudgrid.io/wizard` |
 
 **Note:** All per-site messages now use `{siteName}` instead of `{domain}` for readability. Slack auto-links URLs on their own line.
 
-**Implementation:** The dashboard base URL should come from an env var or constant (e.g. `DASHBOARD_URL`), falling back to `https://sites-platform-e297.atomic.cloudgrid.io`. This avoids hardcoding if the CloudGrid slug ever changes.
+**Implementation:** The dashboard base URL should come from an env var or constant (e.g. `DASHBOARD_URL`), falling back to `https://sites-platform-e297--atomic.cloudgrid.io`. This avoids hardcoding if the CloudGrid slug ever changes.
 
 **Files to change:**
 - `alerts/run.ts` — update all message templates in `planConditions()` and `runReminders()`

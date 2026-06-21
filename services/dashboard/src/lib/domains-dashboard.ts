@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
 // Domains Dashboard API client
-// External service: https://domains-dashboard-53a6.atomic.cloudgrid.io
+// External service: https://domains-dashboard-53a6--atomic.cloudgrid.io
 // No authentication required.
 // ---------------------------------------------------------------------------
 
 const BASE =
   process.env.DOMAINS_DASHBOARD_URL ??
-  "https://domains-dashboard-53a6.atomic.cloudgrid.io";
+  "https://domains-dashboard-53a6--atomic.cloudgrid.io";
 
 // ---------------------------------------------------------------------------
 // Public types

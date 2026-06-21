@@ -37,7 +37,7 @@ POST http://localhost:5000/bulk-generate-images
 ### Dashboard Proxy (production)
 
 ```
-POST https://sites-platform-e297.atomic.cloudgrid.io/api/agent/bulk-generate-images
+POST https://sites-platform-e297--atomic.cloudgrid.io/api/agent/bulk-generate-images
 ```
 
 ## Request

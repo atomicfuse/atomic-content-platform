@@ -176,7 +176,7 @@ const cssVars = [
             if (!email) return;
             if (status) status.textContent = 'Subscribing…';
             try {
-              var res = await fetch('https://sites-platform-e297.atomic.cloudgrid.io/api/subscribe', {
+              var res = await fetch('https://sites-platform-e297--atomic.cloudgrid.io/api/subscribe', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({

@@ -268,7 +268,7 @@ export function startBulkImageGeneration(
   const webhookUrl = config.n8nImageWebhookUrl!;
   const callbackUrl =
     config.imageCallbackUrl ??
-    "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   registerBulkRun(articles, config.github);
   setBulkJobActive(articles.length);
