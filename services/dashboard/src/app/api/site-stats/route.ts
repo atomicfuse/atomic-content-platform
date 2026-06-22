@@ -8,9 +8,11 @@ import { NextResponse } from "next/server";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
+  buildScheduleFromBrief,
   computeNextRun,
   computeTodayExpected,
   emptyStats,
+  preloadBriefs,
   type EnrichedSiteStats,
   type SchedulerGate,
   type SiteStatsResponse,
@@ -98,10 +100,22 @@ export async function GET(): Promise<NextResponse> {
     }
   }
 
-  // 4. Pure enrichment: schedule.nextRun + today.expected (no IO)
+  // 4. Bulk-load briefs for sites missing a schedule (single tree fetch from main)
+  const needsBrief = [...byDomain.values()]
+    .filter((s) => s.schedule === null)
+    .map((s) => s.siteDomain);
+  const briefs = needsBrief.length > 0
+    ? await withTimeout(preloadBriefs(needsBrief), 4_000, new Map<string, Record<string, unknown>>())
+    : new Map<string, Record<string, unknown>>();
+
+  // 5. Pure enrichment: schedule.nextRun + today.expected
   const now = new Date();
   const enriched: EnrichedSiteStats[] = [...byDomain.values()].map((site) => {
-    const rawSchedule = site.schedule;
+    let rawSchedule = site.schedule;
+    if (!rawSchedule) {
+      const brief = briefs.get(site.siteDomain);
+      if (brief) rawSchedule = buildScheduleFromBrief(brief);
+    }
     const schedule = rawSchedule
       ? {
           ...rawSchedule,
