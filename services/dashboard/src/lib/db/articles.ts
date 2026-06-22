@@ -6,7 +6,11 @@ function useMongoReads(): boolean {
   return process.env.USE_MONGO_READS === "true";
 }
 
-/** Frontmatter-only article metadata stored in MongoDB. */
+/** Frontmatter-only article metadata stored in MongoDB.
+ *  MongoDB documents contain camelCase fields (written directly from
+ *  frontmatter by the content-pipeline and backfill scripts). The
+ *  interface declares both forms so TypeScript is satisfied regardless
+ *  of which key name appears in a given document. */
 export interface ArticleMeta {
   domain: string;
   slug: string;
@@ -15,8 +19,10 @@ export interface ArticleMeta {
   status?: string;
   quality_score?: number;
   featured_image?: string;
+  featuredImage?: string;
   image_alt?: string;
   publish_date?: string;
+  publishDate?: string;
   tags?: string[];
   source_url?: string;
   videos?: unknown[];
@@ -25,21 +31,23 @@ export interface ArticleMeta {
   type?: string;
   description?: string;
   score_breakdown?: Record<string, number>;
+  scoreBreakdown?: Record<string, number>;
   reading_time?: number;
   updatedAt?: Date;
 }
 
-/** Map MongoDB ArticleMeta (snake_case) to dashboard ArticleEntry (camelCase). */
+/** Map MongoDB ArticleMeta to dashboard ArticleEntry.
+ *  Handles both camelCase (from frontmatter) and snake_case field names. */
 function toArticleEntry(doc: ArticleMeta): ArticleEntry {
   return {
     slug: doc.slug,
     title: doc.title ?? doc.slug,
     type: doc.type ?? "standard",
     status: doc.status ?? "draft",
-    publishDate: doc.publish_date ?? "",
-    featuredImage: doc.featured_image ?? undefined,
+    publishDate: doc.publishDate ?? doc.publish_date ?? "",
+    featuredImage: doc.featuredImage ?? doc.featured_image ?? undefined,
     score: doc.quality_score,
-    scoreBreakdown: doc.score_breakdown as ArticleEntry["scoreBreakdown"],
+    scoreBreakdown: (doc.scoreBreakdown ?? doc.score_breakdown) as ArticleEntry["scoreBreakdown"],
     qualityNote: undefined,
     reviewerNotes: undefined,
   };
