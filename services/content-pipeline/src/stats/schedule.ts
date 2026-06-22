@@ -65,6 +65,11 @@ const DAY_ORDER: Record<string, number> = {
  *   - weeklyTarget: sum of all topics' articles_per_week
  *   - articlesPerDay: ceil(weeklyTarget / number of unique preferred days)
  */
+/** Normalise "monday" / "Monday" / "MONDAY" → "Monday" (matches DAY_ORDER keys). */
+function capitalizeDay(d: string): string {
+  return d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+}
+
 function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
   const allDays = new Set<string>();
   let totalWeekly = 0;
@@ -72,7 +77,7 @@ function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
   for (const topic of topics) {
     if (!topic.schedule) continue;
     totalWeekly += topic.schedule.articles_per_week ?? 0;
-    for (const d of topic.schedule.preferred_days) allDays.add(d);
+    for (const d of topic.schedule.preferred_days) allDays.add(capitalizeDay(d));
   }
 
   if (totalWeekly <= 0 || allDays.size === 0) return null;

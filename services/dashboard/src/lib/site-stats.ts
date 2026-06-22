@@ -340,14 +340,15 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 /**
  * Returns articlesPerDay if today (UTC) is one of the preferredDays, else 0.
+ * Case-insensitive: handles both "Monday" and "monday" from YAML configs.
  */
 export function computeTodayExpected(
   articlesPerDay: number,
   preferredDays: string[],
   now: Date,
 ): number {
-  const todayName = DAY_NAMES[now.getUTCDay()];
-  return preferredDays.includes(todayName) ? articlesPerDay : 0;
+  const todayName = DAY_NAMES[now.getUTCDay()].toLowerCase();
+  return preferredDays.some((d) => d.toLowerCase() === todayName) ? articlesPerDay : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +443,11 @@ function scheduleFromSiteLevel(
   return { articlesPerDay, preferredDays, weeklyTarget };
 }
 
+/** Normalise "monday" / "Monday" / "MONDAY" → "Monday" (matches DAY_ORDER keys). */
+function capitalizeDay(d: string): string {
+  return d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+}
+
 /**
  * Aggregate per-topic schedules (topics_v2 model) into a single snapshot.
  *
@@ -465,7 +471,7 @@ function scheduleFromTopics(
     const days = Array.isArray(sched.preferred_days)
       ? (sched.preferred_days as string[])
       : [];
-    for (const d of days) allDays.add(d);
+    for (const d of days) allDays.add(capitalizeDay(d));
   }
 
   if (totalWeekly <= 0 || allDays.size === 0) return null;
