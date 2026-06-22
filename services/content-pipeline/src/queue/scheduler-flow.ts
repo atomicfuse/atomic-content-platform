@@ -86,6 +86,7 @@ export async function createSchedulerFlow(
       runId,
       triggeredBy: (forced ? "scheduled-forced" : "scheduled") as GenerateJobData["triggeredBy"],
       briefJson: site.briefJson,
+      timezone,
     },
     opts: DEFAULT_JOB_OPTIONS,
   }));
@@ -299,7 +300,11 @@ export async function processSchedulerRun(
 
     if (genResult.totalSourced === 0) {
       siteStatus = "no_content";
-      siteMessage = "Aggregator returned 0 items for this site's topics";
+      if (genResult.eligibleTopicCount === 0) {
+        siteMessage = "No topics eligible to run today (check per-topic preferred_days)";
+      } else {
+        siteMessage = `Aggregator returned 0 items for ${genResult.eligibleTopicCount ?? "all"} eligible topic(s)`;
+      }
     } else if (created === 0 && genErrors.length > 0) {
       siteStatus = "error";
       siteMessage = genErrors

@@ -1289,19 +1289,34 @@ async function handleRequest(
     return;
   }
 
-  // ─── Backfill MongoDB from Git ──────────────────────────────────
+  // ─── Backfill MongoDB from Git (fire-and-forget) ────────────────
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method === "POST" && pathname === "/backfill-mongo") {
+      // Parse optional { domains: string[] } from request body
+      let domains: string[] | undefined;
       try {
-        const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
-        const summary = await runBackfillMongo();
-        sendJson(res, 200, { status: "ok", ...summary });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error("[backfill-mongo] Error:", message);
-        sendJson(res, 500, { status: "error", message });
-      }
+        const body = await readBody(req);
+        const parsed = body ? JSON.parse(body) : {};
+        if (Array.isArray(parsed.domains) && parsed.domains.length > 0) {
+          domains = parsed.domains;
+        }
+      } catch { /* empty body is fine — backfill all */ }
+
+      const label = domains ? `${domains.length} domains` : "all";
+      sendJson(res, 202, { status: "accepted", message: `Backfill started (${label}). Check CloudGrid logs for progress.` });
+
+      // Fire-and-forget — don't await
+      void (async () => {
+        try {
+          const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
+          const summary = await runBackfillMongo(undefined, domains);
+          console.log("[backfill-mongo] Completed:", JSON.stringify(summary));
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("[backfill-mongo] Error:", message);
+        }
+      })();
       return;
     }
   }

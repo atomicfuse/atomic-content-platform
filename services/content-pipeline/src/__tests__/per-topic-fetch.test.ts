@@ -72,6 +72,41 @@ describe("isTopicEligibleToday", () => {
   it("returns false when articles_per_week is 0 even on preferred day", () => {
     expect(isTopicEligibleToday({ articles_per_week: 0, preferred_days: ["Tuesday"] }, TUESDAY)).toBe(false);
   });
+
+  it("returns true when preferred_days uses different casing", () => {
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["tuesday"] },
+        TUESDAY,
+      ),
+    ).toBe(true);
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["TUESDAY"] },
+        TUESDAY,
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts timezone parameter and uses it for day calculation", () => {
+    // 2026-06-02T03:00:00Z = 2026-06-01 23:00 in America/New_York (Monday night)
+    // In UTC this is Tuesday, but in New York it's still Monday
+    const mondayNightNY = new Date("2026-06-02T03:00:00Z");
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["Monday"] },
+        mondayNightNY,
+        "America/New_York",
+      ),
+    ).toBe(true);
+    // Without timezone (server = UTC by default in test), getDay() returns Tuesday
+    expect(
+      isTopicEligibleToday(
+        { articles_per_week: 1, preferred_days: ["Monday"] },
+        mondayNightNY,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("articleMatchesTopicFilter", () => {

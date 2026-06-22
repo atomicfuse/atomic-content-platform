@@ -442,11 +442,14 @@ function parseArgs(): Phase[] {
   return [phaseArg as Phase];
 }
 
-/** Run the backfill. Callable from HTTP endpoint or CLI. */
+/** Run the backfill. Callable from HTTP endpoint or CLI.
+ *  Pass `domains` to limit to specific sites (articles + site-configs phases). */
 export async function runBackfillMongo(
   phases: Phase[] = ALL_PHASES,
+  domains?: string[],
 ): Promise<BackfillSummary> {
-  console.log(`[backfill] Starting backfill (phases: ${phases.join(", ")})`);
+  const domainLabel = domains?.length ? ` (${domains.length} domains)` : " (all)";
+  console.log(`[backfill] Starting backfill (phases: ${phases.join(", ")})${domainLabel}`);
 
   const config = loadConfig();
   const octokit = createOctokit(config.github);
@@ -460,7 +463,13 @@ export async function runBackfillMongo(
   let sites: ActiveSiteEntry[] = [];
   if (phases.includes("articles") || phases.includes("site-configs")) {
     sites = await listActiveSites(octokit, repo);
-    console.log(`[backfill] Found ${sites.length} active sites`);
+    if (domains?.length) {
+      const domainSet = new Set(domains);
+      sites = sites.filter((s) => domainSet.has(s.domain));
+      console.log(`[backfill] Filtered to ${sites.length} of ${domains.length} requested domains`);
+    } else {
+      console.log(`[backfill] Found ${sites.length} active sites`);
+    }
   }
 
   const summary: BackfillSummary = {

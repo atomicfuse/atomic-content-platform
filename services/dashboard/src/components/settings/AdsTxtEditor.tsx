@@ -22,14 +22,22 @@ export function AdsTxtEditor({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>): void => {
-      const lines = e.target.value
-        .split("\n")
-        .map((l) => l.replace(/\s+$/g, ""))
-        .filter((line) => line.length > 0);
+      const raw = e.target.value;
+      // Preserve empty lines while editing so Enter key works.
+      // Only strip trailing whitespace per line; filter empties on blur.
+      const lines = raw.split("\n").map((l) => l.replace(/\s+$/g, ""));
       onChange(lines);
     },
     [onChange],
   );
+
+  const handleBlur = useCallback((): void => {
+    // Clean up empty lines when the user leaves the field.
+    const cleaned = value.filter((line) => line.length > 0);
+    if (cleaned.length !== value.length) {
+      onChange(cleaned);
+    }
+  }, [value, onChange]);
 
   const entryCount = value.filter((l) => l.trim() !== "" && !l.trim().startsWith("#")).length;
 
@@ -47,6 +55,7 @@ export function AdsTxtEditor({
       <Textarea
         value={textValue}
         onChange={handleChange}
+        onBlur={handleBlur}
         rows={12}
         placeholder="google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0"
         className="font-mono text-xs"

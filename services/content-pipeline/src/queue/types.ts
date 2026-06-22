@@ -11,6 +11,8 @@ export interface GenerateJobData {
   topicName?: string;
   /** Skip date-based per-topic eligibility (manual dashboard trigger). */
   bypassSchedule?: boolean;
+  /** Scheduler timezone — passed to per-topic eligibility check. */
+  timezone?: string;
 }
 
 export interface SchedulerRunData {

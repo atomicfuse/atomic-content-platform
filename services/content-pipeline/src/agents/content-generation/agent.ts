@@ -98,6 +98,9 @@ export interface ContentGenerationParams {
    *  manual on-demand triggers (dashboard "Generate" buttons) work any day.
    *  The scheduled cron sets this to false so it still respects preferred_days. */
   bypassSchedule?: boolean;
+  /** Scheduler timezone — threaded to isTopicEligibleToday so the per-topic
+   *  day check matches the site-level check. */
+  timezone?: string;
   /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
   preloadedBrief?: {
     siteName: string;
@@ -150,6 +153,9 @@ export interface BatchContentGenerationResult {
   availableNew: number;
   /** How many n8n image requests were triggered (0 if n8n not configured) */
   n8nImagesTriggered: number;
+  /** Number of topics that passed the eligibility filter (per-topic sites only).
+   *  Zero means no topics were eligible today — distinct from "aggregator returned 0". */
+  eligibleTopicCount?: number;
   results: ContentGenerationResult[];
 }
 
@@ -285,7 +291,7 @@ export function parseDedupIndex(raw: string): ExistingArticles | null {
  * Slow path: fall back to reading every article file individually (N calls).
  * The index is written/updated atomically with article batch commits.
  */
-async function getAllExistingArticles(
+export async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
   branch?: string,
@@ -1037,6 +1043,7 @@ export async function runContentGeneration(
           tagIds,
           topicName: params.topicName,
           bypassSchedule: params.bypassSchedule ?? false,
+          timezone: params.timezone,
           source: params.source ?? "dashboard",
         });
       }
@@ -1181,6 +1188,8 @@ async function runPerTopicGeneration(args: {
    *  dashboard's general "Generate N Articles" button so users can fire it
    *  any day; the cron sets this to false so it still honors preferred_days. */
   bypassSchedule?: boolean;
+  /** Scheduler timezone for day-of-week calculation. */
+  timezone?: string;
   /** Origin of this run — threaded into per-item cost recording. */
   source?: GenerationSource;
 }): Promise<BatchContentGenerationResult> {
@@ -1238,7 +1247,7 @@ async function runPerTopicGeneration(args: {
     );
     eligibleTopics = topics;
   } else {
-    eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule));
+    eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule, new Date(), args.timezone));
   }
 
   // Aggregate counters for the batch result.
@@ -1428,6 +1437,7 @@ async function runPerTopicGeneration(args: {
     duplicateCount,
     availableNew: allResults.length,
     n8nImagesTriggered: 0,
+    eligibleTopicCount: eligibleTopics.length,
     results: allResults,
   };
 }

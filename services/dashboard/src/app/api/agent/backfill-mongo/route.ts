@@ -1,5 +1,6 @@
 // Proxy to content-pipeline POST /backfill-mongo
-import { NextResponse } from "next/server";
+// Accepts optional { domains: string[] } to backfill specific sites only.
+import { NextResponse, type NextRequest } from "next/server";
 
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
 const LOCAL_FALLBACK = "http://localhost:5000";
@@ -12,12 +13,22 @@ function getAgentUrl(): string {
   return CONTENT_AGENT_URL;
 }
 
-export async function POST(): Promise<NextResponse> {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    // Forward the request body (may contain { domains: string[] })
+    let forwardBody: string | undefined;
+    try {
+      const json = await request.json();
+      if (json && typeof json === "object") {
+        forwardBody = JSON.stringify(json);
+      }
+    } catch { /* empty body — backfill all */ }
+
     const res = await fetch(`${getAgentUrl()}/backfill-mongo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(600_000), // 10 min — backfill reads every article from Git
+      ...(forwardBody ? { body: forwardBody } : {}),
+      signal: AbortSignal.timeout(30_000), // Pipeline returns 202 immediately
     });
     const body = await res.json();
     return NextResponse.json(body, { status: res.status });

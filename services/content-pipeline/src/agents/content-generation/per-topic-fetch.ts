@@ -19,6 +19,28 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
+/**
+ * Map common timezone abbreviations to IANA names so Intl correctly
+ * handles DST transitions. Duplicated from scheduled-publisher to avoid
+ * a circular dependency (scheduled-publisher imports content-generation/agent,
+ * which imports per-topic-fetch).
+ */
+const TIMEZONE_MAP: Record<string, string> = {
+  EST: "America/New_York",
+  EDT: "America/New_York",
+  PST: "America/Los_Angeles",
+  PDT: "America/Los_Angeles",
+  CST: "America/Chicago",
+  CDT: "America/Chicago",
+  MST: "America/Denver",
+  MDT: "America/Denver",
+};
+
+/** Resolve an abbreviation like "EST" to its IANA name, or pass through. */
+function resolveTimezone(tz: string): string {
+  return TIMEZONE_MAP[tz.toUpperCase()] ?? tz;
+}
+
 /** Return the topic's per-run article target.
  *  We don't track week-level budgets across runs; instead each preferred-day
  *  run aims for `ceil(articles_per_week / preferred_days.length)` items. Over
@@ -30,15 +52,34 @@ export function computePerRunTarget(schedule: TopicV2["schedule"]): number {
   return Math.ceil(schedule.articles_per_week / daysCount);
 }
 
+/** Get the day-of-week name for a given date, optionally in a specific timezone. */
+function getDayName(now: Date, timezone?: string): string {
+  if (timezone) {
+    try {
+      const resolved = resolveTimezone(timezone);
+      return new Intl.DateTimeFormat("en-US", {
+        weekday: "long",
+        timeZone: resolved,
+      }).format(now);
+    } catch {
+      // Fall through to UTC-based lookup
+    }
+  }
+  return DAY_NAMES[now.getDay()]!;
+}
+
 /** Check whether the given date falls on one of this topic's preferred days. */
 export function isTopicEligibleToday(
   schedule: TopicV2["schedule"],
   now: Date = new Date(),
+  timezone?: string,
 ): boolean {
   if (computePerRunTarget(schedule) === 0) return false;
-  const dayName = DAY_NAMES[now.getDay()] as string | undefined;
+  const dayName = getDayName(now, timezone);
   if (dayName === undefined) return false;
-  return schedule.preferred_days.includes(dayName);
+  return schedule.preferred_days.some(
+    (d) => d.toLowerCase() === dayName.toLowerCase(),
+  );
 }
 
 /** Evaluate whether an article matches a topic's filter rules.
