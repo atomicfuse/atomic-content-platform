@@ -3,8 +3,7 @@ import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
 import matter from "gray-matter";
 import type { BatchContentGenerationResult, ContentGenerationResult, ContentGenerationParams } from "../agents/content-generation/agent.js";
-import type { ExistingArticles } from "../agents/content-generation/agent.js";
-import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex } from "../agents/content-generation/agent.js";
+import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex, getAllExistingArticles } from "../agents/content-generation/agent.js";
 import { GENERATE_QUEUE } from "./types.js";
 import type { GenerateJobData } from "./types.js";
 import { createOctokit } from "../lib/github.js";
@@ -162,17 +161,20 @@ export async function processGenerateJob(
       .map((r) => r._pendingArticle)
       .filter((a): a is PendingArticle => !!a);
 
-    const updatedExisting: ExistingArticles = { urls: new Set(), titles: new Set() };
+    // Load full existing articles set (from dedup index or file scan) and merge
+    // in the newly created articles. Previously this only wrote the new batch,
+    // causing the next run to lose track of all older articles.
+    const existingArticles = await getAllExistingArticles(config, siteDomain, branch);
     for (const r of created) {
       if (r._pendingArticle) {
         const { data } = matter(r._pendingArticle.content);
-        if (data.source_url) updatedExisting.urls.add(normalizeUrl(data.source_url as string));
-        if (data.title) updatedExisting.titles.add(normalizeTitleKey(data.title as string));
+        if (data.source_url) existingArticles.urls.add(normalizeUrl(data.source_url as string));
+        if (data.title) existingArticles.titles.add(normalizeTitleKey(data.title as string));
       }
     }
     const dedupIndexFile: BatchFileEntry = {
       path: dedupIndexPath(siteDomain),
-      content: serializeDedupIndex(updatedExisting),
+      content: serializeDedupIndex(existingArticles),
     };
 
     const slugList = pendingArticles.map((a) => a.slug).join(", ");

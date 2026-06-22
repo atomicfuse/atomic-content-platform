@@ -288,7 +288,7 @@ export function parseDedupIndex(raw: string): ExistingArticles | null {
  * Slow path: fall back to reading every article file individually (N calls).
  * The index is written/updated atomically with article batch commits.
  */
-async function getAllExistingArticles(
+export async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
   branch?: string,
