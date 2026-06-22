@@ -153,6 +153,9 @@ export interface BatchContentGenerationResult {
   availableNew: number;
   /** How many n8n image requests were triggered (0 if n8n not configured) */
   n8nImagesTriggered: number;
+  /** Number of topics that passed the eligibility filter (per-topic sites only).
+   *  Zero means no topics were eligible today — distinct from "aggregator returned 0". */
+  eligibleTopicCount?: number;
   results: ContentGenerationResult[];
 }
 
@@ -1434,6 +1437,7 @@ async function runPerTopicGeneration(args: {
     duplicateCount,
     availableNew: allResults.length,
     n8nImagesTriggered: 0,
+    eligibleTopicCount: eligibleTopics.length,
     results: allResults,
   };
 }

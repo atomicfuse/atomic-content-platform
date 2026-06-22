@@ -295,7 +295,11 @@ async function processSingleSite(
 
     if (genResult.totalSourced === 0) {
       siteStatus = "no_content";
-      siteMessage = "Aggregator returned 0 items for this site's topics";
+      if (genResult.eligibleTopicCount === 0) {
+        siteMessage = "No topics eligible to run today (check per-topic preferred_days)";
+      } else {
+        siteMessage = `Aggregator returned 0 items for ${genResult.eligibleTopicCount ?? "all"} eligible topic(s)`;
+      }
     } else if (created === 0 && genErrors.length > 0) {
       siteStatus = "error";
       siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
