@@ -21,7 +21,7 @@ import type { SiteBriefData } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
 import { recordGeneration } from "../../stats/recorder.js";
 import { runAfterRun } from "../../alerts/run.js";
-import { buildScheduleSnapshot } from "../../stats/schedule.js";
+import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
@@ -281,7 +281,7 @@ async function processSingleSite(
         startedAt,
         finishedAt,
       },
-      buildScheduleSnapshot(brief.schedule),
+      buildScheduleFromBrief(brief),
     );
 
     // Re-evaluate run-sensitive alert conditions for this site (per-site, inside
