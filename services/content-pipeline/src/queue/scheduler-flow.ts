@@ -86,6 +86,7 @@ export async function createSchedulerFlow(
       runId,
       triggeredBy: (forced ? "scheduled-forced" : "scheduled") as GenerateJobData["triggeredBy"],
       briefJson: site.briefJson,
+      timezone,
     },
     opts: DEFAULT_JOB_OPTIONS,
   }));

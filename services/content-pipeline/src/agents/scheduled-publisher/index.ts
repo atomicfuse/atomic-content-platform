@@ -266,6 +266,7 @@ async function processSingleSite(
           group: briefData.group,
           brief,
         },
+        timezone: schedCfg.timezone,
         source: "scheduler",
       },
       config,
