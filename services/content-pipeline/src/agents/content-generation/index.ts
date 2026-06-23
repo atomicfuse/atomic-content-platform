@@ -849,7 +849,22 @@ async function handleRequest(
     if (req.method === "GET" && pathname === "/scheduler-summary") {
       try {
         const timezone = await getSchedulerTimezone(config);
-        const summary = await getWeeklySummary(timezone);
+        // Load briefs to compute correct schedules (overrides stale MongoDB data)
+        const octokit = createOctokit(config.github);
+        const activeSites = await listActiveSites(octokit, config.networkRepo);
+        const scheduleOverrides = new Map<string, { articlesPerDay: number; preferredDays: string[] }>();
+        await Promise.all(
+          activeSites.map(async (site) => {
+            try {
+              const { data } = await readSiteBriefWithFallback(
+                octokit, config.networkRepo, site.domain, site.branch,
+              );
+              const schedule = buildScheduleFromBrief(data.brief);
+              if (schedule) scheduleOverrides.set(site.domain, schedule);
+            } catch { /* skip */ }
+          }),
+        );
+        const summary = await getWeeklySummary(timezone, new Date(), scheduleOverrides);
         sendJson(res, 200, summary as unknown as Record<string, unknown>);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

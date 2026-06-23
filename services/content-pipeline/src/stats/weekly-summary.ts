@@ -144,6 +144,7 @@ const DAY_NAMES_LOWER = [
 export async function getWeeklySummary(
   timezone: string,
   now: Date = new Date(),
+  scheduleOverrides?: Map<string, { articlesPerDay: number; preferredDays: string[] }>,
 ): Promise<SchedulerSummaryResponse> {
   const { weekOf } = getDayIndexAndWeekOf(timezone, now);
   const db = await getMongoDb();
@@ -178,6 +179,7 @@ export async function getWeeklySummary(
   const allDomains = new Set<string>([
     ...Object.keys(sitesMap ?? {}),
     ...scheduleMap.keys(),
+    ...(scheduleOverrides?.keys() ?? []),
   ]);
 
   if (allDomains.size === 0) {
@@ -195,7 +197,7 @@ export async function getWeeklySummary(
       // Overlay expected from the site's schedule for days with no data yet.
       // A cell of {expected:0, created:0} on a preferred day means the
       // scheduler hasn't processed that day yet — fill in the expected count.
-      const schedule = scheduleMap.get(domain);
+      const schedule = scheduleOverrides?.get(domain) ?? scheduleMap.get(domain);
       if (schedule && schedule.articlesPerDay > 0) {
         const preferredSet = new Set(
           (schedule.preferredDays ?? []).map((d) => d.toLowerCase()),
