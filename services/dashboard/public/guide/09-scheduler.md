@@ -41,8 +41,8 @@ LAYER 2 — Per-Site Gate (for each site in dashboard-index.yaml)
          |-- articles_per_day = 0?        → skip site
          |
          v
-Trigger ContentGenerationAgent
-         |-- count = articles_per_day
+Trigger ContentGenerationAgent (round-robin topic selection)
+         |-- count = articles_per_day (1 article per topic, rotating)
          |-- branch = staging/<domain>    (forces GitHub API commit)
          |
          v
@@ -100,8 +100,8 @@ schedule:
     - Friday
 ```
 
-- `articles_per_day` — integer count generated on each matching day. If the per-site tick fires, this many articles are generated in one batch.
-- `preferred_days` — days of the week (English names, case-insensitive). Empty list ⇒ every day is valid.
+- `articles_per_day` — integer count generated on each matching day. The scheduler picks this many topics via round-robin rotation and generates 1 article per topic. See [Topic Rotation (Round-Robin)](?page=23-topic-rotation) for details.
+- `preferred_days` — days of the week (English names, case-insensitive). Empty list => every day is valid.
 - `articles_per_week` (legacy) — still read as a fallback: `ceil(articles_per_week / preferred_days.length)`. New saves always use `articles_per_day`.
 
 ## The Cron + Config Pattern

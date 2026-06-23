@@ -34,6 +34,7 @@ const GUIDE_PAGES = [
   { slug: "20-query-param-overrides", title: "Query-Param Overrides & Template Vars" },
   { slug: "21-per-topic-filters", title: "Per-Topic Filters" },
   { slug: "22-ops-console-api", title: "Ops Console API" },
+  { slug: "23-topic-rotation", title: "Topic Rotation (Round-Robin)" },
 ];
 
 export default function GuidePage(): React.ReactElement {

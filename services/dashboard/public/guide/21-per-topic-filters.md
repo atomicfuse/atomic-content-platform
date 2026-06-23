@@ -1,12 +1,12 @@
 # Per-Topic Content Filters
 
-The per-topic-filters model treats each topic (menu section) as an editorial unit with its own content source and its own schedule. It replaces the older flat "Content Bundles" model on opted-in sites.
+The per-topic-filters model treats each topic (menu section) as an editorial unit with its own content source. It replaces the older flat "Content Bundles" model on opted-in sites.
 
 ## What changes
 
 - **Topic = the editorial unit.** Each topic on the site (Wine & Beer, Destinations, etc.) gets its own filter — either a raw `category_ids` + `tag_ids` selection (AI-proposed by default) or a pointer to a shared bundle on the aggregator.
 - **Articles are auto-tagged by topic.** When an article is fetched against a topic's filter, it's tagged with that topic. If the article also matches another topic's filter, it's tagged with that topic too — so it appears on both section pages.
-- **Per-topic schedule.** Each topic has its own `articles_per_week` and `preferred_days`. Wine might be 1/week on Tuesday; Destinations might be 3/week on Mon/Wed/Fri.
+- **Scheduling is site-level with round-robin rotation.** The site's `brief.schedule` controls when and how many articles are generated. Topics are selected in round-robin order across runs — see [Topic Rotation (Round-Robin)](?page=23-topic-rotation) for details.
 - **Site theme replaces "Primary Category" for AI context.** The free-text site theme (1–2 lines) is what AI uses to propose filters. Primary Category stays as identification metadata only (drives ads.txt IAB code, dashboard categorization).
 
 ## When does this apply?

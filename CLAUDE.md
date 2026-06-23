@@ -207,7 +207,7 @@ Full env var list in `docs/architecture.md`.
 3. **Writer fallback** — no branch + `LOCAL_NETWORK_PATH` = disk write, bypassing git.
 4. **`CONTENT_AGENT_URL` DNS** — doesn't resolve on host; use fallback pattern.
 5. **GITHUB_TOKEN** — no `pull_requests:write`; print compare URL.
-6. **Article count** — scheduler uses `articles_per_day ?? ceil(articles_per_week / preferred_days.length)`.
+6. **Article count + topic rotation** — scheduler uses `articles_per_day` from site-level `brief.schedule` (fallback: `ceil(articles_per_week / preferred_days.length)`). Topics are selected via round-robin (`site_stats.topicRotation.nextIndex` in MongoDB), 1 article per topic per run. Per-topic `schedule` fields in `topics_v2` are deprecated and ignored.
 7. **Astro 6 env** — `Astro.locals.runtime.env` removed. Use `import { env } from 'cloudflare:workers'`.
 8. **Middleware must run first** — `run_worker_first = true` in `wrangler.toml` required.
 9. **Fail closed on unknown hostname** — no default-site fallback (caused real incidents).
