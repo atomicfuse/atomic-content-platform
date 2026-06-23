@@ -27,7 +27,7 @@ describe("buildScheduleFromBrief", () => {
     });
   });
 
-  it("aggregates per-topic schedules when topics_v2 present", () => {
+  it("uses site-level schedule when topics_v2 present (per-topic schedules ignored)", () => {
     const brief = {
       topics_v2: [
         { name: "A", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Wednesday"] } },
@@ -35,13 +35,14 @@ describe("buildScheduleFromBrief", () => {
         { name: "C", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Tuesday"] } },
         { name: "D", source: { type: "filter" as const, category_ids: [], tag_ids: [] }, schedule: { articles_per_week: 2, preferred_days: ["Thursday"] } },
       ],
+      // site-level schedule is the single source of truth (per-topic schedules ignored)
       schedule: { articles_per_day: 1, preferred_days: ["Monday"], preferred_time: "10:00" },
     } as unknown as SiteBrief;
     const result = buildScheduleFromBrief(brief);
-    // Total weekly: 8, unique days: Tue/Wed/Thu (3)
-    expect(result?.weeklyTarget).toBe(8);
-    expect(result?.preferredDays).toEqual(["Tuesday", "Wednesday", "Thursday"]);
-    expect(result?.articlesPerDay).toBe(3); // ceil(8/3)
+    // Per-topic schedules ignored; only site-level brief.schedule used
+    expect(result?.weeklyTarget).toBe(1); // 1 per day * 1 day
+    expect(result?.preferredDays).toEqual(["Monday"]);
+    expect(result?.articlesPerDay).toBe(1);
   });
 
   it("returns null for null/undefined brief", () => {

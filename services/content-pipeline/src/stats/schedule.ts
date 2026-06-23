@@ -65,6 +65,11 @@ const DAY_ORDER: Record<string, number> = {
  *   - weeklyTarget: sum of all topics' articles_per_week
  *   - articlesPerDay: ceil(weeklyTarget / number of unique preferred days)
  */
+/** Normalise "monday" / "Monday" / "MONDAY" → "Monday" (matches DAY_ORDER keys). */
+function capitalizeDay(d: string): string {
+  return d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+}
+
 function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
   const allDays = new Set<string>();
   let totalWeekly = 0;
@@ -72,7 +77,7 @@ function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
   for (const topic of topics) {
     if (!topic.schedule) continue;
     totalWeekly += topic.schedule.articles_per_week ?? 0;
-    for (const d of topic.schedule.preferred_days) allDays.add(d);
+    for (const d of topic.schedule.preferred_days) allDays.add(capitalizeDay(d));
   }
 
   if (totalWeekly <= 0 || allDays.size === 0) return null;
@@ -85,11 +90,11 @@ function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
 }
 
 /**
- * Build a ScheduleSnapshot from the full site brief. Handles both models:
- *   1. Per-topic (topics_v2): aggregates each topic's schedule
- *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
+ * Build a ScheduleSnapshot from the full site brief.
  *
- * Per-topic takes priority when present.
+ * Both topics_v2 and legacy sites use brief.schedule as the single
+ * source of truth for when/how-many. Per-topic schedules are deprecated
+ * in favor of round-robin rotation.
  */
 export function buildScheduleFromBrief(brief: SiteBrief): ScheduleSnapshot;
 export function buildScheduleFromBrief(brief: SiteBrief | undefined | null): ScheduleSnapshot | null;
@@ -97,11 +102,9 @@ export function buildScheduleFromBrief(
   brief: SiteBrief | undefined | null,
 ): ScheduleSnapshot | null {
   if (!brief) return null;
-
-  if (Array.isArray(brief.topics_v2) && brief.topics_v2.length > 0) {
-    return scheduleFromTopics(brief.topics_v2);
-  }
-
+  // Both topics_v2 and legacy sites use brief.schedule as the single
+  // source of truth for when/how-many. Per-topic schedules are deprecated
+  // in favor of round-robin rotation.
   return buildScheduleSnapshot(brief.schedule);
 }
 

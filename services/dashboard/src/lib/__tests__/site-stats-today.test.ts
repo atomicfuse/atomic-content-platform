@@ -74,68 +74,72 @@ describe("buildScheduleFromBrief — legacy model (brief.schedule)", () => {
   });
 });
 
-describe("buildScheduleFromBrief — per-topic model (topics_v2)", () => {
-  it("aggregates per-topic schedules", () => {
+describe("buildScheduleFromBrief — site-level schedule (single source of truth)", () => {
+  it("uses site-level schedule for topics_v2 sites (per-topic schedules ignored)", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [
         { schedule: { articles_per_week: 2, preferred_days: ["Monday"] } },
         { schedule: { articles_per_week: 3, preferred_days: ["Wednesday"] } },
       ],
-      // site-level schedule is vestigial and should be ignored
+      // site-level schedule is now the single source of truth
       schedule: { articles_per_day: 99, preferred_days: ["Sunday"] },
     });
+    // Per-topic schedules are ignored; only brief.schedule is used
     expect(result).toEqual({
-      articlesPerDay: 3, // ceil(5 / 2)
-      preferredDays: ["Monday", "Wednesday"],
-      weeklyTarget: 5,
+      articlesPerDay: 99,
+      preferredDays: ["Sunday"],
+      weeklyTarget: 99,
     });
   });
 
-  it("deduplicates preferred days across topics", () => {
+  it("respects site-level schedule with multiple preferred days", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [
         { schedule: { articles_per_week: 2, preferred_days: ["Monday", "Wednesday"] } },
         { schedule: { articles_per_week: 2, preferred_days: ["Wednesday", "Thursday"] } },
       ],
+      schedule: { articles_per_week: 4, preferred_days: ["Monday", "Wednesday", "Thursday"] },
     });
-    // Union: Monday, Wednesday, Thursday — 3 unique days
-    // Total weekly: 4
-    // Per day: ceil(4/3) = 2
+    // Site-level schedule is used; per-topic ignored
     expect(result?.preferredDays).toEqual(["Monday", "Wednesday", "Thursday"]);
-    expect(result?.weeklyTarget).toBe(4);
-    expect(result?.articlesPerDay).toBe(2);
+    expect(result?.articlesPerDay).toBe(2); // ceil(4 / 3)
+    expect(result?.weeklyTarget).toBe(6); // 2 per day * 3 days
   });
 
-  it("sorts preferred days by weekday order", () => {
+  it("uses site-level schedule order (no sorting of topics)", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [
         { schedule: { articles_per_week: 1, preferred_days: ["Friday"] } },
         { schedule: { articles_per_week: 1, preferred_days: ["Monday"] } },
         { schedule: { articles_per_week: 1, preferred_days: ["Wednesday"] } },
       ],
+      schedule: { articles_per_week: 3, preferred_days: ["Friday", "Monday", "Wednesday"] },
     });
-    expect(result?.preferredDays).toEqual(["Monday", "Wednesday", "Friday"]);
+    // Site-level schedule order is preserved (per-topic sorting ignored)
+    expect(result?.preferredDays).toEqual(["Friday", "Monday", "Wednesday"]);
   });
 
-  it("returns null for empty topics_v2 array (falls through to legacy)", () => {
+  it("uses site-level schedule when topics_v2 is empty array", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [],
       schedule: { articles_per_day: 2, preferred_days: ["Monday"] },
     });
-    // Empty topics_v2 → falls through to legacy schedule
+    // Site-level schedule applies regardless of topics_v2 state
     expect(result?.articlesPerDay).toBe(2);
   });
 
-  it("returns null when all topics have zero articles_per_week", () => {
+  it("returns null when site-level schedule is absent (even with topics_v2)", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [
         { schedule: { articles_per_week: 0, preferred_days: ["Monday"] } },
       ],
+      // no schedule field
     });
+    // No site-level schedule → null (per-topic model deprecated)
     expect(result).toBeNull();
   });
 
-  it("handles real-world aliensrus-like config", () => {
+  it("uses site-level schedule in real-world topics_v2 config", () => {
     const result = buildScheduleFromBrief({
       topics_v2: [
         { name: "Unexplained Events", schedule: { articles_per_week: 2, preferred_days: ["Wednesday"] } },
@@ -143,13 +147,12 @@ describe("buildScheduleFromBrief — per-topic model (topics_v2)", () => {
         { name: "Conspiracy Theories", schedule: { articles_per_week: 2, preferred_days: ["Tuesday"] } },
         { name: "Strange Phenomena", schedule: { articles_per_week: 2, preferred_days: ["Thursday"] } },
       ],
+      // site-level schedule is the source of truth for when/how-many
       schedule: { articles_per_day: 1, preferred_days: ["Monday", "Tuesday", "Wednesday", "Thursday"] },
     });
-    // Total weekly: 2+2+2+2 = 8
-    // Unique days: Tuesday, Wednesday, Thursday — 3 days
-    // Per day: ceil(8/3) = 3
-    expect(result?.weeklyTarget).toBe(8);
-    expect(result?.preferredDays).toEqual(["Tuesday", "Wednesday", "Thursday"]);
-    expect(result?.articlesPerDay).toBe(3);
+    // Topics ignored; site-level schedule used
+    expect(result?.weeklyTarget).toBe(4); // 1 per day * 4 days
+    expect(result?.preferredDays).toEqual(["Monday", "Tuesday", "Wednesday", "Thursday"]);
+    expect(result?.articlesPerDay).toBe(1);
   });
 });

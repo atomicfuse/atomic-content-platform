@@ -119,8 +119,9 @@ export interface TopicV2 {
   description?: string;
   /** Where this topic pulls its content from. */
   source: TopicV2Source;
-  /** Publishing cadence for this topic. */
-  schedule: TopicV2Schedule;
+  /** @deprecated Per-topic schedule is deprecated. Use site-level brief.schedule
+   *  with round-robin rotation instead. Kept optional for backward compatibility. */
+  schedule?: TopicV2Schedule;
 }
 
 /** A topic's filter source — either raw categories+tags (default) or a pointer

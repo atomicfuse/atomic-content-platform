@@ -336,10 +336,6 @@ function SortableTopicRow({
               <span className="bg-cyan/10 text-cyan px-1.5 py-0.5 rounded text-[10px]">
                 {summary.tags} tags
               </span>
-              <span className="ml-2">
-                {topic.schedule.articles_per_week}/week &middot;{" "}
-                {topic.schedule.preferred_days.map((d) => d.slice(0, 3)).join(", ")}
-              </span>
             </>
           ) : (
             <span>Topic has no filter — no articles will be fetched.</span>

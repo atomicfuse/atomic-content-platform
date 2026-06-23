@@ -29,8 +29,11 @@ interface FilterCardsProps {
 }
 
 export function FilterCards({ rows, activeCard, onCardClick, reviewTotal }: FilterCardsProps): React.ReactElement {
+  const todayCreated = rows.reduce((sum, r) => sum + r.todayCreated, 0);
+  const todayExpected = rows.reduce((sum, r) => sum + r.todayExpected, 0);
+
   return (
-    <div className="grid grid-cols-6 gap-2.5">
+    <div className="grid grid-cols-7 gap-2.5">
       {CARDS.map((card) => {
         const isActive = activeCard === card.id;
         const count = computeCount(card.id, rows, reviewTotal);
@@ -69,6 +72,18 @@ export function FilterCards({ rows, activeCard, onCardClick, reviewTotal }: Filt
           </button>
         );
       })}
+
+      {/* Article Generation — display-only card */}
+      <div className="rounded-xl p-3 text-center bg-card border border-card-border shadow-card">
+        <div className="inline-flex w-7 h-7 rounded-lg bg-success-light items-center justify-center mb-1.5">
+          <span className="text-success text-sm">{"\u270E"}</span>
+        </div>
+        <div className="text-secondary text-[9px] uppercase tracking-wider mb-1">Articles Today</div>
+        <div className="text-2xl font-bold text-primary-text">
+          {todayCreated}
+          <span className="text-secondary text-sm font-normal"> / {todayExpected}</span>
+        </div>
+      </div>
     </div>
   );
 }

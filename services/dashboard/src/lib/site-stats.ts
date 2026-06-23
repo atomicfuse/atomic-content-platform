@@ -340,14 +340,15 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 
 /**
  * Returns articlesPerDay if today (UTC) is one of the preferredDays, else 0.
+ * Case-insensitive: handles both "Monday" and "monday" from YAML configs.
  */
 export function computeTodayExpected(
   articlesPerDay: number,
   preferredDays: string[],
   now: Date,
 ): number {
-  const todayName = DAY_NAMES[now.getUTCDay()];
-  return preferredDays.includes(todayName) ? articlesPerDay : 0;
+  const todayName = DAY_NAMES[now.getUTCDay()].toLowerCase();
+  return preferredDays.some((d) => d.toLowerCase() === todayName) ? articlesPerDay : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -442,6 +443,11 @@ function scheduleFromSiteLevel(
   return { articlesPerDay, preferredDays, weeklyTarget };
 }
 
+/** Normalise "monday" / "Monday" / "MONDAY" → "Monday" (matches DAY_ORDER keys). */
+function capitalizeDay(d: string): string {
+  return d.charAt(0).toUpperCase() + d.slice(1).toLowerCase();
+}
+
 /**
  * Aggregate per-topic schedules (topics_v2 model) into a single snapshot.
  *
@@ -465,7 +471,7 @@ function scheduleFromTopics(
     const days = Array.isArray(sched.preferred_days)
       ? (sched.preferred_days as string[])
       : [];
-    for (const d of days) allDays.add(d);
+    for (const d of days) allDays.add(capitalizeDay(d));
   }
 
   if (totalWeekly <= 0 || allDays.size === 0) return null;
@@ -480,26 +486,15 @@ function scheduleFromTopics(
 /**
  * Build a ScheduleSnapshot from the full brief object (parsed site.yaml).
  *
- * Handles both scheduling models:
- *   1. Per-topic (topics_v2): aggregates each topic's schedule
- *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
- *
- * Per-topic takes priority when present.
+ * Both topics_v2 and legacy sites use brief.schedule as the single
+ * source of truth. Per-topic schedules are deprecated (round-robin).
  */
 export function buildScheduleFromBrief(
   brief: Record<string, unknown> | undefined | null,
 ): ScheduleSnapshot | null {
   if (!brief) return null;
-
-  // Per-topic model: aggregate topics_v2[*].schedule
-  const topicsV2 = brief.topics_v2 as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (Array.isArray(topicsV2) && topicsV2.length > 0) {
-    return scheduleFromTopics(topicsV2);
-  }
-
-  // Legacy model: brief.schedule
+  // Both topics_v2 and legacy sites use brief.schedule as the single
+  // source of truth. Per-topic schedules are deprecated (round-robin).
   const schedule = brief.schedule as Record<string, unknown> | undefined;
   return schedule ? scheduleFromSiteLevel(schedule) : null;
 }

@@ -22,6 +22,16 @@ export interface ScheduleSnapshot {
   weeklyTarget: number;
 }
 
+/** Round-robin topic rotation state, persisted per site in site_stats. */
+export interface TopicRotation {
+  /** Index into the site's topics_v2 array for the next run. Wraps via modulo. */
+  nextIndex: number;
+  /** Topic names served in the most recent run (for dashboard display). */
+  lastServed: string[];
+  /** When the rotation was last advanced. */
+  updatedAt: Date;
+}
+
 export interface SiteStats {
   _id: string;                // siteDomain
   lastRunAt: Date;
@@ -31,6 +41,7 @@ export interface SiteStats {
   lastFailedAt: Date | null;  // status==="error" && created===0
   totalCreated: number;
   schedule: ScheduleSnapshot | null;
+  topicRotation: TopicRotation | null;
   updatedAt: Date;
 }
 

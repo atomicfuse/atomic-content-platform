@@ -8,9 +8,11 @@ import { NextResponse } from "next/server";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readSchedulerConfig } from "@/lib/scheduler";
 import {
+  buildScheduleFromBrief,
   computeNextRun,
   computeTodayExpected,
   emptyStats,
+  preloadBriefs,
   type EnrichedSiteStats,
   type SchedulerGate,
   type SiteStatsResponse,
@@ -98,10 +100,22 @@ export async function GET(): Promise<NextResponse> {
     }
   }
 
-  // 4. Pure enrichment: schedule.nextRun + today.expected (no IO)
+  // 4. Bulk-load briefs for ALL sites (single tree fetch from main, ~1-2s).
+  //    Briefs are the source of truth for schedule data — MongoDB may have stale
+  //    snapshots from before the topics_v2 migration.
+  const allDomains = [...byDomain.keys()];
+  const briefs = await withTimeout(
+    preloadBriefs(allDomains),
+    4_000,
+    new Map<string, Record<string, unknown>>(),
+  );
+
+  // 5. Pure enrichment: schedule.nextRun + today.expected
+  //    Prefer brief-computed schedule; fall back to MongoDB snapshot.
   const now = new Date();
   const enriched: EnrichedSiteStats[] = [...byDomain.values()].map((site) => {
-    const rawSchedule = site.schedule;
+    const brief = briefs.get(site.siteDomain);
+    const rawSchedule = (brief ? buildScheduleFromBrief(brief) : null) ?? site.schedule;
     const schedule = rawSchedule
       ? {
           ...rawSchedule,
