@@ -486,26 +486,15 @@ function scheduleFromTopics(
 /**
  * Build a ScheduleSnapshot from the full brief object (parsed site.yaml).
  *
- * Handles both scheduling models:
- *   1. Per-topic (topics_v2): aggregates each topic's schedule
- *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
- *
- * Per-topic takes priority when present.
+ * Both topics_v2 and legacy sites use brief.schedule as the single
+ * source of truth. Per-topic schedules are deprecated (round-robin).
  */
 export function buildScheduleFromBrief(
   brief: Record<string, unknown> | undefined | null,
 ): ScheduleSnapshot | null {
   if (!brief) return null;
-
-  // Per-topic model: aggregate topics_v2[*].schedule
-  const topicsV2 = brief.topics_v2 as
-    | Array<Record<string, unknown>>
-    | undefined;
-  if (Array.isArray(topicsV2) && topicsV2.length > 0) {
-    return scheduleFromTopics(topicsV2);
-  }
-
-  // Legacy model: brief.schedule
+  // Both topics_v2 and legacy sites use brief.schedule as the single
+  // source of truth. Per-topic schedules are deprecated (round-robin).
   const schedule = brief.schedule as Record<string, unknown> | undefined;
   return schedule ? scheduleFromSiteLevel(schedule) : null;
 }

@@ -90,11 +90,11 @@ function scheduleFromTopics(topics: TopicV2[]): ScheduleSnapshot | null {
 }
 
 /**
- * Build a ScheduleSnapshot from the full site brief. Handles both models:
- *   1. Per-topic (topics_v2): aggregates each topic's schedule
- *   2. Legacy (brief.schedule): site-level articles_per_day / articles_per_week
+ * Build a ScheduleSnapshot from the full site brief.
  *
- * Per-topic takes priority when present.
+ * Both topics_v2 and legacy sites use brief.schedule as the single
+ * source of truth for when/how-many. Per-topic schedules are deprecated
+ * in favor of round-robin rotation.
  */
 export function buildScheduleFromBrief(brief: SiteBrief): ScheduleSnapshot;
 export function buildScheduleFromBrief(brief: SiteBrief | undefined | null): ScheduleSnapshot | null;
@@ -102,11 +102,9 @@ export function buildScheduleFromBrief(
   brief: SiteBrief | undefined | null,
 ): ScheduleSnapshot | null {
   if (!brief) return null;
-
-  if (Array.isArray(brief.topics_v2) && brief.topics_v2.length > 0) {
-    return scheduleFromTopics(brief.topics_v2);
-  }
-
+  // Both topics_v2 and legacy sites use brief.schedule as the single
+  // source of truth for when/how-many. Per-topic schedules are deprecated
+  // in favor of round-robin rotation.
   return buildScheduleSnapshot(brief.schedule);
 }
 
