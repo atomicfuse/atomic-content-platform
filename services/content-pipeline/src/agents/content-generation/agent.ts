@@ -42,6 +42,7 @@ import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import { recordTextUsage } from "../../costs/recorder.js";
 import type { GenerationSource } from "../../stats/types.js";
+import { selectTopicsRoundRobin, readTopicRotation, saveTopicRotation } from "../../stats/topic-rotation.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
 
@@ -1209,6 +1210,8 @@ async function runPerTopicGeneration(args: {
   // manual on-demand trigger from the dashboard, the user wants it now
   // regardless of `preferred_days`.
   let eligibleTopics: TopicV2[];
+  let isRoundRobin = false;
+  let roundRobinNewNextIndex = 0;
   if (args.topicName) {
     const wantName = args.topicName.trim().toLowerCase();
     const target =
@@ -1247,7 +1250,24 @@ async function runPerTopicGeneration(args: {
     );
     eligibleTopics = topics;
   } else {
-    eligibleTopics = topics.filter((t) => isTopicEligibleToday(t.schedule, new Date(), args.timezone));
+    // Scheduler path — round-robin topic selection
+    isRoundRobin = true;
+    const count = args.count ?? topics.length;
+    const rotation = await readTopicRotation(siteDomain);
+    const startIndex = rotation?.nextIndex ?? 0;
+    const topicNames = topics.map((t) => t.name);
+    const { selected, newNextIndex } = selectTopicsRoundRobin(topicNames, count, startIndex);
+    roundRobinNewNextIndex = newNextIndex;
+
+    // Map selected names back to TopicV2 objects (preserves rotation order)
+    const topicByName = new Map(topics.map((t) => [t.name, t]));
+    eligibleTopics = selected.map((name) => topicByName.get(name)!).filter(Boolean);
+
+    console.log(
+      `[agent] [per-topic] round-robin on ${siteDomain}: ` +
+      `picked ${eligibleTopics.map((t) => t.name).join(", ")} ` +
+      `(nextIndex was ${startIndex}, advancing to ${newNextIndex})`,
+    );
   }
 
   // Aggregate counters for the batch result.
@@ -1273,7 +1293,9 @@ async function runPerTopicGeneration(args: {
     // (default 1). Otherwise fall back to the topic's scheduled per-run target.
     const scheduledPerRun = args.topicName
       ? Math.max(1, args.count ?? 1)
-      : computePerRunTarget(topic.schedule);
+      : isRoundRobin
+        ? 1  // Round-robin: 1 article per topic per turn
+        : computePerRunTarget(topic.schedule ?? { articles_per_week: 0, preferred_days: [] });
     // When schedule says 0 (e.g. articles_per_week=0) and we're in bypass mode,
     // still allow 1 article so the manual trigger isn't blocked by an unset
     // schedule.
@@ -1415,7 +1437,10 @@ async function runPerTopicGeneration(args: {
 
   const requestedCount =
     args.count ??
-    eligibleTopics.reduce((s, t) => s + computePerRunTarget(t.schedule), 0);
+    eligibleTopics.reduce(
+      (s, t) => s + computePerRunTarget(t.schedule ?? { articles_per_week: 0, preferred_days: [] }),
+      0,
+    );
 
   // Ensure the caller always gets at least one explicit result so the UI can
   // distinguish "ran but found nothing" from "didn't run at all".
@@ -1425,8 +1450,19 @@ async function runPerTopicGeneration(args: {
       reason: args.topicName
         ? `topic "${args.topicName}": no new items from aggregator`
         : eligibleTopics.length === 0
-          ? "no topics eligible to run today (check preferred_days)"
+          ? "no topics configured on this site"
           : "no new items from aggregator for any eligible topic",
+    });
+  }
+
+  // Persist round-robin rotation state (uses newNextIndex from the single read above)
+  if (isRoundRobin && topics.length > 0) {
+    await saveTopicRotation(siteDomain, {
+      nextIndex: roundRobinNewNextIndex,
+      lastServed: eligibleTopics.map((t) => t.name),
+      updatedAt: new Date(),
+    }).catch((err) => {
+      console.error(`[agent] Failed to save topic rotation for ${siteDomain}:`, err);
     });
   }
 
