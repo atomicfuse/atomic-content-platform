@@ -880,6 +880,54 @@ async function handleRequest(
     }
   }
 
+  // POST /migrate-schedules — one-off bulk update of site_stats.schedule
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/migrate-schedules") {
+      try {
+        const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"];
+        const APD = 2;
+        const SITES = [
+          "wtpop", "travelswire", "wineoceans", "womendivision", "popnsnap",
+          "travelbeautytips", "funnypigeon", "eznutritiontips", "decoratingmom", "giantsavings",
+          "muvizz", "mindmedications", "carsnewsmag", "useminds", "sciencenewslab",
+          "yogaterritory", "medicalnewscorner", "soccernewsreports", "tvshowbox", "gamingnewsalley",
+          "stroylab", "mindsbit", "tvshowsmag", "coffeeactually", "fashionnewsbee",
+          "gigsfreaks", "travelnights", "geekystudios", "buzzsoaps", "medicalnewsalley",
+          "journeypeaks", "travelclearly", "paleobeasts", "babyparenttrends", "gadgetskoala",
+          "foreverhealty", "carsnewsinformer", "decoratinglabs", "decotricksworld", "gamerswiredaily",
+          "diydecorschool", "dramadispatch", "geekytraveler", "thewonderkeepers", "trendscores",
+          "dogslabs",
+        ];
+        const SIZES = [10, 10, 10, 10, 6];
+
+        const db = await getMongoDb();
+        let offset = 0;
+        const results: Array<{ domain: string; day: string; status: string }> = [];
+        for (let i = 0; i < DAYS.length; i++) {
+          const day = DAYS[i]!;
+          const group = SITES.slice(offset, offset + SIZES[i]!);
+          offset += SIZES[i]!;
+          for (const domain of group) {
+            const schedule = { articlesPerDay: APD, preferredDays: [day], weeklyTarget: APD };
+            const r = await db.collection("site_stats").updateOne(
+              { _id: domain as any },
+              { $set: { schedule, updatedAt: new Date() } },
+              { upsert: true },
+            );
+            results.push({ domain, day, status: r.modifiedCount > 0 || r.upsertedCount > 0 ? "ok" : "noop" });
+          }
+        }
+        console.log(`[migrate-schedules] Updated ${results.filter((r) => r.status === "ok").length}/${results.length} sites`);
+        sendJson(res, 200, { status: "ok", updated: results.length, results } as unknown as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        sendJson(res, 500, { status: "error", message });
+      }
+      return;
+    }
+  }
+
   // GET /r2-usage
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
