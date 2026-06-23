@@ -16,8 +16,10 @@ function getAgentUrl(): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
+    const agentUrl = getAgentUrl();
     const action = request.nextUrl.searchParams.get("action");
     const endpoint = action === "migrate-schedules" ? "/migrate-schedules" : "/backfill-mongo";
+    const targetUrl = `${agentUrl}${endpoint}`;
 
     // Forward the request body (may contain { domains: string[] })
     let forwardBody: string | undefined;
@@ -28,17 +30,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     } catch { /* empty body — backfill all */ }
 
-    const res = await fetch(`${getAgentUrl()}${endpoint}`, {
+    const res = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       ...(forwardBody ? { body: forwardBody } : {}),
       signal: AbortSignal.timeout(30_000),
     });
     const body = await res.json();
-    return NextResponse.json(body, { status: res.status });
+    return NextResponse.json(
+      { ...body, _debug: { targetUrl, action, forwardBody: forwardBody ?? null, upstreamStatus: res.status, deployVersion: "v2-debug" } },
+      { status: res.status },
+    );
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { ok: false, error: err instanceof Error ? err.message : String(err), _debug: { deployVersion: "v2-debug" } },
       { status: 502 },
     );
   }
