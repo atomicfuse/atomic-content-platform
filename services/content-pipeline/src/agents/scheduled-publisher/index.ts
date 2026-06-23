@@ -296,7 +296,7 @@ async function processSingleSite(
     if (genResult.totalSourced === 0) {
       siteStatus = "no_content";
       if (genResult.eligibleTopicCount === 0) {
-        siteMessage = "No topics eligible to run today (check per-topic preferred_days)";
+        siteMessage = "No topics configured on this site";
       } else {
         siteMessage = `Aggregator returned 0 items for ${genResult.eligibleTopicCount ?? "all"} eligible topic(s)`;
       }
