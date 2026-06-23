@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import type { TopicV2, TopicV2Source, TopicV2Schedule } from "@/types/dashboard";
+import type { TopicV2, TopicV2Source } from "@/types/dashboard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useAllCategories, useTags, useTagSearch, useBundles } from "@/hooks/useReferenceData";
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 interface Props {
   /** When provided, edit mode. When undefined, add-new mode. */
@@ -26,7 +24,6 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [source, setSource] = useState<TopicV2Source>(initial?.source ?? { type: "filter", category_ids: [], tag_ids: [] });
-  const [schedule, setSchedule] = useState<TopicV2Schedule>(initial?.schedule ?? { articles_per_week: 1, preferred_days: ["Monday"] });
   const [aiRationale, setAiRationale] = useState<string | undefined>();
   const [aiLoading, setAiLoading] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
@@ -70,7 +67,7 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
       alert(`A topic named "${trimmedName}" already exists on this site.`);
       return;
     }
-    onSave({ name: trimmedName, description: description.trim() || undefined, source, schedule });
+    onSave({ name: trimmedName, description: description.trim() || undefined, source });
   }
 
   return (
@@ -170,27 +167,6 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
               </button>
             </>
           )}
-        </div>
-
-        {/* Schedule */}
-        <div>
-          <div className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] mb-1">Schedule</div>
-          <div className="flex items-end gap-4">
-            <div>
-              <div className="text-[10px] text-[var(--text-muted)] mb-1">Articles/week</div>
-              <Input type="number" min="0" value={String(schedule.articles_per_week)} onChange={(e): void => setSchedule({ ...schedule, articles_per_week: Math.max(0, Number(e.target.value) || 0) })} style={{ width: "70px", textAlign: "center" }} />
-            </div>
-            <div className="flex-1">
-              <div className="text-[10px] text-[var(--text-muted)] mb-1">Preferred days</div>
-              <div className="flex gap-1">
-                {DAYS.map((day) => (
-                  <button key={day} type="button" onClick={(): void => setSchedule({ ...schedule, preferred_days: schedule.preferred_days.includes(day) ? schedule.preferred_days.filter((d) => d !== day) : [...schedule.preferred_days, day] })} className={`px-2 py-1 rounded text-[11px] font-medium border ${schedule.preferred_days.includes(day) ? "bg-cyan/20 border-cyan text-cyan" : "bg-[var(--bg-surface)] border-[var(--border-primary)] text-[var(--text-secondary)]"}`}>
-                    {day.slice(0, 3)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
 
         <footer className="flex justify-end gap-2 pt-2 border-t border-[var(--border-primary)]">

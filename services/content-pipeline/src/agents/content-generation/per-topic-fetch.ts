@@ -46,7 +46,7 @@ function resolveTimezone(tz: string): string {
  *  run aims for `ceil(articles_per_week / preferred_days.length)` items. Over
  *  a week the budget is approximately respected. */
 export function computePerRunTarget(schedule: TopicV2["schedule"]): number {
-  if (!schedule.articles_per_week || schedule.articles_per_week <= 0) return 0;
+  if (!schedule || !schedule.articles_per_week || schedule.articles_per_week <= 0) return 0;
   const daysCount = schedule.preferred_days.length;
   if (daysCount === 0) return 0;
   return Math.ceil(schedule.articles_per_week / daysCount);
@@ -74,6 +74,7 @@ export function isTopicEligibleToday(
   now: Date = new Date(),
   timezone?: string,
 ): boolean {
+  if (!schedule) return false;
   if (computePerRunTarget(schedule) === 0) return false;
   const dayName = getDayName(now, timezone);
   if (dayName === undefined) return false;
