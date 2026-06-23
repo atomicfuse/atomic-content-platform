@@ -1344,15 +1344,61 @@ async function handleRequest(
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method === "POST" && pathname === "/backfill-mongo") {
-      // Parse optional { domains: string[] } from request body
+      // Parse optional body: { action: "migrate-schedules" } or { domains: string[] }
       let domains: string[] | undefined;
+      let action: string | undefined;
       try {
         const body = await readBody(req);
         const parsed = body ? JSON.parse(body) : {};
+        if (parsed.action) action = parsed.action;
         if (Array.isArray(parsed.domains) && parsed.domains.length > 0) {
           domains = parsed.domains;
         }
       } catch { /* empty body is fine — backfill all */ }
+
+      // --- Temporary: migrate-schedules action ---
+      if (action === "migrate-schedules") {
+        try {
+          const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"];
+          const APD = 2;
+          const SITES = [
+            "wtpop", "travelswire", "wineoceans", "womendivision", "popnsnap",
+            "travelbeautytips", "funnypigeon", "eznutritiontips", "decoratingmom", "giantsavings",
+            "muvizz", "mindmedications", "carsnewsmag", "useminds", "sciencenewslab",
+            "yogaterritory", "medicalnewscorner", "soccernewsreports", "tvshowbox", "gamingnewsalley",
+            "stroylab", "mindsbit", "tvshowsmag", "coffeeactually", "fashionnewsbee",
+            "gigsfreaks", "travelnights", "geekystudios", "buzzsoaps", "medicalnewsalley",
+            "journeypeaks", "travelclearly", "paleobeasts", "babyparenttrends", "gadgetskoala",
+            "foreverhealty", "carsnewsinformer", "decoratinglabs", "decotricksworld", "gamerswiredaily",
+            "diydecorschool", "dramadispatch", "geekytraveler", "thewonderkeepers", "trendscores",
+            "dogslabs",
+          ];
+          const SIZES = [10, 10, 10, 10, 6];
+          const db = await getMongoDb();
+          let offset = 0;
+          const results: Array<{ domain: string; day: string; ok: boolean }> = [];
+          for (let i = 0; i < DAYS.length; i++) {
+            const day = DAYS[i]!;
+            const group = SITES.slice(offset, offset + SIZES[i]!);
+            offset += SIZES[i]!;
+            for (const domain of group) {
+              const schedule = { articlesPerDay: APD, preferredDays: [day], weeklyTarget: APD };
+              const r = await db.collection("site_stats").updateOne(
+                { _id: domain as any },
+                { $set: { schedule, updatedAt: new Date() } },
+                { upsert: true },
+              );
+              results.push({ domain, day, ok: (r.modifiedCount + r.upsertedCount) > 0 });
+            }
+          }
+          console.log(`[migrate-schedules] Updated ${results.filter((r) => r.ok).length}/${results.length}`);
+          sendJson(res, 200, { status: "ok", updated: results.length, results } as unknown as Record<string, unknown>);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          sendJson(res, 500, { status: "error", message });
+        }
+        return;
+      }
 
       const label = domains ? `${domains.length} domains` : "all";
       sendJson(res, 202, { status: "accepted", message: `Backfill started (${label}). Check CloudGrid logs for progress.` });
