@@ -1608,6 +1608,7 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 });
 
 server.listen(config.port, () => {
+  console.log(`[server] BUILD_MARKER=v3-migrate-2026-06-23`);
   console.log(`[server] Content generation agent running on http://localhost:${config.port}`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate-dedicated`);
