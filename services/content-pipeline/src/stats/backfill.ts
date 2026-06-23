@@ -122,6 +122,7 @@ export async function backfillFromHistory(
       lastFailedAt,
       totalCreated,
       schedule: null,  // history.json has no preferred_days; fills on first real run
+      topicRotation: null,
       updatedAt,
     };
 
