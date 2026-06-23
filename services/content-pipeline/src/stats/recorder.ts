@@ -130,6 +130,7 @@ export async function recordGeneration(
       lastAddedCount: null,
       lastFailedAt: null,
       schedule: null,
+      topicRotation: null,
     };
     const setOnInsert: Record<string, null> = {};
     for (const key of Object.keys(nullDefaults)) {
