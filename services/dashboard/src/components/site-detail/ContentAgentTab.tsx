@@ -1212,12 +1212,10 @@ export function ContentAgentTab({
       </div>
       )}
 
-      {/* Topics, schedule, guidelines. Topics + per-site schedule are legacy
-          fields; in per-topic mode each topic carries its own schedule, so we
-          only show the shared editorial guidelines below. */}
+      {/* Schedule (site-level, shown for all sites) + legacy topics input
+          (only for non-per-topic sites) + editorial guidelines. */}
       <div className="border-t border-[var(--border-primary)] pt-4 space-y-4">
         {!isPerTopic && (
-          <>
             <div className="space-y-1.5">
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                 Topics
@@ -1248,42 +1246,41 @@ export function ContentAgentTab({
                 />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Articles Per Day"
-                type="number"
-                min={1}
-                max={10}
-                value={articlesPerDay}
-                onChange={(e): void => setArticlesPerDay(parseInt(e.target.value, 10) || 1)}
-              />
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Preferred Days
-                </label>
-                <div className="flex gap-2">
-                  {DAYS.map((day) => {
-                    const fullDay = DAY_MAP[day]!;
-                    const isSelected = preferredDays.includes(fullDay);
-                    return (
-                      <button
-                        key={day}
-                        onClick={(): void => toggleDay(day)}
-                        className={`w-9 h-9 rounded-md text-xs font-semibold transition-colors ${
-                          isSelected
-                            ? "bg-cyan text-white"
-                            : "bg-[var(--bg-surface)] text-[var(--text-muted)]"
-                        }`}
-                      >
-                        {day}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </>
         )}
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="Articles Per Day"
+            type="number"
+            min={1}
+            max={10}
+            value={articlesPerDay}
+            onChange={(e): void => setArticlesPerDay(parseInt(e.target.value, 10) || 1)}
+          />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Preferred Days
+            </label>
+            <div className="flex gap-2">
+              {DAYS.map((day) => {
+                const fullDay = DAY_MAP[day]!;
+                const isSelected = preferredDays.includes(fullDay);
+                return (
+                  <button
+                    key={day}
+                    onClick={(): void => toggleDay(day)}
+                    className={`w-9 h-9 rounded-md text-xs font-semibold transition-colors ${
+                      isSelected
+                        ? "bg-cyan text-white"
+                        : "bg-[var(--bg-surface)] text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
         <Textarea
           label="Content Guidelines"
           rows={4}

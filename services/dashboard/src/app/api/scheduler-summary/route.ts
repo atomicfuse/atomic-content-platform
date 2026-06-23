@@ -14,7 +14,7 @@ function getAgentUrl(): string {
 export async function GET(): Promise<NextResponse> {
   try {
     const url = `${getAgentUrl()}/scheduler-summary`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const resp = await fetch(url, { signal: AbortSignal.timeout(30_000) });
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");

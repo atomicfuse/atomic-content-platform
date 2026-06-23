@@ -849,22 +849,10 @@ async function handleRequest(
     if (req.method === "GET" && pathname === "/scheduler-summary") {
       try {
         const timezone = await getSchedulerTimezone(config);
-        // Load briefs to compute correct schedules (overrides stale MongoDB data)
-        const octokit = createOctokit(config.github);
-        const activeSites = await listActiveSites(octokit, config.networkRepo);
-        const scheduleOverrides = new Map<string, { articlesPerDay: number; preferredDays: string[] }>();
-        await Promise.all(
-          activeSites.map(async (site) => {
-            try {
-              const { data } = await readSiteBriefWithFallback(
-                octokit, config.networkRepo, site.domain, site.branch,
-              );
-              const schedule = buildScheduleFromBrief(data.brief);
-              if (schedule) scheduleOverrides.set(site.domain, schedule);
-            } catch { /* skip */ }
-          }),
-        );
-        const summary = await getWeeklySummary(timezone, new Date(), scheduleOverrides);
+        // Schedule data lives in site_stats.schedule (updated on each scheduler
+        // run via recordGeneration). No need to re-fetch all briefs from Git —
+        // getWeeklySummary reads schedules from MongoDB directly.
+        const summary = await getWeeklySummary(timezone, new Date());
         sendJson(res, 200, summary as unknown as Record<string, unknown>);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
