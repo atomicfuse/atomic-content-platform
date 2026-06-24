@@ -140,10 +140,22 @@ export async function GET(): Promise<NextResponse> {
     };
   });
 
-  // Diagnostic: count how many briefs were loaded and how many had schedule
-  const briefsWithSchedule = [...briefs.entries()].filter(([, b]) => b.schedule != null).length;
+  // Diagnostic: check brief-loaded schedule for buzzsoaps
+  const buzzBrief = briefs.get("buzzsoaps");
+  const buzzScheduleRaw = buzzBrief?.schedule as Record<string, unknown> | undefined;
+  const buzzFromBrief = buzzBrief ? buildScheduleFromBrief(buzzBrief) : null;
+  const buzzMongo = [...byDomain.values()].find(s => s.siteDomain === "buzzsoaps")?.schedule;
   return NextResponse.json({
     sites: enriched,
-    _debug: { briefsLoaded: briefs.size, briefsWithSchedule, totalSites: allDomains.length },
+    _debug: {
+      briefsLoaded: briefs.size,
+      totalSites: allDomains.length,
+      buzzsoaps: {
+        briefFound: !!buzzBrief,
+        briefScheduleRaw: buzzScheduleRaw ?? null,
+        briefScheduleParsed: buzzFromBrief,
+        mongoSchedule: buzzMongo ?? null,
+      },
+    },
   });
 }
