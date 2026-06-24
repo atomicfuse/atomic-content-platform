@@ -7,7 +7,6 @@ import { NextResponse } from "next/server";
 
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readSchedulerConfig } from "@/lib/scheduler";
-import { getTreeCacheCommitSha } from "@/lib/github";
 import {
   buildScheduleFromBrief,
   computeNextRun,
@@ -141,24 +140,5 @@ export async function GET(): Promise<NextResponse> {
     };
   });
 
-  // Diagnostic: check brief-loaded schedule for buzzsoaps
-  const buzzBrief = briefs.get("buzzsoaps");
-  const buzzScheduleRaw = buzzBrief?.schedule as Record<string, unknown> | undefined;
-  const buzzFromBrief = buzzBrief ? buildScheduleFromBrief(buzzBrief) : null;
-  const buzzMongo = [...byDomain.values()].find(s => s.siteDomain === "buzzsoaps")?.schedule;
-  const treeCacheSha = getTreeCacheCommitSha("main");
-  return NextResponse.json({
-    sites: enriched,
-    _debug: {
-      treeCacheCommitSha: treeCacheSha,
-      briefsLoaded: briefs.size,
-      totalSites: allDomains.length,
-      buzzsoaps: {
-        briefFound: !!buzzBrief,
-        briefScheduleRaw: buzzScheduleRaw ?? null,
-        briefScheduleParsed: buzzFromBrief,
-        mongoSchedule: buzzMongo ?? null,
-      },
-    },
-  });
+  return NextResponse.json({ sites: enriched });
 }

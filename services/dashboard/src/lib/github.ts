@@ -82,7 +82,10 @@ interface TreeEntry {
   size?: number;
 }
 
-const TREE_CACHE_TTL = Infinity;
+/** Refresh the tree cache every 5 minutes so pushed changes are picked up
+ *  without requiring a full redeploy. Previously Infinity — caused stale
+ *  reads when data was pushed after the process started. */
+const TREE_CACHE_TTL = 5 * 60 * 1_000; // 5 minutes
 const treeCacheStore = new Map<string, { tree: TreeEntry[]; commitSha: string; expiresAt: number }>();
 
 async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
