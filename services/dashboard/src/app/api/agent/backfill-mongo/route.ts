@@ -1,5 +1,4 @@
-// Proxy to content-pipeline POST /backfill-mongo or POST /migrate-schedules.
-// ?action=migrate-schedules routes to the schedule migration endpoint.
+// Proxy to content-pipeline POST /backfill-mongo.
 // Accepts optional { domains: string[] } to backfill specific sites only.
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -16,9 +15,6 @@ function getAgentUrl(): string {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    const action = request.nextUrl.searchParams.get("action");
-    const endpoint = action === "migrate-schedules" ? "/migrate-schedules" : "/backfill-mongo";
-
     // Forward the request body (may contain { domains: string[] })
     let forwardBody: string | undefined;
     try {
@@ -28,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     } catch { /* empty body — backfill all */ }
 
-    const res = await fetch(`${getAgentUrl()}${endpoint}`, {
+    const res = await fetch(`${getAgentUrl()}/backfill-mongo`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       ...(forwardBody ? { body: forwardBody } : {}),

@@ -103,10 +103,11 @@ export async function GET(): Promise<NextResponse> {
   // 4. Bulk-load briefs for ALL sites (single tree fetch from main, ~1-2s).
   //    Briefs are the source of truth for schedule data — MongoDB may have stale
   //    snapshots from before the topics_v2 migration.
+  //    Timeout raised to 10s: 50+ individual blob reads can exceed 4s under load.
   const allDomains = [...byDomain.keys()];
   const briefs = await withTimeout(
     preloadBriefs(allDomains),
-    4_000,
+    10_000,
     new Map<string, Record<string, unknown>>(),
   );
 
