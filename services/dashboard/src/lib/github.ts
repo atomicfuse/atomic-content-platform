@@ -83,7 +83,7 @@ interface TreeEntry {
 }
 
 const TREE_CACHE_TTL = Infinity;
-const treeCacheStore = new Map<string, { tree: TreeEntry[]; expiresAt: number }>();
+const treeCacheStore = new Map<string, { tree: TreeEntry[]; commitSha: string; expiresAt: number }>();
 
 async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
   const ref = branch ?? "main";
@@ -108,8 +108,14 @@ async function getTreeCached(branch?: string): Promise<TreeEntry[]> {
     throw new Error(`Tree truncated for ${ref}`);
   }
 
-  treeCacheStore.set(ref, { tree: tree.tree, expiresAt: Date.now() + TREE_CACHE_TTL });
+  treeCacheStore.set(ref, { tree: tree.tree, commitSha: refData.object.sha, expiresAt: Date.now() + TREE_CACHE_TTL });
   return tree.tree;
+}
+
+/** Return the commit SHA the tree cache is using for a given branch. */
+export function getTreeCacheCommitSha(branch?: string): string | null {
+  const ref = branch ?? "main";
+  return treeCacheStore.get(ref)?.commitSha ?? null;
 }
 
 export function invalidateTreeCache(branch?: string): void {
