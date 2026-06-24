@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readSchedulerConfig } from "@/lib/scheduler";
+import { getTreeCacheCommitSha } from "@/lib/github";
 import {
   buildScheduleFromBrief,
   computeNextRun,
@@ -140,5 +141,15 @@ export async function GET(): Promise<NextResponse> {
     };
   });
 
-  return NextResponse.json({ sites: enriched });
+  // Temporary diagnostic — remove after verifying tree cache fix
+  const buzzBrief = briefs.get("buzzsoaps");
+  const buzzSched = buzzBrief?.schedule as Record<string, unknown> | undefined;
+  return NextResponse.json({
+    sites: enriched,
+    _debug: {
+      treeSha: getTreeCacheCommitSha("main"),
+      briefsLoaded: briefs.size,
+      buzz_preferred_days: buzzSched?.preferred_days ?? "no-brief",
+    },
+  });
 }
