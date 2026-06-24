@@ -88,7 +88,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
     }
 
-    return NextResponse.json({ ok: true, configsUpdated, schedulesUpdated, errors });
+    // 3. Optionally reset this week's weekly_summaries so the scheduler
+    //    summary table re-computes expected values from the new schedules.
+    let weeklyReset = false;
+    if (body?.resetWeeklySummary) {
+      // Compute current week's Sunday date (weekOf key)
+      const now = new Date();
+      const dayIndex = now.getUTCDay(); // 0=Sun
+      const sundayMs = now.getTime() - dayIndex * 86_400_000;
+      const weekOf = new Date(sundayMs).toISOString().slice(0, 10);
+      await db.collection("weekly_summaries").deleteOne({ _id: weekOf as any });
+      weeklyReset = true;
+    }
+
+    return NextResponse.json({ ok: true, configsUpdated, schedulesUpdated, weeklyReset, errors });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
