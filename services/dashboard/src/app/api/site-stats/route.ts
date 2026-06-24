@@ -140,5 +140,10 @@ export async function GET(): Promise<NextResponse> {
     };
   });
 
-  return NextResponse.json({ sites: enriched });
+  // Diagnostic: count how many briefs were loaded and how many had schedule
+  const briefsWithSchedule = [...briefs.entries()].filter(([, b]) => b.schedule != null).length;
+  return NextResponse.json({
+    sites: enriched,
+    _debug: { briefsLoaded: briefs.size, briefsWithSchedule, totalSites: allDomains.length },
+  });
 }
