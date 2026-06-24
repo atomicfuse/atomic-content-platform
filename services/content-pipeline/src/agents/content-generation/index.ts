@@ -1293,34 +1293,34 @@ async function handleRequest(
     return;
   }
 
-  // ─── Backfill MongoDB from Git (fire-and-forget) ────────────────
+  // ─── Backfill MongoDB from Git (synchronous for debugging) ──────
   {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
     if (req.method === "POST" && pathname === "/backfill-mongo") {
-      // Parse optional body: { domains: string[] }
+      // Parse optional body: { domains: string[], phases: string[] }
       let domains: string[] | undefined;
+      let phases: string[] | undefined;
       try {
         const body = await readBody(req);
         const parsed = body ? JSON.parse(body) : {};
         if (Array.isArray(parsed.domains) && parsed.domains.length > 0) {
           domains = parsed.domains;
         }
+        if (Array.isArray(parsed.phases) && parsed.phases.length > 0) {
+          phases = parsed.phases;
+        }
       } catch { /* empty body is fine — backfill all */ }
 
-      const label = domains ? `${domains.length} domains` : "all";
-      sendJson(res, 202, { status: "accepted", message: `Backfill started (${label}). Check CloudGrid logs for progress.` });
-
-      // Fire-and-forget — don't await
-      void (async () => {
-        try {
-          const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
-          const summary = await runBackfillMongo(undefined, domains);
-          console.log("[backfill-mongo] Completed:", JSON.stringify(summary));
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.error("[backfill-mongo] Error:", message);
-        }
-      })();
+      try {
+        const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
+        const summary = await runBackfillMongo(phases as any, domains);
+        console.log("[backfill-mongo] Completed:", JSON.stringify(summary));
+        sendJson(res, 200, { status: "completed", summary });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[backfill-mongo] Error:", message);
+        sendJson(res, 500, { status: "error", error: message });
+      }
       return;
     }
   }
