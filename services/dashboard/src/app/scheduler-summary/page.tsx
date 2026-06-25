@@ -20,7 +20,16 @@ interface SchedulerSummaryData {
   sites: SiteSummary[];
 }
 
-type ReviewSort = "none" | "asc" | "desc";
+type SortColumn = "site" | "review" | "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+type SortDirection = "asc" | "desc";
+interface SortState {
+  column: SortColumn;
+  direction: SortDirection;
+}
+
+const DAY_COLUMN_INDEX: Record<string, number> = {
+  sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6,
+};
 
 function formatWeekRange(weekOf: string): string {
   const sunday = new Date(weekOf + "T00:00:00Z");
@@ -51,7 +60,7 @@ export default function SchedulerSummaryPage(): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [reviewSort, setReviewSort] = useState<ReviewSort>("none");
+  const [sort, setSort] = useState<SortState | null>(null);
 
   useEffect(() => {
     fetch("/api/scheduler-summary")
@@ -74,13 +83,22 @@ export default function SchedulerSummaryPage(): React.ReactElement {
     let sites = needle
       ? data.sites.filter((s) => s.domain.toLowerCase().includes(needle))
       : data.sites;
-    if (reviewSort !== "none") {
-      sites = [...sites].sort((a, b) =>
-        reviewSort === "asc" ? a.needReview - b.needReview : b.needReview - a.needReview,
-      );
+    if (sort) {
+      sites = [...sites].sort((a, b) => {
+        let cmp: number;
+        if (sort.column === "site") {
+          cmp = a.domain.localeCompare(b.domain);
+        } else if (sort.column === "review") {
+          cmp = a.needReview - b.needReview;
+        } else {
+          const idx = DAY_COLUMN_INDEX[sort.column];
+          cmp = a.days[idx].created - b.days[idx].created;
+        }
+        return sort.direction === "asc" ? cmp : -cmp;
+      });
     }
     return sites;
-  }, [data, search, reviewSort]);
+  }, [data, search, sort]);
 
   if (loading) {
     return (
@@ -103,15 +121,20 @@ export default function SchedulerSummaryPage(): React.ReactElement {
 
   const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-  function cycleReviewSort(): void {
-    setReviewSort((prev) => {
-      if (prev === "none") return "desc";
-      if (prev === "desc") return "asc";
-      return "none";
+  function cycleSort(column: SortColumn): void {
+    setSort((prev) => {
+      if (!prev || prev.column !== column) return { column, direction: "desc" };
+      if (prev.direction === "desc") return { column, direction: "asc" };
+      return null;
     });
   }
 
-  const sortIndicator = reviewSort === "desc" ? " \u25BC" : reviewSort === "asc" ? " \u25B2" : "";
+  function sortIndicator(column: SortColumn): string {
+    if (!sort || sort.column !== column) return "";
+    return sort.direction === "desc" ? " \u25BC" : " \u25B2";
+  }
+
+  const sortableThClass = "text-center py-2 px-2 font-medium cursor-pointer select-none hover:text-blue-600 dark:hover:text-blue-400";
 
   return (
     <div className="p-6">
@@ -134,16 +157,32 @@ export default function SchedulerSummaryPage(): React.ReactElement {
         <table className="w-full text-sm border-collapse">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900">
-              <th className="text-left py-2 px-3 font-medium">Site</th>
-              {DAY_SHORT.map((d) => (
-                <th key={d} className="text-center py-2 px-2 font-medium w-16">{d}</th>
-              ))}
               <th
-                className="text-center py-2 px-3 font-medium cursor-pointer select-none hover:text-blue-600 dark:hover:text-blue-400"
-                onClick={cycleReviewSort}
+                className="text-left py-2 px-3 font-medium cursor-pointer select-none hover:text-blue-600 dark:hover:text-blue-400"
+                onClick={() => cycleSort("site")}
+                title="Click to sort by site name"
+              >
+                Site{sortIndicator("site")}
+              </th>
+              {DAY_SHORT.map((d, i) => {
+                const col = d.toLowerCase() as SortColumn;
+                return (
+                  <th
+                    key={d}
+                    className={`${sortableThClass} w-16`}
+                    onClick={() => cycleSort(col)}
+                    title={`Click to sort by ${d} count`}
+                  >
+                    {d}{sortIndicator(col)}
+                  </th>
+                );
+              })}
+              <th
+                className={`${sortableThClass} px-3`}
+                onClick={() => cycleSort("review")}
                 title="Click to sort by review count"
               >
-                Review{sortIndicator}
+                Review{sortIndicator("review")}
               </th>
             </tr>
           </thead>
