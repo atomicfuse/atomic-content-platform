@@ -872,6 +872,91 @@ export async function deleteBranch(branchName: string): Promise<void> {
   });
 }
 
+
+/**
+ * Rename a site folder on a branch: `sites/<oldDomain>/` → `sites/<newDomain>/`.
+ * Optionally also renames `overrides/<oldDomain>/` → `overrides/<newDomain>/`.
+ * Uses blob SHA reuse — no file content is re-uploaded.
+ */
+export async function renameSiteFolder(
+  branch: string,
+  oldDomain: string,
+  newDomain: string,
+  includeOverrides: boolean = false,
+): Promise<void> {
+  const octokit = getOctokit();
+
+  const { data: ref } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  const commitSha = ref.object.sha;
+
+  const { data: srcTree } = await octokit.git.getTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    tree_sha: commitSha,
+    recursive: "true",
+  });
+
+  const prefixes = [`sites/${oldDomain}/`];
+  if (includeOverrides) prefixes.push(`overrides/${oldDomain}/`);
+
+  const entries = srcTree.tree.filter(
+    (e) => prefixes.some((p) => e.path?.startsWith(p)) && e.type === "blob" && e.sha && e.mode,
+  );
+
+  if (entries.length === 0) {
+    throw new Error(`No files found under sites/${oldDomain}/ on branch ${branch}`);
+  }
+
+  // Build tree items: add files under new domain + delete files under old domain
+  const treeItems = [
+    ...entries.map((e) => ({
+      path: e.path!
+        .replace(`sites/${oldDomain}/`, `sites/${newDomain}/`)
+        .replace(`overrides/${oldDomain}/`, `overrides/${newDomain}/`),
+      mode: e.mode as "100644" | "100755" | "040000" | "160000" | "120000",
+      type: "blob" as const,
+      sha: e.sha!,
+    })),
+    ...entries.map((e) => ({
+      path: e.path!,
+      mode: "100644" as const,
+      type: "blob" as const,
+      sha: null as unknown as string,
+    })),
+  ];
+
+  const { data: commit } = await octokit.git.getCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    commit_sha: commitSha,
+  });
+
+  const { data: newTree } = await octokit.git.createTree({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    base_tree: commit.tree.sha,
+    tree: treeItems,
+  });
+
+  const { data: newCommit } = await octokit.git.createCommit({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    message: `site(${oldDomain}): rename to ${newDomain}`,
+    tree: newTree.sha,
+    parents: [commitSha],
+  });
+
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: newCommit.sha,
+  });
+}
 /**
  * List all sites that currently have a `staging/{site}` branch.
  *
