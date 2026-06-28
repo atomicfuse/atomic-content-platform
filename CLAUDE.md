@@ -232,3 +232,4 @@ Full env var list in `docs/architecture.md`.
 28. **Single R2 bucket** — `atl-assets-prod` for both staging and prod. `atl-assets-staging` retired.
 29. **Video embeds need both deploy + re-seed** — dashboard writes to Git; site needs worker deploy + KV seed.
 30. **Dual-account routing is opt-in** — `cloudflare.ts` functions default to Assets account. Pass `domain` only when targeting a specific site.
+31. **Override `ad_placements: []` wipes inherited** — an override with `ad_placements: []` clears all group-level placements via `mergeAdPlacementLayers`. Only include `ads_config` in an override if you intend to change ad behavior. Tracking-only overrides must omit `ads_config` entirely.
