@@ -1201,6 +1201,7 @@ async function runPerTopicGeneration(args: {
     isTopicEligibleToday,
     computePerRunTarget,
     resolveArticleTopics,
+    describeZeroResultFetch,
   } = await import("./per-topic-fetch.js");
 
   const settings = await getSettings();
@@ -1307,6 +1308,10 @@ async function runPerTopicGeneration(args: {
     // Fetch per the topic's source.
     const perTopicItems: ContentItem[] = [];
     let fetchedFromBundleId: string | undefined;
+    // Count candidates the aggregator returned for THIS topic (across pages) so
+    // a 0-result outcome can be diagnosed: empty filter vs. matched-but-all-dupes
+    // vs. filter matched nothing in the aggregator.
+    let topicSourcedCount = 0;
 
     const PAGE_SIZE = 20;
     const MAX_PAGES = 5;
@@ -1325,6 +1330,7 @@ async function runPerTopicGeneration(args: {
             topic.source.tag_ids.length > 0 ? topic.source.tag_ids : undefined,
         });
         totalSourced += response.items.length;
+        topicSourcedCount += response.items.length;
         if (response.items.length === 0) break;
         for (const item of response.items) {
           if (existing.urls.has(normalizeUrl(item.url))) {
@@ -1363,6 +1369,7 @@ async function runPerTopicGeneration(args: {
           bundle_id: topic.source.bundle_id,
         });
         totalSourced += response.items.length;
+        topicSourcedCount += response.items.length;
         if (response.items.length === 0) break;
         for (const item of response.items) {
           if (existing.urls.has(normalizeUrl(item.url))) {
@@ -1393,15 +1400,17 @@ async function runPerTopicGeneration(args: {
     }
 
     if (perTopicItems.length === 0) {
-      console.log(
-        `[agent] [per-topic] topic="${topic.name}" — no new items this run`,
-      );
-      allResults.push({
-        status: "skipped",
-        reason:
-          `topic "${topic.name}": aggregator returned no new items matching the filter` +
-          ` (or all candidates already exist on this site)`,
-      });
+      const outcome = describeZeroResultFetch(topic, topicSourcedCount);
+      if (outcome.kind === "empty-filter") {
+        // Configuration problem (e.g. a re-propose that dropped categories),
+        // NOT a content shortage — warn so it stands out.
+        console.warn(`[agent] [per-topic] topic="${topic.name}" — EMPTY FILTER: ${outcome.reason}`);
+      } else {
+        console.log(
+          `[agent] [per-topic] topic="${topic.name}" — no new items this run (${outcome.kind}; sourced ${topicSourcedCount})`,
+        );
+      }
+      allResults.push({ status: "skipped", reason: outcome.reason });
       continue;
     }
 

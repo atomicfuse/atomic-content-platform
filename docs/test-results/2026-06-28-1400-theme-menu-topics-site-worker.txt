@@ -1,0 +1,28 @@
+
+> @atomic-platform/site-worker@0.1.0 test /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/packages/site-worker
+> vitest run --project unit
+
+
+ RUN  v3.2.4 /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/packages/site-worker
+
+ ✓ |unit| src/lib/__tests__/contrast.test.ts (5 tests) 1ms
+ ✓ |unit| src/lib/__tests__/preview-override.test.ts (24 tests) 3ms
+ ✓ |unit| src/lib/__tests__/articles-api.test.ts (12 tests) 2ms
+ ✓ |unit| src/lib/__tests__/url.test.ts (6 tests) 3ms
+ ✓ |unit| scripts/__tests__/content-types.test.ts (2 tests) 1ms
+ ✓ |unit| scripts/__tests__/featured-frontmatter.test.ts (5 tests) 2ms
+ ✓ |unit| src/lib/__tests__/inline-ads.test.ts (21 tests) 3ms
+ ✓ |unit| src/lib/__tests__/kv-schema.test.ts (9 tests) 2ms
+ ✓ |unit| src/lib/__tests__/featured.test.ts (13 tests) 4ms
+ ✓ |unit| scripts/__tests__/resolve-layout.test.ts (12 tests) 3ms
+ ✓ |unit| scripts/__tests__/mock-ads-e2e.test.ts (16 tests) 4ms
+ ✓ |unit| scripts/__tests__/resolve.test.ts (68 tests) 8ms
+ ✓ |unit| src/lib/__tests__/category-and-layout.test.ts (90 tests) 72ms
+ ✓ |unit| src/lib/__tests__/deep-merge.test.ts (4 tests) 1ms
+ ✓ |unit| scripts/__tests__/theme-asset-rewrite.test.ts (2 tests) 1ms
+
+ Test Files  15 passed (15)
+      Tests  289 passed (289)
+   Start at  14:21:51
+   Duration  414ms (transform 355ms, setup 0ms, collect 794ms, tests 110ms, environment 2ms, prepare 877ms)
+

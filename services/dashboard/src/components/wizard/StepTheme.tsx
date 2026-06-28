@@ -582,6 +582,28 @@ export function StepTheme({
                   Defaults to 92% of header height. Click Reset to return to auto.
                 </p>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+                  Menu item size
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={10}
+                    max={24}
+                    step={1}
+                    value={data.menuItemFontSize ?? 14}
+                    onChange={(e): void => onChange({ menuItemFontSize: parseInt(e.target.value, 10) })}
+                    className="flex-1 accent-cyan"
+                  />
+                  <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                    {data.menuItemFontSize ?? 14}px
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-1">
+                  Navigation menu item font size. Increase it alongside a larger logo. Defaults to 14px.
+                </p>
+              </div>
             </div>
           </div>
 

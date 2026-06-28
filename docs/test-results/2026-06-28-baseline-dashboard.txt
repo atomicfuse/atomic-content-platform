@@ -1,0 +1,127 @@
+
+> @atomic-platform/dashboard@0.1.0 test /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard
+> vitest run
+
+
+ RUN  v3.2.4 /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard
+
+ ✓ src/lib/db/__tests__/articles.test.ts (6 tests) 43ms
+ ❯ src/lib/__tests__/mongo.test.ts (3 tests | 3 failed) 41ms
+   × getMongoDb > returns a Db instance from MONGODB_URL 8ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × getMongoDb > throws if no MONGODB_URL or MONGODB_URI is set 17ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × getMongoDb > memoizes — returns same promise on second call 14ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+ ✓ src/lib/db/__tests__/configs.test.ts (20 tests) 39ms
+ ✓ src/lib/db/__tests__/site-configs.test.ts (7 tests) 46ms
+ ✓ src/lib/db/__tests__/dashboard-index.test.ts (9 tests) 48ms
+stderr | src/actions/__tests__/per-topic-migration.test.ts > migrateSiteToPerTopic > tracks bundles that failed to delete
+[migrate] DELETE /api/bundles/b-fail -> 500
+
+ ✓ src/actions/__tests__/per-topic-migration.test.ts (6 tests) 8ms
+ ❯ src/actions/__tests__/attach-domain.test.ts (8 tests | 8 failed) 78ms
+   × attachCustomDomain > registers Custom Domain on the worker on happy path 76ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × attachCustomDomain > rolls back index when DNS cleanup + retry still fails 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × attachCustomDomain > rolls back index on unexpected CF registration errors 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × attachCustomDomain > rolls back CF registration + index when KV seed fails 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × attachCustomDomain > rejects duplicate custom domain across sites 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × detachCustomDomain > deregisters Custom Domain from worker and deletes KV hostname entry 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+   × detachCustomDomain > throws when no custom domain is attached 0ms
+     → Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+ ✓ src/lib/__tests__/config-normalizers.test.ts (35 tests) 4ms
+ ✓ src/components/settings/__tests__/SizeConfigPanel.test.tsx (33 tests) 257ms
+ ✓ src/components/settings/__tests__/AdsConfigForm.test.tsx (23 tests) 253ms
+ ✓ src/components/settings/__tests__/ad-loader.test.ts (29 tests) 5ms
+ ✓ src/lib/__tests__/ops-helpers.test.ts (13 tests) 2ms
+ ✓ src/lib/__tests__/domains-dashboard.test.ts (10 tests) 2ms
+ ✓ src/components/settings/__tests__/ad-size-config.test.ts (36 tests) 3ms
+ ✓ src/lib/__tests__/site-checks.test.ts (6 tests) 2ms
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/actions/__tests__/wizard-per-topic.test.ts [ src/actions/__tests__/wizard-per-topic.test.ts ]
+ FAIL  src/lib/__tests__/site-stats-today.test.ts [ src/lib/__tests__/site-stats-today.test.ts ]
+ FAIL  src/lib/__tests__/site-stats.test.ts [ src/lib/__tests__/site-stats.test.ts ]
+Error: Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/src/lib/mongo.ts:1:28
+  1  |  import { MongoClient } from "mongodb";
+     |                               ^
+  2  |  let clientPromise = null;
+  3  |  let dbPromise = null;
+ ❯ TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29003:43
+ ❯ TransformPluginContext.error ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29000:14
+ ❯ normalizeUrl ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27123:18
+ ❯ ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27181:32
+ ❯ TransformPluginContext.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27149:4
+ ❯ EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:28801:14
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:22670:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > registers Custom Domain on the worker on happy path
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index when DNS cleanup + retry still fails
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index on unexpected CF registration errors
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back CF registration + index when KV seed fails
+ FAIL  src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rejects duplicate custom domain across sites
+ FAIL  src/actions/__tests__/attach-domain.test.ts > detachCustomDomain > deregisters Custom Domain from worker and deletes KV hostname entry
+ FAIL  src/actions/__tests__/attach-domain.test.ts > detachCustomDomain > throws when no custom domain is attached
+ FAIL  src/lib/__tests__/mongo.test.ts > getMongoDb > throws if no MONGODB_URL or MONGODB_URI is set
+ FAIL  src/lib/__tests__/mongo.test.ts > getMongoDb > memoizes — returns same promise on second call
+Error: Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/src/lib/mongo.ts:1:28
+  1  |  import { MongoClient } from "mongodb";
+     |                               ^
+  2  |  let clientPromise = null;
+  3  |  let dbPromise = null;
+ ❯ TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29003:43
+ ❯ TransformPluginContext.error ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29000:14
+ ❯ normalizeUrl ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27123:18
+ ❯ ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27181:32
+ ❯ TransformPluginContext.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27149:4
+ ❯ EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:28801:14
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:22670:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  src/lib/__tests__/mongo.test.ts > getMongoDb > returns a Db instance from MONGODB_URL
+Error: Failed to resolve import "mongodb" from "src/lib/mongo.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/src/lib/mongo.ts:1:28
+  1  |  import { MongoClient } from "mongodb";
+     |                               ^
+  2  |  let clientPromise = null;
+  3  |  let dbPromise = null;
+ ❯ TransformPluginContext._formatLog ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29003:43
+ ❯ TransformPluginContext.error ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:29000:14
+ ❯ normalizeUrl ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27123:18
+ ❯ ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27181:32
+ ❯ TransformPluginContext.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:27149:4
+ ❯ EnvironmentPluginContainer.transform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:28801:14
+ ❯ loadAndTransform ../../node_modules/.pnpm/vite@7.3.2_@types+node@22.19.15_jiti@2.6.1_lightningcss@1.32.0_tsx@4.21.0_yaml@2.8.3/node_modules/vite/dist/node/chunks/config.js:22670:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+
+ Test Files  5 failed | 13 passed (18)
+      Tests  11 failed | 233 passed (244)
+   Start at  13:26:52
+   Duration  1.80s (transform 1.68s, setup 1.37s, collect 1.88s, tests 830ms, environment 10.80s, prepare 1.04s)
+
+/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @atomic-platform/dashboard@0.1.0 test: `vitest run`
+Exit status 1

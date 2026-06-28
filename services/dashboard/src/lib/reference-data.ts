@@ -121,16 +121,100 @@ export async function getCategories(parentId: string): Promise<CategoryItem[]> {
     .filter((x): x is CategoryItem => x !== null);
 }
 
+/** Walk all pages of a paginated aggregator list endpoint at the documented
+ *  max `page_size` of 100. `basePath` is a dashboard proxy path (e.g.
+ *  "/api/categories?active=true") with everything EXCEPT page/page_size.
+ *  Returns [] if the first page fails. Bounded by a high safety ceiling. */
+async function fetchAllPages(basePath: string, maxPages = 50): Promise<unknown[]> {
+  const sep = basePath.includes("?") ? "&" : "?";
+  const all: unknown[] = [];
+  let totalPages = 1;
+  for (let page = 1; page <= totalPages && page <= maxPages; page++) {
+    const res = await fetch(`${basePath}${sep}page=${page}&page_size=100`);
+    if (!res.ok) {
+      if (page === 1) return [];
+      break;
+    }
+    const data = (await res.json()) as { items?: unknown[]; total_pages?: number };
+    if (!Array.isArray(data.items)) break;
+    all.push(...data.items);
+    totalPages = typeof data.total_pages === "number" ? data.total_pages : page;
+    if (data.items.length === 0) break;
+  }
+  return all;
+}
+
 /** Fetch ALL categories (tier-1s + every subcategory across the taxonomy).
- *  Used by bundle-creation UIs that allow picking subcats across multiple tier-1s. */
+ *  Paginated at page_size=100 (documented max) — covers the ~524-row taxonomy
+ *  plus growth. Used by bundle/topic UIs that pick across multiple tier-1s. */
 export async function getAllCategories(): Promise<CategoryItem[]> {
-  const res = await fetch("/api/categories");
-  if (!res.ok) return [];
-  const data = (await res.json()) as { items?: unknown[] };
-  if (!Array.isArray(data.items)) return [];
-  return data.items
+  const items = await fetchAllPages("/api/categories?active=true");
+  return items
     .map(parseCategoryItem)
     .filter((x): x is CategoryItem => x !== null);
+}
+
+/** Fetch the most-used tags (usage_count desc), bounded by `limit`. Replaces
+ *  the old "fetch everything" path which doesn't scale as the tag taxonomy
+ *  grows (9k+ and climbing). Niche tags are reachable via `searchTags`, and a
+ *  selected topic's exact ids are resolved by id via `resolveTagNames`. */
+export async function getTopTags(limit = 300): Promise<TagItem[]> {
+  const PAGE_SIZE = 100;
+  const maxPages = Math.max(1, Math.ceil(limit / PAGE_SIZE));
+  const all: TagItem[] = [];
+  const seen = new Set<string>();
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await fetch(
+      `/api/tags?sort=usage_count&order=desc&include_usage=true&page_size=${PAGE_SIZE}&page=${page}`,
+    );
+    if (!res.ok) break;
+    const data = (await res.json()) as { items?: unknown[] };
+    if (!Array.isArray(data.items) || data.items.length === 0) break;
+    for (const t of extractTags(data.items)) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        all.push(t);
+      }
+    }
+    if (all.length >= limit || data.items.length < PAGE_SIZE) break;
+  }
+  return all.slice(0, limit);
+}
+
+/** Resolve specific taxonomy ids → names via the aggregator `?ids=` endpoint.
+ *  O(selected), not O(taxonomy) — scales regardless of total taxonomy size.
+ *  Robust if the endpoint over-returns: we map by id and keep only the
+ *  requested ids. Returns {} for empty input (no request). */
+async function resolveNames(
+  path: string,
+  ids: string[],
+  extract: (items: unknown[]) => Array<{ id: string; name: string }>,
+): Promise<Record<string, string>> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return {};
+  const res = await fetch(`${path}?ids=${unique.join(",")}&include_usage=true`);
+  if (!res.ok) return {};
+  const data = (await res.json()) as { items?: unknown[] };
+  if (!Array.isArray(data.items)) return {};
+  const byId = new Map(extract(data.items).map((x) => [x.id, x.name]));
+  const out: Record<string, string> = {};
+  for (const id of unique) {
+    const name = byId.get(id);
+    if (name) out[id] = name;
+  }
+  return out;
+}
+
+/** Resolve tag ids → names via `?ids=`. */
+export async function resolveTagNames(ids: string[]): Promise<Record<string, string>> {
+  return resolveNames("/api/tags", ids, extractTags);
+}
+
+/** Resolve category ids → names via `?ids=`. */
+export async function resolveCategoryNames(ids: string[]): Promise<Record<string, string>> {
+  return resolveNames("/api/categories", ids, (items) =>
+    items.map(parseCategoryItem).filter((x): x is CategoryItem => x !== null),
+  );
 }
 
 function parseCategoryItem(d: unknown): CategoryItem | null {
@@ -141,37 +225,13 @@ function parseCategoryItem(d: unknown): CategoryItem | null {
   return null;
 }
 
-/** Fetch the entire tag library by paginating until empty.
- *  Used to populate name-by-id lookups for tag pills (so a site's selected
- *  tag_ids display as names, not raw IDs). The aggregator caps `page_size`
- *  (~100 in practice), so a single fetch isn't enough for large taxonomies;
- *  we walk pages until exhaustion or a safety ceiling.
+/** Tag lookup list for pills/selection. Bounded to the most-used tags so it
+ *  scales as the tag taxonomy grows (formerly fetched up to 2000 tags
+ *  alphabetically — broke past that ceiling). Niche tags are reached via
+ *  `searchTags`; a topic's exact selected ids resolve via `resolveTagNames`.
  *  No vertical scoping (dropped 2026-04-29). */
 export async function getTags(): Promise<TagItem[]> {
-  const PAGE_SIZE = 100;
-  const MAX_PAGES = 20; // safety ceiling — 2000 tags is well past today's taxonomy
-  const all: TagItem[] = [];
-  const seen = new Set<string>();
-
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = await fetch(`/api/tags?page_size=${PAGE_SIZE}&page=${page}`);
-    if (!res.ok) break;
-    const data = (await res.json()) as { items?: unknown[] };
-    if (!Array.isArray(data.items) || data.items.length === 0) break;
-    const batch = extractTags(data.items);
-    let addedThisPage = 0;
-    for (const t of batch) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        all.push(t);
-        addedThisPage++;
-      }
-    }
-    // If the aggregator returned fewer than a full page OR all items were dups
-    // we've seen before, we're done.
-    if (data.items.length < PAGE_SIZE || addedThisPage === 0) break;
-  }
-  return all;
+  return getTopTags(300);
 }
 
 /** Search tags by name via API. Debounce in the caller. No vertical scoping (dropped 2026-04-29). */

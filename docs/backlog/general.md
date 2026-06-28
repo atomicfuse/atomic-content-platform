@@ -90,3 +90,11 @@ Phase 1 of the layout v2 plan landed (commits `d3a43cf`–`964302d` on `feat/wiz
 - [ ] **Tech debt:** `packages/shared-types/dist/*` is checked into git but stale relative to `src/`. Phase 1 implementer subagents had to `pnpm build` locally to make tests pass. Either rebuild + commit on every src change, or add `dist/` to `.gitignore`. Standalone cleanup.
 - [ ] **Tech debt / convention:** Project `CLAUDE.md` says `Co-Authored-By: Claude Opus 4.6` but the design + plan + Phase-1 commits use `Claude Opus 4.7 (1M context)`. Reconcile in either direction.
 - [ ] **Tech debt:** `seed-kv.ts:374` uses `as unknown as ResolvedConfig` to bypass typecheck on the assembly literal. With Phase 1 adding required fields (`layout`, `theme.layout_v2`), this cast hides real omissions. Future cleanup: remove the cast and rely on real types so missing fields surface at typecheck.
+
+### Theme / Topics fixes follow-ups (added 2026-06-28)
+
+Landed on `asaf-new` (pending Asaf's local test). Audit: `docs/audit-logs/2026-06-28-0849-theme-menu-topics-fixes.md`. Session: `docs/sessions/2026-06-28-theme-menu-topics-fixes.md`.
+
+- [ ] **Theme polish:** ~7 presets use a light-but-not-white `secondary` (e.g. `#fafafa`, `#f7f5ee`) so Read More / Subscribe buttons are low-contrast against the light page background. Auto-contrast (this session) makes the button *text* legible, but the button still blends into the page. Decide whether to normalize those presets' `secondary` to a dark value (like the well-formed light presets) or keep the "ghost button" look.
+- [ ] **Topics resolution coverage:** `TopicEditModal` + `PerTopicReviewScreen` now resolve names via persisted `*_names` → `?ids=` → in-memory → id. `ContentAgentTab`, `BundleSubscriptionsPanel`, `TopicsListPanel` still rely on the bounded `getTags` (top-300) + full categories. Categories now load fully (pagination fix), but niche *tags* in those three could still show raw ids — extend `resolveByIds` to them if it surfaces.
+- [ ] **Deploy step (when approved):** re-seed all live sites after deploy so `menu_item_font_size` + the 4 preset `secondary` changes + the `--color-*-fg` vars reach KV. `seed:kv` per CLAUDE.md.
