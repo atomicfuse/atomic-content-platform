@@ -61,6 +61,7 @@ import {
 import { resolveLayout } from './lib/resolve-layout';
 import { parseFeatured } from './lib/parse-featured';
 import { contentTypeForFile } from './lib/content-types';
+import { validateResolvedConfig } from './lib/validate-config';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -527,6 +528,14 @@ async function main(): Promise<void> {
 
   // 1. Resolve config
   const { config, conditionalOverrides } = await resolveSiteConfig(siteId);
+
+  // Validate resolved config — warn about dangerous patterns.
+  const configWarnings = validateResolvedConfig(config as unknown as Record<string, unknown>, siteId);
+  if (configWarnings.length > 0) {
+    console.warn('[seed-kv] CONFIG WARNINGS:');
+    for (const w of configWarnings) console.warn(`  ${w}`);
+  }
+
   const adCount = (config.ads_config?.ad_placements ?? []).length;
   console.log(`[seed-kv] ad_placements resolved: ${adCount}`);
 
