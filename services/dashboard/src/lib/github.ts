@@ -1257,6 +1257,7 @@ export async function commitNetworkFiles(
     ref: `heads/${branch}`,
     sha: newCommit.sha,
   });
+  invalidateTreeCache(branch);
 }
 
 /** List contents of a directory in the network repo (or a specified repo). */
@@ -1329,6 +1330,7 @@ export async function deleteNetworkFile(
     ref: `heads/${branch}`,
     sha: newCommit.sha,
   });
+  invalidateTreeCache(branch);
 }
 
 // --- Helpers ---
