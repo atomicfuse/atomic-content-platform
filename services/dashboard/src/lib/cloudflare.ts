@@ -827,10 +827,11 @@ export async function deleteR2ObjectsByPrefix(
   return deleted;
 }
 
-/** Copy all R2 objects from one prefix to another within the same bucket.
+/** Move (rename) all R2 objects from one prefix to another within the same bucket.
+ *  Copies each object to the new prefix then deletes the originals.
  *  Server-side copy — no data transfer, fast even for hundreds of objects.
- *  Returns the number of objects copied. Returns 0 if R2 credentials are not configured. */
-export async function copyR2ObjectsByPrefix(
+ *  Returns the number of objects moved. Returns 0 if R2 credentials are not configured. */
+export async function moveR2ObjectsByPrefix(
   bucket: string,
   oldPrefix: string,
   newPrefix: string,
@@ -839,7 +840,7 @@ export async function copyR2ObjectsByPrefix(
   const client = getR2Client(domain);
   if (!client) return 0;
 
-  let copied = 0;
+  let moved = 0;
   let continuationToken: string | undefined;
 
   do {
@@ -870,11 +871,22 @@ export async function copyR2ObjectsByPrefix(
       }),
     );
 
-    copied += objects.length;
+    // Delete the originals in one batch
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objects.filter((o) => o.Key).map((o) => ({ Key: o.Key })),
+          Quiet: true,
+        },
+      }),
+    );
+
+    moved += objects.length;
     continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
   } while (continuationToken);
 
-  return copied;
+  return moved;
 }
 
 /** Delete specific R2 objects by exact keys.

@@ -8,7 +8,7 @@ import {
   invalidateTreeCache,
   triggerWorkflowViaPush,
 } from "@/lib/github";
-import { copyR2ObjectsByPrefix } from "@/lib/cloudflare";
+import { moveR2ObjectsByPrefix } from "@/lib/cloudflare";
 import { R2_BUCKET_PROD } from "@/lib/constants";
 import { getMongoDb } from "@/lib/mongo";
 import { COLLECTIONS } from "@/lib/db/collections";
@@ -194,20 +194,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // --- 6. R2: Copy assets from old prefix to new prefix ---
+    // --- 6. R2: Move assets from old prefix to new prefix ---
     // Article markdown uses domain-agnostic paths (/assets/images/...) and
     // seed-kv rewrites them to /<siteId>/assets/... at seed time. If R2
-    // objects aren't copied, every image URL 404s after rename.
+    // objects aren't moved, every image URL 404s after rename.
     try {
-      const count = await copyR2ObjectsByPrefix(
+      const count = await moveR2ObjectsByPrefix(
         R2_BUCKET_PROD,
         `${oldDomain}/`,
         `${newDomain}/`,
       );
-      console.log(`[sites/rename] Copied ${count} R2 objects from ${oldDomain}/ to ${newDomain}/`);
+      console.log(`[sites/rename] Moved ${count} R2 objects from ${oldDomain}/ to ${newDomain}/`);
     } catch (err) {
       console.warn(
-        `[sites/rename] R2 copy failed (non-fatal):`,
+        `[sites/rename] R2 move failed (non-fatal):`,
         err instanceof Error ? err.message : err,
       );
     }
