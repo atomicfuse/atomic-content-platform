@@ -8,6 +8,8 @@ import {
   invalidateTreeCache,
   triggerWorkflowViaPush,
 } from "@/lib/github";
+import { copyR2ObjectsByPrefix } from "@/lib/cloudflare";
+import { R2_BUCKET_PROD } from "@/lib/constants";
 import { getMongoDb } from "@/lib/mongo";
 import { COLLECTIONS } from "@/lib/db/collections";
 
@@ -192,7 +194,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // --- 6. Git: Delete old staging branch (cleanup, last step) ---
+    // --- 6. R2: Copy assets from old prefix to new prefix ---
+    // Article markdown uses domain-agnostic paths (/assets/images/...) and
+    // seed-kv rewrites them to /<siteId>/assets/... at seed time. If R2
+    // objects aren't copied, every image URL 404s after rename.
+    try {
+      const count = await copyR2ObjectsByPrefix(
+        R2_BUCKET_PROD,
+        `${oldDomain}/`,
+        `${newDomain}/`,
+      );
+      console.log(`[sites/rename] Copied ${count} R2 objects from ${oldDomain}/ to ${newDomain}/`);
+    } catch (err) {
+      console.warn(
+        `[sites/rename] R2 copy failed (non-fatal):`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    // --- 8. Git: Delete old staging branch (cleanup, last step) ---
     if (oldStagingBranch) {
       try {
         await deleteBranch(oldStagingBranch);
@@ -204,7 +224,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // --- 7. Trigger KV sync for the new site ---
+    // --- 9. Trigger KV sync for the new site ---
     try {
       await triggerWorkflowViaPush(newStagingBranch, newDomain);
     } catch (err) {

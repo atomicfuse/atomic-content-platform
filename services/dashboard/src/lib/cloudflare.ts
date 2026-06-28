@@ -3,6 +3,7 @@ import {
   S3Client,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
@@ -824,6 +825,56 @@ export async function deleteR2ObjectsByPrefix(
   } while (continuationToken);
 
   return deleted;
+}
+
+/** Copy all R2 objects from one prefix to another within the same bucket.
+ *  Server-side copy — no data transfer, fast even for hundreds of objects.
+ *  Returns the number of objects copied. Returns 0 if R2 credentials are not configured. */
+export async function copyR2ObjectsByPrefix(
+  bucket: string,
+  oldPrefix: string,
+  newPrefix: string,
+  domain?: string,
+): Promise<number> {
+  const client = getR2Client(domain);
+  if (!client) return 0;
+
+  let copied = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: oldPrefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const objects = list.Contents;
+    if (!objects || objects.length === 0) break;
+
+    // Copy each object to the new prefix (server-side, no data download)
+    await Promise.all(
+      objects.map(async (obj) => {
+        if (!obj.Key) return;
+        const newKey = newPrefix + obj.Key.slice(oldPrefix.length);
+        await client.send(
+          new CopyObjectCommand({
+            Bucket: bucket,
+            CopySource: `${bucket}/${obj.Key}`,
+            Key: newKey,
+          }),
+        );
+      }),
+    );
+
+    copied += objects.length;
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return copied;
 }
 
 /** Delete specific R2 objects by exact keys.
