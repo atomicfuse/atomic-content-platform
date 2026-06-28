@@ -5,9 +5,12 @@ import {
   deleteBranch,
   readDashboardIndex,
   writeDashboardIndex,
+  readSiteConfig,
+  commitSiteFiles,
   invalidateTreeCache,
   triggerWorkflowViaPush,
 } from "@/lib/github";
+import { stringify as stringifyYaml } from "yaml";
 import { moveR2ObjectsByPrefix } from "@/lib/cloudflare";
 import { R2_BUCKET_PROD } from "@/lib/constants";
 import { getMongoDb } from "@/lib/mongo";
@@ -90,6 +93,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       // --- 2. Git: Rename folder on the new staging branch ---
       await renameSiteFolder(newStagingBranch, oldDomain, newDomain);
       invalidateTreeCache(newStagingBranch);
+
+      // --- 2b. Git: Update domain field inside site.yaml ---
+      const siteYaml = await readSiteConfig(newDomain, newStagingBranch);
+      if (siteYaml) {
+        siteYaml.domain = newDomain;
+        await commitSiteFiles(
+          newDomain,
+          [{ path: `sites/${newDomain}/site.yaml`, content: stringifyYaml(siteYaml, { lineWidth: 0 }) }],
+          `update domain field to ${newDomain}`,
+          newStagingBranch,
+        );
+        invalidateTreeCache(newStagingBranch);
+      }
     }
 
     // --- 3. Git: Rename on main if published ---
@@ -97,6 +113,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       try {
         await renameSiteFolder("main", oldDomain, newDomain, true);
         invalidateTreeCache("main");
+
+        // Update domain field inside site.yaml on main too
+        const mainYaml = await readSiteConfig(newDomain, "main");
+        if (mainYaml) {
+          mainYaml.domain = newDomain;
+          await commitSiteFiles(
+            newDomain,
+            [{ path: `sites/${newDomain}/site.yaml`, content: stringifyYaml(mainYaml, { lineWidth: 0 }) }],
+            `update domain field to ${newDomain}`,
+            "main",
+          );
+          invalidateTreeCache("main");
+        }
       } catch (err) {
         console.warn(
           `[sites/rename] Failed to rename on main (may not have files yet):`,
