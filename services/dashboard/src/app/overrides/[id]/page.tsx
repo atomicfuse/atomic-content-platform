@@ -11,7 +11,7 @@ import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
 import { DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
-import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig } from "@/lib/config-normalizers";
+import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig, stripDefaultOverrideFields } from "@/lib/config-normalizers";
 import { COMPANIES } from "@/lib/constants";
 
 interface OverrideConfig {
@@ -137,8 +137,10 @@ export default function OverrideDetailPage(): React.ReactElement {
     setSaving(true);
     setError(null);
     try {
-      // Embed _mode into each field before saving
-      const configToSave = { ...config };
+      // Strip sections that only contain normalizer defaults — prevents the
+      // form from injecting destructive values (e.g. ad_placements: []) into
+      // overrides when the user never touched those sections.
+      const configToSave = stripDefaultOverrideFields({ ...config }) as OverrideConfig;
       if (configToSave.tracking && mergeModes.tracking !== DEFAULT_MERGE_MODES.tracking) {
         configToSave.tracking = { ...configToSave.tracking, _mode: mergeModes.tracking };
       }
