@@ -97,6 +97,7 @@ export function ContentAgentTab({
     return single ? [single] : [];
   })();
   const initTone = brief?.tone ?? "";
+  const [siteSlug, setSiteSlug] = useState(domain);
   const [siteName, setSiteName] = useState(initSiteName);
   const [siteTagline, setSiteTagline] = useState(initSiteTagline);
   const initAuthor = (siteConfig?.author as string) ?? "";
@@ -420,34 +421,76 @@ export function ContentAgentTab({
 
   async function saveIdentity(): Promise<void> {
     setSavingIdentity(true);
-    // When "same as logo" is on, let the save route auto-extract a square
-    // icon favicon from the logo instead of using the full logo as favicon.
     const effectiveFavicon = faviconSameAsLogo ? null : pendingFavicon;
+    const slugChanged = siteSlug !== domain;
+    let activeDomain = domain;
+
     try {
-      const res = await fetch("/api/sites/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          domain,
-          logoBase64: pendingLogo ?? null,
-          footerLogoBase64: pendingFooterLogo ?? undefined,
-          faviconBase64: effectiveFavicon ?? null,
-          clearLogo: clearLogo || undefined,
-          clearFooterLogo: clearFooterLogo || undefined,
-          configUpdates: {
-            siteName,
-            siteTagline,
-            author,
-            audiences,
-            audienceIds,
-            tone,
-            verticalId,
-            vertical: verticals.find((v) => v.id === verticalId)?.name ?? "",
-          },
-        }),
-      });
-      const data = (await res.json()) as { status: string; message?: string };
-      if (data.status === "ok") {
+      // Step 1: Rename if slug changed
+      if (slugChanged) {
+        const renameRes = await fetch("/api/sites/rename", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oldDomain: domain, newDomain: siteSlug }),
+        });
+        const renameData = (await renameRes.json()) as { status: string; message?: string; newDomain?: string };
+        if (renameData.status !== "ok") {
+          toast(renameData.message ?? "Failed to rename site", "error");
+          setSavingIdentity(false);
+          return;
+        }
+        activeDomain = renameData.newDomain ?? siteSlug;
+      }
+
+      // Step 2: Save config updates (using new domain if renamed)
+      const hasConfigChanges =
+        siteName !== initSiteName ||
+        siteTagline !== initSiteTagline ||
+        author !== initAuthor ||
+        tone !== initTone ||
+        JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
+        !!pendingLogo ||
+        !!pendingFooterLogo ||
+        !!pendingFavicon ||
+        clearLogo ||
+        clearFooterLogo;
+
+      if (hasConfigChanges) {
+        const res = await fetch("/api/sites/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            domain: activeDomain,
+            logoBase64: pendingLogo ?? null,
+            footerLogoBase64: pendingFooterLogo ?? undefined,
+            faviconBase64: effectiveFavicon ?? null,
+            clearLogo: clearLogo || undefined,
+            clearFooterLogo: clearFooterLogo || undefined,
+            configUpdates: {
+              siteName,
+              siteTagline,
+              author,
+              audiences,
+              audienceIds,
+              tone,
+              verticalId,
+              vertical: verticals.find((v) => v.id === verticalId)?.name ?? "",
+            },
+          }),
+        });
+        const data = (await res.json()) as { status: string; message?: string };
+        if (data.status !== "ok") {
+          toast(data.message ?? "Failed to save identity", "error");
+          setSavingIdentity(false);
+          return;
+        }
+      }
+
+      // Step 3: Success
+      if (slugChanged) {
+        toast(`Site renamed to ${activeDomain}`, "success");
+        router.push(`/sites/${activeDomain}`);
+      } else {
         toast("Identity saved", "success");
         setPendingLogo(null);
         setPendingFooterLogo(null);
@@ -456,8 +499,6 @@ export function ContentAgentTab({
         setClearFooterLogo(false);
         setAssetVersion((v) => v + 1);
         router.refresh();
-      } else {
-        toast(data.message ?? "Failed to save", "error");
       }
     } catch {
       toast("Failed to save identity", "error");
@@ -529,6 +570,7 @@ export function ContentAgentTab({
   // --- Sub-tab content ---
 
   const identityDirty =
+    siteSlug !== domain ||
     siteName !== initSiteName ||
     siteTagline !== initSiteTagline ||
     author !== initAuthor ||
@@ -558,6 +600,7 @@ export function ContentAgentTab({
   const identityContent = (
     <div className="space-y-6">
       <div className="space-y-4">
+        <Input label="Site Slug" value={siteSlug} onChange={(e): void => setSiteSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))} placeholder="e.g. sillycapybara" />
         <Input label="Site Name" value={siteName} onChange={(e): void => setSiteName(e.target.value)} />
         <Input label="Tagline" value={siteTagline} onChange={(e): void => setSiteTagline(e.target.value)} />
         <Input label="Default Author" value={author} onChange={(e): void => setAuthor(e.target.value)} placeholder="e.g. Sarah Mitchell" />
