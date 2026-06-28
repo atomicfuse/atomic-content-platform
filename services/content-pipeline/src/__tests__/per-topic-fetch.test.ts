@@ -5,6 +5,7 @@ import {
   articleMatchesTopicFilter,
   resolveArticleTopics,
   isPerTopicSite,
+  describeZeroResultFetch,
 } from "../agents/content-generation/per-topic-fetch.js";
 import type { TopicV2, SiteBrief } from "../types.js";
 import type { ContentItem } from "../agents/content-generation/types.js";
@@ -175,6 +176,32 @@ describe("resolveArticleTopics", () => {
     const item = makeItem();
     const result = resolveArticleTopics(item, primary, allTopics);
     expect(result).toEqual(["Wine & Beer"]);
+  });
+});
+
+describe("describeZeroResultFetch", () => {
+  it("flags an empty filter (no category_ids + tag_ids) as a config problem", () => {
+    const topic = makeTopic({ source: { type: "filter", category_ids: [], tag_ids: [] } });
+    const out = describeZeroResultFetch(topic, 0);
+    expect(out.kind).toBe("empty-filter");
+    expect(out.reason).toMatch(/no filter configured/i);
+  });
+
+  it("reports no-match when the filter is set but the aggregator returned nothing", () => {
+    const out = describeZeroResultFetch(makeTopic(), 0);
+    expect(out.kind).toBe("no-match");
+    expect(out.reason).toMatch(/matched 0 items/i);
+  });
+
+  it("reports all-duplicates when candidates came back but all already exist", () => {
+    const out = describeZeroResultFetch(makeTopic(), 7);
+    expect(out.kind).toBe("all-duplicates");
+    expect(out.reason).toMatch(/all already exist/i);
+  });
+
+  it("treats a bundle source with candidates as all-duplicates (not empty-filter)", () => {
+    const topic = makeTopic({ source: { type: "bundle", bundle_id: "b1" } });
+    expect(describeZeroResultFetch(topic, 3).kind).toBe("all-duplicates");
   });
 });
 

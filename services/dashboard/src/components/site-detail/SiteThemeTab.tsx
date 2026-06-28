@@ -39,6 +39,8 @@ interface ThemeState {
   logoHeight: number;
   /** Footer logo height in pixels. null = auto (92% of header). */
   logoHeightFooter: number | null;
+  /** Navigation menu item font size in pixels. Defaults to 14. */
+  menuItemFontSize: number;
 }
 
 const DEFAULT_LAYOUT: LayoutState = {
@@ -106,6 +108,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     layout: { ...DEFAULT_LAYOUT },
     logoHeight: 52,
     logoHeightFooter: null,
+    menuItemFontSize: 14,
   });
   const [topicInput, setTopicInput] = useState("");
   // Footer logo upload state — tracked separately from ThemeState because
@@ -153,6 +156,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           logoHeight: typeof theme.logo_height === "number" ? theme.logo_height : 52,
           logoHeightFooter:
             typeof theme.logo_height_footer === "number" ? theme.logo_height_footer : null,
+          menuItemFontSize:
+            typeof theme.menu_item_font_size === "number" ? theme.menu_item_font_size : 14,
         };
         setState(loaded);
         initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
@@ -167,6 +172,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           layout: { ...DEFAULT_LAYOUT },
           logoHeight: 52,
           logoHeightFooter: null,
+          menuItemFontSize: 14,
         };
       } finally {
         setLoading(false);
@@ -247,6 +253,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             theme_fonts: { heading: state.fontHeading, body: state.fontBody },
             theme_logo_height: state.logoHeight,
             theme_logo_height_footer: state.logoHeightFooter,
+            theme_menu_item_font_size: state.menuItemFontSize,
             layout: state.layout,
           },
         }),
@@ -514,6 +521,32 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             </div>
             <p className="text-xs text-[var(--text-muted)] mt-1">
               Defaults to 92% of header height. Click Reset to return to auto.
+            </p>
+          </div>
+
+          {/* Menu item size */}
+          <div className="pt-3 border-t border-[var(--border-secondary)]">
+            <label className="block text-xs font-semibold text-[var(--text-primary)] mb-1">
+              Menu item size
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min={10}
+                max={24}
+                step={1}
+                value={state.menuItemFontSize}
+                onChange={(e): void =>
+                  setState((s) => ({ ...s, menuItemFontSize: parseInt(e.target.value, 10) }))
+                }
+                className="flex-1 accent-cyan"
+              />
+              <span className="text-xs font-mono text-[var(--text-muted)] w-12 text-right">
+                {state.menuItemFontSize}px
+              </span>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] mt-1">
+              Font size of the navigation menu items. Increase it when using a larger logo. Defaults to 14px.
             </p>
           </div>
 

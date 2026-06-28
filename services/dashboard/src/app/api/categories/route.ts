@@ -11,13 +11,26 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = request.nextUrl;
     const parentId = searchParams.get("parent_id") ?? "";
-    // No parent_id → fetch ALL categories (tier-1s + every subcat across the
-    // taxonomy). The aggregator's taxonomy is ~12 tier-1s × 10–15 subcats; 500
-    // is comfortably above that ceiling.
-    const qs = parentId
-      ? `?parent_id=${parentId}&active=true&page_size=100`
-      : "?active=true&page_size=500";
-    const url = `${AGGREGATOR_URL}/api/categories${qs}`;
+    const ids = searchParams.get("ids") ?? "";
+    // page_size capped at the documented aggregator max of 100. Callers paginate
+    // (page=N) to walk the full taxonomy — requesting 500 here previously risked
+    // an upstream 400 / oversized response that silently became an empty list.
+    const pageSizeRaw = parseInt(searchParams.get("page_size") ?? "100", 10);
+    const pageSize = Math.min(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 100, 100);
+    const page = searchParams.get("page") ?? "1";
+
+    const qs = new URLSearchParams();
+    if (ids) {
+      // id-resolution mode: resolve exact ids regardless of active state.
+      qs.set("ids", ids);
+    } else {
+      if (parentId) qs.set("parent_id", parentId);
+      qs.set("active", searchParams.get("active") ?? "true");
+    }
+    qs.set("page", page);
+    qs.set("page_size", String(pageSize));
+
+    const url = `${AGGREGATOR_URL}/api/categories?${qs.toString()}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       redirect: "manual",
@@ -25,7 +38,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
     if (!res.ok) {
       console.error(`[categories] ${res.status} from ${url}`);
-      return NextResponse.json([], { status: res.status });
+      return NextResponse.json({ items: [] }, { status: res.status });
     }
     const data: unknown = await res.json();
     return NextResponse.json(data, {
@@ -33,6 +46,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
   } catch (error) {
     console.error("[categories] error:", error);
-    return NextResponse.json([], { status: 500 });
+    return NextResponse.json({ items: [] }, { status: 500 });
   }
 }

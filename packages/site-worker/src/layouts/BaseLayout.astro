@@ -7,6 +7,7 @@
  * are intentionally absent — Phase 4 brings them back as Server Islands.
  */
 import { getConfig, isStagingEnv } from '../lib/config';
+import { readableTextColor } from '../lib/contrast';
 import PixelLoader from '../components/PixelLoader.astro';
 import InterstitialLoader from '../components/InterstitialLoader.astro';
 import '../themes/modern/styles/theme.css';
@@ -52,14 +53,33 @@ const logoHeightFooter = typeof theme.logo_height_footer === 'number' ? theme.lo
 // Nav grows with the logo (8px padding top + 8px bottom), min 64px (mobile), max 120px.
 const navHeight = Math.min(Math.max(64, logoHeight + 16), 120);
 
+// Menu item font size — clamped to a sane range so it scales with a larger logo
+// without breaking the nav. Default 14px (matches the prior hardcoded 0.875rem).
+const rawMenuItemFontSize = typeof theme.menu_item_font_size === 'number' ? theme.menu_item_font_size : 14;
+const menuItemFontSize = Math.min(Math.max(rawMenuItemFontSize, 10), 24);
+
 const colorVars = Object.entries(theme.colors)
   .map(([key, value]) => `--color-${key}: ${value};`)
   .join(' ');
 
+// Auto-contrast foreground for colors used as button/section backgrounds, so
+// text stays legible no matter what color a preset/site picks (fixes the
+// white-on-white Read More / Subscribe buttons when secondary === #ffffff).
+const secondaryBg = theme.colors.secondary ?? '#1a1a2e';
+const accentBg = theme.colors.accent ?? secondaryBg;
+const primaryBg = theme.colors.primary ?? '#1a1a2e';
+const fgVars = [
+  `--color-secondary-fg: ${readableTextColor(secondaryBg)};`,
+  `--color-accent-fg: ${readableTextColor(accentBg)};`,
+  `--color-primary-fg: ${readableTextColor(primaryBg)};`,
+].join(' ');
+
 const cssVars = [
   colorVars,
+  fgVars,
   `--logo-height: ${logoHeight}px;`,
   `--nav-height: ${navHeight}px;`,
+  `--menu-item-font-size: ${menuItemFontSize}px;`,
   logoHeightFooter != null ? `--logo-height-footer: ${logoHeightFooter}px;` : '',
 ]
   .filter(Boolean)

@@ -112,6 +112,13 @@ export type TopicV2Source = {
     type: "filter";
     category_ids: string[];
     tag_ids: string[];
+    /** Denormalized id→name maps for display. Optional + backward-compatible:
+     *  `category_ids`/`tag_ids` remain the source of truth for aggregator
+     *  fetches. Names are persisted so the dashboard never shows raw IDs and
+     *  display does not depend on fetching the full (unbounded) taxonomy.
+     *  Resolved via the aggregator `?ids=` endpoint when missing. */
+    category_names?: Record<string, string>;
+    tag_names?: Record<string, string>;
 } | {
     type: "bundle";
     bundle_id: string;
@@ -147,6 +154,9 @@ export interface ThemeConfig {
     logo_height?: number;
     /** Footer logo height in pixels. Defaults to ~92% of `logo_height` (≈48 when logo_height is 52). */
     logo_height_footer?: number;
+    /** Navigation menu item font size in pixels. Defaults to 14. Lets the menu
+     *  items scale up next to a larger logo. */
+    menu_item_font_size?: number;
     /** URL or path to the site favicon. */
     favicon?: string;
     /** Font family overrides. */
@@ -174,6 +184,8 @@ export interface ResolvedThemeConfig {
     logo_height: number;
     /** Footer logo height in pixels. `null` means auto-derive (CSS calc 92% of header). */
     logo_height_footer: number | null;
+    /** Navigation menu item font size in pixels. */
+    menu_item_font_size: number;
     /** URL or path to the site favicon. */
     favicon: string;
     /** Font family settings. */

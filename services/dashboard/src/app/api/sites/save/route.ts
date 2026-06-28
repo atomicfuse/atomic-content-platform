@@ -134,6 +134,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
         existing.theme = theme;
       }
+      if (configUpdates.theme_menu_item_font_size !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.menu_item_font_size = configUpdates.theme_menu_item_font_size;
+        existing.theme = theme;
+      }
       if (configUpdates.layout !== undefined) {
         existing.layout = configUpdates.layout;
       }

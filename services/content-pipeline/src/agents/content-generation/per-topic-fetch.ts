@@ -155,3 +155,35 @@ export function resolveArticleTopics(
 export function isPerTopicSite(brief: SiteBrief): boolean {
   return Array.isArray(brief.topics_v2) && brief.topics_v2.length > 0;
 }
+
+/** Diagnose why a per-topic fetch produced zero usable items, distinguishing:
+ *  - empty-filter: the topic has no category_ids/tag_ids at all (a config bug,
+ *    e.g. an AI re-propose that dropped categories) — NOT a content shortage;
+ *  - no-match: the filter matched nothing in the aggregator (stale/invalid ids);
+ *  - all-duplicates: the aggregator returned candidates but all already exist.
+ *  Pure + testable; the agent uses it to log and to build the skip reason. */
+export function describeZeroResultFetch(
+  topic: TopicV2,
+  sourcedCount: number,
+): { kind: "empty-filter" | "no-match" | "all-duplicates"; reason: string } {
+  const emptyFilter =
+    topic.source.type === "filter" &&
+    topic.source.category_ids.length === 0 &&
+    topic.source.tag_ids.length === 0;
+  if (emptyFilter) {
+    return {
+      kind: "empty-filter",
+      reason: `topic "${topic.name}": no filter configured (empty category_ids + tag_ids) — set categories/tags in the dashboard`,
+    };
+  }
+  if (sourcedCount === 0) {
+    return {
+      kind: "no-match",
+      reason: `topic "${topic.name}": the configured filter matched 0 items in the aggregator (check the categories/tags are still valid)`,
+    };
+  }
+  return {
+    kind: "all-duplicates",
+    reason: `topic "${topic.name}": aggregator returned ${sourcedCount} item(s) but all already exist on this site`,
+  };
+}

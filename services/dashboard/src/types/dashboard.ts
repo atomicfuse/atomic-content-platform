@@ -6,7 +6,15 @@ export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live";
 
 /** A topic's filter source — either raw categories+tags or a pointer to a bundle. */
 export type TopicV2Source =
-  | { type: "filter"; category_ids: string[]; tag_ids: string[] }
+  | {
+      type: "filter";
+      category_ids: string[];
+      tag_ids: string[];
+      /** Denormalized id→name maps for display (optional, backward-compatible).
+       *  Mirrors @atomic-platform/shared-types TopicV2Source. */
+      category_names?: Record<string, string>;
+      tag_names?: Record<string, string>;
+    }
   | { type: "bundle"; bundle_id: string };
 
 export interface TopicV2Schedule {
@@ -190,4 +198,6 @@ export interface WizardFormData {
   logoHeight?: number;
   /** Footer logo height in pixels. Undefined = auto-derive (92% of header). */
   logoHeightFooter?: number;
+  /** Navigation menu item font size in pixels (default 14). */
+  menuItemFontSize?: number;
 }

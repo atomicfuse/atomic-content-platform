@@ -355,7 +355,7 @@ export const PRESETS: Record<string, PresetDefinition> = {
     subtitle: "Deep teal + emerald",
     fonts: { heading: "IBM Plex Sans", body: "IBM Plex Sans" },
     colors: {
-      primary: "#064e3b", accent: "#047857", background: "#ffffff", secondary: "#ffffff",
+      primary: "#064e3b", accent: "#047857", background: "#ffffff", secondary: "#064e3b",
       text: "#022c22", muted: "#6b7280", surface: "#ecfdf5", border: "#d1fae5",
       heading: "#022c22", link: "#064e3b", link_hover: "#047857",
       nav_link: "#ffffff", nav_link_hover: "#6ee7b7",
@@ -474,7 +474,7 @@ export const PRESETS: Record<string, PresetDefinition> = {
       // Deep indigo primary (header) + cool off-white nav = 14:1.
       // Kabuki red accent (subscribe bg) + cream-white text = 4.6:1 AA.
       // Deep-navy footer + muted indigo text = 6:1.
-      primary: "#1a1b2e", accent: "#c81e3b", background: "#0f111c", secondary: "#ffffff",
+      primary: "#1a1b2e", accent: "#c81e3b", background: "#0f111c", secondary: "#252845",
       text: "#e0e6f0", muted: "#9aa3b8", surface: "#1f2138", border: "#2d2f4a",
       heading: "#f0f3f8", link: "#7c89f0", link_hover: "#e94560",
       nav_link: "#e0e6f0", nav_link_hover: "#e94560",
@@ -516,7 +516,7 @@ export const PRESETS: Record<string, PresetDefinition> = {
     subtitle: "Northern-lights tech",
     fonts: { heading: "Space Grotesk", body: "Inter" },
     colors: {
-      primary: "#0a0e27", accent: "#7c3aed", background: "#0a0e27", secondary: "#ffffff",
+      primary: "#0a0e27", accent: "#7c3aed", background: "#0a0e27", secondary: "#1c2150",
       text: "#e9e4ff", muted: "#a8aacc", surface: "#1a1a3e", border: "#2a2d52",
       heading: "#f5f3ff", link: "#a78bfa", link_hover: "#f093fb",
       nav_link: "#e9e4ff", nav_link_hover: "#f093fb",
@@ -614,7 +614,7 @@ export const PRESETS: Record<string, PresetDefinition> = {
     colors: {
       // Deep purple-black base + soft pink text. Header gradient peaks at
       // pink 600 (#db2777) — light pink text holds 4.8:1 on the peak.
-      primary: "#180a25", accent: "#be185d", background: "#180a25", secondary: "#ffffff",
+      primary: "#180a25", accent: "#be185d", background: "#180a25", secondary: "#2c1640",
       text: "#fce7f3", muted: "#d8b4d8", surface: "#1f0f30", border: "#3d1a4a",
       heading: "#fce7f3", link: "#f472b6", link_hover: "#fbcfe8",
       nav_link: "#fce7f3", nav_link_hover: "#ffffff",

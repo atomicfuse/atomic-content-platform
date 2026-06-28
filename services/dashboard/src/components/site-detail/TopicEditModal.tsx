@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { TopicV2, TopicV2Source } from "@/types/dashboard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useAllCategories, useTags, useTagSearch, useBundles } from "@/hooks/useReferenceData";
+import { resolveCategoryNames, resolveTagNames } from "@/lib/reference-data";
 
 interface Props {
   /** When provided, edit mode. When undefined, add-new mode. */
@@ -18,8 +19,8 @@ interface Props {
 }
 
 export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onSave }: Props): React.ReactElement {
-  const { categories: allCategories } = useAllCategories();
-  const { tags: allTags } = useTags();
+  const { categories: allCategories, loading: categoriesLoading } = useAllCategories();
+  const { tags: allTags, loading: tagsLoading } = useTags();
   const { bundles } = useBundles();
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -29,8 +30,60 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
   const [tagSearch, setTagSearch] = useState("");
   const { results: tagSearchResults } = useTagSearch(tagSearch);
 
-  function nameForCategory(id: string): string { return allCategories.find((c) => c.id === id)?.name ?? id; }
-  function nameForTag(id: string): string { return allTags.find((t) => t.id === id)?.name ?? id; }
+  // Denormalized id→name resolution. Precedence: persisted names on the topic
+  // source → names resolved via the aggregator `?ids=` endpoint → the in-memory
+  // taxonomy lists → the raw id (last resort). This means a topic's selected
+  // categories/tags display as names without depending on fetching the full
+  // (unbounded) tag taxonomy.
+  const initialNames =
+    initial?.source.type === "filter"
+      ? { cat: initial.source.category_names ?? {}, tag: initial.source.tag_names ?? {} }
+      : { cat: {}, tag: {} };
+  const [resolvedNames, setResolvedNames] = useState<{ cat: Record<string, string>; tag: Record<string, string> }>(initialNames);
+  // Ids we've already attempted to resolve via `?ids=` — prevents refetch loops
+  // for ids that the aggregator can't resolve (e.g. a deleted tag).
+  const attemptedRef = useRef<Set<string>>(new Set());
+
+  function nameForCategory(id: string): string {
+    return resolvedNames.cat[id] ?? allCategories.find((c) => c.id === id)?.name ?? id;
+  }
+  function nameForTag(id: string): string {
+    return resolvedNames.tag[id] ?? allTags.find((t) => t.id === id)?.name ?? id;
+  }
+
+  // Resolve any selected ids that still lack a name (not persisted, not in the
+  // loaded lists) via `?ids=`. Each id is attempted at most once.
+  useEffect(() => {
+    if (source.type !== "filter") return;
+    const needsCat = source.category_ids.filter(
+      (id) => !resolvedNames.cat[id] && !allCategories.some((c) => c.id === id) && !attemptedRef.current.has(`c:${id}`),
+    );
+    const needsTag = source.tag_ids.filter(
+      (id) => !resolvedNames.tag[id] && !allTags.some((t) => t.id === id) && !attemptedRef.current.has(`t:${id}`),
+    );
+    if (needsCat.length === 0 && needsTag.length === 0) return;
+    needsCat.forEach((id) => attemptedRef.current.add(`c:${id}`));
+    needsTag.forEach((id) => attemptedRef.current.add(`t:${id}`));
+    let cancelled = false;
+    void Promise.all([
+      needsCat.length ? resolveCategoryNames(needsCat) : Promise.resolve({}),
+      needsTag.length ? resolveTagNames(needsTag) : Promise.resolve({}),
+    ]).then(([cat, tag]) => {
+      if (cancelled) return;
+      if (Object.keys(cat).length || Object.keys(tag).length) {
+        setResolvedNames((prev) => ({ cat: { ...prev.cat, ...cat }, tag: { ...prev.tag, ...tag } }));
+      }
+    });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [source, allCategories, allTags, resolvedNames]);
+
+  // Taxonomy must be loaded before the AI proposal — otherwise the model is
+  // handed an empty category list and silently proposes tags-only.
+  const taxonomyLoading = categoriesLoading || tagsLoading;
+  const taxonomyFailed = !taxonomyLoading && allCategories.length === 0;
+  const canPropose = !taxonomyLoading && !taxonomyFailed && allCategories.length > 0;
 
   async function proposeWithAI(): Promise<void> {
     if (!name.trim()) return;
@@ -67,7 +120,23 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
       alert(`A topic named "${trimmedName}" already exists on this site.`);
       return;
     }
-    onSave({ name: trimmedName, description: description.trim() || undefined, source });
+    // Persist resolved names so the topic self-heals — display never falls back
+    // to raw ids again, even if the taxonomy changes or grows.
+    let finalSource = source;
+    if (source.type === "filter") {
+      const category_names: Record<string, string> = {};
+      for (const id of source.category_ids) {
+        const n = nameForCategory(id);
+        if (n && n !== id) category_names[id] = n;
+      }
+      const tag_names: Record<string, string> = {};
+      for (const id of source.tag_ids) {
+        const n = nameForTag(id);
+        if (n && n !== id) tag_names[id] = n;
+      }
+      finalSource = { ...source, category_names, tag_names };
+    }
+    onSave({ name: trimmedName, description: description.trim() || undefined, source: finalSource });
   }
 
   return (
@@ -98,9 +167,14 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
         <div className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-3 space-y-3">
           {source.type === "filter" ? (
             <>
+              {taxonomyFailed && (
+                <div className="rounded border-l-2 border-red-500/60 bg-red-500/10 pl-3 py-2 text-xs text-red-300">
+                  Couldn&apos;t load the content taxonomy. AI proposals are disabled until it loads — close and reopen, or check the connection.
+                </div>
+              )}
               {source.category_ids.length === 0 && source.tag_ids.length === 0 && (
-                <Button onClick={(): void => void proposeWithAI()} disabled={!name.trim() || aiLoading || !siteTheme.trim()}>
-                  {aiLoading ? "Proposing…" : "✨ Propose filter with AI"}
+                <Button onClick={(): void => void proposeWithAI()} disabled={!name.trim() || aiLoading || !siteTheme.trim() || !canPropose}>
+                  {aiLoading ? "Proposing…" : taxonomyLoading ? "Loading taxonomy…" : "✨ Propose filter with AI"}
                 </Button>
               )}
               {(source.category_ids.length > 0 || source.tag_ids.length > 0) && (
@@ -142,8 +216,8 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
                   {aiRationale && (
                     <div className="rounded border-l-2 border-cyan/50 pl-3 py-1 text-xs text-[var(--text-muted)] italic">✨ {aiRationale}</div>
                   )}
-                  <Button variant="ghost" onClick={(): void => void proposeWithAI()} disabled={aiLoading}>
-                    ✨ Re-propose with AI
+                  <Button variant="ghost" onClick={(): void => void proposeWithAI()} disabled={aiLoading || !canPropose} title={!canPropose ? "Waiting for the taxonomy to load…" : undefined}>
+                    {taxonomyLoading ? "Loading taxonomy…" : "✨ Re-propose with AI"}
                   </Button>
                 </>
               )}

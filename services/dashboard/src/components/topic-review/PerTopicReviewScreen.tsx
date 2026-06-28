@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { TopicV2, TopicV2Schedule, TopicV2Source } from "@/types/dashboard";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { useAllCategories, useTags } from "@/hooks/useReferenceData";
+import { resolveCategoryNames, resolveTagNames } from "@/lib/reference-data";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -128,22 +129,65 @@ export function PerTopicReviewScreen({
     updateItem(idx, { source: { ...item.source, [kind]: next } });
   }
 
+  // Resolve any proposed/selected ids that aren't in the loaded lists via the
+  // aggregator `?ids=` endpoint (scales regardless of taxonomy size).
+  const [resolvedNames, setResolvedNames] = useState<{ cat: Record<string, string>; tag: Record<string, string> }>({ cat: {}, tag: {} });
+  const attemptedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const catIds = new Set<string>();
+    const tagIds = new Set<string>();
+    for (const it of items) {
+      if (it.source.type !== "filter") continue;
+      it.source.category_ids.forEach((id) => catIds.add(id));
+      it.source.tag_ids.forEach((id) => tagIds.add(id));
+    }
+    const needsCat = [...catIds].filter((id) => !resolvedNames.cat[id] && !allCategories.some((c) => c.id === id) && !attemptedRef.current.has(`c:${id}`));
+    const needsTag = [...tagIds].filter((id) => !resolvedNames.tag[id] && !allTags.some((t) => t.id === id) && !attemptedRef.current.has(`t:${id}`));
+    if (needsCat.length === 0 && needsTag.length === 0) return;
+    needsCat.forEach((id) => attemptedRef.current.add(`c:${id}`));
+    needsTag.forEach((id) => attemptedRef.current.add(`t:${id}`));
+    let cancelled = false;
+    void Promise.all([
+      needsCat.length ? resolveCategoryNames(needsCat) : Promise.resolve({}),
+      needsTag.length ? resolveTagNames(needsTag) : Promise.resolve({}),
+    ]).then(([cat, tag]) => {
+      if (cancelled) return;
+      if (Object.keys(cat).length || Object.keys(tag).length) {
+        setResolvedNames((prev) => ({ cat: { ...prev.cat, ...cat }, tag: { ...prev.tag, ...tag } }));
+      }
+    });
+    return (): void => {
+      cancelled = true;
+    };
+  }, [items, allCategories, allTags, resolvedNames]);
+
   function nameForCategory(id: string): string {
-    return allCategories.find((c) => c.id === id)?.name ?? id;
+    return resolvedNames.cat[id] ?? allCategories.find((c) => c.id === id)?.name ?? id;
   }
   function nameForTag(id: string): string {
-    return allTags.find((t) => t.id === id)?.name ?? id;
+    return resolvedNames.tag[id] ?? allTags.find((t) => t.id === id)?.name ?? id;
   }
 
   async function handleSave(): Promise<void> {
     setSaving(true);
     try {
-      const topics: TopicV2[] = items.map((it) => ({
-        name: it.name,
-        description: it.description,
-        source: it.source,
-        schedule: it.schedule,
-      }));
+      const topics: TopicV2[] = items.map((it) => {
+        let source = it.source;
+        if (source.type === "filter") {
+          const category_names: Record<string, string> = {};
+          for (const id of source.category_ids) {
+            const n = nameForCategory(id);
+            if (n && n !== id) category_names[id] = n;
+          }
+          const tag_names: Record<string, string> = {};
+          for (const id of source.tag_ids) {
+            const n = nameForTag(id);
+            if (n && n !== id) tag_names[id] = n;
+          }
+          source = { ...source, category_names, tag_names };
+        }
+        return { name: it.name, description: it.description, source, schedule: it.schedule };
+      });
       await onSave(topics);
     } finally {
       setSaving(false);

@@ -128,6 +128,7 @@ export async function createSiteAndBuildStaging(
       base: data.themePreset,
       colors: data.themeColors,
       logo_height: data.logoHeight ?? 52,
+      menu_item_font_size: data.menuItemFontSize ?? 14,
       // Omit logo_height_footer entirely when auto so saved YAML signals
       // "let CSS auto-derive (92% of header)".
       ...(data.logoHeightFooter != null ? { logo_height_footer: data.logoHeightFooter } : {}),
@@ -1029,6 +1030,8 @@ export interface StagingSiteConfig {
   theme_logo_height?: number;
   /** `null` clears the field (auto-derive). `undefined` leaves it untouched. */
   theme_logo_height_footer?: number | null;
+  /** Navigation menu item font size in pixels. */
+  theme_menu_item_font_size?: number;
   layout?: Record<string, unknown>;
   /** Free-text site theme (per-topic model — drives AI proposals). */
   theme?: string;
