@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { TopicV2 } from "@/types/dashboard";
 
 // Mutable hook state, controlled per test.
@@ -46,6 +47,28 @@ describe("TopicEditModal — name resolution", () => {
     expect(screen.getByText("dog videos")).toBeInTheDocument();
     // The raw id must NOT be shown.
     expect(screen.queryByText("6a00793d1104bbff809b7c59")).not.toBeInTheDocument();
+  });
+
+  it("saves ids ONLY — strips legacy name maps (avoids git conflicts in site.yaml)", async () => {
+    const onSave = vi.fn();
+    const topic: TopicV2 = {
+      name: "Animals",
+      source: {
+        type: "filter",
+        category_ids: ["c1"],
+        tag_ids: ["t1"],
+        category_names: { c1: "Pets" },
+        tag_names: { t1: "dog videos" },
+      },
+    };
+    render(<TopicEditModal initial={topic} siteTheme="funny" existingNames={["Animals"]} onClose={noop} onSave={onSave} />);
+    await userEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const saved = onSave.mock.calls[0][0] as TopicV2;
+    expect(saved.source).toEqual({ type: "filter", category_ids: ["c1"], tag_ids: ["t1"] });
+    expect(saved.source).not.toHaveProperty("category_names");
+    expect(saved.source).not.toHaveProperty("tag_names");
   });
 });
 

@@ -120,21 +120,18 @@ export function TopicEditModal({ initial, siteTheme, existingNames, onClose, onS
       alert(`A topic named "${trimmedName}" already exists on this site.`);
       return;
     }
-    // Persist resolved names so the topic self-heals — display never falls back
-    // to raw ids again, even if the taxonomy changes or grows.
+    // Persist ONLY ids — names are resolved live via the aggregator `?ids=`
+    // endpoint at display time. Writing names into site.yaml duplicated
+    // aggregator state and rewrote the whole topics block on every save, which
+    // caused noisy git conflicts between staging/<domain> and main. Strip any
+    // legacy name maps so re-saving a topic also cleans them up.
     let finalSource = source;
     if (source.type === "filter") {
-      const category_names: Record<string, string> = {};
-      for (const id of source.category_ids) {
-        const n = nameForCategory(id);
-        if (n && n !== id) category_names[id] = n;
-      }
-      const tag_names: Record<string, string> = {};
-      for (const id of source.tag_ids) {
-        const n = nameForTag(id);
-        if (n && n !== id) tag_names[id] = n;
-      }
-      finalSource = { ...source, category_names, tag_names };
+      finalSource = {
+        type: "filter",
+        category_ids: source.category_ids,
+        tag_ids: source.tag_ids,
+      };
     }
     onSave({ name: trimmedName, description: description.trim() || undefined, source: finalSource });
   }
