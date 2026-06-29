@@ -171,21 +171,14 @@ export function PerTopicReviewScreen({
   async function handleSave(): Promise<void> {
     setSaving(true);
     try {
+      // Persist ids only — names resolve live via `?ids=` (writing names into
+      // site.yaml caused noisy staging↔main git conflicts). Strip any legacy
+      // name maps on save.
       const topics: TopicV2[] = items.map((it) => {
-        let source = it.source;
-        if (source.type === "filter") {
-          const category_names: Record<string, string> = {};
-          for (const id of source.category_ids) {
-            const n = nameForCategory(id);
-            if (n && n !== id) category_names[id] = n;
-          }
-          const tag_names: Record<string, string> = {};
-          for (const id of source.tag_ids) {
-            const n = nameForTag(id);
-            if (n && n !== id) tag_names[id] = n;
-          }
-          source = { ...source, category_names, tag_names };
-        }
+        const source: TopicV2Source =
+          it.source.type === "filter"
+            ? { type: "filter", category_ids: it.source.category_ids, tag_ids: it.source.tag_ids }
+            : it.source;
         return { name: it.name, description: it.description, source, schedule: it.schedule };
       });
       await onSave(topics);

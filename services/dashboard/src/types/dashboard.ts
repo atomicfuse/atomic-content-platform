@@ -10,8 +10,9 @@ export type TopicV2Source =
       type: "filter";
       category_ids: string[];
       tag_ids: string[];
-      /** Denormalized id→name maps for display (optional, backward-compatible).
-       *  Mirrors @atomic-platform/shared-types TopicV2Source. */
+      /** @deprecated Legacy id→name maps — no longer written (names resolve live
+       *  via `?ids=`). Kept optional so older site.yaml parses + seeds display;
+       *  stripped on next save. Mirrors @atomic-platform/shared-types. */
       category_names?: Record<string, string>;
       tag_names?: Record<string, string>;
     }

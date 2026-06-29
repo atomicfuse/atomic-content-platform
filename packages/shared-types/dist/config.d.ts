@@ -112,11 +112,11 @@ export type TopicV2Source = {
     type: "filter";
     category_ids: string[];
     tag_ids: string[];
-    /** Denormalized id→name maps for display. Optional + backward-compatible:
-     *  `category_ids`/`tag_ids` remain the source of truth for aggregator
-     *  fetches. Names are persisted so the dashboard never shows raw IDs and
-     *  display does not depend on fetching the full (unbounded) taxonomy.
-     *  Resolved via the aggregator `?ids=` endpoint when missing. */
+    /** @deprecated Legacy denormalized id→name maps. No longer written — the
+     *  dashboard resolves names live via the aggregator `?ids=` endpoint at
+     *  display time. Kept optional so older site.yaml files still parse and can
+     *  seed instant display; stripped on the next save. Persisting these caused
+     *  noisy staging↔main git conflicts (config duplicated aggregator state). */
     category_names?: Record<string, string>;
     tag_names?: Record<string, string>;
 } | {
