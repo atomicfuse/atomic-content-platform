@@ -71,6 +71,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [lastArticlesSort, setLastArticlesSort] = useState<"asc" | "desc" | null>(null);
+  const [createdSort, setCreatedSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -182,8 +183,15 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         return lastArticlesSort === "asc" ? aTime - bTime : bTime - aTime;
       });
     }
+    if (createdSort) {
+      filtered.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return createdSort === "asc" ? aTime - bTime : bTime - aTime;
+      });
+    }
     return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded]);
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded, createdSort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -236,7 +244,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setCreatedSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Website
@@ -264,7 +272,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setCreatedSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
                   >
                     Articles
@@ -280,7 +288,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setCreatedSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Last Articles
@@ -297,6 +305,22 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort(null); setCreatedSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Created
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${createdSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {createdSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -308,7 +332,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -370,6 +394,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
+                    {formatRelativeDate(site.created_at)}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}
