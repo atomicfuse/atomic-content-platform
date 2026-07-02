@@ -4,19 +4,6 @@ import type { Db } from "mongodb";
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
 
-/** Extract the database name from a mongodb:// URL path segment. */
-function dbNameFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    // pathname is "/<dbName>" or "/<dbName>?authSource=admin" — strip leading slash
-    const name = parsed.pathname.replace(/^\//, "");
-    if (name) return name;
-  } catch {
-    // malformed URL — fall through
-  }
-  return "atl_ops"; // ultimate fallback
-}
-
 /**
  * Lazy, memoized MongoDB connection for the dashboard.
  * Same pattern as content-pipeline's getMongoDb().
@@ -41,13 +28,14 @@ export async function getMongoDb(): Promise<Db> {
       throw err;
     });
 
-    /** DB name: explicit env > parsed from URL path > fallback.
-     *  CloudGrid injects the provisioned DB name in the URL path
-     *  (e.g. …/sites-platform-e297?authSource=admin). */
-    const dbName =
-      process.env.MONGODB_DB ?? dbNameFromUrl(url);
-
-    dbPromise = clientPromise.then((c) => c.db(dbName));
+    /** DB name: explicit env override, or let the driver use the name from
+     *  the connection string (e.g. …/sites-platform-e297?authSource=admin).
+     *  Avoids hand-parsing MongoDB URLs that `new URL()` can't handle
+     *  (replica sets, SRV, etc.). */
+    const explicitDb = process.env.MONGODB_DB;
+    dbPromise = clientPromise.then((c) =>
+      explicitDb ? c.db(explicitDb) : c.db(),
+    );
   }
 
   return dbPromise!;
