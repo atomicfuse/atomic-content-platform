@@ -396,7 +396,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     {site.site_id || "—"}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
-                    {formatRelativeDate(site.created_at)}
+                    {formatRelativeDate(site.created_at ?? "")}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}

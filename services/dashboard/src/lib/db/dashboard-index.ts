@@ -43,6 +43,10 @@ export async function getDashboardIndex(
     if (rest.status === "deleted" || (rest as Record<string, unknown>).deleted_at) {
       deleted.push(rest as unknown as DeletedSiteEntry);
     } else if (rest.status !== "permanently_deleted") {
+      // Ensure created_at has a fallback for docs predating this field
+      if (!rest.created_at && rest.last_updated) {
+        rest.created_at = rest.last_updated as string;
+      }
       sites.push(rest as unknown as DashboardSiteEntry);
     }
   }
