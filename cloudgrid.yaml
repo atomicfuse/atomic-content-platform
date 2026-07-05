@@ -83,5 +83,5 @@ services:
     run: http://content-pipeline-app/run-alerts
 
 requires:
-  - redis: private
+  - redis
   - mongodb
