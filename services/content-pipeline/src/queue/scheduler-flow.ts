@@ -241,22 +241,31 @@ export async function autoPublishSite(
     console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
   }
 
-  // Reset staging branch to main HEAD
+  // Reset staging branch to main HEAD.
+  // Use force-update instead of delete+recreate — the atomic ref update avoids
+  // a window where the branch doesn't exist, which races with n8n image
+  // callbacks trying to read from the staging branch.
   const { owner, repo: repoName } = parseRepo(repo);
   const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
   const mainSha = mainRef.data.object.sha;
 
   try {
-    await octokit.rest.git.deleteRef({ owner, repo: repoName, ref: `heads/${stagingBranch}` });
+    await octokit.rest.git.updateRef({
+      owner,
+      repo: repoName,
+      ref: `heads/${stagingBranch}`,
+      sha: mainSha,
+      force: true,
+    });
   } catch {
-    // Branch may already be gone
+    // Branch may not exist yet — create it
+    await octokit.rest.git.createRef({
+      owner,
+      repo: repoName,
+      ref: `refs/heads/${stagingBranch}`,
+      sha: mainSha,
+    });
   }
-  await octokit.rest.git.createRef({
-    owner,
-    repo: repoName,
-    ref: `refs/heads/${stagingBranch}`,
-    sha: mainSha,
-  });
 
   // Dual-write: staging branch was reset — remove stale staging article docs
   await deleteArticlesForSiteBranch(domain, stagingBranch);

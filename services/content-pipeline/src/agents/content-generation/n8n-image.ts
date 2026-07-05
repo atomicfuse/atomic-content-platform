@@ -17,6 +17,7 @@ import {
   readFile,
   commitFile,
   commitBatch,
+  clearTreeCache,
 } from "../../lib/github.js";
 import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
@@ -630,9 +631,14 @@ export async function processN8nImageResult(
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
   const imageUrl = `/assets/images/${slug}.webp`;
 
+  // Force a fresh tree fetch — the cache may be stale from auto-publish or a
+  // prior operation that ran between the article commit and this callback
+  // (the tree cache has no TTL and is only cleared by explicit calls).
+  clearTreeCache(branch);
+
   if (isPartOfBulkRun(siteDomain, slug)) {
     // Bulk mode: buffer for single batch commit when all callbacks arrive
-    const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+    const rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
     const parsed = matter(rawContent);
     parsed.data["featuredImage"] = imageUrl;
     parsed.data["image_alt"] = altText;
@@ -648,7 +654,10 @@ export async function processN8nImageResult(
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+        // Clear again inside the queue — another operation may have re-populated
+        // the cache while this callback waited in the per-branch queue.
+        clearTreeCache(branch);
+        const rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
 
         const parsed = matter(rawContent);
         parsed.data["featuredImage"] = imageUrl;
@@ -686,4 +695,40 @@ export async function processN8nImageResult(
       }
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// readArticleWithFallback — try staging branch first, fall back to main
+// ---------------------------------------------------------------------------
+
+/**
+ * Read an article file from the given branch, falling back to `main` if the
+ * file isn't found on the staging branch. Auto-publish may have merged the
+ * article to main and reset the staging branch between the article commit
+ * and this image callback arriving.
+ */
+async function readArticleWithFallback(
+  octokit: ReturnType<typeof createOctokit>,
+  repo: string,
+  articlePath: string,
+  branch: string,
+  tag: string,
+): Promise<string> {
+  try {
+    return await readFile(octokit, repo, articlePath, branch);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Only fall back for "file not found" — not for auth errors, network issues, etc.
+    if (!msg.includes("got nothing") && !msg.includes("Not Found") && !msg.includes("404")) {
+      throw err;
+    }
+    if (branch === "main") throw err; // already on main, no fallback
+
+    console.warn(
+      `${tag} Article not found on ${branch}, trying main ` +
+      `(auto-publish may have reset staging)`,
+    );
+    clearTreeCache("main");
+    return await readFile(octokit, repo, articlePath, "main");
+  }
 }
