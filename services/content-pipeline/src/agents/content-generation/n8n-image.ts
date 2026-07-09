@@ -558,6 +558,13 @@ export async function handleImageCallback(
   const imageData = Buffer.from(payload.data_base64, "base64");
   const rawSizeKB = (imageData.length / 1024).toFixed(0);
 
+  // Mark success immediately — n8n delivered a valid callback with image data.
+  // This prevents the 300s "callback not received" timer from firing a false
+  // alert if processN8nImageResult partially fails (e.g., R2 upload succeeds
+  // but Git commit fails due to SHA conflict). The image is valid regardless.
+  const imageKey = `${site_domain}/${slug}`;
+  markImageSuccess(imageKey);
+
   try {
     await processN8nImageResult({
       siteDomain: site_domain,
@@ -567,8 +574,6 @@ export async function handleImageCallback(
       branch,
       github,
     });
-    const imageKey = `${site_domain}/${slug}`;
-    markImageSuccess(imageKey);
     console.log(
       `${tag} SUCCESS — image delivered (provider=${provider}, ` +
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
