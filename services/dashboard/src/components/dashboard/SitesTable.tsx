@@ -204,22 +204,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   }, [totalPages]);
 
   function handleRowClick(site: DashboardSiteEntry): void {
-    switch (site.status) {
-      case "New":
-        router.push(`/wizard?domain=${encodeURIComponent(site.domain)}`);
-        break;
-      case "Staging":
-        router.push(`/sites/${encodeURIComponent(site.domain)}?tab=staging`);
-        break;
-      case "Preview":
-        router.push(`/sites/${encodeURIComponent(site.domain)}?tab=preview`);
-        break;
-      case "Ready":
-        router.push(`/sites/${encodeURIComponent(site.domain)}`);
-        break;
-      case "Live":
-        router.push(`/sites/${encodeURIComponent(site.domain)}`);
-        break;
+    if (site.status === "Staging") {
+      router.push(`/sites/${encodeURIComponent(site.domain)}?tab=staging`);
+    } else {
+      router.push(`/sites/${encodeURIComponent(site.domain)}`);
     }
   }
 

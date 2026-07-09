@@ -11,7 +11,7 @@ Site deletion follows a two-stage model: **soft delete** (move to trash) and **p
 ```
 Active Site ──[Delete]──> Trash ──[Permanently Delete]──> Gone
                             │
-                            └──[Restore]──> Active Site (status: New)
+                            └──[Restore]──> Active Site (status: Staging)
 ```
 
 ### Soft Delete
@@ -42,7 +42,7 @@ After cleanup, the entry is removed from the `deleted[]` array in `dashboard-ind
 
 ### Restore from Trash
 
-Restoring a site moves it back to the active list. Since the staging branch and site files were already deleted during soft delete, the site status resets to **New** — it will need to be set up again through the wizard.
+Restoring a site moves it back to the active list. Since the staging branch and site files were already deleted during soft delete, the site status resets to **Staging** — it returns to the staging workflow.
 
 ## What Gets Deleted — Full Inventory
 

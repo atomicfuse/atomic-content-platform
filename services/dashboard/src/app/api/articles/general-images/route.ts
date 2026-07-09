@@ -39,12 +39,7 @@ async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
   }
 
   const index = await readDashboardIndex();
-  const activeSites = index.sites.filter(
-    (s) =>
-      s.status === "Staging" ||
-      s.status === "Ready" ||
-      s.status === "Live",
-  );
+  const activeSites = index.sites;
 
   const results: GeneralImageArticle[] = [];
 

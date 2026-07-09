@@ -315,7 +315,7 @@ export async function restoreSiteInIndex(
     // Check main as fallback
     const mainConfig = await readSiteConfig(domain);
     if (!mainConfig) {
-      newStatus = "New";
+      newStatus = "Staging";
     }
   }
 
