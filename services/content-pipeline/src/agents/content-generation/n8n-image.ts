@@ -638,7 +638,22 @@ export async function processN8nImageResult(
 
   if (isPartOfBulkRun(siteDomain, slug)) {
     // Bulk mode: buffer for single batch commit when all callbacks arrive
-    const rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
+    let rawContent: string;
+    try {
+      rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
+    } catch (readErr) {
+      const readMsg = readErr instanceof Error ? readErr.message : String(readErr);
+      const isNotFound = readMsg.includes("got nothing") || readMsg.includes("Not Found") || readMsg.includes("404");
+      if (isNotFound) {
+        // Article lost (auto-publish race reset the staging branch before this
+        // callback arrived). Image is already in R2 — persist to MongoDB so the
+        // article can pick it up if regenerated, and move on.
+        console.warn(`${tag} Article not found on any branch — image saved to R2 only (${r2Key})`);
+        await upsertArticleMeta(siteDomain, slug, branch, { featuredImage: imageUrl, image_alt: altText });
+        return;
+      }
+      throw readErr;
+    }
     const parsed = matter(rawContent);
     parsed.data["featuredImage"] = imageUrl;
     parsed.data["image_alt"] = altText;
@@ -690,6 +705,15 @@ export async function processN8nImageResult(
           console.warn(`${tag} Git SHA conflict (attempt ${attempt}/${MAX_RETRIES}), retrying in ${delayMs}ms...`);
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
+        }
+
+        // Article gone (auto-publish race). Image is already in R2 — persist
+        // to MongoDB and succeed instead of triggering a noisy alert.
+        const isNotFound = msg.includes("got nothing") || msg.includes("Not Found") || msg.includes("404");
+        if (isNotFound) {
+          console.warn(`${tag} Article not found on any branch — image saved to R2 only (${r2Key})`);
+          await upsertArticleMeta(siteDomain, slug, branch, { featuredImage: imageUrl, image_alt: altText });
+          return;
         }
         throw err;
       }

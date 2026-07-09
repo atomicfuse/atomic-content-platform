@@ -186,6 +186,26 @@ export async function autoPublishSite(
   domain: string,
   stagingBranch: string,
 ): Promise<void> {
+  const { owner, repo: repoName } = parseRepo(repo);
+
+  // Force a fresh tree fetch — child jobs (content generation) may have committed
+  // new articles to the staging branch. If the tree was cached earlier (e.g.,
+  // during brief reading, or in a different worker process), the cached snapshot
+  // would be stale and auto-publish would silently miss new articles, permanently
+  // losing them when staging is force-reset below.
+  clearTreeCache(stagingBranch);
+
+  // Capture the staging HEAD SHA *before* reading files. After committing to
+  // main we'll re-check staging — if a concurrent operation (n8n image callback,
+  // dashboard edit, manual content generation) committed to staging between our
+  // read and the reset, the SHA will have advanced. In that case we SKIP the
+  // force-reset to avoid permanently losing those commits. The next auto-publish
+  // cycle will merge them.
+  const stagingRefBefore = await octokit.rest.git.getRef({
+    owner, repo: repoName, ref: `heads/${stagingBranch}`,
+  });
+  const stagingShaBeforeRead = stagingRefBefore.data.object.sha;
+
   const siteDir = `sites/${domain}`;
   const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
 
@@ -241,11 +261,31 @@ export async function autoPublishSite(
     console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
   }
 
+  // Before resetting staging, verify no concurrent operation has committed to it
+  // since our read. If the SHA advanced, another operation (image callback,
+  // dashboard edit, concurrent content generation) landed new data. Force-
+  // resetting would permanently lose that data.
+  const stagingRefAfter = await octokit.rest.git.getRef({
+    owner, repo: repoName, ref: `heads/${stagingBranch}`,
+  });
+  const stagingShaAfterPublish = stagingRefAfter.data.object.sha;
+
+  if (stagingShaAfterPublish !== stagingShaBeforeRead) {
+    console.warn(
+      `[auto-publish] ${domain}: staging branch advanced during publish ` +
+      `(${stagingShaBeforeRead.slice(0, 7)} → ${stagingShaAfterPublish.slice(0, 7)}). ` +
+      `Skipping staging reset to avoid losing concurrent commits. ` +
+      `Next auto-publish cycle will merge them.`,
+    );
+    clearTreeCache(stagingBranch);
+    clearTreeCache("main");
+    return;
+  }
+
   // Reset staging branch to main HEAD.
   // Use force-update instead of delete+recreate — the atomic ref update avoids
   // a window where the branch doesn't exist, which races with n8n image
   // callbacks trying to read from the staging branch.
-  const { owner, repo: repoName } = parseRepo(repo);
   const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
   const mainSha = mainRef.data.object.sha;
 
@@ -364,8 +404,11 @@ export async function processSchedulerRun(
     skipped,
   };
 
-  // Write to GitHub
+  // Write to GitHub — clear main tree cache first so we read the latest
+  // history.json, not a stale version cached during brief reading or an
+  // earlier auto-publish in this same run.
   const octokit = createOctokit(config.github);
+  clearTreeCache("main");
   let history: unknown[] = [];
   try {
     const raw = await readFile(octokit, config.networkRepo, HISTORY_PATH);
