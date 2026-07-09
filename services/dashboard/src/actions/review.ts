@@ -105,11 +105,20 @@ export async function applyReviewDecisions(decisions: {
       // 1. Update approved articles' frontmatter → status: published
       let actualApproved = 0;
       if (approved.length > 0) {
-        const fileUpdates: Array<{ path: string; content: string }> = [];
+        // Read all articles in parallel — each readFileContent() call triggers a
+        // single getBlob() API call (the tree is already cached after the first).
+        // Sequential reads were O(N) round-trips which caused 504 Gateway Timeouts
+        // on batches of 20+ articles.
+        const readResults = await Promise.all(
+          approved.map(async (slug) => {
+            const path = `sites/${domain}/articles/${slug}.md`;
+            const content = await readFileContent(path, branch);
+            return { slug, path, content };
+          }),
+        );
 
-        for (const slug of approved) {
-          const path = `sites/${domain}/articles/${slug}.md`;
-          const content = await readFileContent(path, branch);
+        const fileUpdates: Array<{ path: string; content: string }> = [];
+        for (const { slug, path, content } of readResults) {
           if (!content) {
             console.warn(`[review] Article not found on ${branch}: ${path}`);
             continue;
