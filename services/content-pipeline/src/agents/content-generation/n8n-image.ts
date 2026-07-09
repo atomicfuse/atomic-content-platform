@@ -116,6 +116,13 @@ export function trackPendingImage(
 ): void {
   const timer = setTimeout(() => {
     pendingImages.delete(requestId);
+
+    // The callback may have arrived successfully but without request_id (n8n
+    // doesn't always forward it), so clearPendingImage was never called.
+    // Check the successfulImages set before alerting to avoid false alarms.
+    const imageKey = `${siteDomain}/${slug}`;
+    if (successfulImages.has(imageKey)) return;
+
     const reason = `n8n image callback not received within ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s — ` +
       `n8n may have failed to deliver the result (timeout, network error, or crash)`;
     console.error(

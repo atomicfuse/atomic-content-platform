@@ -72,127 +72,135 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
 export async function applyReviewDecisions(decisions: {
   approved: Array<{ domain: string; slug: string }>;
   rejected: Array<{ domain: string; slug: string }>;
-}): Promise<{ summary: string }> {
-  const index = await readDashboardIndex();
+}): Promise<{ summary: string; error?: string }> {
+  try {
+    const index = await readDashboardIndex();
 
-  // Group all decisions by domain
-  const byDomain = new Map<string, { approved: string[]; rejected: string[] }>();
+    // Group all decisions by domain
+    const byDomain = new Map<string, { approved: string[]; rejected: string[] }>();
 
-  for (const { domain, slug } of decisions.approved) {
-    const entry = byDomain.get(domain) ?? { approved: [], rejected: [] };
-    entry.approved.push(slug);
-    byDomain.set(domain, entry);
-  }
-  for (const { domain, slug } of decisions.rejected) {
-    const entry = byDomain.get(domain) ?? { approved: [], rejected: [] };
-    entry.rejected.push(slug);
-    byDomain.set(domain, entry);
-  }
+    for (const { domain, slug } of decisions.approved) {
+      const entry = byDomain.get(domain) ?? { approved: [], rejected: [] };
+      entry.approved.push(slug);
+      byDomain.set(domain, entry);
+    }
+    for (const { domain, slug } of decisions.rejected) {
+      const entry = byDomain.get(domain) ?? { approved: [], rejected: [] };
+      entry.rejected.push(slug);
+      byDomain.set(domain, entry);
+    }
 
-  const summaryParts: string[] = [];
+    const summaryParts: string[] = [];
 
-  for (const [domain, { approved, rejected }] of byDomain) {
-    const site = index.sites.find((s) => s.domain === domain);
-    const branch = site?.staging_branch ?? "main";
+    for (const [domain, { approved, rejected }] of byDomain) {
+      const site = index.sites.find((s) => s.domain === domain);
+      const branch = site?.staging_branch ?? "main";
 
-    // Force fresh tree read — the tree cache (Infinity TTL) may be stale if
-    // content-pipeline committed new articles since the last dashboard tree
-    // fetch. Without this, readFileContent() returns null for articles that
-    // exist on Git but aren't in the cached tree, silently skipping them.
-    invalidateTreeCache(branch);
+      // Force fresh tree read — the tree cache (Infinity TTL) may be stale if
+      // content-pipeline committed new articles since the last dashboard tree
+      // fetch. Without this, readFileContent() returns null for articles that
+      // exist on Git but aren't in the cached tree, silently skipping them.
+      invalidateTreeCache(branch);
 
-    // 1. Update approved articles' frontmatter → status: published
-    let actualApproved = 0;
-    if (approved.length > 0) {
-      const fileUpdates: Array<{ path: string; content: string }> = [];
+      // 1. Update approved articles' frontmatter → status: published
+      let actualApproved = 0;
+      if (approved.length > 0) {
+        const fileUpdates: Array<{ path: string; content: string }> = [];
 
-      for (const slug of approved) {
-        const path = `sites/${domain}/articles/${slug}.md`;
-        const content = await readFileContent(path, branch);
-        if (!content) {
-          console.warn(`[review] Article not found on ${branch}: ${path}`);
-          continue;
+        for (const slug of approved) {
+          const path = `sites/${domain}/articles/${slug}.md`;
+          const content = await readFileContent(path, branch);
+          if (!content) {
+            console.warn(`[review] Article not found on ${branch}: ${path}`);
+            continue;
+          }
+
+          const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+          if (!fmMatch) {
+            console.warn(`[review] Could not parse frontmatter: ${path}`);
+            continue;
+          }
+
+          const frontmatter = parseYaml(fmMatch[1]!) as Record<string, unknown>;
+          const body = fmMatch[2] ?? "";
+
+          frontmatter.status = "published";
+          frontmatter.reviewer_notes = "Approved via review queue.";
+
+          const newFm = stringifyYaml(frontmatter, { lineWidth: 0 });
+          fileUpdates.push({ path, content: `---\n${newFm}---\n${body}` });
         }
 
-        const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-        if (!fmMatch) {
-          console.warn(`[review] Could not parse frontmatter: ${path}`);
-          continue;
+        actualApproved = fileUpdates.length;
+        if (fileUpdates.length > 0) {
+          await commitSiteFiles(
+            domain,
+            fileUpdates,
+            `review: approve ${fileUpdates.length} article${fileUpdates.length > 1 ? "s" : ""}`,
+            branch,
+          );
+
+          // Dual-write approved articles to MongoDB (soft-fail)
+          await upsertArticlesMeta(
+            approved
+              .filter((slug) => fileUpdates.some((f) => f.path.endsWith(`/${slug}.md`)))
+              .map((slug) => ({
+                domain,
+                slug,
+                branch,
+                frontmatter: { status: "published" },
+              })),
+          );
         }
-
-        const frontmatter = parseYaml(fmMatch[1]!) as Record<string, unknown>;
-        const body = fmMatch[2] ?? "";
-
-        frontmatter.status = "published";
-        frontmatter.reviewer_notes = "Approved via review queue.";
-
-        const newFm = stringifyYaml(frontmatter, { lineWidth: 0 });
-        fileUpdates.push({ path, content: `---\n${newFm}---\n${body}` });
       }
 
-      actualApproved = fileUpdates.length;
-      if (fileUpdates.length > 0) {
-        await commitSiteFiles(
-          domain,
-          fileUpdates,
-          `review: approve ${fileUpdates.length} article${fileUpdates.length > 1 ? "s" : ""}`,
-          branch,
-        );
+      // 2. Delete rejected articles
+      if (rejected.length > 0) {
+        const filePaths = rejected.map((slug) => `sites/${domain}/articles/${slug}.md`);
+        await deleteFilesFromBranch(filePaths, branch);
 
-        // Dual-write approved articles to MongoDB (soft-fail)
-        await upsertArticlesMeta(
-          approved
-            .filter((slug) => fileUpdates.some((f) => f.path.endsWith(`/${slug}.md`)))
-            .map((slug) => ({
-              domain,
-              slug,
-              branch,
-              frontmatter: { status: "published" },
-            })),
-        );
+        // Dual-write: delete rejected articles from MongoDB (soft-fail)
+        await deleteArticlesMeta(domain, rejected, branch);
       }
+
+      // Only trigger build + merge if something actually changed
+      const hasChanges = actualApproved > 0 || rejected.length > 0;
+
+      // 3. ONE build trigger per domain
+      if (hasChanges && site?.staging_branch) {
+        await triggerWorkflowViaPush(site.staging_branch, domain);
+      }
+
+      // 4. If site is Live or Ready → merge staging to main + clean up deleted articles
+      if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
+        const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
+        const deletedSlugs = await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
+        await cleanupDeletedArticles(domain, deletedSlugs, site.staging_branch);
+      }
+
+      const parts: string[] = [];
+      if (actualApproved > 0) parts.push(`${actualApproved} approved`);
+      const skipped = approved.length - actualApproved;
+      if (skipped > 0) parts.push(`${skipped} not found on branch`);
+      if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
+      summaryParts.push(`${domain}: ${parts.join(", ")}`);
+
+      revalidatePath(`/sites/${domain}`);
     }
 
-    // 2. Delete rejected articles
-    if (rejected.length > 0) {
-      const filePaths = rejected.map((slug) => `sites/${domain}/articles/${slug}.md`);
-      await deleteFilesFromBranch(filePaths, branch);
+    revalidatePath("/review");
 
-      // Dual-write: delete rejected articles from MongoDB (soft-fail)
-      await deleteArticlesMeta(domain, rejected, branch);
-    }
-
-    // Only trigger build + merge if something actually changed
-    const hasChanges = actualApproved > 0 || rejected.length > 0;
-
-    // 3. ONE build trigger per domain
-    if (hasChanges && site?.staging_branch) {
-      await triggerWorkflowViaPush(site.staging_branch, domain);
-    }
-
-    // 4. If site is Live or Ready → merge staging to main + clean up deleted articles
-    if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
-      const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
-      const deletedSlugs = await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);
-      await cleanupDeletedArticles(domain, deletedSlugs, site.staging_branch);
-    }
-
-    const parts: string[] = [];
-    if (actualApproved > 0) parts.push(`${actualApproved} approved`);
-    const skipped = approved.length - actualApproved;
-    if (skipped > 0) parts.push(`${skipped} not found on branch`);
-    if (rejected.length > 0) parts.push(`${rejected.length} rejected`);
-    summaryParts.push(`${domain}: ${parts.join(", ")}`);
-
-    revalidatePath(`/sites/${domain}`);
+    return {
+      summary: summaryParts.join("; "),
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[review] applyReviewDecisions failed:", message);
+    return {
+      summary: "",
+      error: `Review action failed: ${message}`,
+    };
   }
-
-
-  revalidatePath("/review");
-
-  return {
-    summary: summaryParts.join("; "),
-  };
 }
 
 // ---------------------------------------------------------------------------
