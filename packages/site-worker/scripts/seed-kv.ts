@@ -199,6 +199,148 @@ async function uploadAssetsToR2(siteId: string, bucket: string): Promise<number>
   });
 }
 
+// ---------- Topic inference for legacy articles ----------
+
+/** Check if a topic keyword (or its stem) appears in the text. */
+function wordStemInText(word: string, text: string): boolean {
+  if (text.includes(word)) return true;
+  // Strip common suffixes so "brewing" matches "brew", "guides" matches "guide"
+  if (word.endsWith('ing') && word.length > 4 && text.includes(word.slice(0, -3))) return true;
+  if (word.endsWith('s') && word.length > 3 && text.includes(word.slice(0, -1))) return true;
+  if (word.endsWith('es') && word.length > 4 && text.includes(word.slice(0, -2))) return true;
+  if (word.endsWith('ed') && word.length > 4 && text.includes(word.slice(0, -2))) return true;
+  return false;
+}
+
+/**
+ * Infer `topics` field for articles that lack one (WordPress imports, legacy
+ * generated content).  Uses a three-pass strategy:
+ *
+ *   Pass 1 — Tag matching: exact slug, exact name, partial-suffix.
+ *   Pass 2 — Keyword fill: for topics still at zero articles, require ALL
+ *            significant words from the topic name to appear in title/desc.
+ *   Pass 3 — Best-effort fill: for topics STILL at zero, score every article
+ *            and assign the best N so no topic page is completely empty.
+ *
+ * Why at seed-time?  The original Git data is untouched — the `topics` field
+ * is added only to the KV article-index, so the site-worker's
+ * `articleBelongsToTopic()` uses the preferred explicit-topics path instead of
+ * the fragile tag-slug fallback.
+ */
+function inferArticleTopics(
+  articles: ArticleRecord[],
+  siteTopics: string[],
+): void {
+  if (siteTopics.length === 0) return;
+
+  const topicSlugs = siteTopics.map((t) => t.toLowerCase().replace(/\s+/g, '-'));
+
+  // --- Pass 1: Tag-based matching (high confidence) ---
+  for (const article of articles) {
+    const fm = article.frontmatter;
+    if (Array.isArray(fm.topics) && fm.topics.length > 0) continue;
+
+    const matched = new Set<string>();
+    const tagSlugs = fm.tags.map((t) => t.toLowerCase().replace(/\s+/g, '-'));
+    const tagLower = fm.tags.map((t) => t.toLowerCase());
+
+    for (let i = 0; i < siteTopics.length; i++) {
+      const topic = siteTopics[i]!;
+      const slug = topicSlugs[i]!;
+
+      // Exact tag-slug match (same logic as topic page filter)
+      if (tagSlugs.includes(slug)) { matched.add(topic); continue; }
+      // Exact tag name match (case-insensitive)
+      if (tagLower.includes(topic.toLowerCase())) { matched.add(topic); continue; }
+      // Partial: tag is suffix of topic slug or vice-versa
+      // e.g., tag "Beans" (beans) ↔ topic "Coffee Beans" (coffee-beans)
+      if (tagSlugs.some((ts) => slug.endsWith(`-${ts}`) || ts.endsWith(`-${slug}`))) {
+        matched.add(topic);
+      }
+    }
+
+    if (matched.size > 0) fm.topics = Array.from(matched);
+  }
+
+  // Count articles per topic after pass 1
+  const topicCounts = new Map<string, number>();
+  for (const topic of siteTopics) topicCounts.set(topic, 0);
+  for (const a of articles) {
+    for (const t of a.frontmatter.topics ?? []) {
+      topicCounts.set(t, (topicCounts.get(t) ?? 0) + 1);
+    }
+  }
+
+  const emptyTopics = siteTopics.filter((t) => (topicCounts.get(t) ?? 0) === 0);
+  if (emptyTopics.length === 0) {
+    // Ensure every article has at least one topic
+    assignFallbackTopics(articles, siteTopics, topicSlugs);
+    return;
+  }
+
+  // --- Pass 2: Keyword fill for empty topics (ALL significant words) ---
+  const topicSignificantWords = new Map(
+    emptyTopics.map((t) => [t, t.toLowerCase().split(/\s+/).filter((w) => w.length > 2)]),
+  );
+
+  for (const article of articles) {
+    const fm = article.frontmatter;
+    const titleLower = fm.title.toLowerCase();
+    const descLower = (fm.description ?? '').toLowerCase();
+    const combined = `${titleLower} ${descLower}`;
+
+    for (const topic of emptyTopics) {
+      const words = topicSignificantWords.get(topic)!;
+      if (words.length === 0) continue;
+      if (words.every((w) => wordStemInText(w, combined))) {
+        if (!fm.topics) fm.topics = [];
+        if (!fm.topics.includes(topic)) fm.topics.push(topic);
+      }
+    }
+  }
+
+  // --- Pass 3: Best-effort fill for topics STILL empty ---
+  for (const topic of emptyTopics) {
+    if (articles.some((a) => a.frontmatter.topics?.includes(topic))) continue;
+
+    const words = topicSignificantWords.get(topic)!;
+    if (words.length === 0) continue;
+
+    // Score every article and take top matches
+    const scored = articles
+      .map((a) => {
+        const text = `${a.frontmatter.title} ${a.frontmatter.description ?? ''} ${a.frontmatter.tags.join(' ')}`.toLowerCase();
+        const score = words.filter((w) => wordStemInText(w, text)).length;
+        return { article: a, score };
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    for (const { article } of scored.slice(0, Math.max(5, Math.ceil(articles.length / siteTopics.length)))) {
+      if (!article.frontmatter.topics) article.frontmatter.topics = [];
+      if (!article.frontmatter.topics.includes(topic)) {
+        article.frontmatter.topics.push(topic);
+      }
+    }
+  }
+
+  // Ensure every article has at least one topic
+  assignFallbackTopics(articles, siteTopics, topicSlugs);
+}
+
+/** Assign topics[0] to any article still without a topic assignment. */
+function assignFallbackTopics(
+  articles: ArticleRecord[],
+  siteTopics: string[],
+  _topicSlugs: string[],
+): void {
+  for (const article of articles) {
+    if (!article.frontmatter.topics || article.frontmatter.topics.length === 0) {
+      article.frontmatter.topics = [siteTopics[0]!];
+    }
+  }
+}
+
 // ---------- Article loading ----------
 
 async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
@@ -539,8 +681,34 @@ async function main(): Promise<void> {
   const adCount = (config.ads_config?.ad_placements ?? []).length;
   console.log(`[seed-kv] ad_placements resolved: ${adCount}`);
 
+  // Derive brief.topics from topics_v2 when the site uses the per-topic
+  // model but brief.topics was never mirrored (e.g. manual config edit).
+  // Without this, Header nav and category pages see zero topics.
+  const brief = (config as Record<string, unknown>).brief as Record<string, unknown> | undefined;
+  if (brief) {
+    const tv2 = brief.topics_v2 as Array<{ name: string }> | undefined;
+    if (Array.isArray(tv2) && tv2.length > 0) {
+      if (!Array.isArray(brief.topics) || (brief.topics as string[]).length === 0) {
+        brief.topics = tv2.map((t) => t.name);
+        console.log(`[seed-kv] Derived brief.topics from topics_v2: ${(brief.topics as string[]).join(', ')}`);
+      }
+    }
+  }
+
   // 2. Articles
   const articles = await loadArticles(siteId);
+
+  // Infer topic membership for legacy articles (WordPress imports etc.)
+  // that have tags but no explicit `topics` field.
+  const siteTopics = ((config as Record<string, unknown>).brief as Record<string, unknown> | undefined)?.topics as string[] | undefined;
+  if (Array.isArray(siteTopics) && siteTopics.length > 0) {
+    const before = articles.filter((a) => !a.frontmatter.topics).length;
+    inferArticleTopics(articles, siteTopics);
+    if (before > 0) {
+      console.log(`[seed-kv] Inferred topics for ${before} legacy articles across ${siteTopics.length} topics`);
+    }
+  }
+
   const index: ArticleIndexEntry[] = articles.map((a) => a.frontmatter);
   console.log(`[seed-kv] articles: ${articles.length}`);
 

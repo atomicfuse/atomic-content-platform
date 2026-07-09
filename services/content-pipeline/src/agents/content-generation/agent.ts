@@ -206,13 +206,29 @@ export function ensureTopicTag(
   );
   if (hasTopicTag) return tags;
 
+  // Try exact substring match first (strong signal)
   const combined = [articleTitle, ...tags].join(" ").toLowerCase();
   const matchedTopic = topics.find((topic) =>
     combined.includes(topic.toLowerCase()),
   );
   if (matchedTopic) return [matchedTopic, ...tags];
 
-  return [topics[0]!, ...tags];
+  // Keyword scoring: pick the topic whose words appear most in title + tags.
+  // This distributes articles across topics instead of always defaulting to
+  // topics[0] (which heavily skews toward the first topic).
+  let bestTopic = topics[0]!;
+  let bestScore = 0; // Only override default if there's a positive match
+  for (const topic of topics) {
+    const words = topic.toLowerCase().split(/\s+/);
+    if (words.length === 0) continue;
+    const score = words.filter((w) => combined.includes(w)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestTopic = topic;
+    }
+  }
+
+  return [bestTopic, ...tags];
 }
 
 // ---------------------------------------------------------------------------

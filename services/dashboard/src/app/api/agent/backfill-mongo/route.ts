@@ -28,7 +28,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       ...(forwardBody ? { body: forwardBody } : {}),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(300_000),
     });
     const body = await res.json();
     return NextResponse.json(body, { status: res.status });
