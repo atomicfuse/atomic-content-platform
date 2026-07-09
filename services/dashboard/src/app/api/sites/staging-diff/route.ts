@@ -30,12 +30,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       basehead: `main...${site.staging_branch}`,
     });
 
-    const files: StagingDiffFile[] = (data.files ?? []).map((f) => ({
-      filename: f.filename,
-      status: f.status as StagingDiffFile["status"],
-      additions: f.additions,
-      deletions: f.deletions,
-    }));
+    // Only show files belonging to this domain — staging branches may
+    // contain cross-domain changes from batch operations (e.g. topic backfill).
+    const domainPrefix = `sites/${domain}/`;
+    const files: StagingDiffFile[] = (data.files ?? [])
+      .filter((f) => f.filename.startsWith(domainPrefix))
+      .map((f) => ({
+        filename: f.filename,
+        status: f.status as StagingDiffFile["status"],
+        additions: f.additions,
+        deletions: f.deletions,
+      }));
 
     return NextResponse.json({
       files,
