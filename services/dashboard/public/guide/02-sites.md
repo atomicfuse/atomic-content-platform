@@ -5,18 +5,14 @@
 Every site moves through these statuses:
 
 ```
-New --> Staging --> Preview --> Ready --> Live
+Staging --> Ready --> Live
 ```
 
 | Status | Meaning |
 |--------|---------|
-| **New** | Domain exists in Cloudflare but no site config yet |
 | **Staging** | Wizard completed. Site files committed to a staging branch, KV seeded, Worker preview available |
-| **Preview** | Staging content is ready for review via the Worker Preview URL |
 | **Ready** | Staging merged to main. Production KV seeded. No custom domain yet |
 | **Live** | Custom domain attached to the production Worker and DNS verified |
-
-There is also a **WordPress** status for legacy sites being migrated.
 
 ## Creating a Site (Wizard Flow)
 

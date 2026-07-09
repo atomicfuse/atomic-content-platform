@@ -4,20 +4,10 @@ export const STATUS_CONFIG: Record<
   SiteStatus,
   { label: string; color: string; bgColor: string }
 > = {
-  New: {
-    label: "New",
-    color: "text-gray-600 dark:text-gray-300",
-    bgColor: "bg-gray-200 dark:bg-gray-500/20",
-  },
   Staging: {
     label: "Staging",
     color: "text-amber-700 dark:text-amber-300",
     bgColor: "bg-amber-100 dark:bg-amber-500/20",
-  },
-  Preview: {
-    label: "Preview",
-    color: "text-purple-700 dark:text-purple-300",
-    bgColor: "bg-purple-100 dark:bg-purple-500/20",
   },
   Ready: {
     label: "Ready",
@@ -46,9 +36,7 @@ export const VERTICALS: Vertical[] = [
 ];
 
 export const STATUSES: SiteStatus[] = [
-  "New",
   "Staging",
-  "Preview",
   "Ready",
   "Live",
 ];

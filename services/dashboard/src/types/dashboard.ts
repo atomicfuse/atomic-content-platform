@@ -1,4 +1,4 @@
-export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live";
+export type SiteStatus = "Staging" | "Ready" | "Live";
 
 // ---------------------------------------------------------------------------
 // Per-topic model types (mirrors @atomic-platform/shared-types TopicV2)
