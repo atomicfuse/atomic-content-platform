@@ -50,9 +50,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // ---------- Queue path ----------
   if (REDIS_URL) {
     try {
-      const { getGenerateQueue, getGenerateQueueEvents } = await import(
+      const { getGenerateQueue, getGenerateQueueEvents, isRedisReachable } = await import(
         "@/lib/queue"
       );
+      // ioredis buffers commands while Redis is unreachable (enableOfflineQueue),
+      // so an enqueue against a dead Redis "succeeds" and the job is lost.
+      // Verify reachability first; otherwise use the direct HTTP proxy below.
+      if (!(await isRedisReachable())) {
+        throw new Error("Redis unreachable (ping timeout) — using direct proxy");
+      }
       const queue = getGenerateQueue();
       const queueEvents = getGenerateQueueEvents();
 

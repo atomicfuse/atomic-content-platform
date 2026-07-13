@@ -23,6 +23,12 @@ export interface AgentConfig {
   };
 }
 
+function parsePort(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export function loadConfig(): AgentConfig {
   const localNetworkPath = process.env.LOCAL_NETWORK_PATH;
   const githubToken = process.env.GITHUB_TOKEN;
@@ -45,7 +51,11 @@ export function loadConfig(): AgentConfig {
     geminiApiKey: process.env.GEMINI_API_KEY,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     contentAggregatorUrl: process.env.CONTENT_AGGREGATOR_URL ?? "https://content-aggregator-v2-34cd--atomic.cloudgrid.io",
-    port: process.env.PORT ? (parseInt(process.env.PORT, 10) || 3001) : 3001,
+    // CONTENT_PIPELINE_PORT is a local-dev override: `cloudgrid dev` injects
+    // PORT=3000 into every service, which collides with the dashboard and
+    // pushes this service onto the 5111 fallback while the dashboard proxy
+    // expects :5000. In production only PORT exists, so PORT still wins there.
+    port: parsePort(process.env.CONTENT_PIPELINE_PORT) ?? parsePort(process.env.PORT) ?? 3001,
     redisUrl: process.env.REDIS_URL,
     n8nImageWebhookUrl: process.env.N8N_IMAGE_WEBHOOK_URL,
     imageCallbackUrl: process.env.IMAGE_CALLBACK_URL,

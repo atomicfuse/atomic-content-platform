@@ -85,7 +85,7 @@ cd services/dashboard && pnpm typecheck
 cd services/content-pipeline && pnpm typecheck
 
 # Local dev
-cloudgrid dev                   # dashboard :3001, content-pipeline :5000
+cloudgrid dev                   # dashboard :3000, content-pipeline :5000 (via CONTENT_PIPELINE_PORT in .env)
 
 # Site worker
 cd packages/site-worker
@@ -233,3 +233,4 @@ Full env var list in `docs/architecture.md`.
 29. **Video embeds need both deploy + re-seed** — dashboard writes to Git; site needs worker deploy + KV seed.
 30. **Dual-account routing is opt-in** — `cloudflare.ts` functions default to Assets account. Pass `domain` only when targeting a specific site.
 31. **Override `ad_placements: []` wipes inherited** — an override with `ad_placements: []` clears all group-level placements via `mergeAdPlacementLayers`. Only include `ads_config` in an override if you intend to change ad behavior. Tracking-only overrides must omit `ads_config` entirely.
+32. **Pipeline `.env` overrides cloudgrid-injected env** — content-pipeline loads dotenv with `override: true`, so vars in its local `.env` beat what `cloudgrid dev` injects. cloudgrid runs an embedded Redis on an ephemeral port and injects `REDIS_URL` into both services: keep `REDIS_URL` OUT of the pipeline's `.env`, or the dashboard enqueues to one Redis while the worker listens on another and jobs are never consumed. cloudgrid also injects `PORT=3000` (collides with the dashboard) — `CONTENT_PIPELINE_PORT=5000` in `.env` keeps the pipeline where the dashboard proxy expects it.
