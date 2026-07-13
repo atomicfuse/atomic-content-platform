@@ -16,7 +16,7 @@ export interface ContentItem {
   id: string;
   url: string;
   title: string;
-  description: string;
+  description: string | null;
   /** Structured brief: "What happened… Why it matters… Content opportunity…" */
   summary: string;
   thumbnail: { url: string } | null;
@@ -27,7 +27,11 @@ export interface ContentItem {
   tags: Array<{ name: string }>;
   audience_types: Array<{ name: string }>;
   source: { name: string };
+  /** Original author/platform, e.g. "Yahoo", "Youtube". Null-safe. */
+  author: string | null;
   published_at: string;
+  /** When the item stops being current. Null = long shelf life. */
+  expires_at: string | null;
   language: string;
   /** Aggregator category IDs attached to this item (present on enriched responses). */
   category_ids?: string[];

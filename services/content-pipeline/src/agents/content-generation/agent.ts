@@ -624,7 +624,7 @@ async function processItem(
     console.log(`[agent] Routed "${item.title}" → ${decision.generator} (${decision.reason})`);
 
     // Step 2: Generate article with cross-model fallback
-    const genConfig: GeneratorConfig = { siteName, brief };
+    const genConfig: GeneratorConfig = { siteName, brief, isFactual: decision.isFactual };
     let generated: V2GeneratedArticle;
     let actualGenerator: "claude" | "openai" = decision.generator;
 
