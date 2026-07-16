@@ -85,7 +85,7 @@ cd services/dashboard && pnpm typecheck
 cd services/content-pipeline && pnpm typecheck
 
 # Local dev
-cloudgrid dev                   # dashboard :3001, content-pipeline :5000
+cloudgrid dev                   # dashboard :3000, content-pipeline :5000 (via CONTENT_PIPELINE_PORT in .env)
 
 # Site worker
 cd packages/site-worker
@@ -129,9 +129,9 @@ function getAgentUrl(): string {
 
 `content-pipeline/src/lib/writer.ts`: `LOCAL_NETWORK_PATH` set + no branch = local FS write. **Agents wanting git commits must pass a branch.** Scheduler passes `staging/<domain>`.
 
-### Cache Invalidation After Mutations
+### Mongo Dual-Write After Git Mutations
 
-Any server action writing to Git MUST call `invalidateSiteCaches(domain, branch)` before `revalidatePath()`. Without this, in-memory caches (`treeCacheStore`, `articlesCache`, `siteConfigCache`, `dashboardIndexCache` in `github.ts`) serve stale data for up to 15 min.
+The dashboard reads from a **MongoDB read layer** when `USE_MONGO_READS=true` (production): `site_configs`, `dashboard_index`, `articles` collections via `src/lib/db/*`. Mongo is a persistent store, not a TTL cache — any server action that commits to Git WITHOUT mirroring the write to Mongo leaves the UI stale **forever**, not for 15 minutes. Every config-mutating action must follow the dual-write pattern (see `actions/agent.ts:54-64`): `commitSiteFiles(...)` → `upsertSiteConfig(domain, config)` (and/or `updateDashboardIndexEntry`) → `revalidatePath(...)`. The legacy in-memory `treeCacheStore` in `github.ts` (5 min TTL) only matters on the `USE_MONGO_READS=false` Git-read path.
 
 ### KV Schema Evolution (3 mandatory steps)
 
@@ -233,3 +233,4 @@ Full env var list in `docs/architecture.md`.
 29. **Video embeds need both deploy + re-seed** — dashboard writes to Git; site needs worker deploy + KV seed.
 30. **Dual-account routing is opt-in** — `cloudflare.ts` functions default to Assets account. Pass `domain` only when targeting a specific site.
 31. **Override `ad_placements: []` wipes inherited** — an override with `ad_placements: []` clears all group-level placements via `mergeAdPlacementLayers`. Only include `ads_config` in an override if you intend to change ad behavior. Tracking-only overrides must omit `ads_config` entirely.
+32. **Pipeline `.env` overrides cloudgrid-injected env** — content-pipeline loads dotenv with `override: true`, so vars in its local `.env` beat what `cloudgrid dev` injects. cloudgrid runs an embedded Redis on an ephemeral port and injects `REDIS_URL` into both services: keep `REDIS_URL` OUT of the pipeline's `.env`, or the dashboard enqueues to one Redis while the worker listens on another and jobs are never consumed. cloudgrid also injects `PORT=3000` (collides with the dashboard) — `CONTENT_PIPELINE_PORT=5000` in `.env` keeps the pipeline where the dashboard proxy expects it.

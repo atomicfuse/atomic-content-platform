@@ -300,3 +300,12 @@ It's just `timestamp + 3 random digits` — a throwaway unique ID with no real m
 2. **Cloudflare Pages project name** — like `coolnews-dev`
 3. **A custom ID defined per site** in Jira or an internal system
 4. **Remove it entirely** — domain is already a unique identifier
+
+---
+
+## Parking lot (added 2026-07-16, six-bugs session)
+
+- **Content types:** aggregator `trend` items are generated as plain articles with zero trend-specific handling (no prompt branch, no citation); `social_post` has a prompt branch but no embed/storage; consider genre packs per content_type when prioritized. Persist the source `content_type` in frontmatter so downstream surfaces can tell article/video/trend apart.
+- **Dead code:** `services/content-pipeline/src/lib/aggregator.ts` (legacy `/api/articles` client with its own `content_format` model) is never imported outside its tests — delete when convenient.
+- **Doc rot:** the top of this file ("There is no database", React Query caching) predates the MongoDB read layer and the current caching reality — rewrite when someone next touches team docs.
+- **Per-topic AND semantics:** category+tag AND-across-dimensions is fragile by design; if the drop-tags fallback fires often (watch pipeline logs), consider per-topic configurable combination semantics.

@@ -36,6 +36,30 @@ function getConnection(): Redis {
   return _connection;
 }
 
+/**
+ * Verify Redis actually answers before enqueueing. With
+ * `enableOfflineQueue: true` (needed in prod to ride out blips), commands
+ * against an unreachable Redis buffer silently — a job "enqueued" on a dev
+ * machine with no Redis is simply lost. Callers should fall back to the
+ * direct HTTP proxy when this returns false.
+ */
+export async function isRedisReachable(timeoutMs = 2_000): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      getConnection().ping(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("redis ping timeout")), timeoutMs);
+      }),
+    ]);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 let _queue: Queue | null = null;
 export function getGenerateQueue(): Queue {
   if (!_queue) {

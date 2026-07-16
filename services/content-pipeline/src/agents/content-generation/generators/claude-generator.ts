@@ -6,24 +6,28 @@
  */
 
 import { generateContent } from "../../../lib/ai.js";
-import { buildPromptContext, parseGeneratedArticle } from "./base-generator.js";
+import { parseGeneratedArticle } from "./base-generator.js";
 import type { Generator, GeneratorConfig } from "./base-generator.js";
 import type { ContentItem, GeneratedArticle } from "../types.js";
-import { buildNewsSystemPrompt, buildNewsUserPrompt } from "../prompts/news-article.js";
+import { buildArticlePrompts } from "../prompts/build-prompts.js";
 
 export class ClaudeGenerator implements Generator {
   readonly name = "claude";
 
   async generate(item: ContentItem, config: GeneratorConfig): Promise<GeneratedArticle> {
-    const ctx = buildPromptContext(item);
-    const systemPrompt = buildNewsSystemPrompt(config.siteName, config.brief);
-    const userPrompt = buildNewsUserPrompt(ctx);
+    const { system, user, genre } = buildArticlePrompts({
+      siteName: config.siteName,
+      brief: config.brief,
+      mode: "sourced",
+      item,
+      isFactual: config.isFactual ?? true,
+    });
 
-    console.log(`[claude-gen] Generating factual article: "${item.title}"`);
+    console.log(`[claude-gen] Generating ${genre} article: "${item.title}"`);
 
     const { text, usage } = await generateContent({
-      systemPrompt,
-      userPrompt,
+      systemPrompt: system,
+      userPrompt: user,
       // ai.ts maps "claude-sonnet" for CloudGrid, DEFAULT_MODEL for Anthropic SDK
       maxTokens: 4096,
     });

@@ -281,7 +281,8 @@ export async function runMigration(
     if (dedupUrls.size > 0 || dedupTitles.size > 0) {
       files.push({
         path: dedupIndexPath(siteId),
-        content: serializeDedupIndex({ urls: dedupUrls, titles: dedupTitles }),
+        // Imported (WordPress) articles have no aggregator item ids.
+        content: serializeDedupIndex({ urls: dedupUrls, titles: dedupTitles, ids: new Set() }),
       });
     }
 

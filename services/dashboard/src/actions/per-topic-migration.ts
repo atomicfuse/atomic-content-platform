@@ -1,9 +1,10 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { stringify as stringifyYaml } from "yaml";
 import type { TopicV2 } from "@/types/dashboard";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
-import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
+import { getSiteConfig as readSiteConfigFromGit, upsertSiteConfig } from "@/lib/db/site-configs";
 import { commitSiteFiles } from "@/lib/github";
 
 const RAW_AGGREGATOR_URL =
@@ -69,6 +70,13 @@ export async function migrateSiteToPerTopic(
     `feat: migrate ${args.domain} to per-topic filters`,
     site.staging_branch,
   );
+
+  // Dual-write: mirror the migrated config to MongoDB (soft-fail). The
+  // dashboard reads config from Mongo under USE_MONGO_READS, so a git-only
+  // commit would leave the UI stale indefinitely.
+  await upsertSiteConfig(args.domain, existing);
+  revalidatePath("/");
+  revalidatePath(`/sites/${args.domain}`);
 
   // Best-effort delete orphan bundles on the aggregator.
   let bundlesDeleted = 0;

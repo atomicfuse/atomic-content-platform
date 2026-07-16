@@ -98,3 +98,12 @@ Landed on `asaf-new` (pending Asaf's local test). Audit: `docs/audit-logs/2026-0
 - [ ] **Theme polish:** ~7 presets use a light-but-not-white `secondary` (e.g. `#fafafa`, `#f7f5ee`) so Read More / Subscribe buttons are low-contrast against the light page background. Auto-contrast (this session) makes the button *text* legible, but the button still blends into the page. Decide whether to normalize those presets' `secondary` to a dark value (like the well-formed light presets) or keep the "ghost button" look.
 - [ ] **Topics resolution coverage:** `TopicEditModal` + `PerTopicReviewScreen` now resolve names via persisted `*_names` → `?ids=` → in-memory → id. `ContentAgentTab`, `BundleSubscriptionsPanel`, `TopicsListPanel` still rely on the bounded `getTags` (top-300) + full categories. Categories now load fully (pagination fix), but niche *tags* in those three could still show raw ids — extend `resolveByIds` to them if it surfaces.
 - [ ] **Deploy step (when approved):** re-seed all live sites after deploy so `menu_item_font_size` + the 4 preset `secondary` changes + the `--color-*-fg` vars reach KV. `seed:kv` per CLAUDE.md.
+
+## Six-bugs session follow-ups (added 2026-07-16)
+
+- [ ] **[High] Ops:** Run the post-US-migration Mongo backfill (`docs/runbooks/2026-07-16-post-us-migration-remediation.md`) — restores article counts on ~49 sites, requires prod secrets (Asaf)
+- [ ] **Ops:** Fix giantsavings topic tag_ids (cross-vertical pollution) + audit other sites seeded around `f57293a` for the same issue (runbook §4)
+- [ ] **Ops:** `rebuild-dedup-index.ts --all` after the dedup-v2 fix deploys, so pre-existing articles get id-keyed protection (runbook §3)
+- [ ] **Safety net:** Extend pipeline `/reconcile-mongo` to also reconcile `site_configs` + `dashboard_index` from git (today it only covers `articles`) — closes the class of stale-UI bugs where a dual-write is missed
+- [ ] **Refactor:** Introduce a `commitAndSyncSiteConfig()` helper (git commit + Mongo upsert + revalidate) and route all config-mutating dashboard actions through it
+- [ ] **Dedup:** Harden `normalizeUrl` (strip tracking params, AMP suffixes) — URL variants are still a dup vector for pre-source_title articles

@@ -28,7 +28,7 @@ import { parseGeneratedArticle } from "./generators/base-generator.js";
 import { validateArticleBody, ensureTopicTag } from "./agent.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { triggerN8nImage, trackPendingImage } from "./n8n-image.js";
-import { buildDedicatedSystemPrompt, buildDedicatedUserPrompt } from "./prompts/dedicated-article.js";
+import { buildArticlePrompts } from "./prompts/build-prompts.js";
 import { recordTextUsage } from "../../costs/recorder.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown } from "../../types.js";
@@ -137,8 +137,12 @@ export async function runDedicatedGeneration(
   console.log(`[dedicated] Generating article for ${siteDomain} (${siteName}) on branch ${branch}`);
 
   // Step 2: Generate article via Claude
-  const systemPrompt = buildDedicatedSystemPrompt(siteName, brief);
-  const userPromptText = buildDedicatedUserPrompt(userPrompt);
+  const { system: systemPrompt, user: userPromptText } = buildArticlePrompts({
+    siteName,
+    brief,
+    mode: "original",
+    userRequest: userPrompt,
+  });
 
   let rawResponse: string;
   let usage: { inputTokens: number; outputTokens: number; estimated: boolean };
