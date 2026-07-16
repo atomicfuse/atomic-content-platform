@@ -1,7 +1,11 @@
 "use server";
 
 import { listDomainsWithPagesInfo } from "@/lib/cloudflare";
-import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import {
+  getDashboardIndex as readDashboardIndex,
+  updateDashboardIndexEntry,
+  deleteDashboardIndexEntry,
+} from "@/lib/db/dashboard-index";
 import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
 import { writeDashboardIndex } from "@/lib/github";
 import { computeCorrectStatus } from "@/lib/site-status";
@@ -33,6 +37,7 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
   // Re-check status of existing domains (e.g. files deleted, deployment changed)
   let updatedCount = 0;
   const removedDomains: string[] = [];
+  const changedSites: Array<{ domain: string; status: string }> = [];
   for (const site of index.sites) {
     const cfInfo = cfDomains.find((d) => d.domain === site.domain);
     const siteConfig = await readSiteConfig(site.domain);
@@ -47,6 +52,7 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     if (site.status !== correctStatus) {
       site.status = correctStatus;
       site.last_updated = now;
+      changedSites.push({ domain: site.domain, status: correctStatus });
       updatedCount++;
     }
   }
@@ -61,6 +67,19 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
       index,
       `dashboard: sync ${updatedCount} updated, ${removedDomains.length} removed`
     );
+
+    // Dual-write: mirror to MongoDB (soft-fail) — the dashboard reads the
+    // index from Mongo under USE_MONGO_READS, so a git-only write leaves the
+    // UI stale indefinitely.
+    for (const changed of changedSites) {
+      await updateDashboardIndexEntry(changed.domain, {
+        status: changed.status,
+        last_updated: now,
+      });
+    }
+    for (const domain of removedDomains) {
+      await deleteDashboardIndexEntry(domain);
+    }
   }
 
   revalidatePath("/");
