@@ -359,11 +359,13 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   // EC-4: Retry index update once on failure. If still failing, surface a
   // specific message so the user knows files are deployed but the index
   // needs manual attention.
+  let wasExistingEntry = false;
   for (let indexAttempt = 0; indexAttempt < 2; indexAttempt++) {
     try {
       const index = await readDashboardIndex({ fresh: true });
       const existing = index.sites.find((s) => s.domain === siteFolder);
       if (existing) {
+        wasExistingEntry = true;
         await updateSiteInIndex(siteFolder, {
           status: "Staging",
           company: data.company || null,
@@ -388,9 +390,23 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     }
   }
 
-  // Dual-write: mirror site config + dashboard index entry to MongoDB (soft-fail)
+  // Dual-write: mirror site config + dashboard index entry to MongoDB (soft-fail).
+  // On a wizard re-run of an existing site, mirror ONLY the fields the git
+  // path updated — upserting the freshly-built siteEntry would clobber
+  // preserved fields in Mongo (custom_domain, site_id, created_at, …).
   await upsertSiteConfig(siteFolder, siteConfig as unknown as Record<string, unknown>);
-  await upsertDashboardIndexEntry(siteFolder, siteEntry as unknown as Record<string, unknown>);
+  if (wasExistingEntry) {
+    await upsertDashboardIndexEntry(siteFolder, {
+      status: "Staging",
+      company: data.company || null,
+      vertical: displayVertical ?? "",
+      staging_branch: stagingBranch,
+      preview_url: previewUrl,
+      last_updated: now,
+    });
+  } else {
+    await upsertDashboardIndexEntry(siteFolder, siteEntry as unknown as Record<string, unknown>);
+  }
 
   revalidatePath("/");
 
@@ -747,6 +763,24 @@ export async function attachCustomDomain(
   const previousZoneId = site.zone_id;
   const previousPendingDns = site.worker_pending_dns;
 
+  // Revert git index AND the MongoDB mirror. The success path mirrors the
+  // attach to Mongo before CF/KV work — a git-only rollback would leave the
+  // UI permanently showing Live + an attached domain that never registered.
+  const rollbackAttach = async (commitMessage: string): Promise<void> => {
+    site.custom_domain = previousCustomDomain;
+    site.status = previousStatus;
+    site.zone_id = previousZoneId;
+    site.worker_pending_dns = previousPendingDns;
+    site.last_updated = new Date().toISOString();
+    await writeDashboardIndex(index, commitMessage);
+    await updateDashboardIndexEntry(domain, {
+      custom_domain: previousCustomDomain ?? null,
+      status: previousStatus,
+      zone_id: previousZoneId ?? null,
+      worker_pending_dns: previousPendingDns ?? null,
+    });
+  };
+
   site.custom_domain = customDomain;
   site.zone_id = resolvedZoneId;
   site.status = 'Live';
@@ -794,15 +828,7 @@ export async function attachCustomDomain(
         // Cleanup or retry failed — roll back
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
         console.error('[attachCustomDomain] CF registration failed after DNS cleanup, rolling back index', retryErr);
-        site.custom_domain = previousCustomDomain;
-        site.status = previousStatus;
-        site.zone_id = previousZoneId;
-        site.worker_pending_dns = previousPendingDns;
-        site.last_updated = new Date().toISOString();
-        await writeDashboardIndex(
-          index,
-          `dashboard: rollback attach ${customDomain} from ${domain}`,
-        );
+        await rollbackAttach(`dashboard: rollback attach ${customDomain} from ${domain}`);
         throw new Error(
           `Failed to register ${customDomain} on Cloudflare after DNS cleanup: ${retryMsg}`,
         );
@@ -810,15 +836,7 @@ export async function attachCustomDomain(
     } else {
       // Unexpected error — roll back index write
       console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
-      site.custom_domain = previousCustomDomain;
-      site.status = previousStatus;
-      site.zone_id = previousZoneId;
-      site.worker_pending_dns = previousPendingDns;
-      site.last_updated = new Date().toISOString();
-      await writeDashboardIndex(
-        index,
-        `dashboard: rollback attach ${customDomain} from ${domain}`,
-      );
+      await rollbackAttach(`dashboard: rollback attach ${customDomain} from ${domain}`);
       throw new Error(
         `Failed to register ${customDomain} on Cloudflare: ${message}`,
       );
@@ -851,14 +869,8 @@ export async function attachCustomDomain(
       );
     }
 
-    // Revert index
-    site.custom_domain = previousCustomDomain;
-    site.status = previousStatus;
-    site.zone_id = previousZoneId;
-    site.worker_pending_dns = previousPendingDns;
-    site.last_updated = new Date().toISOString();
-    await writeDashboardIndex(
-      index,
+    // Revert index (git + Mongo mirror)
+    await rollbackAttach(
       `dashboard: rollback attach ${customDomain} from ${domain} (KV seed failed)`,
     );
 
@@ -985,6 +997,11 @@ export async function saveStagingPreview(
   previews.push({ url, label, saved_at: new Date().toISOString() });
 
   await updateSiteInIndex(domain, { saved_previews: previews });
+
+  // Dual-write: mirror to MongoDB (soft-fail) — the UI reads the index from
+  // Mongo under USE_MONGO_READS.
+  await updateDashboardIndexEntry(domain, { saved_previews: previews });
+
   revalidatePath(`/sites/${domain}`);
 }
 

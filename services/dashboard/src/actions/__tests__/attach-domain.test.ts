@@ -118,6 +118,42 @@ describe("attachCustomDomain", () => {
     vi.clearAllMocks();
   });
 
+  it("mirrors the rollback to MongoDB when CF registration fails", async () => {
+    const site = makeSite({ status: "Ready", custom_domain: null, zone_id: null });
+    setupIndex([site]);
+    mockRegisterWorkerCustomDomain.mockRejectedValue(new Error("CF exploded"));
+
+    const { attachCustomDomain } = await import("../wizard");
+    await expect(
+      attachCustomDomain("trendscores", "trendscores.com", "zone-123"),
+    ).rejects.toThrow(/Failed to register/);
+
+    // The optimistic mirror set Live+domain; the rollback must revert Mongo
+    // too, or the UI shows an attached domain that never registered.
+    const lastMirror = mockUpdateDashboardIndexEntry.mock.calls.at(-1)!;
+    expect(lastMirror[0]).toBe("trendscores");
+    expect(lastMirror[1]).toMatchObject({
+      custom_domain: null,
+      status: "Ready",
+      zone_id: null,
+    });
+  });
+
+  it("mirrors the rollback to MongoDB when KV seeding fails", async () => {
+    const site = makeSite({ status: "Ready", custom_domain: null, zone_id: null });
+    setupIndex([site]);
+    mockRegisterWorkerCustomDomain.mockResolvedValue({ id: "cd-1" });
+    mockPutKVEntry.mockRejectedValueOnce(new Error("KV down"));
+
+    const { attachCustomDomain } = await import("../wizard");
+    await expect(
+      attachCustomDomain("trendscores", "trendscores.com", "zone-123"),
+    ).rejects.toThrow(/KV seed failed/);
+
+    const lastMirror = mockUpdateDashboardIndexEntry.mock.calls.at(-1)!;
+    expect(lastMirror[1]).toMatchObject({ custom_domain: null, status: "Ready" });
+  });
+
   it("registers Custom Domain on the worker on happy path", async () => {
     const site = makeSite();
     setupIndex([site]);

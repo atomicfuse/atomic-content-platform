@@ -104,6 +104,16 @@ export async function updateDashboardIndexEntry(domain: string, update: Record<s
   }
 }
 
+export async function deleteDashboardIndexEntry(domain: string): Promise<void> {
+  try {
+    const db = await getMongoDb();
+    await db.collection(COLLECTIONS.dashboardIndex).deleteOne({ domain });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[db] deleteDashboardIndexEntry failed (${domain}): ${msg}`);
+  }
+}
+
 export async function addToDeleteHistory(domain: string, historyEntry: Record<string, unknown>): Promise<void> {
   try {
     const db = await getMongoDb();

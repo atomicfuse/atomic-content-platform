@@ -1,7 +1,7 @@
 # Bugs
 
-_Last reviewed: 2026-07-16_
-_4 open bugs, 1 marked [High]_
+_Last reviewed: 2026-07-16 (PM — rename-route entry removed after audit verified its Mongo mirror exists)_
+_3 open bugs, 1 marked [High]_
 
 Known bugs grouped by what part of the system they affect. Items marked [High] are user-affecting or cause data-integrity problems. Tick the checkbox when fixed.
 
@@ -36,20 +36,6 @@ Known bugs grouped by what part of the system they affect. Items marked [High] a
 ---
 
 ## Dashboard
-
-### [ ] Renaming a site may leave MongoDB out of sync
-
-**The bug:** The site-rename flow updates git and clears only the old in-memory cache; it's unverified whether the renamed config and branch fields are mirrored into MongoDB, which is what the dashboard actually reads in production.
-
-**Where it happens:** Site rename. (`services/dashboard/src/app/api/sites/rename/route.ts` — calls legacy tree-cache invalidation only.)
-
-**What should happen:** Rename dual-writes the updated config/index entry to MongoDB like other mutations do.
-
-**What actually happens:** Possibly stale name/branch data in the UI after a rename (needs verification — flagged during the 2026-07-16 stale-UI investigation).
-
-**How to fix or work around:** Workaround: run the Mongo backfill/reconcile after a rename. Fix: audit the route against the dual-write pattern.
-
----
 
 ### [ ] Article lists never refresh if the Mongo read flag is turned off
 

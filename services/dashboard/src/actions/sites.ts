@@ -33,7 +33,7 @@ import type { DashboardSiteEntry } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { deleteArticleMeta, deleteArticlesMeta, deleteArticlesForSite, upsertArticleMeta, upsertArticlesMeta } from "@/lib/db/articles";
 import { deleteSiteConfig } from "@/lib/db/site-configs";
-import { updateDashboardIndexEntry, addToDeleteHistory } from "@/lib/db/dashboard-index";
+import { updateDashboardIndexEntry, upsertDashboardIndexEntry, addToDeleteHistory } from "@/lib/db/dashboard-index";
 
 /** Update dashboard metadata for a site. */
 export async function updateSiteEntry(
@@ -207,10 +207,18 @@ export async function deleteSiteEntry(domain: string): Promise<{
 
 /** Restore a domain from trash back to the active dashboard. */
 export async function restoreSiteEntry(domain: string): Promise<void> {
-  await restoreSiteInIndex(domain);
+  const index = await restoreSiteInIndex(domain);
 
-  // Dual-write: mark as restored (Staging) in MongoDB (soft-fail)
-  await updateDashboardIndexEntry(domain, { status: "Staging" });
+  // Dual-write: mirror the restored entry to MongoDB (soft-fail). Use the
+  // entry restoreSiteInIndex actually wrote — it re-detects status (may be
+  // Live/Ready, not always Staging) — and upsert so a missing Mongo doc is
+  // recreated rather than silently skipped.
+  const restored = index.sites.find((s) => s.domain === domain);
+  if (restored) {
+    await upsertDashboardIndexEntry(domain, restored as unknown as Record<string, unknown>);
+  } else {
+    await updateDashboardIndexEntry(domain, { status: "Staging" });
+  }
 
   revalidatePath("/");
   revalidatePath("/sites");
