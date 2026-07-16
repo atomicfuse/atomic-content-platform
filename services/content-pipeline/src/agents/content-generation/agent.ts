@@ -164,6 +164,8 @@ export interface BatchContentGenerationResult {
 interface ArticleFrontmatterWithExtras extends ArticleFrontmatter {
   source_url?: string;
   source_item_id?: string;
+  /** Original aggregator title (pre-rewrite) — cross-run title dedup key. */
+  source_title?: string;
   generated_by?: string;
   quality_score?: number;
   score_breakdown?: QualityScoreBreakdown;
@@ -259,6 +261,8 @@ export function normalizeTitleKey(title: string): string {
 export interface ExistingArticles {
   urls: Set<string>;
   titles: Set<string>;
+  /** Aggregator item ids (`source_item_id`) — the stable cross-run dedup key. */
+  ids: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,9 +272,11 @@ export interface ExistingArticles {
 const DEDUP_INDEX_FILENAME = "dedup-index.json";
 
 interface DedupIndexData {
-  version: 1;
+  /** v1: urls + titles only. v2: adds aggregator item ids. */
+  version: 1 | 2;
   urls: string[];
   titles: string[];
+  ids?: string[];
 }
 
 /** @internal Exported for testing. */
@@ -281,9 +287,10 @@ export function dedupIndexPath(siteDomain: string): string {
 /** @internal Exported for testing. */
 export function serializeDedupIndex(existing: ExistingArticles): string {
   const data: DedupIndexData = {
-    version: 1,
+    version: 2,
     urls: Array.from(existing.urls),
     titles: Array.from(existing.titles),
+    ids: Array.from(existing.ids),
   };
   return JSON.stringify(data);
 }
@@ -292,8 +299,17 @@ export function serializeDedupIndex(existing: ExistingArticles): string {
 export function parseDedupIndex(raw: string): ExistingArticles | null {
   try {
     const data = JSON.parse(raw) as Partial<DedupIndexData>;
-    if (data.version === 1 && Array.isArray(data.urls) && Array.isArray(data.titles)) {
-      return { urls: new Set(data.urls), titles: new Set(data.titles) };
+    // v1 (no ids) stays valid — existing indexes must not trigger full rescans.
+    if (
+      (data.version === 1 || data.version === 2) &&
+      Array.isArray(data.urls) &&
+      Array.isArray(data.titles)
+    ) {
+      return {
+        urls: new Set(data.urls),
+        titles: new Set(data.titles),
+        ids: new Set(Array.isArray(data.ids) ? data.ids : []),
+      };
     }
   } catch {
     // Invalid JSON
@@ -315,10 +331,15 @@ export async function getAllExistingArticles(
 ): Promise<ExistingArticles> {
   const urls = new Set<string>();
   const titles = new Set<string>();
+  const ids = new Set<string>();
 
   function extractFromFrontmatter(data: Record<string, unknown>): void {
     if (data.source_url) urls.add(normalizeUrl(data.source_url as string));
     if (data.title) titles.add(normalizeTitleKey(data.title as string));
+    // Original aggregator title — the key incoming items are compared against
+    // (frontmatter `title` is the LLM rewrite and never matches item.title).
+    if (data.source_title) titles.add(normalizeTitleKey(data.source_title as string));
+    if (data.source_item_id) ids.add(String(data.source_item_id));
   }
 
   if (config.localNetworkPath && !branch) {
@@ -341,7 +362,7 @@ export async function getAllExistingArticles(
     try {
       files = await fs.readdir(articlesDir);
     } catch {
-      return { urls, titles };
+      return { urls, titles, ids };
     }
 
     for (const file of files) {
@@ -356,7 +377,7 @@ export async function getAllExistingArticles(
     }
 
     console.log(`[agent] Built dedup index from full scan (local): ${urls.size} URLs, ${titles.size} titles`);
-    return { urls, titles };
+    return { urls, titles, ids };
   }
 
   // GitHub mode — try dedup index first
@@ -380,7 +401,7 @@ export async function getAllExistingArticles(
   try {
     files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
   } catch {
-    return { urls, titles };
+    return { urls, titles, ids };
   }
 
   for (const file of files) {
@@ -400,7 +421,7 @@ export async function getAllExistingArticles(
   }
 
   console.log(`[agent] Built dedup index from full scan: ${urls.size} URLs, ${titles.size} titles (${files.length} files read)`);
-  return { urls, titles };
+  return { urls, titles, ids };
 }
 
 // ---------------------------------------------------------------------------
@@ -758,6 +779,7 @@ async function processItem(
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
       source_url: item.url,
       source_item_id: item.id,
+      source_title: item.title,
       generated_by: actualGenerator,
       ...(featuredImageUrl ? { featuredImage: featuredImageUrl } : {}),
       ...(qualityScore !== undefined ? { quality_score: qualityScore } : {}),
@@ -839,7 +861,7 @@ async function processItem(
 /** Dependencies injected into the bundle fan-out helpers. */
 export interface FetchUnionDeps {
   targetCount: number;
-  existing: { urls: Set<string>; titles: Set<string> };
+  existing: ExistingArticles;
   bundleIds: (string | undefined)[];
   mergedCategoryIds: string[];
   language: string;
@@ -914,6 +936,7 @@ export async function fetchNewItemsForBundle(
     if (pageItems.length === 0) break;
 
     for (const item of pageItems) {
+      if (deps.existing.ids.has(item.id)) { duplicateCount++; continue; }
       if (deps.existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
       if (deps.existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
       newItems.push(item);
@@ -1196,7 +1219,7 @@ async function runPerTopicGeneration(args: {
   count?: number;
   jobId?: string;
   config: AgentConfig;
-  existing: { urls: Set<string>; titles: Set<string> };
+  existing: ExistingArticles;
   tagIds: string[] | undefined;
   /** When set, runs only this topic and bypasses date-based eligibility.
    *  Used by the dashboard "Generate" button on individual topic rows. */
@@ -1333,46 +1356,70 @@ async function runPerTopicGeneration(args: {
     const MAX_PAGES = 5;
 
     if (topic.source.type === "filter") {
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const response = await getContent({
-          limit: PAGE_SIZE,
-          page,
-          language: brief.language ?? "EN",
-          category_ids:
-            topic.source.category_ids.length > 0
-              ? topic.source.category_ids
-              : undefined,
-          tag_ids:
-            topic.source.tag_ids.length > 0 ? topic.source.tag_ids : undefined,
-        });
-        totalSourced += response.items.length;
-        topicSourcedCount += response.items.length;
-        if (response.items.length === 0) break;
-        for (const item of response.items) {
-          if (existing.urls.has(normalizeUrl(item.url))) {
-            duplicateCount++;
-            continue;
+      const source = topic.source;
+      const fetchFilterPages = async (tagIds: string[] | undefined): Promise<void> => {
+        for (let page = 1; page <= MAX_PAGES; page++) {
+          const response = await getContent({
+            limit: PAGE_SIZE,
+            page,
+            language: brief.language ?? "EN",
+            category_ids:
+              source.category_ids.length > 0 ? source.category_ids : undefined,
+            tag_ids: tagIds && tagIds.length > 0 ? tagIds : undefined,
+          });
+          totalSourced += response.items.length;
+          topicSourcedCount += response.items.length;
+          if (response.items.length === 0) break;
+          for (const item of response.items) {
+            if (existing.ids.has(item.id)) {
+              duplicateCount++;
+              continue;
+            }
+            if (existing.urls.has(normalizeUrl(item.url))) {
+              duplicateCount++;
+              continue;
+            }
+            if (existing.titles.has(normalizeTitleKey(item.title))) {
+              duplicateCount++;
+              continue;
+            }
+            if (
+              seenIds.has(item.id) ||
+              seenUrls.has(normalizeUrl(item.url)) ||
+              seenTitles.has(normalizeTitleKey(item.title))
+            ) {
+              duplicateCount++;
+              continue;
+            }
+            seenIds.add(item.id);
+            seenUrls.add(normalizeUrl(item.url));
+            seenTitles.add(normalizeTitleKey(item.title));
+            perTopicItems.push(item);
+            if (perTopicItems.length >= perRunTarget) break;
           }
-          if (existing.titles.has(normalizeTitleKey(item.title))) {
-            duplicateCount++;
-            continue;
-          }
-          if (
-            seenIds.has(item.id) ||
-            seenUrls.has(normalizeUrl(item.url)) ||
-            seenTitles.has(normalizeTitleKey(item.title))
-          ) {
-            duplicateCount++;
-            continue;
-          }
-          seenIds.add(item.id);
-          seenUrls.add(normalizeUrl(item.url));
-          seenTitles.add(normalizeTitleKey(item.title));
-          perTopicItems.push(item);
           if (perTopicItems.length >= perRunTarget) break;
+          if (page >= (response.total_pages ?? 1)) break;
         }
-        if (perTopicItems.length >= perRunTarget) break;
-        if (page >= (response.total_pages ?? 1)) break;
+      };
+
+      // Narrow search: the topic's categories AND tags. The aggregator ANDs
+      // dimensions, so miscurated tag_ids (e.g. cross-vertical tags from
+      // seed-time inference) can zero out an otherwise-valid category filter.
+      await fetchFilterPages(source.tag_ids);
+
+      // Broad fallback: drop the tag filter and retry with categories only —
+      // mirrors the legacy path's narrow→broad fallback. Only when the topic
+      // has categories to fall back on (tags alone dropping to nothing would
+      // query the whole aggregator unfiltered).
+      if (
+        perTopicItems.length === 0 &&
+        source.tag_ids.length > 0 &&
+        source.category_ids.length > 0
+      ) {
+        console.log(
+          `[agent] [per-topic] topic="${topic.name}" — narrow filter (categories AND tags) matched nothing new; retrying with categories only`,
+        );
+        await fetchFilterPages(undefined);
       }
     } else {
       // bundle source
@@ -1388,6 +1435,10 @@ async function runPerTopicGeneration(args: {
         topicSourcedCount += response.items.length;
         if (response.items.length === 0) break;
         for (const item of response.items) {
+          if (existing.ids.has(item.id)) {
+            duplicateCount++;
+            continue;
+          }
           if (existing.urls.has(normalizeUrl(item.url))) {
             duplicateCount++;
             continue;

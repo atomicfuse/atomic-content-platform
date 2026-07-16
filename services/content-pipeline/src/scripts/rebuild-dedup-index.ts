@@ -29,6 +29,7 @@ async function rebuildForSite(domain: string): Promise<void> {
   const articlesDir = path.join(networkPath, "sites", domain, "articles");
   const urls = new Set<string>();
   const titles = new Set<string>();
+  const ids = new Set<string>();
 
   let files: string[];
   try {
@@ -52,16 +53,18 @@ async function rebuildForSite(domain: string): Promise<void> {
         try { urls.add(normalizeUrl(data.source_url as string)); } catch { /* skip */ }
       }
       if (data.title) titles.add(normalizeTitleKey(data.title as string));
+      if (data.source_title) titles.add(normalizeTitleKey(data.source_title as string));
+      if (data.source_item_id) ids.add(String(data.source_item_id));
     } catch {
       console.warn(`  Skipping unparseable file: ${file}`);
     }
   }
 
   const indexPath = path.join(networkPath, dedupIndexPath(domain));
-  const indexContent = serializeDedupIndex({ urls, titles });
+  const indexContent = serializeDedupIndex({ urls, titles, ids });
   await fs.writeFile(indexPath, indexContent, "utf-8");
 
-  console.log(`  ${domain}: ${urls.size} URLs, ${titles.size} titles (from ${mdFiles.length} articles)`);
+  console.log(`  ${domain}: ${urls.size} URLs, ${titles.size} titles, ${ids.size} ids (from ${mdFiles.length} articles)`);
 }
 
 async function main(): Promise<void> {

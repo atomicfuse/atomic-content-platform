@@ -4,7 +4,7 @@ import { listDomainsWithPagesInfo } from "@/lib/cloudflare";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
 import { writeDashboardIndex } from "@/lib/github";
-import type { SiteStatus } from "@/types/dashboard";
+import { computeCorrectStatus } from "@/lib/site-status";
 import { revalidatePath } from "next/cache";
 
 interface SyncResult {
@@ -37,18 +37,8 @@ export async function syncDomainsFromCloudflare(): Promise<SyncResult> {
     const cfInfo = cfDomains.find((d) => d.domain === site.domain);
     const siteConfig = await readSiteConfig(site.domain);
 
-    let correctStatus: SiteStatus;
-    if (site.staging_branch && site.status === "Staging") {
-      correctStatus = "Staging";
-    } else if (site.staging_branch && (site.status === "Ready" || site.status === "Live")) {
-      correctStatus = site.status;
-    } else if (site.custom_domain) {
-      correctStatus = "Live";
-    } else if (cfInfo) {
-      correctStatus = "Ready";
-    } else if (siteConfig) {
-      correctStatus = "Staging";
-    } else {
+    const correctStatus = computeCorrectStatus(site, Boolean(cfInfo), Boolean(siteConfig));
+    if (correctStatus === null) {
       // No CF zone, no config — orphaned entry, remove it
       removedDomains.push(site.domain);
       continue;

@@ -188,6 +188,53 @@ describe("runContentGeneration", () => {
     expect(result.availableNew).toBe(0);
   });
 
+  it("skips items whose aggregator id is already in the dedup index", async () => {
+    const { readFile } = await import("node:fs/promises");
+    // Dedup index (v2) knows this item id even though its URL and title differ
+    // — e.g. the same story was already generated via a different query that
+    // returned a syndicated URL variant. (Path-aware mock: site.yaml is also
+    // read through fs.readFile before the dedup index.)
+    vi.mocked(readFile).mockImplementation(async (p) =>
+      String(p).endsWith("dedup-index.json")
+        ? JSON.stringify({
+            version: 2,
+            urls: ["some-other.com/url"],
+            titles: ["a rewritten seo title"],
+            ids: ["item-1"],
+          })
+        : "",
+    );
+
+    try {
+      const result = await runContentGeneration(
+        { siteDomain: "coolnews.dev" },
+        config,
+      );
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]!.status).toBe("skipped");
+      expect(result.duplicateCount).toBe(1);
+    } finally {
+      // clearAllMocks resets calls, not implementations — restore the default.
+      vi.mocked(readFile).mockImplementation(async () => "");
+    }
+  });
+
+  it("records the original aggregator title as source_title in frontmatter", async () => {
+    const result = await runContentGeneration(
+      { siteDomain: "coolnews.dev" },
+      config,
+    );
+
+    const created = result.results.find((r) => r.status === "created");
+    const writtenContent = created?._pendingArticle?.content ?? "";
+    // item.title is "Test Article"; the generated (rewritten) title is
+    // "Generated Title". Cross-run title dedup compares aggregator titles, so
+    // the ORIGINAL must be persisted.
+    expect(writtenContent).toContain("source_title: Test Article");
+    expect(writtenContent).toContain("source_item_id: item-1");
+  });
+
   it("respects count parameter to limit articles", async () => {
     const result = await runContentGeneration(
       { siteDomain: "coolnews.dev", count: 1 },

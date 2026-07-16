@@ -41,7 +41,7 @@ const TEST_PAGINATION: FetchPagination = { maxPages: 1 };
 function makeDeps(overrides: Partial<FetchUnionDeps> = {}): FetchUnionDeps {
   return {
     targetCount: 10,
-    existing: { urls: new Set(), titles: new Set() },
+    existing: { urls: new Set(), titles: new Set(), ids: new Set() },
     bundleIds: ["b1", "b2"],
     mergedCategoryIds: [],
     language: "EN",
@@ -181,7 +181,7 @@ describe("fetchNewItemsUnion — fan-out across multiple bundles", () => {
 
     const deps = makeDeps({
       bundleIds: ["b1"],
-      existing: { urls: new Set(["x/known"]), titles: new Set() },
+      existing: { urls: new Set(["x/known"]), titles: new Set(), ids: new Set() },
     });
     const result = await fetchNewItemsUnion(undefined, "test", deps, TEST_PAGINATION);
     expect(result.newItems).toHaveLength(1);

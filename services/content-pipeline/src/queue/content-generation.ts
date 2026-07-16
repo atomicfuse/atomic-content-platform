@@ -170,6 +170,10 @@ export async function processGenerateJob(
         const { data } = matter(r._pendingArticle.content);
         if (data.source_url) existingArticles.urls.add(normalizeUrl(data.source_url as string));
         if (data.title) existingArticles.titles.add(normalizeTitleKey(data.title as string));
+        // Original aggregator title + item id — the cross-run dedup keys that
+        // survive the LLM title rewrite and URL variants.
+        if (data.source_title) existingArticles.titles.add(normalizeTitleKey(data.source_title as string));
+        if (data.source_item_id) existingArticles.ids.add(String(data.source_item_id));
       }
     }
     const dedupIndexFile: BatchFileEntry = {

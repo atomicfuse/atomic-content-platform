@@ -5,18 +5,21 @@ vi.mock("@/lib/db/dashboard-index", () => ({
 }));
 vi.mock("@/lib/db/site-configs", () => ({
   getSiteConfig: vi.fn(),
+  upsertSiteConfig: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/github", () => ({
   commitSiteFiles: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+import { revalidatePath } from "next/cache";
 import { migrateSiteToPerTopic } from "../per-topic-migration";
 import { commitSiteFiles } from "@/lib/github";
 import { getDashboardIndex } from "@/lib/db/dashboard-index";
-import { getSiteConfig } from "@/lib/db/site-configs";
+import { getSiteConfig, upsertSiteConfig } from "@/lib/db/site-configs";
 
 const SITE_INDEX = {
   sites: [{ domain: "travelnights", staging_branch: "staging/travelnights", status: "Live" }],
@@ -78,6 +81,41 @@ describe("migrateSiteToPerTopic", () => {
     expect(parsed.brief.bundle_ids).toBeUndefined();
     expect(parsed.brief.category_ids).toBeUndefined();
     expect(parsed.brief.tag_ids).toBeUndefined();
+  });
+
+  it("dual-writes the migrated config to MongoDB and revalidates the site page", async () => {
+    const result = await migrateSiteToPerTopic({
+      domain: "travelnights",
+      theme: "Travel and eating while traveling",
+      topics_v2: TOPICS_V2,
+      deleteOrphanBundleIds: [],
+    });
+    expect(result.status).toBe("ok");
+
+    // The dashboard reads config from MongoDB (USE_MONGO_READS) — a git-only
+    // commit leaves the UI stale forever. The action must mirror the write.
+    expect(upsertSiteConfig).toHaveBeenCalledTimes(1);
+    const [domain, config] = vi.mocked(upsertSiteConfig).mock.calls[0]!;
+    expect(domain).toBe("travelnights");
+    const brief = (config as { brief: Record<string, unknown> }).brief;
+    expect(brief.topics_v2).toEqual(TOPICS_V2);
+    expect(brief.bundle_ids).toBeUndefined();
+
+    expect(revalidatePath).toHaveBeenCalledWith("/sites/travelnights");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
+  });
+
+  it("does not dual-write when the git commit fails", async () => {
+    vi.mocked(commitSiteFiles).mockRejectedValueOnce(new Error("git down"));
+    await expect(
+      migrateSiteToPerTopic({
+        domain: "travelnights",
+        theme: "Travel",
+        topics_v2: TOPICS_V2,
+        deleteOrphanBundleIds: [],
+      }),
+    ).rejects.toThrow("git down");
+    expect(upsertSiteConfig).not.toHaveBeenCalled();
   });
 
   it("deletes orphan bundles on the aggregator (best-effort)", async () => {

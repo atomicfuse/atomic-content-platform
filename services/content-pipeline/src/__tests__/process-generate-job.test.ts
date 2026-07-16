@@ -24,6 +24,7 @@ vi.mock("../lib/site-brief.js", () => ({
 const mockGetAllExistingArticles = vi.fn().mockResolvedValue({
   urls: new Set(["example.com/existing-1", "example.com/existing-2"]),
   titles: new Set(["existing article one", "existing article two"]),
+  ids: new Set(["existing-id-1"]),
 });
 
 vi.mock("../agents/content-generation/agent.js", () => ({
@@ -32,11 +33,12 @@ vi.mock("../agents/content-generation/agent.js", () => ({
   normalizeUrl: (url: string) => url,
   normalizeTitleKey: (title: string) => title.toLowerCase(),
   dedupIndexPath: (domain: string) => `sites/${domain}/dedup-index.json`,
-  serializeDedupIndex: (existing: { urls: Set<string>; titles: Set<string> }) =>
+  serializeDedupIndex: (existing: { urls: Set<string>; titles: Set<string>; ids: Set<string> }) =>
     JSON.stringify({
-      version: 1,
+      version: 2,
       urls: Array.from(existing.urls),
       titles: Array.from(existing.titles),
+      ids: Array.from(existing.ids ?? []),
     }),
   getAllExistingArticles: (...args: unknown[]): unknown =>
     mockGetAllExistingArticles(...args),
@@ -135,6 +137,7 @@ describe("processGenerateJob", () => {
     mockGetAllExistingArticles.mockResolvedValue({
       urls: new Set(["example.com/existing-1", "example.com/existing-2"]),
       titles: new Set(["existing article one", "existing article two"]),
+      ids: new Set(["existing-id-1"]),
     });
   });
 
@@ -418,7 +421,8 @@ describe("processGenerateJob", () => {
           _pendingArticle: {
             siteDomain: "test.com",
             slug: "new-article",
-            content: "---\ntitle: New Article\nsource_url: https://example.com/new\n---\nBody",
+            content:
+              "---\ntitle: New Article\nsource_title: Original Wire Title\nsource_url: https://example.com/new\nsource_item_id: agg-new-1\n---\nBody",
           },
         },
       ],
@@ -441,5 +445,10 @@ describe("processGenerateJob", () => {
     expect(dedupIndex.titles).toContain("existing article one");
     expect(dedupIndex.titles).toContain("existing article two");
     expect(dedupIndex.titles).toContain("new article");
+    // v2 fields: the aggregator item id and the ORIGINAL source title must be
+    // merged in, so cross-run dedup works even when the URL differs.
+    expect(dedupIndex.ids).toContain("existing-id-1");
+    expect(dedupIndex.ids).toContain("agg-new-1");
+    expect(dedupIndex.titles).toContain("original wire title");
   });
 });

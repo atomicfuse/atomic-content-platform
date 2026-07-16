@@ -496,13 +496,17 @@ export async function goLive(domain: string): Promise<void> {
   await deleteBranch(stagingBranch);
   await createBranch(stagingBranch, "main");
 
-  // 5. Update index: status = Ready, KEEP staging_branch and preview_url
+  // 5. Update index, KEEP staging_branch and preview_url. A site with a
+  // custom domain attached is serving production traffic — publishing staged
+  // edits must not demote it from Live back to Ready (that stranded sites on
+  // "Ready" with no path back, since only attachCustomDomain sets Live).
+  const postPublishStatus = site.custom_domain ? "Live" : "Ready";
   await updateSiteInIndex(domain, {
-    status: "Ready",
+    status: postPublishStatus,
   });
 
   // Dual-write: mirror status to MongoDB (soft-fail)
-  await updateDashboardIndexEntry(domain, { status: "Ready" });
+  await updateDashboardIndexEntry(domain, { status: postPublishStatus });
 
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
