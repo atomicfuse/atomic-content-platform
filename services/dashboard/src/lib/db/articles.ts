@@ -6,6 +6,10 @@ function useMongoReads(): boolean {
   return process.env.USE_MONGO_READS === "true";
 }
 
+/** Legacy auto-publish runs upserted placeholder files (articles/.gitkeep)
+ *  into Mongo as articles with dot-prefixed slugs — reads must exclude them. */
+const NON_PLACEHOLDER_SLUG = { $not: /^\./ };
+
 /** Frontmatter-only article metadata stored in MongoDB.
  *  MongoDB documents contain camelCase fields (written directly from
  *  frontmatter by the content-pipeline and backfill scripts). The
@@ -170,7 +174,7 @@ export async function readArticlesFromDb(
     effectiveBranch === "main" ? "main" : { $in: [effectiveBranch, "main"] };
   const docs = await db
     .collection<ArticleMeta>(COLLECTIONS.articles)
-    .find({ domain, branch: branchFilter })
+    .find({ domain, branch: branchFilter, slug: NON_PLACEHOLDER_SLUG })
     .sort({ slug: 1 })
     .toArray();
   const bySlug = new Map<string, ArticleMeta>();
@@ -205,7 +209,7 @@ export async function countArticlesForSites(
   }));
 
   const pipeline = [
-    { $match: { $or: branchFilters } },
+    { $match: { slug: NON_PLACEHOLDER_SLUG, $or: branchFilters } },
     { $group: { _id: "$domain", slugs: { $addToSet: "$slug" } } },
     { $project: { count: { $size: "$slugs" } } },
   ];

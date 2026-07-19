@@ -19,9 +19,12 @@ Asaf reported that some sites still show "–" in the Sites table Articles colum
 ## Article-counts fix implemented (same session, after Asaf's go-ahead)
 Dual-branch reads in `services/dashboard/src/lib/db/articles.ts` (TDD): `countArticlesForSites` now matches `branch ∈ {staging_branch, "main"}` per site (null-staging sites included via main) and counts distinct slugs; `readArticlesFromDb` unions staging+main and dedupes by slug preferring the staging doc. Spec/plan in `docs/superpowers/`. **Uncommitted — awaiting Asaf's local test + approval.** Note: local dev uses the Git read path, so the fix is proven by unit tests and verifiable in production after deploy (see audit log post-deploy checklist).
 
+## Follow-up: .gitkeep surfaced as an article (same session, post-deploy)
+The dual-branch read exposed placeholder docs: `autoPublishSite` had been dual-writing `articles/.gitkeep` to Mongo as an article (slug `.gitkeep`, branch `main`) for every auto-published site. Fixed both sides TDD: pipeline `isArticleMarkdownPath()` filter in the auto-publish dual-write, and a dot-slug exclusion (`{$not: /^\./}`) in both dashboard read queries so the existing prod docs disappear without a migration.
+
 ## Tests added
-- +4 (dual-branch union counting, empty-input guard, slug dedup preference, main-only default) in `src/lib/db/__tests__/articles.test.ts`. Dashboard suite 307 → 311, all green.
-- Test-results file: `docs/test-results/2026-07-19-article-counts-dual-branch.txt`.
+- +4 dual-branch tests (union counting, empty-input guard, slug dedup preference, main-only default) + 2 dot-slug filter tests in `src/lib/db/__tests__/articles.test.ts`; +2 `isArticleMarkdownPath` tests in pipeline `auto-publish.test.ts`. Dashboard suite 307 → 313; pipeline suite 629, all green.
+- Test-results files: `docs/test-results/2026-07-19-article-counts-dual-branch.txt`, `2026-07-19-gitkeep-filter-dashboard.txt`, `2026-07-19-gitkeep-filter-pipeline.txt`.
 
 ## Items captured this session
 **To `backlog.md`:** None

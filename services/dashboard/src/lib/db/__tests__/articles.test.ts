@@ -123,6 +123,7 @@ describe("dual-branch article reads (staging ∪ main)", () => {
     expect(mockAggregate).toHaveBeenCalledWith([
       {
         $match: {
+          slug: { $not: /^\./ },
           $or: [
             { domain: "wineoceans", branch: { $in: ["staging/wineoceans", "main"] } },
             { domain: "wpsite", branch: { $in: ["main"] } },
@@ -153,6 +154,7 @@ describe("dual-branch article reads (staging ∪ main)", () => {
     expect(mockFind).toHaveBeenCalledWith({
       domain: "wineoceans",
       branch: { $in: ["staging/wineoceans", "main"] },
+      slug: { $not: /^\./ },
     });
     expect(result.map((r) => r.slug)).toEqual(["a", "b"]);
     expect(result[0].title).toBe("A staging");
@@ -163,6 +165,39 @@ describe("dual-branch article reads (staging ∪ main)", () => {
     const { readArticlesFromDb } = await import("../articles.js");
     mockToArray.mockResolvedValueOnce([]);
     await readArticlesFromDb("wineoceans");
-    expect(mockFind).toHaveBeenCalledWith({ domain: "wineoceans", branch: "main" });
+    expect(mockFind).toHaveBeenCalledWith({
+      domain: "wineoceans",
+      branch: "main",
+      slug: { $not: /^\./ },
+    });
+  });
+
+  // Legacy auto-publish runs upserted placeholder files (articles/.gitkeep)
+  // into Mongo as articles with dot-prefixed slugs — reads must exclude them.
+  it("readArticlesFromDb excludes dot-prefixed slugs in the query", async () => {
+    const { readArticlesFromDb } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([]);
+    await readArticlesFromDb("wineoceans", "staging/wineoceans");
+    expect(mockFind).toHaveBeenCalledWith({
+      domain: "wineoceans",
+      branch: { $in: ["staging/wineoceans", "main"] },
+      slug: { $not: /^\./ },
+    });
+  });
+
+  it("countArticlesForSites excludes dot-prefixed slugs in the match stage", async () => {
+    const { countArticlesForSites } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([]);
+    await countArticlesForSites([{ domain: "wineoceans", staging_branch: "staging/wineoceans" }]);
+    expect(mockAggregate).toHaveBeenCalledWith([
+      {
+        $match: {
+          slug: { $not: /^\./ },
+          $or: [{ domain: "wineoceans", branch: { $in: ["staging/wineoceans", "main"] } }],
+        },
+      },
+      { $group: { _id: "$domain", slugs: { $addToSet: "$slug" } } },
+      { $project: { count: { $size: "$slugs" } } },
+    ]);
   });
 });

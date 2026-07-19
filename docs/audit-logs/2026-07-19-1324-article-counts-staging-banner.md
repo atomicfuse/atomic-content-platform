@@ -95,7 +95,33 @@ Commit 9f77622 made `hasPendingChanges` depend on the GitHub compare API's `file
 
 **Issues found:** None.
 
+### Change 4: .gitkeep surfaced as an article after the dual-branch fix deployed
+**Files:** `services/content-pipeline/src/queue/scheduler-flow.ts`, `services/dashboard/src/lib/db/articles.ts` (+ both test files)
+**Action:** Modify
+**Why:** After deploying Changes 2-3, every auto-published site's Content tab showed a `.gitkeep` "article" (draft, no date). Root cause: `autoPublishSite` dual-wrote **every** file under `/articles/` to Mongo — including the `articles/.gitkeep` placeholder — as an article doc with slug `.gitkeep` under branch `main`. These docs existed all along; the old staging-only read hid them, the union read surfaced them. (The backfill script filtered `.md` correctly; only the auto-publish path didn't.)
+
+**What changed:**
+- Pipeline: new exported `isArticleMarkdownPath()` (`/articles/` + `.md` only), used in the auto-publish dual-write filter — stops creating placeholder docs (TDD, 2 new tests).
+- Dashboard: `NON_PLACEHOLDER_SLUG` (`{ $not: /^\./ }`) added to `readArticlesFromDb` and `countArticlesForSites` queries — hides the placeholder docs already in prod Mongo without a data migration (TDD, 2 new tests + 2 updated assertions).
+
+**Verification after this change:**
+| Check | Result |
+|-------|--------|
+| tsc --noEmit (dashboard + pipeline) | PASS |
+| Dashboard suite | PASS (313, Δ +2) — `docs/test-results/2026-07-19-gitkeep-filter-dashboard.txt` |
+| Pipeline suite | PASS (629, Δ +2 in auto-publish.test.ts) — `docs/test-results/2026-07-19-gitkeep-filter-pipeline.txt` |
+
+**Issues found:** First test draft used `mockAggregate.mock.calls[0][0]` which failed typecheck (untyped mock tuple); rewrote as a `toHaveBeenCalledWith` full-pipeline assertion.
+
 ## Decisions
+
+### Decision: Read-filter + write-filter for .gitkeep, no Mongo data migration
+**Alternatives considered:**
+1. **Delete the placeholder docs from prod Mongo** — cleanest data, but needs prod credentials/script run and doesn't prevent recurrence.
+2. **Filter dot-prefixed slugs at read time AND stop writing them at publish time** — self-healing (docs become invisible on deploy, stop being recreated), no migration.
+
+**Chosen approach:** 2. The stale docs are harmless once invisible; a cleanup can ride along any future backfill.
+**Trade-offs accepted:** a few dead docs remain in the collection.
 
 ### Decision: Fix on the read side (union), not the write side
 **Alternatives considered:**

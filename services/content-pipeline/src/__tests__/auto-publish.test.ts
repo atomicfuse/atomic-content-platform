@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { shouldAutoPublish, isBinaryPath, isImageAsset, collectFilesForPublish } from "../queue/scheduler-flow.js";
+import { shouldAutoPublish, isBinaryPath, isImageAsset, isArticleMarkdownPath, collectFilesForPublish } from "../queue/scheduler-flow.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
 
 describe("shouldAutoPublish", () => {
@@ -86,6 +86,21 @@ describe("isBinaryPath", () => {
     ]) {
       expect(isBinaryPath(p)).toBe(false);
     }
+  });
+});
+
+describe("isArticleMarkdownPath", () => {
+  it("matches only .md files under /articles/", () => {
+    expect(isArticleMarkdownPath("sites/x/articles/post.md")).toBe(true);
+    expect(isArticleMarkdownPath("sites/x/articles/nested/deep-post.md")).toBe(true);
+  });
+
+  it("rejects placeholder and non-markdown files under /articles/", () => {
+    // .gitkeep was being upserted into Mongo as an article with slug ".gitkeep"
+    expect(isArticleMarkdownPath("sites/x/articles/.gitkeep")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/articles/image.png")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/site.yaml")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/dedup-index.json")).toBe(false);
   });
 });
 
