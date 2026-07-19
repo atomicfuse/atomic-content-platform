@@ -149,6 +149,11 @@ export async function countArticles(
  * Read articles for a site, returning dashboard-friendly ArticleEntry[].
  * When USE_MONGO_READS is true, reads from MongoDB and maps to camelCase.
  * When false, falls back to Git via readArticles (or KV via readArticlesWithKVFallback).
+ *
+ * Auto-publish re-keys article docs from the staging branch to "main" and
+ * deletes the staging copies (see content-pipeline autoPublishSite), so a
+ * site's article set is the union of both branches, deduped by slug with the
+ * staging doc winning (it is the newer working copy).
  */
 export async function readArticlesFromDb(
   domain: string,
@@ -161,12 +166,20 @@ export async function readArticlesFromDb(
   }
   const effectiveBranch = branch ?? "main";
   const db = await getMongoDb();
+  const branchFilter =
+    effectiveBranch === "main" ? "main" : { $in: [effectiveBranch, "main"] };
   const docs = await db
     .collection<ArticleMeta>(COLLECTIONS.articles)
-    .find({ domain, branch: effectiveBranch })
+    .find({ domain, branch: branchFilter })
     .sort({ slug: 1 })
     .toArray();
-  return docs.map(toArticleEntry);
+  const bySlug = new Map<string, ArticleMeta>();
+  for (const doc of docs) {
+    if (!bySlug.has(doc.slug) || doc.branch === effectiveBranch) {
+      bySlug.set(doc.slug, doc);
+    }
+  }
+  return [...bySlug.values()].map(toArticleEntry);
 }
 
 /**
@@ -181,16 +194,20 @@ export async function countArticlesForSites(
     const { countArticlesForSites: gitCount } = await import("../github");
     return gitCount(sites);
   }
+  if (sites.length === 0) return {};
   const db = await getMongoDb();
-  // Build match filter for all staging branches
-  const branchFilters = sites
-    .filter((s) => s.staging_branch)
-    .map((s) => ({ domain: s.domain, branch: s.staging_branch! }));
-  if (branchFilters.length === 0) return {};
+  // A site's articles live under its staging branch between publishes and
+  // under "main" once auto-publish re-keys them — count the union of both,
+  // distinct by slug so an article present on both branches counts once.
+  const branchFilters = sites.map((s) => ({
+    domain: s.domain,
+    branch: { $in: s.staging_branch ? [s.staging_branch, "main"] : ["main"] },
+  }));
 
   const pipeline = [
     { $match: { $or: branchFilters } },
-    { $group: { _id: "$domain", count: { $sum: 1 } } },
+    { $group: { _id: "$domain", slugs: { $addToSet: "$slug" } } },
+    { $project: { count: { $size: "$slugs" } } },
   ];
   const results = await db.collection(COLLECTIONS.articles).aggregate(pipeline).toArray();
   const counts: Record<string, number> = {};
