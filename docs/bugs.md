@@ -1,7 +1,7 @@
 # Bugs
 
-_Last reviewed: 2026-07-16 (PM — rename-route entry removed after audit verified its Mongo mirror exists)_
-_3 open bugs, 1 marked [High]_
+_Last reviewed: 2026-07-19 (article-counts + staging-banner investigation; banner bug fixed operationally same day)_
+_4 open bugs, 2 marked [High]_
 
 Known bugs grouped by what part of the system they affect. Items marked [High] are user-affecting or cause data-integrity problems. Tick the checkbox when fixed.
 
@@ -36,6 +36,34 @@ Known bugs grouped by what part of the system they affect. Items marked [High] a
 ---
 
 ## Dashboard
+
+### [ ] [High] Article counts disappear for auto-published sites
+
+**The bug:** Every night, when the scheduler publishes a live site's new articles to production, it moves the site's article records in MongoDB from the "staging" shelf to the "main" shelf and throws away the staging copies. But the dashboard only ever looks at the staging shelf when counting articles — so for these sites it finds nothing.
+
+**Where it happens:** The Sites table Articles column shows "–" and the site's Content tab is empty, for any Live site with nightly auto-publish (wineoceans, decoratingmom, travelswire, etc.). (`services/dashboard/src/lib/db/articles.ts:177-201` and `:153-170` query only `branch = staging_branch`; `services/content-pipeline/src/queue/scheduler-flow.ts:224-279` writes docs under `"main"` and deletes the staging-branch docs.)
+
+**What should happen:** The table and Content tab should show the site's real article count and list, whether the articles are pending on staging or already published.
+
+**What actually happens:** Counts show "–" and the Content tab is empty, even though the site publishes articles daily ("Last Articles: today" stays correct because it reads from a different source — the scheduler's history file in Git). The 2026-07-16 Mongo backfill fixed these sites for less than a day; the next scheduler run wiped the staging docs again.
+
+**How to fix or work around:** Fix implemented 2026-07-19 (dual-branch reads in `services/dashboard/src/lib/db/articles.ts`, +4 tests, suite 311 green) — **uncommitted, awaiting Asaf's local review and deploy**. Tick this off once verified in production (local dev uses the Git read path, so verification happens post-deploy).
+
+---
+
+### [x] (2026-07-19) [High] Unpublished-changes banner hidden on polluted staging branches — fixed operationally: cleanup script + `git merge origin/main` pushed to 8 polluted branches (merge-base advanced, compare now exact). `staging/chaibeseret` + `staging/travelingfoodie2` intentionally skipped (sites slated for deletion). Durable hardening (tree-SHA compare, writer path guard) parked in `notes.md` → "Staging-branch hygiene".
+
+**The bug:** The yellow "You have unpublished changes on staging" banner now decides whether to show by asking GitHub for the list of changed files and keeping only the ones belonging to the site. GitHub only returns the first 300 changed files (alphabetically) — and ten staging branches are cluttered with thousands of leftover files from other sites (from an old topic-backfill batch job), so the site's own files never make it into that first 300 and the banner stays hidden.
+
+**Where it happens:** Site detail page after editing topics, theme, articles, etc., on the affected sites — verified live for staging/hiddenstorydaily (12 commits ahead, no banner), travelingfoodie2 (28 ahead), tvshowsmag, paleobeasts, carsnewsmag, coffeeactually, financenewsbase, gamingnewsalley, muvizzcom, chaibeseret. (`services/dashboard/src/app/api/sites/staging-status/route.ts:42-57`, changed in commit 9f77622; GitHub compare API caps `files` at 300.)
+
+**What should happen:** Any real un-published edit to the site should make the banner appear.
+
+**What actually happens:** On the ten polluted branches, edits pile up invisibly and the operator has no way to see or publish them from the UI. Clean branches still work.
+
+**How to fix or work around:** Workaround: run `scripts/cleanup-staging-crossdomain.sh` to strip the cross-domain files (restores the banner but leaves the check fragile). Real fix: compare the Git tree of `sites/<domain>/` between main and the staging branch (two cheap API calls, immune to the 300-file cap). Related latent risk found during the same investigation: the banner is also gated on the Mongo dashboard-index doc's `status`/`staging_branch`, and `updateDashboardIndexEntry` is a non-upsert `updateOne` — a missing Mongo doc silently disables the banner too.
+
+---
 
 ### [ ] Article lists never refresh if the Mongo read flag is turned off
 
