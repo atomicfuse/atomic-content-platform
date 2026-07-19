@@ -152,6 +152,12 @@ export function isImageAsset(path: string): boolean {
   return IMAGE_ASSET_RE.test(path);
 }
 
+/** Only .md files under /articles/ are articles — placeholder files like
+ *  articles/.gitkeep must never be dual-written to Mongo as article docs. */
+export function isArticleMarkdownPath(path: string): boolean {
+  return path.includes("/articles/") && path.endsWith(".md");
+}
+
 /**
  * Partition site files into text (UTF-8) and binary (base64) sets for commit,
  * reading each via the appropriate binary-safe primitive. Pure aside from the
@@ -222,7 +228,7 @@ export async function autoPublishSite(
   );
 
   // Dual-write: copy article metadata to MongoDB under branch "main"
-  const articleFiles = files.filter((f) => f.path.includes("/articles/"));
+  const articleFiles = files.filter((f) => isArticleMarkdownPath(f.path));
   if (articleFiles.length > 0) {
     const articleDocs = articleFiles.map((f) => {
       const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";

@@ -104,3 +104,100 @@ describe("article DB helpers", () => {
     expect(mockDeleteMany).toHaveBeenCalledWith({ domain: "example.com" });
   });
 });
+
+// Auto-publish re-keys article docs from the staging branch to "main" and
+// deletes the staging copies (scheduler-flow autoPublishSite), so reads must
+// treat a site's articles as the union of both branches, deduped by slug.
+describe("dual-branch article reads (staging ∪ main)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("countArticlesForSites matches staging+main per site and counts distinct slugs", async () => {
+    const { countArticlesForSites } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([{ _id: "wineoceans", count: 42 }]);
+    const counts = await countArticlesForSites([
+      { domain: "wineoceans", staging_branch: "staging/wineoceans" },
+      { domain: "wpsite", staging_branch: null },
+    ]);
+    expect(mockAggregate).toHaveBeenCalledWith([
+      {
+        $match: {
+          slug: { $not: /^\./ },
+          $or: [
+            { domain: "wineoceans", branch: { $in: ["staging/wineoceans", "main"] } },
+            { domain: "wpsite", branch: { $in: ["main"] } },
+          ],
+        },
+      },
+      { $group: { _id: "$domain", slugs: { $addToSet: "$slug" } } },
+      { $project: { count: { $size: "$slugs" } } },
+    ]);
+    expect(counts).toEqual({ wineoceans: 42 });
+  });
+
+  it("countArticlesForSites returns {} for empty input without querying", async () => {
+    const { countArticlesForSites } = await import("../articles.js");
+    const counts = await countArticlesForSites([]);
+    expect(counts).toEqual({});
+    expect(mockAggregate).not.toHaveBeenCalled();
+  });
+
+  it("readArticlesFromDb with a staging branch unions main and prefers the staging doc per slug", async () => {
+    const { readArticlesFromDb } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([
+      { domain: "wineoceans", slug: "a", branch: "main", title: "A main" },
+      { domain: "wineoceans", slug: "a", branch: "staging/wineoceans", title: "A staging" },
+      { domain: "wineoceans", slug: "b", branch: "main", title: "B main" },
+    ]);
+    const result = await readArticlesFromDb("wineoceans", "staging/wineoceans");
+    expect(mockFind).toHaveBeenCalledWith({
+      domain: "wineoceans",
+      branch: { $in: ["staging/wineoceans", "main"] },
+      slug: { $not: /^\./ },
+    });
+    expect(result.map((r) => r.slug)).toEqual(["a", "b"]);
+    expect(result[0].title).toBe("A staging");
+    expect(result[1].title).toBe("B main");
+  });
+
+  it("readArticlesFromDb without a branch reads main only", async () => {
+    const { readArticlesFromDb } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([]);
+    await readArticlesFromDb("wineoceans");
+    expect(mockFind).toHaveBeenCalledWith({
+      domain: "wineoceans",
+      branch: "main",
+      slug: { $not: /^\./ },
+    });
+  });
+
+  // Legacy auto-publish runs upserted placeholder files (articles/.gitkeep)
+  // into Mongo as articles with dot-prefixed slugs — reads must exclude them.
+  it("readArticlesFromDb excludes dot-prefixed slugs in the query", async () => {
+    const { readArticlesFromDb } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([]);
+    await readArticlesFromDb("wineoceans", "staging/wineoceans");
+    expect(mockFind).toHaveBeenCalledWith({
+      domain: "wineoceans",
+      branch: { $in: ["staging/wineoceans", "main"] },
+      slug: { $not: /^\./ },
+    });
+  });
+
+  it("countArticlesForSites excludes dot-prefixed slugs in the match stage", async () => {
+    const { countArticlesForSites } = await import("../articles.js");
+    mockToArray.mockResolvedValueOnce([]);
+    await countArticlesForSites([{ domain: "wineoceans", staging_branch: "staging/wineoceans" }]);
+    expect(mockAggregate).toHaveBeenCalledWith([
+      {
+        $match: {
+          slug: { $not: /^\./ },
+          $or: [{ domain: "wineoceans", branch: { $in: ["staging/wineoceans", "main"] } }],
+        },
+      },
+      { $group: { _id: "$domain", slugs: { $addToSet: "$slug" } } },
+      { $project: { count: { $size: "$slugs" } } },
+    ]);
+  });
+});

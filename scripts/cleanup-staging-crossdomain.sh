@@ -4,7 +4,7 @@
 # back to their main-branch state.
 set -euo pipefail
 
-NETWORK_REPO="/Users/michal/Documents/ATL-content-network/atomic-labs-network"
+NETWORK_REPO="${NETWORK_REPO:-/Users/michal/Documents/ATL-content-network/atomic-labs-network}"
 WORKTREE_BASE="/tmp/atl-staging-cleanup"
 
 cd "$NETWORK_REPO"
