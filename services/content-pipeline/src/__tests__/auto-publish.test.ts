@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { shouldAutoPublish, isBinaryPath, isImageAsset, isArticleMarkdownPath, collectFilesForPublish } from "../queue/scheduler-flow.js";
+import { shouldAutoPublish, isBinaryPath, isImageAsset, isArticleMarkdownPath, collectFilesForPublish, decideStagingReset } from "../queue/scheduler-flow.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
 
 describe("shouldAutoPublish", () => {
@@ -142,5 +142,45 @@ describe("collectFilesForPublish (logos are R2-native)", () => {
     ]);
     // Non-image binaries (fonts) still go through the base64 blob path.
     expect(binaryFiles.map((f) => f.path)).toEqual(["sites/x/assets/brand.woff2"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staging-reset compare-and-swap (Bug B — 2026-08-27)
+//
+// autoPublishSite snapshots staging → commits to main → force-resets staging.
+// Commits landing on staging during that window were copied nowhere and then
+// erased. n8n image callbacks commit featuredImage ~20s after article creation,
+// which overlaps the window: on 2026-08-27, 5 of 12 articles lost their image
+// this way despite every image succeeding.
+// ---------------------------------------------------------------------------
+
+describe("decideStagingReset", () => {
+  it("resets when the staging ref has not moved", () => {
+    expect(decideStagingReset("abc123", "abc123", 1, 3)).toEqual({ action: "reset" });
+  });
+
+  it("re-copies when staging moved and attempts remain", () => {
+    expect(decideStagingReset("abc123", "def456", 1, 3)).toEqual({ action: "recopy" });
+  });
+
+  it("skips the reset rather than destroying commits when attempts are exhausted", () => {
+    const decision = decideStagingReset("abc123", "def456", 3, 3);
+    expect(decision.action).toBe("skip");
+    if (decision.action === "skip") {
+      expect(decision.reason).toContain("staging");
+    }
+  });
+
+  it("resets when either SHA is unknown (preserves legacy create-branch path)", () => {
+    expect(decideStagingReset(null, "def456", 1, 3)).toEqual({ action: "reset" });
+    expect(decideStagingReset("abc123", null, 1, 3)).toEqual({ action: "reset" });
+    expect(decideStagingReset(null, null, 1, 3)).toEqual({ action: "reset" });
+  });
+
+  it("never re-copies forever — the last attempt can only reset or skip", () => {
+    for (const attempt of [3, 4, 99]) {
+      expect(decideStagingReset("a", "b", attempt, 3).action).toBe("skip");
+    }
   });
 });
