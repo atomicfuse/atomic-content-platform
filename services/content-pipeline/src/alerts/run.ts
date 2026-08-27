@@ -22,7 +22,7 @@
 
 import type { Db } from "mongodb";
 import { getMongoDb } from "../lib/mongo.js";
-import { loadConfig } from "../lib/config.js";
+import { loadConfig, DASHBOARD_PUBLIC_URL } from "../lib/config.js";
 import { createOctokit, readFile } from "../lib/github.js";
 import { listActiveSites, readSiteBrief } from "../lib/site-brief.js";
 import { notifyAttention, type NotificationConfig } from "../lib/notifications.js";
@@ -85,8 +85,9 @@ async function cleanupOrphanedConditions(db: Db): Promise<void> {
   }
 }
 
-export const DASHBOARD_URL =
-  process.env.DASHBOARD_URL ?? "https://sites-platform-e297--atomic.cloudgrid.io";
+/** Kept as a named export for existing importers; the value itself now has a
+ *  single definition in lib/config.ts. */
+export const DASHBOARD_URL = DASHBOARD_PUBLIC_URL;
 
 export interface RunAlertsOptions {
   /** Scope the run to a single site (used by runAfterRun). */
