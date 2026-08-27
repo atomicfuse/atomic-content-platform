@@ -316,3 +316,27 @@ It's just `timestamp + 3 random digits` — a throwaway unique ID with no real m
 - **Writer guard against cross-domain pollution:** nothing prevents a batch op from committing files outside `sites/<domain>/` onto `staging/<domain>` (that's what broke the banner). A path guard in the pipeline writer / batch tooling would make the fix permanent.
 - **Cleanup script alone is insufficient:** `scripts/cleanup-staging-crossdomain.sh` reverts *content* but doesn't advance the *merge-base*, so GitHub's three-dot compare still shows the polluted paths. A `git merge origin/main` into the staging branch is what actually clears the compare. Learned 2026-07-19; the script is now env-overridable via `NETWORK_REPO`.
 - **Skipped branches pending site deletion:** `staging/chaibeseret` and `staging/travelingfoodie2` were left polluted on 2026-07-19 because Asaf plans to delete both sites (demo/mock). If deletion doesn't happen, their banners stay broken until they get the same merge treatment (both have own-domain conflicts needing manual review).
+
+## Alerting gaps (added 2026-08-27, sync-kv + image-alert investigation)
+
+- **Detect absence, not just failure.** All four bugs of 2026-08-27 reported
+  success while doing the wrong thing: cancelled CI runs skip `if: failure()`,
+  stale-snapshot syncs verify against their own checkout, a dead cron logs
+  nothing, and per-replica alert state cannot see the other four replicas. Any
+  alerting rebuild should watch for expected-things-not-happening.
+- **`run-alerts` cron has not fired since 2026-06-08.** Four of seven alert
+  conditions are cron-only and have therefore never been evaluated since. Split
+  the diagnosis: `curl localhost:5000/run-alerts` under `cloudgrid dev` proves
+  the code; temporarily shortening the schedule and re-plugging proves
+  registration. A dashboard `api/run-alerts` proxy would give a permanent
+  trigger — there is none today, and `grid ssh` 403s even for a grid admin.
+- **Alert thresholds are untuned:** `in_review` fires above 15/site when the
+  real maximum is 6; `general_images` nags weekly on `> 0`;
+  `create_new_site` is an unconditional 14-day calendar ping. All three are
+  settable in `scheduler/alerts.yaml` **without a deploy** — that file does not
+  exist yet, so every run also logs a "failed to load" warning.
+- **`monthly_creation_alert` is self-inconsistent:** it fires on *failure*
+  count exceeding 70% of expected, but the message reports *articles created*.
+- **Never edit `main` directly for a live site.** Auto-publish copies the whole
+  `sites/<domain>/` tree from staging, so a main-only edit reverts at the next
+  publish. Apply to both branches.

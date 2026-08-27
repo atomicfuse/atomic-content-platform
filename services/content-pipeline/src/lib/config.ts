@@ -4,6 +4,16 @@
 
 import type { GitHubConfig } from "./github.js";
 
+/**
+ * Public dashboard origin, used to build links in outbound notifications.
+ * Single definition: alerts/run.ts and lib/notifications.ts both read it, and
+ * a wrong value here means dead links in Slack.
+ *
+ * NOT the same as the in-cluster `http://dashboard-app` used for service calls.
+ */
+export const DASHBOARD_PUBLIC_URL =
+  process.env.DASHBOARD_URL ?? "https://sites-platform-e297--atomic.cloudgrid.io";
+
 export interface AgentConfig {
   github: GitHubConfig;
   networkRepo: string;

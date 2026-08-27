@@ -22,6 +22,7 @@ import {
 import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
+import { isGeneralImage } from "../../lib/general-image.js";
 import { recordImageGenEvent } from "../../stats/recorder.js";
 import { recordImageUsage } from "../../costs/recorder.js";
 import { incrementR2Tally } from "../../stats/r2-tally.js";
@@ -107,34 +108,128 @@ const pendingImages = new Map<string, PendingImage>();
  * Track a triggered image request. If no callback arrives within the timeout,
  * fires a Slack/Telegram alert so the failure is visible.
  */
+/**
+ * Reads an article's current `featuredImage` from the authoritative store.
+ * Resolves to the value, `undefined` when the article has no image, or `null`
+ * when it could not be read at all.
+ */
+export type ImageVerifier = (
+  siteDomain: string,
+  slug: string,
+) => Promise<string | undefined | null>;
+
+/**
+ * Decide whether a timed-out image request warrants an alert.
+ *
+ * The in-process flag is only trustworthy when it says "succeeded". This service
+ * runs 5 replicas and n8n's callback is load-balanced, so it usually lands on a
+ * different replica than the one holding the timer — "no success seen here"
+ * means nothing on its own. That is what fired 4 false alerts on 2026-08-27 for
+ * articles whose images had been delivered in ~22s.
+ *
+ * `featuredImage` read from Git is the authoritative answer. An unverifiable
+ * read alerts rather than staying quiet: every failure in this subsystem so far
+ * has been a silence, and a false positive is cheaper than a lost image.
+ */
+export function shouldAlertOnImageTimeout(
+  succeededInThisProcess: boolean,
+  featuredImage: string | undefined | null,
+  domain: string,
+): boolean {
+  if (succeededInThisProcess) return false;
+  if (featuredImage === null) return true;
+  return isGeneralImage(featuredImage, domain);
+}
+
+/**
+ * Build an {@link ImageVerifier} that reads the article's frontmatter from Git.
+ *
+ * Git rather than KV: KV is only re-seeded minutes later by CI, so at the 300s
+ * mark it is not yet authoritative. Tries the staging branch (where the image
+ * callback commits) before main (where auto-publish copies it); after a publish
+ * the two are identical, so either answers correctly.
+ */
+export function createGitImageVerifier(
+  github: GitHubConfig,
+  networkRepo: string,
+): ImageVerifier {
+  return async (siteDomain, slug) => {
+    const octokit = createOctokit(github);
+    const path = `sites/${siteDomain}/articles/${slug}.md`;
+
+    for (const branch of [`staging/${siteDomain}`, "main"]) {
+      try {
+        clearTreeCache(branch);
+        const raw = await readFile(octokit, networkRepo, path, branch);
+        const featured = matter(raw).data.featuredImage ?? matter(raw).data.featured_image;
+        return typeof featured === "string" ? featured : undefined;
+      } catch {
+        // Not on this branch (or unreadable) — try the next one.
+      }
+    }
+    return null;
+  };
+}
+
+/**
+ * Track a triggered image request. If no callback arrives within the timeout,
+ * verify the article against Git and alert only if it really has no image.
+ */
 export function trackPendingImage(
   requestId: string,
   siteDomain: string,
   slug: string,
   articleTitle: string,
   notifications: NotificationConfig,
+  verifier?: ImageVerifier,
 ): void {
   const timer = setTimeout(() => {
-    pendingImages.delete(requestId);
+    // Async work is fired-and-contained: this callback must never throw into
+    // the timer queue.
+    void (async () => {
+      pendingImages.delete(requestId);
 
-    // The callback may have arrived successfully but without request_id (n8n
-    // doesn't always forward it), so clearPendingImage was never called.
-    // Check the successfulImages set before alerting to avoid false alarms.
-    const imageKey = `${siteDomain}/${slug}`;
-    if (successfulImages.has(imageKey)) return;
+      const imageKey = `${siteDomain}/${slug}`;
+      const succeeded = successfulImages.has(imageKey);
 
-    const reason = `n8n image callback not received within ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s — ` +
-      `n8n may have failed to deliver the result (timeout, network error, or crash)`;
-    console.error(
-      `[n8n-image] TIMEOUT — no callback for ${siteDomain}/${slug} ` +
-      `(request_id=${requestId}) after ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s`,
-    );
-    void notifyImageDefaultFallback(notifications, {
-      site: siteDomain,
-      articleTitle,
-      slug,
-      reason,
-    });
+      // `succeeded` is per-replica and therefore only meaningful when true.
+      // Otherwise ask Git what the article actually looks like.
+      let featuredImage: string | undefined | null = null;
+      let verified = false;
+      if (!succeeded && verifier) {
+        try {
+          featuredImage = await verifier(siteDomain, slug);
+          verified = featuredImage !== null;
+        } catch (err) {
+          console.error(`[n8n-image] image verification failed for ${imageKey}:`, err);
+          featuredImage = null;
+        }
+      }
+
+      if (!shouldAlertOnImageTimeout(succeeded, featuredImage, siteDomain)) {
+        console.log(
+          `[n8n-image] TIMEOUT for ${imageKey} but the article has a real image — ` +
+          `no alert (callback was handled by another replica)`,
+        );
+        return;
+      }
+
+      const seconds = IMAGE_CALLBACK_TIMEOUT_MS / 1000;
+      const reason = verified
+        ? `n8n image callback not received within ${seconds}s and the article still uses the default image`
+        : `n8n image callback not received within ${seconds}s — could not verify the article's current image`;
+
+      console.error(
+        `[n8n-image] TIMEOUT — no callback for ${imageKey} ` +
+        `(request_id=${requestId}) after ${seconds}s`,
+      );
+      void notifyImageDefaultFallback(notifications, {
+        site: siteDomain,
+        articleTitle,
+        slug,
+        reason,
+      });
+    })();
   }, IMAGE_CALLBACK_TIMEOUT_MS);
 
   // Don't let the timer prevent process exit

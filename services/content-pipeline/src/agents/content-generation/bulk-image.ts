@@ -3,6 +3,7 @@ import matter from "gray-matter";
 import type { AgentConfig } from "../../lib/config.js";
 import { createOctokit, readFile, listFiles } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
+import { isGeneralImage } from "../../lib/general-image.js";
 import { triggerN8nImage, registerBulkRun, removeBulkExpected, scheduleBulkFlush } from "./n8n-image.js";
 
 /* ------------------------------------------------------------------ */
@@ -108,14 +109,9 @@ function clearBulkJob(): void {
 /*  General image detection                                            */
 /* ------------------------------------------------------------------ */
 
-/** Returns true if the article uses the site's default general image or has no image. */
-export function isGeneralImage(
-  featuredImage: string | undefined,
-  _domain: string,
-): boolean {
-  if (!featuredImage) return true;
-  return featuredImage.includes("general-article");
-}
+// The predicate moved to lib/general-image.ts so n8n-image.ts can use it too
+// without a circular import. Re-exported here for existing callers.
+export { isGeneralImage };
 
 /* ------------------------------------------------------------------ */
 /*  Scan phase                                                         */

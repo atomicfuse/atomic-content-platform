@@ -27,7 +27,7 @@ import { upsertArticleMeta } from "../../lib/db/articles.js";
 import { parseGeneratedArticle } from "./generators/base-generator.js";
 import { validateArticleBody, ensureTopicTag } from "./agent.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
-import { triggerN8nImage, trackPendingImage } from "./n8n-image.js";
+import { triggerN8nImage, trackPendingImage, createGitImageVerifier } from "./n8n-image.js";
 import { buildArticlePrompts } from "./prompts/build-prompts.js";
 import { recordTextUsage } from "../../costs/recorder.js";
 import type { AgentConfig } from "../../lib/config.js";
@@ -350,7 +350,14 @@ export async function runDedicatedGeneration(
     });
 
     if (n8nImageTriggered) {
-      trackPendingImage(requestId, siteDomain, slug, generated.title, config.notifications);
+      trackPendingImage(
+        requestId,
+        siteDomain,
+        slug,
+        generated.title,
+        config.notifications,
+        createGitImageVerifier(config.github, config.networkRepo),
+      );
     }
   }
 

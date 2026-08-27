@@ -186,6 +186,68 @@ export async function collectFilesForPublish(
  * Copy sites/<domain>/ from staging branch to main, then reset staging branch.
  * This is the content-pipeline equivalent of the dashboard's publishStagingToProduction.
  */
+/** Maximum snapshot -> commit -> verify attempts before giving up on the reset. */
+const MAX_PUBLISH_ATTEMPTS = 3;
+
+/** What to do with the staging branch after copying its content to main. */
+export type StagingResetDecision =
+  | { action: "reset" }
+  | { action: "recopy" }
+  | { action: "skip"; reason: string };
+
+/**
+ * Decide whether the staging branch can safely be force-reset to main.
+ *
+ * The reset is destructive: anything committed to staging after the snapshot
+ * was taken is erased. n8n image callbacks commit `featuredImage` to the
+ * staging branch ~20s after an article is created, which overlaps the copy
+ * window -- on 2026-08-27 that silently cost 5 of 12 articles their images
+ * even though every image generated successfully.
+ *
+ * Comparing the ref SHA before and after the copy detects those commits. When
+ * drift is present we re-copy; if it persists we skip the reset entirely,
+ * because leaving staging ahead of main loses nothing (the preview stays
+ * correct and the next publish copies the commits over) whereas resetting
+ * destroys them.
+ *
+ * An unknown SHA on either side yields `reset`, preserving the previous
+ * behaviour including the create-branch fallback for a missing branch.
+ */
+export function decideStagingReset(
+  shaAtSnapshot: string | null,
+  shaNow: string | null,
+  attempt: number,
+  maxAttempts: number,
+): StagingResetDecision {
+  if (shaAtSnapshot === null || shaNow === null) return { action: "reset" };
+  if (shaAtSnapshot === shaNow) return { action: "reset" };
+  if (attempt < maxAttempts) return { action: "recopy" };
+  return {
+    action: "skip",
+    reason:
+      `staging branch advanced during publish (${shaAtSnapshot.slice(0, 7)} -> ${shaNow.slice(0, 7)}) ` +
+      `after ${maxAttempts} attempt(s) -- skipping reset so the new commits survive`,
+  };
+}
+
+/**
+ * Read a branch's head SHA. Returns null when the branch is absent or the
+ * read fails, which callers treat as "cannot compare".
+ */
+async function getBranchSha(
+  octokit: Octokit,
+  owner: string,
+  repoName: string,
+  branch: string,
+): Promise<string | null> {
+  try {
+    const ref = await octokit.rest.git.getRef({ owner, repo: repoName, ref: `heads/${branch}` });
+    return ref.data.object.sha;
+  } catch {
+    return null;
+  }
+}
+
 export async function autoPublishSite(
   octokit: Octokit,
   repo: string,
@@ -193,102 +255,133 @@ export async function autoPublishSite(
   stagingBranch: string,
 ): Promise<void> {
   const { owner, repo: repoName } = parseRepo(repo);
-
-  // Force a fresh tree fetch — child jobs (content generation) may have committed
-  // new articles to the staging branch. If the tree was cached earlier (e.g.,
-  // during brief reading, or in a different worker process), the cached snapshot
-  // would be stale and auto-publish would silently miss new articles, permanently
-  // losing them when staging is force-reset below.
-  clearTreeCache(stagingBranch);
-
   const siteDir = `sites/${domain}`;
-  const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
 
-  if (filePaths.length === 0) {
-    console.warn(`[auto-publish] No files found in ${siteDir} on ${stagingBranch}`);
+  for (let attempt = 1; attempt <= MAX_PUBLISH_ATTEMPTS; attempt++) {
+    // Record where staging is BEFORE snapshotting so commits landing during the
+    // copy can be detected before the destructive reset below.
+    const shaAtSnapshot = await getBranchSha(octokit, owner, repoName, stagingBranch);
+
+    // Force a fresh tree fetch -- child jobs (content generation) and n8n image
+    // callbacks commit to the staging branch while this runs, so a cached
+    // snapshot would silently miss them.
+    clearTreeCache(stagingBranch);
+
+    const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
+
+    if (filePaths.length === 0) {
+      console.warn(`[auto-publish] No files found in ${siteDir} on ${stagingBranch}`);
+      return;
+    }
+
+    // Binary assets (logos, favicons, images) MUST be read as base64 and
+    // committed as base64 blobs -- reading them as UTF-8 corrupts the bytes.
+    const { files, binaryFiles } = await collectFilesForPublish(
+      filePaths,
+      (p) => readFile(octokit, repo, p, stagingBranch),
+      (p) => readFileBase64(octokit, repo, p, stagingBranch),
+    );
+    const totalFiles = files.length + binaryFiles.length;
+
+    await commitBatch(
+      octokit,
+      repo,
+      files,
+      binaryFiles,
+      `scheduler: auto-publish ${domain} (${totalFiles} files)`,
+      "main",
+    );
+
+    // Dual-write: copy article metadata to MongoDB under branch "main"
+    const articleFiles = files.filter((f) => isArticleMarkdownPath(f.path));
+    if (articleFiles.length > 0) {
+      const articleDocs = articleFiles.map((f) => {
+        const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";
+        const parsed = matter(f.content);
+        return {
+          domain,
+          slug,
+          branch: "main",
+          frontmatter: {
+            title: parsed.data.title,
+            description: parsed.data.description,
+            status: parsed.data.status,
+            type: parsed.data.type,
+            publish_date: parsed.data.publishDate ?? parsed.data.publish_date,
+            author: parsed.data.author,
+            tags: parsed.data.tags,
+            featured_image: parsed.data.featuredImage ?? parsed.data.featured_image,
+            quality_score: parsed.data.quality_score,
+            videos: parsed.data.videos,
+            scripts: parsed.data.scripts,
+          },
+        };
+      });
+      await upsertArticlesBatch(articleDocs);
+      console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
+    }
+
+    // Compare-and-swap: did anything land on staging while we were copying?
+    const shaNow = await getBranchSha(octokit, owner, repoName, stagingBranch);
+    const decision = decideStagingReset(shaAtSnapshot, shaNow, attempt, MAX_PUBLISH_ATTEMPTS);
+
+    if (decision.action === "recopy") {
+      console.warn(
+        `[auto-publish] ${domain}: staging advanced during publish ` +
+        `(${shaAtSnapshot?.slice(0, 7)} -> ${shaNow?.slice(0, 7)}) -- re-copying ` +
+        `(attempt ${attempt + 1}/${MAX_PUBLISH_ATTEMPTS})`,
+      );
+      continue;
+    }
+
+    if (decision.action === "skip") {
+      // Deliberately NOT resetting, and NOT deleting the staging article docs:
+      // staging still holds commits that main does not. The next auto-publish
+      // for this site copies them over.
+      console.warn(`[auto-publish] ${domain}: ${decision.reason}`);
+      clearTreeCache(stagingBranch);
+      clearTreeCache("main");
+      await invalidateDashboardCache(domain, stagingBranch);
+      await invalidateDashboardCache(domain, "main");
+      console.log(`[auto-publish] Published ${domain}: ${totalFiles} files -> main, staging left ahead`);
+      return;
+    }
+
+    // Reset staging branch to main HEAD.
+    // Use force-update instead of delete+recreate -- the atomic ref update
+    // avoids a window where the branch doesn't exist, which races with n8n
+    // image callbacks trying to read from the staging branch.
+    const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
+    const mainSha = mainRef.data.object.sha;
+
+    try {
+      await octokit.rest.git.updateRef({
+        owner,
+        repo: repoName,
+        ref: `heads/${stagingBranch}`,
+        sha: mainSha,
+        force: true,
+      });
+    } catch {
+      // Branch may not exist yet -- create it
+      await octokit.rest.git.createRef({
+        owner,
+        repo: repoName,
+        ref: `refs/heads/${stagingBranch}`,
+        sha: mainSha,
+      });
+    }
+
+    // Dual-write: staging branch was reset -- remove stale staging article docs
+    await deleteArticlesForSiteBranch(domain, stagingBranch);
+
+    clearTreeCache(stagingBranch);
+    clearTreeCache("main");
+    await invalidateDashboardCache(domain, stagingBranch);
+    await invalidateDashboardCache(domain, "main");
+    console.log(`[auto-publish] Published ${domain}: ${totalFiles} files -> main, staging reset`);
     return;
   }
-
-  // Binary assets (logos, favicons, images) MUST be read as base64 and
-  // committed as base64 blobs — reading them as UTF-8 corrupts the bytes.
-  const { files, binaryFiles } = await collectFilesForPublish(
-    filePaths,
-    (p) => readFile(octokit, repo, p, stagingBranch),
-    (p) => readFileBase64(octokit, repo, p, stagingBranch),
-  );
-  const totalFiles = files.length + binaryFiles.length;
-
-  await commitBatch(
-    octokit,
-    repo,
-    files,
-    binaryFiles,
-    `scheduler: auto-publish ${domain} (${totalFiles} files)`,
-    "main",
-  );
-
-  // Dual-write: copy article metadata to MongoDB under branch "main"
-  const articleFiles = files.filter((f) => isArticleMarkdownPath(f.path));
-  if (articleFiles.length > 0) {
-    const articleDocs = articleFiles.map((f) => {
-      const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";
-      const parsed = matter(f.content);
-      return {
-        domain,
-        slug,
-        branch: "main",
-        frontmatter: {
-          title: parsed.data.title,
-          description: parsed.data.description,
-          status: parsed.data.status,
-          type: parsed.data.type,
-          publish_date: parsed.data.publishDate ?? parsed.data.publish_date,
-          author: parsed.data.author,
-          tags: parsed.data.tags,
-          featured_image: parsed.data.featuredImage ?? parsed.data.featured_image,
-          quality_score: parsed.data.quality_score,
-          videos: parsed.data.videos,
-          scripts: parsed.data.scripts,
-        },
-      };
-    });
-    await upsertArticlesBatch(articleDocs);
-    console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
-  }
-
-  // Reset staging branch to main HEAD.
-  // Use force-update instead of delete+recreate — the atomic ref update avoids
-  // a window where the branch doesn't exist, which races with n8n image
-  // callbacks trying to read from the staging branch.
-  const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
-  const mainSha = mainRef.data.object.sha;
-
-  try {
-    await octokit.rest.git.updateRef({
-      owner,
-      repo: repoName,
-      ref: `heads/${stagingBranch}`,
-      sha: mainSha,
-      force: true,
-    });
-  } catch {
-    // Branch may not exist yet — create it
-    await octokit.rest.git.createRef({
-      owner,
-      repo: repoName,
-      ref: `refs/heads/${stagingBranch}`,
-      sha: mainSha,
-    });
-  }
-
-  // Dual-write: staging branch was reset — remove stale staging article docs
-  await deleteArticlesForSiteBranch(domain, stagingBranch);
-
-  clearTreeCache(stagingBranch);
-  clearTreeCache("main");
-  await invalidateDashboardCache(domain, stagingBranch);
-  await invalidateDashboardCache(domain, "main");
-  console.log(`[auto-publish] Published ${domain}: ${totalFiles} files → main, staging reset`);
 }
 
 // ---------------------------------------------------------------------------

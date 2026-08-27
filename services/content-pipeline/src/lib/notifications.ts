@@ -3,6 +3,8 @@
  * or when errors occur in the pipeline.
  */
 
+import { DASHBOARD_PUBLIC_URL } from "./config.js";
+
 export interface NotificationConfig {
   telegramBotToken?: string;
   telegramChatId?: string;
@@ -120,12 +122,17 @@ export async function notifyImageDefaultFallback(
     reason: string;
   },
 ): Promise<void> {
-  const articleUrl = `https://${params.site}/articles/${params.slug}`;
+  // A live article URL is NOT derivable from `params.site`: that is the siteId
+  // (folder name), not a hostname, and articles are served at /<slug>/ — not
+  // /articles/<slug>. The old template produced a dead link in every alert
+  // (https://dogslabs/articles/<slug> — no such host, and the path 404s).
+  // Link the dashboard instead: always valid, and it is where the image is fixed.
+  const reviewUrl = `${DASHBOARD_PUBLIC_URL}/articles/general-images`;
   const message =
     `Image generation failed for site: ${params.site}\n` +
-    `Article: "${params.articleTitle}" (${articleUrl})\n` +
+    `Article: "${params.articleTitle}" (${params.slug})\n` +
     `Reason: ${params.reason}\n` +
-    `The article is using the default site image.`;
+    `The article is using the default site image — review: ${reviewUrl}`;
 
   await dispatch(config, withSeverity("not_critical", message));
 }

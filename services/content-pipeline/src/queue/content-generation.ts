@@ -14,7 +14,7 @@ import { runContentGeneration } from "../agents/content-generation/agent.js";
 import { writeArticleBatch } from "../lib/writer.js";
 import type { PendingArticle } from "../lib/writer.js";
 import { upsertArticlesBatch } from "../lib/db/articles.js";
-import { triggerN8nImage, trackPendingImage } from "../agents/content-generation/n8n-image.js";
+import { triggerN8nImage, trackPendingImage, createGitImageVerifier } from "../agents/content-generation/n8n-image.js";
 import { notifyImageDefaultFallback } from "../lib/notifications.js";
 import type { AgentConfig } from "../lib/config.js";
 import { recordGeneration, sourceFromTriggeredBy } from "../stats/recorder.js";
@@ -238,7 +238,14 @@ export async function processGenerateJob(
           },
         }).then((accepted) => {
           if (accepted) {
-            trackPendingImage(req.requestId, req.siteDomain, req.slug, req.articleTitle, config.notifications);
+            trackPendingImage(
+              req.requestId,
+              req.siteDomain,
+              req.slug,
+              req.articleTitle,
+              config.notifications,
+              createGitImageVerifier(config.github, config.networkRepo),
+            );
           } else {
             void notifyImageDefaultFallback(config.notifications, {
               site: req.siteDomain, articleTitle: req.articleTitle,

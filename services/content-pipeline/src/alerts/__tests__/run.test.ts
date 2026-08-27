@@ -32,6 +32,8 @@ vi.mock("../../lib/site-brief.js", () => ({
 
 vi.mock("../../lib/config.js", () => ({
   loadConfig: (...args: unknown[]): unknown => mockLoadConfig(...args),
+  // run.ts re-exports DASHBOARD_URL from here, so the mock must provide it.
+  DASHBOARD_PUBLIC_URL: "https://dashboard.test",
 }));
 
 vi.mock("../../lib/github.js", () => ({
