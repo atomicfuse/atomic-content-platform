@@ -1,11 +1,45 @@
 # Bugs
 
-_Last reviewed: 2026-07-19 (article-counts + staging-banner investigation; banner bug fixed operationally same day)_
+_Last reviewed: 2026-08-27 (sync-kv cancellation + image-alert investigation; four bugs found, all fixed)_
 _4 open bugs, 2 marked [High]_
 
 Known bugs grouped by what part of the system they affect. Items marked [High] are user-affecting or cause data-integrity problems. Tick the checkbox when fixed.
 
 ## Content pipeline
+
+### [x] (2026-08-27) [High] Auto-publish destroyed image commits that landed mid-publish
+
+**The bug:** When the scheduler publishes a site, it copies `sites/<domain>/` from the staging branch to `main` and then force-resets the staging branch. Anything committed to staging *between* the copy and the reset was copied nowhere and then erased. n8n image callbacks commit `featuredImage` to staging about 20 seconds after an article is created — squarely inside that window.
+
+**Where it happens:** `services/content-pipeline/src/queue/scheduler-flow.ts` → `autoPublishSite`. The pre-existing `clearTreeCache` guard fixed stale *caching*, not the *interleaving*.
+
+**What should happen:** Every commit on the staging branch reaches `main`, or is left on staging for the next publish. Nothing is discarded.
+
+**What actually happened:** On 2026-08-27, 12 articles generated and all 12 images succeeded (n8n took 20–24s each). Five nonetheless ended up on `main` with `<site>-general-article.webp`. Two variants: the image lands *before* the reset → destroyed on both branches (permanent); or *after* the reset → staging keeps it, `main` stays stale until the next publish (self-healing but slow). Recurring across at least the 08-23, 08-24 and 08-27 runs — 8 articles restored in total.
+
+**Fix:** Compare-and-swap on the staging ref. Record its SHA before snapshotting; re-read before the reset; if it moved, re-copy (bounded to 3 attempts) and if drift persists skip the reset entirely, because leaving staging ahead loses nothing while resetting destroys commits. Only the first variant is fully prevented; the second now surfaces via the image-timeout alert instead of being silent.
+
+### [x] (2026-08-27) [High] Image-failure alerts were uncorrelated with reality (5 replicas, in-memory state)
+
+**The bug:** The 300s "n8n callback not received" alert decided whether to fire by consulting an in-memory set. The service runs **5 replicas**, and n8n's callback is load-balanced — so the replica holding the timer usually isn't the one that received the callback and recorded success. It then alerted for articles that had images.
+
+**Where it happens:** `services/content-pipeline/src/agents/content-generation/n8n-image.ts` → `trackPendingImage`. `pendingImages`, `successfulImages` and `delayedAlerts` are all per-process.
+
+**What should happen:** Alert when an article lacks its image; stay quiet when it has one.
+
+**What actually happened:** On the 2026-08-27 run, 4 alerts fired and all 4 were false (proved by `SUCCESS — image delivered` and `TIMEOUT` logged for the same slug 4 minutes apart), while 5 articles that genuinely lost their image were silent. Zero of the alerts were correct in either direction.
+
+**Fix:** The timeout now reads the article's actual `featuredImage` from Git (staging, falling back to `main`) and alerts only if it is missing or a general image. Unverifiable reads alert, with the reason saying so — every failure in this subsystem has been a silence, and a false positive is cheaper than a lost image.
+
+### [x] (2026-08-27) Image alerts linked to a URL that could never resolve
+
+**The bug:** The alert body built `https://${site}/articles/${slug}`, where `site` is the siteId (folder name) rather than a hostname, and `/articles/` is not the article route.
+
+**Where it happens:** `services/content-pipeline/src/lib/notifications.ts` → `notifyImageDefaultFallback`.
+
+**What actually happened:** `https://dogslabs/articles/<slug>` — no such host. With the real domain it still 404s; the working form is `https://dogslabs.com/<slug>/`. Every image alert ever sent contained a dead link.
+
+**Fix:** Link the dashboard's general-images page instead — always valid, and where the image gets fixed. `DASHBOARD_PUBLIC_URL` now has a single definition in `lib/config.ts` rather than being re-declared per file.
 
 ### [ ] [High] Articles generated while Redis is down are silently lost
 
