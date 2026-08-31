@@ -215,6 +215,9 @@ async function upsertState(db: Db, state: AlertState): Promise<void> {
  *
  * Failure-isolated: any error is logged and swallowed so one condition never
  * aborts the rest of the run.
+ *
+ * Returns whether an alert was actually delivered, so the caller can report a
+ * meaningful heartbeat.
  */
 export async function evaluateAndMaybeFire(
   db: Db,
@@ -224,7 +227,7 @@ export async function evaluateAndMaybeFire(
   message: string,
   now: Date,
   notifConfig: NotificationConfig,
-): Promise<void> {
+): Promise<boolean> {
   const id = `${domain}:${conditionId}`;
   try {
     const existing = await db
@@ -241,13 +244,15 @@ export async function evaluateAndMaybeFire(
         await upsertState(db, newState);
       }
       // On failure: persist nothing, leaving old state intact so it retries.
-      return;
+      return ok;
     }
 
     // Not firing: persist recovery / steady-state (never advances lastFiredAt).
     await upsertState(db, newState);
+    return false;
   } catch (err) {
     console.error(`[alerts/run] ${id} evaluation failed:`, err);
+    return false;
   }
 }
 
@@ -263,15 +268,17 @@ async function maybeFireReminder(
   message: string,
   now: Date,
   notifConfig: NotificationConfig,
-): Promise<void> {
-  if (!shouldFire) return;
+): Promise<boolean> {
+  if (!shouldFire) return false;
   try {
     const ok = await notifyAttention(notifConfig, message);
     if (ok) {
       await upsertState(db, { ...state, lastFiredAt: now });
     }
+    return ok;
   } catch (err) {
     console.error(`[alerts/run] reminder ${reminderId} failed:`, err);
+    return false;
   }
 }
 
@@ -327,6 +334,7 @@ export async function runAlerts(
   }
 
   let totalGeneralImages = 0;
+  let alertsFired = 0;
 
   for (const site of sites) {
     const { domain, branch } = site;
@@ -347,7 +355,7 @@ export async function runAlerts(
 
       const plans = planConditions(domain, inputs, cfg);
       for (const plan of plans) {
-        await evaluateAndMaybeFire(
+        if (await evaluateAndMaybeFire(
           db,
           domain,
           plan.conditionId,
@@ -355,7 +363,7 @@ export async function runAlerts(
           plan.message,
           now,
           notifConfig,
-        );
+        )) alertsFired++;
       }
     } catch (err) {
       console.error(`[alerts/run] site ${domain} failed:`, err);
@@ -363,9 +371,24 @@ export async function runAlerts(
   }
 
   // Reminders are network-scoped — only run on a full (non-scoped) tick.
-  if (opts?.onlySite) return;
+  if (opts?.onlySite) {
+    console.log(
+      `[alerts/run] tick complete: 1 site(s) evaluated (scoped to ${opts.onlySite}), ` +
+      `${alertsFired} alert(s) fired`,
+    );
+    return;
+  }
 
-  await runReminders(db, cfg, totalGeneralImages, now, notifConfig);
+  const remindersFired = await runReminders(db, cfg, totalGeneralImages, now, notifConfig);
+
+  // Heartbeat. runAlerts used to log nothing on success, which is exactly why a
+  // cron that stopped firing on 2026-06-08 went unnoticed for two months —
+  // "did it run?" had no cheap answer. Absence of this line is now the signal.
+  console.log(
+    `[alerts/run] tick complete: ${sites.length} site(s) evaluated, ` +
+    `${alertsFired} alert(s) fired, ${remindersFired} reminder(s) fired, ` +
+    `${totalGeneralImages} article(s) on a general image`,
+  );
 }
 
 /**
@@ -378,7 +401,8 @@ async function runReminders(
   totalGeneralImages: number,
   now: Date,
   notifConfig: NotificationConfig,
-): Promise<void> {
+): Promise<number> {
+  let fired = 0;
   // general_images — fire every 7 days if totalGeneralImages > 0
   if (cfg.reminders.generalImages.enabled) {
     try {
@@ -388,7 +412,7 @@ async function runReminders(
         state.lastFiredAt == null ||
         now.getTime() - state.lastFiredAt.getTime() >= intervalMs;
       const shouldFire = totalGeneralImages > 0 && intervalPassed;
-      await maybeFireReminder(
+      if (await maybeFireReminder(
         db,
         "general_images",
         shouldFire,
@@ -396,7 +420,7 @@ async function runReminders(
         `📷 There are ${totalGeneralImages} articles using a general image — review it here:\n${DASHBOARD_URL}/articles/general-images`,
         now,
         notifConfig,
-      );
+      )) fired++;
     } catch (err) {
       console.error("[alerts/run] general_images reminder failed:", err);
     }
@@ -410,7 +434,7 @@ async function runReminders(
       const shouldFire =
         state.lastFiredAt == null ||
         now.getTime() - state.lastFiredAt.getTime() >= intervalMs;
-      await maybeFireReminder(
+      if (await maybeFireReminder(
         db,
         "create_new_site",
         shouldFire,
@@ -418,11 +442,13 @@ async function runReminders(
         `Time to create a new site\n${DASHBOARD_URL}/wizard`,
         now,
         notifConfig,
-      );
+      )) fired++;
     } catch (err) {
       console.error("[alerts/run] create_new_site reminder failed:", err);
     }
   }
+
+  return fired;
 }
 
 /**

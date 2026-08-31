@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { notifyAttention } from "../../lib/notifications.js";
+import { notifyAttention, notifyImageDefaultFallback } from "../../lib/notifications.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -21,5 +21,49 @@ describe("notifyAttention", () => {
   it("returns false when the send fails", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
     expect(await notifyAttention({ slackWebhookUrl: "https://hooks.slack.com/x" } as any, "x")).toBe(false);
+  });
+
+  // A revoked webhook, a deleted channel, or a removed app answers with a 4xx
+  // *body* — fetch RESOLVES, it does not throw. Before 2026-08-31 sendSlack
+  // ignored the response entirely, so notifyAttention returned true, the alert
+  // was recorded as delivered and lastFiredAt advanced. Nothing arrived, and
+  // nothing ever retried.
+  it("returns false when Slack answers 403 — a resolved non-2xx is still a failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 403, statusText: "Forbidden", text: async () => "invalid_token",
+    } as unknown as Response));
+    expect(
+      await notifyAttention({ slackWebhookUrl: "https://hooks.slack.com/x" } as any, "x"),
+    ).toBe(false);
+  });
+
+  it("returns false when Slack answers 404 (revoked webhook)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 404, statusText: "Not Found", text: async () => "no_service",
+    } as unknown as Response));
+    expect(
+      await notifyAttention({ slackWebhookUrl: "https://hooks.slack.com/x" } as any, "x"),
+    ).toBe(false);
+  });
+});
+
+describe("dispatch-based notifiers surface delivery failures", () => {
+  it("logs when Slack rejects the post instead of failing silently", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false, status: 403, statusText: "Forbidden", text: async () => "invalid_token",
+    } as unknown as Response));
+
+    // dispatch() uses Promise.allSettled, so a rejection is swallowed by design.
+    // It must at least be logged, or a delivery outage is invisible.
+    await notifyImageDefaultFallback(
+      { slackWebhookUrl: "https://hooks.slack.com/x" } as any,
+      { site: "dogslabs", articleTitle: "t", slug: "s", reason: "r" },
+    );
+
+    expect(errSpy).toHaveBeenCalled();
+    const logged = errSpy.mock.calls.flat().map(String).join(" ");
+    expect(logged.toLowerCase()).toContain("slack");
+    errSpy.mockRestore();
   });
 });
