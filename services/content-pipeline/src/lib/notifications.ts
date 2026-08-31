@@ -31,10 +31,20 @@ function withSeverity(severity: Severity, message: string): string {
 
 /** Dispatch a message to all configured channels (Telegram + Slack). */
 async function dispatch(config: NotificationConfig, text: string): Promise<void> {
-  await Promise.allSettled([
+  const channels = ["telegram", "slack"] as const;
+  const results = await Promise.allSettled([
     config.telegramBotToken ? sendTelegram(config, text) : Promise.resolve(),
     config.slackWebhookUrl ? sendSlack(config, text) : Promise.resolve(),
   ]);
+
+  // allSettled deliberately swallows failures so one dead channel never blocks
+  // the other — but an UNLOGGED failure makes a delivery outage indistinguishable
+  // from "nothing was wrong", which is how a revoked webhook would present.
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`[notifications] ${channels[i]} delivery failed:`, result.reason);
+    }
+  });
 }
 
 /**
@@ -180,9 +190,21 @@ async function sendSlack(
 ): Promise<void> {
   if (!config.slackWebhookUrl) return;
 
-  await fetch(config.slackWebhookUrl, {
+  const response = await fetch(config.slackWebhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
+
+  // A revoked webhook, a deleted channel or a removed app answers with a 4xx
+  // BODY rather than a network error, so fetch RESOLVES. Without this check the
+  // caller treats the post as delivered: notifyAttention returns true, the
+  // alert state records lastFiredAt, and nothing ever retries or complains.
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Slack webhook returned ${response.status} ${response.statusText}` +
+      (body ? `: ${body.slice(0, 200)}` : ""),
+    );
+  }
 }

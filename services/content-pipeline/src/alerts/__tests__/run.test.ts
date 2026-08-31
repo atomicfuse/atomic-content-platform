@@ -515,3 +515,16 @@ describe("runAfterRun", () => {
     expect(await getState(`${SITE}:tracking_off`)).toBeNull();
   });
 });
+
+describe("runAlerts heartbeat", () => {
+  it("logs a completion line so a dead cron is detectable", async () => {
+    // runAlerts previously logged nothing on success, which is why a cron that
+    // stopped firing on 2026-06-08 went unnoticed for two months.
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runAlerts(NOW);
+    const logged = logSpy.mock.calls.flat().map(String).join(" ");
+    logSpy.mockRestore();
+    expect(logged).toMatch(/\[alerts\/run\] tick complete/);
+    expect(logged).toMatch(/site\(s\) evaluated/);
+  });
+});
