@@ -19,15 +19,19 @@ import { createOctokit, readFile } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
 import type { SiteBriefData } from "../../lib/site-brief.js";
 import { runContentGeneration } from "../content-generation/agent.js";
+import { recordGeneration } from "../../stats/recorder.js";
+import { runAfterRun } from "../../alerts/run.js";
+import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { PublishSchedule } from "../../types.js";
 import { RunHistoryAccumulator } from "./history.js";
 import type { SiteRunResult } from "./history.js";
-import { createSchedulerFlow, buildRunId } from "../../queue/scheduler-flow.js";
+import { createSchedulerFlow, buildRunId, shouldAutoPublish, autoPublishSite } from "../../queue/scheduler-flow.js";
 import type { SchedulerSite } from "../../queue/scheduler-flow.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { notifyError, notifySummary } from "../../lib/notifications.js";
+import { updateWeeklySummary } from "../../stats/weekly-summary.js";
 
 const SCHEDULER_CONFIG_PATH = "scheduler/config.yaml";
 
@@ -205,6 +209,7 @@ async function processSingleSite(
   siteEntry: { domain: string; branch: string },
   config: AgentConfig,
   schedCfg: SchedulerConfig,
+  forced: boolean,
 ): Promise<SiteOutcome> {
   const { domain, branch: preferredBranch } = siteEntry;
   const octokit = createOctokit(config.github);
@@ -249,6 +254,7 @@ async function processSingleSite(
     console.log(
       `[scheduled-publisher] Triggering ${articlesPerDay} article(s) for ${domain} on ${writeBranch}`,
     );
+    const startedAt = new Date();
     const genResult = await runContentGeneration(
       {
         siteDomain: domain,
@@ -260,9 +266,27 @@ async function processSingleSite(
           group: briefData.group,
           brief,
         },
+        timezone: schedCfg.timezone,
+        source: "scheduler",
       },
       config,
     );
+    const finishedAt = new Date();
+    await recordGeneration(
+      genResult,
+      {
+        source: "scheduler",
+        forced,
+        topicName: null,
+        startedAt,
+        finishedAt,
+      },
+      buildScheduleFromBrief(brief),
+    );
+
+    // Re-evaluate run-sensitive alert conditions for this site (per-site, inside
+    // the loop; fire-and-forget; failure-isolated; never alters generation).
+    void runAfterRun(domain, new Date());
 
     const created = genResult.results.filter((r) => r.status === "created").length;
     const genErrors = genResult.results.filter((r) => r.status === "error");
@@ -271,7 +295,11 @@ async function processSingleSite(
 
     if (genResult.totalSourced === 0) {
       siteStatus = "no_content";
-      siteMessage = "Aggregator returned 0 items for this site's topics";
+      if (genResult.eligibleTopicCount === 0) {
+        siteMessage = "No topics configured on this site";
+      } else {
+        siteMessage = `Aggregator returned 0 items for ${genResult.eligibleTopicCount ?? "all"} eligible topic(s)`;
+      }
     } else if (created === 0 && genErrors.length > 0) {
       siteStatus = "error";
       siteMessage = genErrors.map((e) => e.message ?? e.reason ?? "unknown").join("; ");
@@ -350,7 +378,7 @@ export async function runScheduledPublish(
 
   // 2. List all active sites (from dashboard-index.yaml, non-deleted)
   const octokit = createOctokit(config.github);
-  let activeSites: Array<{ domain: string; branch: string }>;
+  let activeSites: Array<{ domain: string; branch: string; status: string }>;
   try {
     activeSites = await listActiveSites(octokit, config.networkRepo);
   } catch (err) {
@@ -445,7 +473,7 @@ export async function runScheduledPublish(
     MAX_SITES_CONCURRENT,
     activeSites.length,
     async (siteEntry) => {
-      const outcome = await processSingleSite(siteEntry, config, schedCfg);
+      const outcome = await processSingleSite(siteEntry, config, schedCfg, force);
       // Record to incremental history immediately
       if (outcome.kind === "skipped") {
         history.recordSkipped(outcome.domain, outcome.reason);
@@ -497,6 +525,50 @@ export async function runScheduledPublish(
 
   // 4. Final history flush — ensures any pending writes land before we return
   await history.finalize();
+
+  // Update weekly summary in MongoDB
+  const allSiteDomains = activeSites.map((s) => s.domain);
+  await updateWeeklySummary({
+    allSiteDomains,
+    siteResults: siteOutcomes
+      .filter((o): o is Extract<SiteOutcome, { kind: "triggered" }> => o.kind === "triggered")
+      .map((o) => ({
+        domain: o.domain,
+        articlesRequested: o.siteResult.articlesRequested,
+        articlesCreated: o.siteResult.articlesCreated,
+      })),
+    skipped: result.skipped,
+    timezone: schedCfg.timezone,
+  });
+
+  // 5. Auto-publish: merge staging → main for Live sites with new articles.
+  //    Mirrors the queue path logic in scheduler-flow.ts processSchedulerRun().
+  const siteStatusMap = new Map(activeSites.map((s) => [s.domain, s.status]));
+  const siteBranchMap = new Map(activeSites.map((s) => [s.domain, s.branch]));
+
+  const autoPublished: string[] = [];
+  for (const outcome of siteOutcomes) {
+    if (outcome.kind !== "triggered") continue;
+    const status = siteStatusMap.get(outcome.domain) ?? "";
+    if (!shouldAutoPublish(outcome.siteResult, status)) continue;
+
+    const branch = siteBranchMap.get(outcome.domain);
+    if (!branch) continue;
+
+    try {
+      await autoPublishSite(octokit, config.networkRepo, outcome.domain, branch);
+      autoPublished.push(outcome.domain);
+    } catch (pubErr) {
+      const msg = pubErr instanceof Error ? pubErr.message : String(pubErr);
+      console.error(`[auto-publish] Failed for ${outcome.domain}: ${msg}`);
+    }
+  }
+
+  if (autoPublished.length > 0) {
+    console.log(
+      `[scheduled-publisher] Auto-published ${autoPublished.length} site(s): ${autoPublished.join(", ")}`,
+    );
+  }
 
   return result;
 }

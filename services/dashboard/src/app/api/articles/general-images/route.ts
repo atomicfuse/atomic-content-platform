@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { readArticleIndexFromKV } from "@/lib/kv-api";
 import { isGeneralImage } from "@/lib/general-image-utils";
 
@@ -39,13 +39,7 @@ async function loadGeneralImageArticles(): Promise<GeneralImageArticle[]> {
   }
 
   const index = await readDashboardIndex();
-  const activeSites = index.sites.filter(
-    (s) =>
-      s.status === "Staging" ||
-      s.status === "Ready" ||
-      s.status === "Live" ||
-      s.status === "WordPress",
-  );
+  const activeSites = index.sites;
 
   const results: GeneralImageArticle[] = [];
 

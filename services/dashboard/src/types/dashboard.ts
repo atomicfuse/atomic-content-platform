@@ -1,4 +1,43 @@
-export type SiteStatus = "New" | "Staging" | "Preview" | "Ready" | "Live" | "WordPress";
+export type SiteStatus = "Staging" | "Ready" | "Live";
+
+// ---------------------------------------------------------------------------
+// Per-topic model types (mirrors @atomic-platform/shared-types TopicV2)
+// ---------------------------------------------------------------------------
+
+/** A topic's filter source — either raw categories+tags or a pointer to a bundle. */
+export type TopicV2Source =
+  | {
+      type: "filter";
+      category_ids: string[];
+      tag_ids: string[];
+      /** @deprecated Legacy id→name maps — no longer written (names resolve live
+       *  via `?ids=`). Kept optional so older site.yaml parses + seeds display;
+       *  stripped on next save. Mirrors @atomic-platform/shared-types. */
+      category_names?: Record<string, string>;
+      tag_names?: Record<string, string>;
+    }
+  | { type: "bundle"; bundle_id: string };
+
+export interface TopicV2Schedule {
+  /** Target articles per calendar week. */
+  articles_per_week: number;
+  /** Days of the week (full names: "Monday"..."Sunday") on which this topic
+   *  is eligible to publish. Empty array = never publish. */
+  preferred_days: string[];
+}
+
+/** One topic in the per-topic model. Carries its own filter and schedule. */
+export interface TopicV2 {
+  /** Display name of the topic. Unique per site (case-insensitive). */
+  name: string;
+  /** Optional 1-line description for AI proposals. */
+  description?: string;
+  /** Where this topic pulls its content from. */
+  source: TopicV2Source;
+  /** @deprecated Per-topic schedule is deprecated. Use site-level brief.schedule
+   *  with round-robin rotation instead. Kept optional for backward compatibility. */
+  schedule?: TopicV2Schedule;
+}
 export type Company = "ATL" | "NGC" | "";
 export type Vertical = string;
 
@@ -47,9 +86,23 @@ export interface DeletedSiteEntry extends DashboardSiteEntry {
   deleted_at: string;
 }
 
+export interface HistoryEntry {
+  /** Site folder name (e.g. "rumorumor"). */
+  domain: string;
+  /** Custom domain that was connected (e.g. "rumorumor.com"), or null. */
+  custom_domain: string | null;
+  /** Display name / company for reference. */
+  company: Company | null;
+  /** Category for reference. */
+  vertical: Vertical;
+  /** ISO 8601 timestamp of when the site was permanently deleted. */
+  permanently_deleted_at: string;
+}
+
 export interface DashboardIndex {
   sites: DashboardSiteEntry[];
   deleted?: DeletedSiteEntry[];
+  history?: HistoryEntry[];
 }
 
 export interface ActivityEvent {
@@ -114,14 +167,12 @@ export interface WizardFormData {
   audiences: string[];
   /** Audience type IDs from the Content Aggregator API. */
   audienceIds: string[];
-  /** Selected categories from Niche Targeting step: { id, name, iabCode }. */
-  selectedCategories: Array<{ id: string; name: string; iabCode: string }>;
-  /** Selected tags from Niche Targeting step: { id, name }. */
-  selectedTags: Array<{ id: string; name: string }>;
   /** IAB vertical code (denormalized from vertical object). */
   iabVerticalCode: string;
-  /** Existing bundle ID (set when user picks an existing bundle instead of creating new). */
-  bundleId: string;
+  /** Free-text site theme — drives AI proposals in the Topic Filters step. */
+  theme: string;
+  /** Topic filters built up in the Topic Filters step. */
+  topics_v2: TopicV2[];
   tone: string;
   topics: string[];
   articlesPerDay: number;
@@ -148,4 +199,6 @@ export interface WizardFormData {
   logoHeight?: number;
   /** Footer logo height in pixels. Undefined = auto-derive (92% of header). */
   logoHeightFooter?: number;
+  /** Navigation menu item font size in pixels (default 14). */
+  menuItemFontSize?: number;
 }

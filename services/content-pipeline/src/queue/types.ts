@@ -7,6 +7,12 @@ export interface GenerateJobData {
   runId?: string;
   triggeredBy: "manual" | "scheduled" | "scheduled-forced";
   briefJson?: string;
+  /** Per-topic override for per-topic sites (manual dashboard trigger). */
+  topicName?: string;
+  /** Skip date-based per-topic eligibility (manual dashboard trigger). */
+  bypassSchedule?: boolean;
+  /** Scheduler timezone — passed to per-topic eligibility check. */
+  timezone?: string;
 }
 
 export interface SchedulerRunData {
@@ -14,7 +20,7 @@ export interface SchedulerRunData {
   timezone: string;
   forced: boolean;
   /** Domains that were enqueued as child generate jobs. */
-  enqueuedDomains: string[];
+  enqueuedDomains: Array<{ domain: string; count: number }>;
   skipped: Array<{ domain: string; reason: string }>;
 }
 

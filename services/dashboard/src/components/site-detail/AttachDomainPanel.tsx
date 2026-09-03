@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { attachCustomDomain, detachCustomDomain, getAvailableZones } from "@/actions/wizard";
@@ -17,7 +16,6 @@ export function AttachDomainPanel({
 }: AttachDomainPanelProps): React.ReactElement {
   const [isPending, startTransition] = useTransition();
   const { toast } = useToast();
-  const router = useRouter();
   const [selectedZone, setSelectedZone] = useState<{ domain: string; zoneId: string } | null>(null);
   const [zones, setZones] = useState<Array<{ domain: string; zoneId: string }>>([]);
   const [loadingZones, setLoadingZones] = useState(false);
@@ -42,8 +40,8 @@ export function AttachDomainPanel({
       try {
         await attachCustomDomain(domain, selectedZone.domain, selectedZone.zoneId);
         setSelectedZone(null);
-        router.refresh();
-        toast("Domain connected — live in ~60 seconds", "success");
+        await fetch("/api/cache-flush", { method: "POST" });
+        window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to attach domain", "error");
       }
@@ -54,8 +52,8 @@ export function AttachDomainPanel({
     startTransition(async () => {
       try {
         await detachCustomDomain(domain);
-        router.refresh();
-        toast("Domain disconnected", "success");
+        await fetch("/api/cache-flush", { method: "POST" });
+        window.location.reload();
       } catch (err) {
         toast(err instanceof Error ? err.message : "Failed to disconnect domain", "error");
       }

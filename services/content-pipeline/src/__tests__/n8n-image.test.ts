@@ -42,6 +42,7 @@ vi.mock("../lib/github.js", () => {
       "Body content here.",
     ].join("\n")),
     commitFile: vi.fn(async () => "abc1234"),
+    clearTreeCache: vi.fn(),
   };
 });
 

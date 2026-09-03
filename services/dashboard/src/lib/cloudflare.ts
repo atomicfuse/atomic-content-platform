@@ -3,6 +3,7 @@ import {
   S3Client,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  CopyObjectCommand,
 } from "@aws-sdk/client-s3";
 
 const CF_API_BASE = "https://api.cloudflare.com/client/v4";
@@ -529,6 +530,50 @@ export async function deleteDnsTxtRecord(
   );
 }
 
+/** Delete A, AAAA and CNAME records for a hostname so the Workers Custom
+ *  Domains API can create its own managed records. Returns the number of
+ *  records deleted. Throws on list failure; individual deletes are
+ *  best-effort. */
+export async function deleteConflictingDnsRecords(
+  zoneId: string,
+  hostname: string,
+  domain?: string,
+): Promise<number> {
+  const headers = headersFromCreds(getCredentials(domain));
+
+  const listResp = await fetch(
+    `${CF_API_BASE}/zones/${zoneId}/dns_records?name=${encodeURIComponent(hostname)}`,
+    { headers },
+  );
+  const listData = (await listResp.json()) as CloudflareResponse<CloudflareDnsRecord[]>;
+  if (!listData.success) {
+    throw new Error(
+      `Failed to list DNS records for ${hostname}: ${listData.errors.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  const conflicting = listData.result.filter((r) =>
+    r.type === "A" || r.type === "AAAA" || r.type === "CNAME",
+  );
+  if (conflicting.length === 0) return 0;
+
+  let deleted = 0;
+  for (const record of conflicting) {
+    const delResp = await fetch(
+      `${CF_API_BASE}/zones/${zoneId}/dns_records/${record.id}`,
+      { method: "DELETE", headers },
+    );
+    const delData = (await delResp.json()) as CloudflareResponse<null>;
+    if (delData.success) deleted++;
+    else {
+      console.warn(
+        `[deleteConflictingDnsRecords] Failed to delete ${record.type} record ${record.id} for ${hostname}`,
+      );
+    }
+  }
+  return deleted;
+}
+
 // --- KV Direct Write API ---
 
 /** Write a single KV entry by key. Value is a raw string (caller must JSON.stringify).
@@ -780,6 +825,68 @@ export async function deleteR2ObjectsByPrefix(
   } while (continuationToken);
 
   return deleted;
+}
+
+/** Move (rename) all R2 objects from one prefix to another within the same bucket.
+ *  Copies each object to the new prefix then deletes the originals.
+ *  Server-side copy — no data transfer, fast even for hundreds of objects.
+ *  Returns the number of objects moved. Returns 0 if R2 credentials are not configured. */
+export async function moveR2ObjectsByPrefix(
+  bucket: string,
+  oldPrefix: string,
+  newPrefix: string,
+  domain?: string,
+): Promise<number> {
+  const client = getR2Client(domain);
+  if (!client) return 0;
+
+  let moved = 0;
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: oldPrefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    const objects = list.Contents;
+    if (!objects || objects.length === 0) break;
+
+    // Copy each object to the new prefix (server-side, no data download)
+    await Promise.all(
+      objects.map(async (obj) => {
+        if (!obj.Key) return;
+        const newKey = newPrefix + obj.Key.slice(oldPrefix.length);
+        await client.send(
+          new CopyObjectCommand({
+            Bucket: bucket,
+            CopySource: `${bucket}/${obj.Key}`,
+            Key: newKey,
+          }),
+        );
+      }),
+    );
+
+    // Delete the originals in one batch
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: objects.filter((o) => o.Key).map((o) => ({ Key: o.Key })),
+          Quiet: true,
+        },
+      }),
+    );
+
+    moved += objects.length;
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return moved;
 }
 
 /** Delete specific R2 objects by exact keys.

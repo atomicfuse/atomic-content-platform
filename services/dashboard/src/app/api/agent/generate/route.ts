@@ -1,5 +1,6 @@
 // services/dashboard/src/app/api/agent/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 const REDIS_URL = process.env.REDIS_URL;
 
@@ -27,6 +28,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     siteDomain: string;
     branch?: string | null;
     count?: number | null;
+    /** Per-topic override for per-topic sites. Defaults `count` to 1 if unset. */
+    topicName?: string | null;
   };
 
   if (!body.siteDomain) {
@@ -36,24 +39,43 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  const topicName =
+    typeof body.topicName === "string" && body.topicName.trim().length > 0
+      ? body.topicName
+      : undefined;
+  // For per-topic on-demand generation, default to 1 article unless caller
+  // overrode `count`. For legacy/scheduled paths, keep the existing default of 3.
+  const defaultCount = topicName ? 1 : 3;
+
   // ---------- Queue path ----------
   if (REDIS_URL) {
     try {
-      const { getGenerateQueue, getGenerateQueueEvents } = await import(
+      const { getGenerateQueue, getGenerateQueueEvents, isRedisReachable } = await import(
         "@/lib/queue"
       );
+      // ioredis buffers commands while Redis is unreachable (enableOfflineQueue),
+      // so an enqueue against a dead Redis "succeeds" and the job is lost.
+      // Verify reachability first; otherwise use the direct HTTP proxy below.
+      if (!(await isRedisReachable())) {
+        throw new Error("Redis unreachable (ping timeout) — using direct proxy");
+      }
       const queue = getGenerateQueue();
       const queueEvents = getGenerateQueueEvents();
 
       const job = await queue.add("generate", {
         siteDomain: body.siteDomain,
-        count: body.count ?? 3,
+        count: body.count ?? defaultCount,
         branch: body.branch ?? `staging/${body.siteDomain}`,
         triggeredBy: "manual",
+        // Manual dashboard trigger: skip the per-topic date eligibility check
+        // so users can fire it any day, regardless of preferred_days.
+        bypassSchedule: true,
+        ...(topicName ? { topicName } : {}),
       });
 
       try {
         const result = await job.waitUntilFinished(queueEvents, 90_000);
+        revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
         return NextResponse.json(result as Record<string, unknown>, {
           status: 201,
         });
@@ -96,10 +118,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: JSON.stringify({
         siteDomain: body.siteDomain,
         ...(body.branch ? { branch: body.branch } : {}),
-        ...(body.count ? { count: body.count } : {}),
+        ...(body.count ? { count: body.count } : topicName ? { count: defaultCount } : {}),
+        ...(topicName ? { topicName } : {}),
+        bypassSchedule: true,
       }),
     });
     const result = (await agentResponse.json()) as Record<string, unknown>;
+    if (agentResponse.ok) {
+      revalidatePath(`/sites/${encodeURIComponent(body.siteDomain)}`);
+    }
     return NextResponse.json(result, { status: agentResponse.status });
   } catch (error) {
     const message =

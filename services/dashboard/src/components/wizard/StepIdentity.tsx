@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { COMPANIES } from "@/lib/constants";
-import { useAudiences } from "@/hooks/useReferenceData";
+import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface StepIdentityProps {
@@ -22,6 +22,7 @@ export function StepIdentity({
   onCancel,
 }: StepIdentityProps): React.ReactElement {
   const { audiences } = useAudiences();
+  const { verticals } = useVerticals();
   const [audienceSearch, setAudienceSearch] = useState("");
   const [audienceOpen, setAudienceOpen] = useState(false);
   const audienceRef = useRef<HTMLDivElement>(null);
@@ -42,7 +43,10 @@ export function StepIdentity({
     .filter((a) => a.name.toLowerCase().includes(audienceSearch.toLowerCase()));
 
   // EC-16: Trim whitespace before checking — "   " is truthy but blank.
-  const canProceed = data.pagesProjectName?.trim() && data.siteName?.trim();
+  const canProceed =
+    data.pagesProjectName?.trim() &&
+    data.siteName?.trim() &&
+    data.theme.trim().length > 0;
 
   function handleProjectNameChange(value: string): void {
     // EC-14: Enforce max length of 63 (DNS label limit / GitHub branch best practice).
@@ -173,6 +177,33 @@ export function StepIdentity({
           onChange({ company: e.target.value as WizardFormData["company"] })
         }
       />
+
+      {/* Category — display/organization label only. Sites grid groups by
+          this; aggregator filtering is driven by topics_v2, not by category. */}
+      <Select
+        label="Category (optional)"
+        options={[
+          { value: "", label: "— None —" },
+          ...verticals.map((v) => ({ value: v.id, label: v.name })),
+        ]}
+        value={data.verticalId}
+        onChange={(e): void => {
+          const id = e.target.value;
+          const name = verticals.find((v) => v.id === id)?.name ?? "";
+          onChange({ verticalId: id, vertical: name });
+        }}
+      />
+
+      <div className="space-y-1.5">
+        <label className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Site theme *</label>
+        <p className="text-xs text-[var(--text-muted)]">1–2 lines describing the editorial angle. AI uses this to propose filters for each topic.</p>
+        <textarea
+          value={data.theme}
+          onChange={(e): void => onChange({ theme: e.target.value })}
+          placeholder="Travel and eating while traveling — destinations, food tourism, wine routes."
+          className="w-full min-h-[64px] rounded border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-2 text-sm"
+        />
+      </div>
 
       <div className="flex justify-between pt-4">
         <Button variant="ghost" onClick={onCancel}>

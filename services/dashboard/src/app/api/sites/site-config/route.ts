@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parse as parseYaml } from "yaml";
-import { readDashboardIndex, readSiteConfig, readFileContent } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { readFileContent } from "@/lib/github";
 
 /**
  * GET /api/sites/site-config?domain=<domain>
@@ -34,10 +36,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
-    const config = await readSiteConfig(domain, site.staging_branch ?? undefined);
+    const branch = site.staging_branch ?? undefined;
+    let config = await readSiteConfig(domain, branch);
+    // Fallback: if staging branch is gone (deleted), read config from main
+    if (!config && branch) {
+      config = await readSiteConfig(domain, undefined);
+    }
     if (!config) {
       return NextResponse.json(
-        { error: "site.yaml not found on staging branch" },
+        { error: "site.yaml not found" },
         { status: 404 },
       );
     }

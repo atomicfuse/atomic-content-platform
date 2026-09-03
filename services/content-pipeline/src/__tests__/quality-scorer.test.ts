@@ -12,8 +12,8 @@ import type { SiteBrief, QualityScoreBreakdown } from "../types.js";
 
 // Mock AI module
 vi.mock("../lib/ai.js", () => ({
-  generateContent: vi.fn().mockResolvedValue(
-    JSON.stringify({
+  generateContent: vi.fn().mockResolvedValue({
+    text: JSON.stringify({
       seo_quality: 85,
       tone_match: 90,
       content_length: 75,
@@ -21,7 +21,8 @@ vi.mock("../lib/ai.js", () => ({
       keyword_relevance: 70,
       note: "Good article with strong tone match.",
     }),
-  ),
+    usage: { inputTokens: 100, outputTokens: 50, estimated: false },
+  }),
 }));
 
 const mockBrief: SiteBrief = {
@@ -183,9 +184,9 @@ describe("resolveStatus", () => {
     expect(resolveStatus(74, 75)).toBe("review");
   });
 
-  it("uses default threshold of 75 when not provided", () => {
-    expect(resolveStatus(75)).toBe("published");
-    expect(resolveStatus(74)).toBe("review");
+  it("uses default threshold of 40 when not provided", () => {
+    expect(resolveStatus(40)).toBe("published");
+    expect(resolveStatus(39)).toBe("review");
   });
 
   it("handles zero threshold (everything passes)", () => {

@@ -47,6 +47,8 @@
     /* Logo sizing — footer auto-derives 92% of header unless overridden */
     --logo-height: 52px;
     --logo-height-footer: calc(var(--logo-height) * 0.92);
+    /* Navigation menu item font size (overridable per-site via theme config) */
+    --menu-item-font-size: 14px;
   }
 }
 
@@ -251,7 +253,7 @@ img {
 
 .prose pre {
   background: var(--color-secondary);
-  color: #e5e7eb;
+  color: var(--color-secondary-fg, #e5e7eb);
   padding: 1rem 1.25rem;
   border-radius: var(--radius-md);
   overflow-x: auto;

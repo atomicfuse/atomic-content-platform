@@ -38,6 +38,29 @@
   --color-warning: #eab308;
   --color-error: #ef4444;
 
+  /* Ops dashboard semantic tokens (resolved via CSS variables) */
+  --color-primary: var(--ops-primary);
+  --color-secondary: var(--ops-secondary);
+  --color-primary-text: var(--ops-primary-text);
+  --color-heading: var(--ops-heading);
+  --color-card: var(--ops-card);
+  --color-card-border: var(--ops-card-border);
+  --color-page: var(--ops-page);
+  --color-divider: var(--ops-divider);
+  --color-table-header: var(--ops-table-header);
+  --color-muted: var(--ops-muted);
+  --color-primary-light: var(--ops-primary-light);
+  --color-primary-border: var(--ops-primary-border);
+  --color-primary-hover: var(--ops-primary-hover);
+  --color-success-light: var(--ops-success-light);
+  --color-success-border: var(--ops-success-border);
+  --color-warning-light: var(--ops-warning-light);
+  --color-warning-border: var(--ops-warning-border);
+  --color-error-light: var(--ops-error-light);
+  --color-error-border: var(--ops-error-border);
+  --shadow-card: var(--ops-shadow-card);
+  --shadow-card-hover: var(--ops-shadow-card-hover);
+
   /* Font */
   --font-sans: "Nunito", system-ui, -apple-system, sans-serif;
 
@@ -59,6 +82,29 @@
   --text-primary: #f9fafb;
   --text-secondary: #9ca3af;
   --text-muted: #6b7280;
+
+  /* Ops dashboard tokens — dark */
+  --ops-primary: #d2a8ff;
+  --ops-secondary: #7d8590;
+  --ops-primary-text: #e6edf3;
+  --ops-heading: #e6edf3;
+  --ops-card: #161b22;
+  --ops-card-border: #30363d;
+  --ops-page: #0d1117;
+  --ops-divider: #21262d;
+  --ops-table-header: #161b22;
+  --ops-muted: #484f58;
+  --ops-primary-light: #1c1433;
+  --ops-primary-border: #4c3a80;
+  --ops-primary-hover: #b88aff;
+  --ops-success-light: #0d1f0d;
+  --ops-success-border: #1a5a1a;
+  --ops-warning-light: #1f1507;
+  --ops-warning-border: #7a4510;
+  --ops-error-light: #1f0d0d;
+  --ops-error-border: #7a1a1a;
+  --ops-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --ops-shadow-card-hover: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 /* Light mode */
@@ -72,6 +118,29 @@
   --text-primary: var(--color-gray-900);
   --text-secondary: var(--color-gray-600);
   --text-muted: var(--color-gray-400);
+
+  /* Ops dashboard tokens — light */
+  --ops-primary: #6D4AFF;
+  --ops-secondary: #6B7280;
+  --ops-primary-text: #111827;
+  --ops-heading: #0F172A;
+  --ops-card: #FFFFFF;
+  --ops-card-border: #E7E8F0;
+  --ops-page: #F8F9FC;
+  --ops-divider: #EEF0F5;
+  --ops-table-header: #FAFAFC;
+  --ops-muted: #D1D5DB;
+  --ops-primary-light: #F3F0FF;
+  --ops-primary-border: #D9CCFF;
+  --ops-primary-hover: #5B3EF0;
+  --ops-success-light: #ECFDF5;
+  --ops-success-border: #A7F3D0;
+  --ops-warning-light: #FFFBEB;
+  --ops-warning-border: #FCD34D;
+  --ops-error-light: #FEF2F2;
+  --ops-error-border: #FECACA;
+  --ops-shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 8px 24px rgba(15, 23, 42, 0.04);
+  --ops-shadow-card-hover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 12px 32px rgba(15, 23, 42, 0.06);
 }
 
 body {

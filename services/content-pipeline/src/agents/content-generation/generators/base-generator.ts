@@ -16,6 +16,8 @@ import type { SiteBrief } from "../../../types.js";
 export interface GeneratorConfig {
   siteName: string;
   brief: SiteBrief;
+  /** Router decision for the item (true = factual/news). Used for genre selection. */
+  isFactual?: boolean;
 }
 
 /** All generators must implement this interface. */
@@ -33,14 +35,20 @@ export interface Generator {
 /** Structured context extracted from a ContentItem for use in prompts. */
 export interface PromptContext {
   title: string;
+  /** Empty string when the API sends null (e.g. videos). */
   description: string;
   summary: string;
   categories: string;
   tags: string;
   audienceTypes: string;
-  vertical: string;
   sourceName: string;
+  /** Original author/platform, empty string when unknown. */
+  author: string;
   publishedAt: string;
+  /** Empty string when no expiry (long shelf life). */
+  expiresAt: string;
+  /** "article" | "video" | "social_post" (open set from aggregator). */
+  contentType: string;
   language: string;
 }
 
@@ -51,14 +59,16 @@ export interface PromptContext {
 export function buildPromptContext(item: ContentItem): PromptContext {
   return {
     title: item.title,
-    description: item.description,
+    description: item.description ?? "",
     summary: item.summary,
     categories: item.categories.map((c) => c.name).join(", ") || "General",
     tags: item.tags.map((t) => t.name).join(", ") || "none",
     audienceTypes: item.audience_types.map((a) => a.name).join(", ") || "General",
-    vertical: item.vertical?.name ?? "General",
     sourceName: item.source.name,
+    author: item.author ?? "",
     publishedAt: item.published_at,
+    expiresAt: item.expires_at ?? "",
+    contentType: item.content_type,
     language: item.language,
   };
 }

@@ -1,7 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(sed -i '' 's|https://content-aggregator-cloudgrid.apps.cloudgrid.io|https://content-aggregator-v2-34cd.atomic.cloudgrid.io|g' \\\\ *)",
+      "Bash(sed -i '' 's|https://content-aggregator-cloudgrid.apps.cloudgrid.io|https://content-aggregator-v2-34cd--atomic.cloudgrid.io|g' \\\\ *)",
       "Bash(git add *)",
       "Bash(git push *)"
     ],

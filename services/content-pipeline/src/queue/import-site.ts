@@ -12,7 +12,8 @@ import {
   generateAuthorName,
 } from "../agents/migration/site-scaffolder.js";
 import { commitBatch, parseRepo, createOctokit } from "../lib/github.js";
-import type { BatchFileEntry, BatchBinaryEntry } from "../lib/github.js";
+import type { BatchFileEntry } from "../lib/github.js";
+import { uploadToR2 } from "../lib/r2-upload.js";
 import { writeSiteStatus } from "../agents/migration/import-status.js";
 
 async function fetchImageAsBase64(url: string): Promise<string | null> {
@@ -99,15 +100,20 @@ export async function processImportSiteJob(
       { path: `sites/${siteId}/assets/.gitkeep`, content: "" },
       { path: `sites/${siteId}/articles/.gitkeep`, content: "" },
     ];
-    const binaryFiles: BatchBinaryEntry[] = [];
-    if (logoBase64) binaryFiles.push({ path: `sites/${siteId}/assets/logo.png`, base64: logoBase64 });
-    if (faviconBase64) binaryFiles.push({ path: `sites/${siteId}/assets/favicon.png`, base64: faviconBase64 });
+    // Logos/favicons are R2-native — upload directly to R2, never commit to
+    // git (committing binary via the GitHub API corrupted logos historically).
+    if (logoBase64) {
+      await uploadToR2(`${siteId}/assets/logo.png`, Buffer.from(logoBase64, "base64"), "image/png");
+    }
+    if (faviconBase64) {
+      await uploadToR2(`${siteId}/assets/favicon.png`, Buffer.from(faviconBase64, "base64"), "image/png");
+    }
 
     await commitBatch(
       octokit,
       networkRepo,
       textFiles,
-      binaryFiles,
+      [],
       `feat: scaffold site ${siteId} from CSV import`,
       `staging/${siteId}`,
     );

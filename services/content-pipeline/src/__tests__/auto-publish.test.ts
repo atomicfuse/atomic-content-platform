@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { shouldAutoPublish } from "../queue/scheduler-flow.js";
+import { describe, it, expect, vi } from "vitest";
+import { shouldAutoPublish, isBinaryPath, isImageAsset, isArticleMarkdownPath, collectFilesForPublish, decideStagingReset } from "../queue/scheduler-flow.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
 
 describe("shouldAutoPublish", () => {
@@ -61,5 +61,126 @@ describe("shouldAutoPublish", () => {
       articlesRequested: 2,
     };
     expect(shouldAutoPublish(result, "ready")).toBe(false);
+  });
+});
+
+describe("isBinaryPath", () => {
+  it("classifies image/font assets as binary", () => {
+    for (const p of [
+      "sites/x/assets/logo.png",
+      "sites/x/assets/favicon.ICO",
+      "sites/x/assets/hero.jpeg",
+      "sites/x/assets/icon.svg",
+      "sites/x/assets/font.woff2",
+    ]) {
+      expect(isBinaryPath(p)).toBe(true);
+    }
+  });
+
+  it("classifies text/content files as non-binary", () => {
+    for (const p of [
+      "sites/x/site.yaml",
+      "sites/x/articles/my-post.md",
+      "sites/x/data.json",
+      "sites/x/README",
+    ]) {
+      expect(isBinaryPath(p)).toBe(false);
+    }
+  });
+});
+
+describe("isArticleMarkdownPath", () => {
+  it("matches only .md files under /articles/", () => {
+    expect(isArticleMarkdownPath("sites/x/articles/post.md")).toBe(true);
+    expect(isArticleMarkdownPath("sites/x/articles/nested/deep-post.md")).toBe(true);
+  });
+
+  it("rejects placeholder and non-markdown files under /articles/", () => {
+    // .gitkeep was being upserted into Mongo as an article with slug ".gitkeep"
+    expect(isArticleMarkdownPath("sites/x/articles/.gitkeep")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/articles/image.png")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/site.yaml")).toBe(false);
+    expect(isArticleMarkdownPath("sites/x/dedup-index.json")).toBe(false);
+  });
+});
+
+describe("isImageAsset", () => {
+  it("matches image assets that are now R2-native", () => {
+    expect(isImageAsset("sites/x/assets/logo.png")).toBe(true);
+    expect(isImageAsset("sites/x/assets/favicon.ICO")).toBe(true);
+    expect(isImageAsset("sites/x/assets/images/hero.webp")).toBe(true);
+    expect(isImageAsset("sites/x/site.yaml")).toBe(false);
+    expect(isImageAsset("sites/x/articles/post.md")).toBe(false);
+  });
+});
+
+describe("collectFilesForPublish (logos are R2-native)", () => {
+  it("skips ALL image assets and never reads their bytes", async () => {
+    const paths = [
+      "sites/x/articles/post.md",
+      "sites/x/site.yaml",
+      "sites/x/assets/logo.png",
+      "sites/x/assets/favicon.png",
+      "sites/x/assets/images/hero.webp",
+      "sites/x/assets/brand.woff2", // non-image binary still travels as base64
+    ];
+    const readText = vi.fn(async (p: string) => `text:${p}`);
+    const readBinaryBase64 = vi.fn(async (p: string) => `b64:${p}`);
+
+    const { files, binaryFiles } = await collectFilesForPublish(paths, readText, readBinaryBase64);
+
+    // Images must never be read or committed — they live in R2 only. Reading
+    // them through git is what corrupted every logo.
+    for (const img of ["sites/x/assets/logo.png", "sites/x/assets/favicon.png", "sites/x/assets/images/hero.webp"]) {
+      expect(readText).not.toHaveBeenCalledWith(img);
+      expect(readBinaryBase64).not.toHaveBeenCalledWith(img);
+    }
+
+    expect(files.map((f) => f.path).sort()).toEqual([
+      "sites/x/articles/post.md",
+      "sites/x/site.yaml",
+    ]);
+    // Non-image binaries (fonts) still go through the base64 blob path.
+    expect(binaryFiles.map((f) => f.path)).toEqual(["sites/x/assets/brand.woff2"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Staging-reset compare-and-swap (Bug B — 2026-08-27)
+//
+// autoPublishSite snapshots staging → commits to main → force-resets staging.
+// Commits landing on staging during that window were copied nowhere and then
+// erased. n8n image callbacks commit featuredImage ~20s after article creation,
+// which overlaps the window: on 2026-08-27, 5 of 12 articles lost their image
+// this way despite every image succeeding.
+// ---------------------------------------------------------------------------
+
+describe("decideStagingReset", () => {
+  it("resets when the staging ref has not moved", () => {
+    expect(decideStagingReset("abc123", "abc123", 1, 3)).toEqual({ action: "reset" });
+  });
+
+  it("re-copies when staging moved and attempts remain", () => {
+    expect(decideStagingReset("abc123", "def456", 1, 3)).toEqual({ action: "recopy" });
+  });
+
+  it("skips the reset rather than destroying commits when attempts are exhausted", () => {
+    const decision = decideStagingReset("abc123", "def456", 3, 3);
+    expect(decision.action).toBe("skip");
+    if (decision.action === "skip") {
+      expect(decision.reason).toContain("staging");
+    }
+  });
+
+  it("resets when either SHA is unknown (preserves legacy create-branch path)", () => {
+    expect(decideStagingReset(null, "def456", 1, 3)).toEqual({ action: "reset" });
+    expect(decideStagingReset("abc123", null, 1, 3)).toEqual({ action: "reset" });
+    expect(decideStagingReset(null, null, 1, 3)).toEqual({ action: "reset" });
+  });
+
+  it("never re-copies forever — the last attempt can only reset or skip", () => {
+    for (const attempt of [3, 4, 99]) {
+      expect(decideStagingReset("a", "b", attempt, 3).action).toBe("skip");
+    }
   });
 });

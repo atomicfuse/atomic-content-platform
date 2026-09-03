@@ -5,15 +5,25 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const { searchParams } = request.nextUrl;
     const search = searchParams.get("search") ?? "";
-    const pageSize = searchParams.get("page_size") ?? "20";
+    const ids = searchParams.get("ids") ?? "";
+    const sort = searchParams.get("sort") ?? "";
+    const order = searchParams.get("order") ?? "";
+    // Clamp to the documented aggregator max of 100.
+    const pageSizeRaw = parseInt(searchParams.get("page_size") ?? "20", 10);
+    const pageSize = String(Math.min(Number.isFinite(pageSizeRaw) ? pageSizeRaw : 20, 100));
+    const page = searchParams.get("page");
     const qs = new URLSearchParams({ page_size: pageSize, include_usage: "true" });
+    if (ids) qs.set("ids", ids);
     if (search) qs.set("search", search);
+    if (sort) qs.set("sort", sort);
+    if (order) qs.set("order", order);
+    if (page) qs.set("page", page);
     const res = await fetch(`${AGGREGATOR_URL}/api/tags?${qs.toString()}`, {
       headers: { Accept: "application/json" },
       next: { revalidate: 60 },

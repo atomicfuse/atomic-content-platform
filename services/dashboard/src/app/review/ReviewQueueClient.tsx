@@ -184,7 +184,11 @@ export function ReviewQueueClient(): React.ReactElement {
           approved: approvedList,
           rejected: rejectedList,
         });
-        toast(result.summary, "success");
+        if (result.error) {
+          toast(result.error, "error");
+        } else {
+          toast(result.summary, "success");
+        }
         setDecisions(new Map());
         // Refresh current page with fresh data (cache is stale after apply)
         void fetchPage(page, selectedDomain, sortOrder, true);

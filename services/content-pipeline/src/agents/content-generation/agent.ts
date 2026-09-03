@@ -40,8 +40,11 @@ import { readSiteBrief } from "../../lib/site-brief.js";
 import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { processWithConcurrency } from "../../lib/concurrency.js";
+import { recordTextUsage } from "../../costs/recorder.js";
+import type { GenerationSource } from "../../stats/types.js";
+import { selectTopicsRoundRobin, readTopicRotation, saveTopicRotation } from "../../stats/topic-rotation.js";
 import type { AgentConfig } from "../../lib/config.js";
-import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig } from "../../types.js";
+import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
 
 // ---------------------------------------------------------------------------
 // Body validation — rejects empty/garbage content before quality scoring
@@ -88,6 +91,17 @@ export interface ContentGenerationParams {
   count?: number;
   /** BullMQ job ID — passed to n8n for image callback tracking. */
   jobId?: string;
+  /** Per-topic override: when set on a per-topic site, runs that single topic
+   *  and bypasses the date-based eligibility check (`isTopicEligibleToday`).
+   *  Ignored for legacy (non-per-topic) sites. */
+  topicName?: string;
+  /** When true on a per-topic site, skip the `isTopicEligibleToday` filter so
+   *  manual on-demand triggers (dashboard "Generate" buttons) work any day.
+   *  The scheduled cron sets this to false so it still respects preferred_days. */
+  bypassSchedule?: boolean;
+  /** Scheduler timezone — threaded to isTopicEligibleToday so the per-topic
+   *  day check matches the site-level check. */
+  timezone?: string;
   /** Pre-loaded brief data — avoids redundant GitHub read when passed from scheduler. */
   preloadedBrief?: {
     siteName: string;
@@ -95,6 +109,9 @@ export interface ContentGenerationParams {
     group: string;
     brief: SiteBrief;
   };
+  /** Origin of this generation run — threaded into cost recording. Reuses the
+   *  same value the callers compute for the stats recorder. */
+  source?: GenerationSource;
 }
 
 export interface ContentGenerationResult {
@@ -137,6 +154,9 @@ export interface BatchContentGenerationResult {
   availableNew: number;
   /** How many n8n image requests were triggered (0 if n8n not configured) */
   n8nImagesTriggered: number;
+  /** Number of topics that passed the eligibility filter (per-topic sites only).
+   *  Zero means no topics were eligible today — distinct from "aggregator returned 0". */
+  eligibleTopicCount?: number;
   results: ContentGenerationResult[];
 }
 
@@ -144,6 +164,8 @@ export interface BatchContentGenerationResult {
 interface ArticleFrontmatterWithExtras extends ArticleFrontmatter {
   source_url?: string;
   source_item_id?: string;
+  /** Original aggregator title (pre-rewrite) — cross-run title dedup key. */
+  source_title?: string;
   generated_by?: string;
   quality_score?: number;
   score_breakdown?: QualityScoreBreakdown;
@@ -186,13 +208,29 @@ export function ensureTopicTag(
   );
   if (hasTopicTag) return tags;
 
+  // Try exact substring match first (strong signal)
   const combined = [articleTitle, ...tags].join(" ").toLowerCase();
   const matchedTopic = topics.find((topic) =>
     combined.includes(topic.toLowerCase()),
   );
   if (matchedTopic) return [matchedTopic, ...tags];
 
-  return [topics[0]!, ...tags];
+  // Keyword scoring: pick the topic whose words appear most in title + tags.
+  // This distributes articles across topics instead of always defaulting to
+  // topics[0] (which heavily skews toward the first topic).
+  let bestTopic = topics[0]!;
+  let bestScore = 0; // Only override default if there's a positive match
+  for (const topic of topics) {
+    const words = topic.toLowerCase().split(/\s+/);
+    if (words.length === 0) continue;
+    const score = words.filter((w) => combined.includes(w)).length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestTopic = topic;
+    }
+  }
+
+  return [bestTopic, ...tags];
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +261,8 @@ export function normalizeTitleKey(title: string): string {
 export interface ExistingArticles {
   urls: Set<string>;
   titles: Set<string>;
+  /** Aggregator item ids (`source_item_id`) — the stable cross-run dedup key. */
+  ids: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -232,9 +272,11 @@ export interface ExistingArticles {
 const DEDUP_INDEX_FILENAME = "dedup-index.json";
 
 interface DedupIndexData {
-  version: 1;
+  /** v1: urls + titles only. v2: adds aggregator item ids. */
+  version: 1 | 2;
   urls: string[];
   titles: string[];
+  ids?: string[];
 }
 
 /** @internal Exported for testing. */
@@ -245,9 +287,10 @@ export function dedupIndexPath(siteDomain: string): string {
 /** @internal Exported for testing. */
 export function serializeDedupIndex(existing: ExistingArticles): string {
   const data: DedupIndexData = {
-    version: 1,
+    version: 2,
     urls: Array.from(existing.urls),
     titles: Array.from(existing.titles),
+    ids: Array.from(existing.ids),
   };
   return JSON.stringify(data);
 }
@@ -256,8 +299,17 @@ export function serializeDedupIndex(existing: ExistingArticles): string {
 export function parseDedupIndex(raw: string): ExistingArticles | null {
   try {
     const data = JSON.parse(raw) as Partial<DedupIndexData>;
-    if (data.version === 1 && Array.isArray(data.urls) && Array.isArray(data.titles)) {
-      return { urls: new Set(data.urls), titles: new Set(data.titles) };
+    // v1 (no ids) stays valid — existing indexes must not trigger full rescans.
+    if (
+      (data.version === 1 || data.version === 2) &&
+      Array.isArray(data.urls) &&
+      Array.isArray(data.titles)
+    ) {
+      return {
+        urls: new Set(data.urls),
+        titles: new Set(data.titles),
+        ids: new Set(Array.isArray(data.ids) ? data.ids : []),
+      };
     }
   } catch {
     // Invalid JSON
@@ -272,17 +324,22 @@ export function parseDedupIndex(raw: string): ExistingArticles | null {
  * Slow path: fall back to reading every article file individually (N calls).
  * The index is written/updated atomically with article batch commits.
  */
-async function getAllExistingArticles(
+export async function getAllExistingArticles(
   config: AgentConfig,
   siteDomain: string,
   branch?: string,
 ): Promise<ExistingArticles> {
   const urls = new Set<string>();
   const titles = new Set<string>();
+  const ids = new Set<string>();
 
   function extractFromFrontmatter(data: Record<string, unknown>): void {
     if (data.source_url) urls.add(normalizeUrl(data.source_url as string));
     if (data.title) titles.add(normalizeTitleKey(data.title as string));
+    // Original aggregator title — the key incoming items are compared against
+    // (frontmatter `title` is the LLM rewrite and never matches item.title).
+    if (data.source_title) titles.add(normalizeTitleKey(data.source_title as string));
+    if (data.source_item_id) ids.add(String(data.source_item_id));
   }
 
   if (config.localNetworkPath && !branch) {
@@ -305,7 +362,7 @@ async function getAllExistingArticles(
     try {
       files = await fs.readdir(articlesDir);
     } catch {
-      return { urls, titles };
+      return { urls, titles, ids };
     }
 
     for (const file of files) {
@@ -320,7 +377,7 @@ async function getAllExistingArticles(
     }
 
     console.log(`[agent] Built dedup index from full scan (local): ${urls.size} URLs, ${titles.size} titles`);
-    return { urls, titles };
+    return { urls, titles, ids };
   }
 
   // GitHub mode — try dedup index first
@@ -344,7 +401,7 @@ async function getAllExistingArticles(
   try {
     files = await listFiles(octokit, config.networkRepo, articlesPath, branch);
   } catch {
-    return { urls, titles };
+    return { urls, titles, ids };
   }
 
   for (const file of files) {
@@ -364,7 +421,7 @@ async function getAllExistingArticles(
   }
 
   console.log(`[agent] Built dedup index from full scan: ${urls.size} URLs, ${titles.size} titles (${files.length} files read)`);
-  return { urls, titles };
+  return { urls, titles, ids };
 }
 
 // ---------------------------------------------------------------------------
@@ -447,9 +504,19 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     throw new Error(`Site ${siteDomain} has no content brief defined`);
   }
 
-  // Propagate top-level bundle_id into brief for backward compat
-  if (!siteConfig.brief.bundle_id && (siteConfig as Record<string, unknown>).bundle_id) {
-    siteConfig.brief.bundle_id = (siteConfig as Record<string, unknown>).bundle_id as string;
+  // Promote legacy singular bundle_id into bundle_ids.
+  // Sources, in order: brief.bundle_id, top-level config.bundle_id.
+  // NOTE: identical shim exists in services/content-pipeline/src/lib/site-brief.ts — keep in sync.
+  const topLevelBundleId = (siteConfig as Record<string, unknown>).bundle_id;
+  if (!siteConfig.brief.bundle_ids || siteConfig.brief.bundle_ids.length === 0) {
+    const legacy: string[] = [];
+    if (siteConfig.brief.bundle_id) legacy.push(siteConfig.brief.bundle_id);
+    if (typeof topLevelBundleId === "string" && topLevelBundleId && !legacy.includes(topLevelBundleId)) {
+      legacy.push(topLevelBundleId);
+    }
+    if (legacy.length > 0) {
+      siteConfig.brief.bundle_ids = legacy;
+    }
   }
 
   return {
@@ -557,6 +624,8 @@ async function processItem(
   brief: SiteBrief,
   branch?: string,
   author?: string,
+  topicsArray?: string[],
+  opts: { source: GenerationSource } = { source: "dashboard" },
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -576,7 +645,7 @@ async function processItem(
     console.log(`[agent] Routed "${item.title}" → ${decision.generator} (${decision.reason})`);
 
     // Step 2: Generate article with cross-model fallback
-    const genConfig: GeneratorConfig = { siteName, brief };
+    const genConfig: GeneratorConfig = { siteName, brief, isFactual: decision.isFactual };
     let generated: V2GeneratedArticle;
     let actualGenerator: "claude" | "openai" = decision.generator;
 
@@ -598,6 +667,21 @@ async function processItem(
           `${primary.name}: ${msg} | ${fallback.name}: ${fallbackMsg}`,
         );
       }
+    }
+
+    // Record text-generation cost for the generator that ACTUALLY ran (the
+    // fallback path can flip Claude↔OpenAI). Fire-and-forget; failure-isolated.
+    if (generated.usage) {
+      const generatorModelId =
+        actualGenerator === "claude" ? "claude-sonnet-4-6" : "gpt-4o-mini";
+      void recordTextUsage({
+        siteDomain,
+        source: opts.source,
+        model: generatorModelId,
+        inputTokens: generated.usage.inputTokens,
+        outputTokens: generated.usage.outputTokens,
+        estimated: generated.usage.estimated,
+      });
     }
 
     // Step 2b: Validate generated body
@@ -656,6 +740,18 @@ async function processItem(
       qualityNote = qualityResult.note;
       articleStatus = resolveQualityStatus(qualityResult.overallScore, brief.quality_threshold);
 
+      // Record quality-scoring cost (Claude). Fire-and-forget; failure-isolated.
+      if (qualityResult.usage) {
+        void recordTextUsage({
+          siteDomain,
+          source: opts.source,
+          model: "claude-sonnet-4-6",
+          inputTokens: qualityResult.usage.inputTokens,
+          outputTokens: qualityResult.usage.outputTokens,
+          estimated: qualityResult.usage.estimated,
+        });
+      }
+
       console.log(
         `[agent] Quality score: ${qualityScore}/100 → ${articleStatus}` +
         ` (threshold: ${brief.quality_threshold ?? 40})`,
@@ -683,6 +779,7 @@ async function processItem(
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
       source_url: item.url,
       source_item_id: item.id,
+      source_title: item.title,
       generated_by: actualGenerator,
       ...(featuredImageUrl ? { featuredImage: featuredImageUrl } : {}),
       ...(qualityScore !== undefined ? { quality_score: qualityScore } : {}),
@@ -701,6 +798,13 @@ async function processItem(
         },
       ];
       console.log(`[agent] Video content detected — embedding ${item.url} after paragraph 1`);
+    }
+
+    // Per-topic membership — set only when the per-topic path provides a list.
+    // Legacy path never passes topicsArray, so this field is never written for
+    // legacy sites (no behaviour change on the existing path).
+    if (topicsArray && topicsArray.length > 0) {
+      frontmatter.topics = topicsArray;
     }
 
     // Strip leading H1 from body — the title is in frontmatter and rendered
@@ -725,7 +829,13 @@ async function processItem(
         articleTitle: generated.title,
         articleDescription: generated.description,
         articleSummary: item.summary,
-        vertical: item.vertical?.name ?? "General",
+        // Style cue for image generation. On per-topic sites the article's
+        // primary topic (topics[0]) is the most precise editorial label;
+        // fall back to the source item's aggregator vertical for legacy
+        // articles or when topics aren't set.
+        vertical: (topicsArray && topicsArray.length > 0 ? topicsArray[0] : undefined)
+          ?? item.vertical?.name
+          ?? "General",
         sourceThumbnailUrl: item.thumbnail?.url,
         imageGuidelines: brief.image_guidelines ?? null,
       },
@@ -743,6 +853,179 @@ async function processItem(
 // ---------------------------------------------------------------------------
 // Concurrency-limited processing — imported from ../../lib/concurrency.js
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Bundle fan-out helpers (module-level, exported for testing)
+// ---------------------------------------------------------------------------
+
+/** Dependencies injected into the bundle fan-out helpers. */
+export interface FetchUnionDeps {
+  targetCount: number;
+  existing: ExistingArticles;
+  bundleIds: (string | undefined)[];
+  mergedCategoryIds: string[];
+  language: string;
+  /** Optional rotation seed for the bundle iteration order. Production omits
+   *  this and the fan-out rotates by hour-of-day. Tests pass a fixed integer
+   *  (e.g. 0) for deterministic ordering. */
+  bundleOrderSeed?: number;
+  /** `ids` is intentionally absent: pre-published items are indexed by url+title only.
+   *  The union-level dedupe additionally tracks `item.id` to catch the same article
+   *  appearing in multiple bundle queries. */
+}
+
+/** Pagination tunables for the fan-out fetch. Production uses defaults; tests
+ *  may override `maxPages: 1` to avoid pagination loops. */
+export interface FetchPagination {
+  pageSize?: number;
+  maxPages?: number;
+}
+
+/** Rotate an array left by `n` positions (mod len). Pure, no allocation past one slice. */
+function rotateArray<T>(arr: readonly T[], n: number): T[] {
+  if (arr.length === 0) return [];
+  const offset = ((n % arr.length) + arr.length) % arr.length;
+  return [...arr.slice(offset), ...arr.slice(0, offset)];
+}
+
+/**
+ * Fetch new (non-duplicate) items for a single bundle from the aggregator,
+ * paginating until `deps.targetCount` unique items are found or pages run out.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function fetchNewItemsForBundle(
+  bundleId: string | undefined,
+  useTagIds: string[] | undefined,
+  label: string,
+  deps: FetchUnionDeps,
+  pagination: FetchPagination = {},
+): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+  const PAGE_SIZE = pagination.pageSize ?? 20;
+  const MAX_PAGES = pagination.maxPages ?? 5;
+  const newItems: ContentItem[] = [];
+  let totalFetched = 0;
+  let duplicateCount = 0;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    console.log(
+      `[agent] [${label}] bundle=${bundleId ?? "(none)"} ` +
+      `Fetching page ${page} (${PAGE_SIZE}) — target ${deps.targetCount}`,
+    );
+
+    // When a bundle is set, suppress site-level category/tag filters.
+    // The aggregator AND's all dimensions; sending bundle + site categories
+    // intersects them and wipes results when the bundle's rules don't overlap
+    // the site's primary vertical (e.g. site=Travel, bundle=Food/Wine).
+    // The bundle's own rules (set when the bundle was created) are the
+    // intended filter — the site-level fields are only a fallback for the
+    // no-bundle path.
+    const response = await getContent({
+      limit: PAGE_SIZE,
+      page,
+      language: deps.language,
+      bundle_id: bundleId,
+      category_ids: bundleId
+        ? undefined
+        : (deps.mergedCategoryIds.length > 0 ? deps.mergedCategoryIds : undefined),
+      tag_ids: bundleId ? undefined : useTagIds,
+    });
+
+    const pageItems = response.items;
+    totalFetched += pageItems.length;
+    if (pageItems.length === 0) break;
+
+    for (const item of pageItems) {
+      if (deps.existing.ids.has(item.id)) { duplicateCount++; continue; }
+      if (deps.existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
+      if (deps.existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
+      newItems.push(item);
+    }
+
+    const totalPages = response.total_pages ?? 1;
+    if (newItems.length >= deps.targetCount || page >= totalPages) break;
+
+    console.log(
+      `[agent] [${label}] bundle=${bundleId ?? "(none)"} Page ${page}: ` +
+      `found ${newItems.length} new so far (${duplicateCount} dupes), ` +
+      `need ${deps.targetCount - newItems.length} more — fetching next page`,
+    );
+  }
+
+  return { newItems, totalFetched, duplicateCount };
+}
+
+/**
+ * Fan out over all bundles in `deps.bundleIds`, merge results, and dedupe
+ * across the union by item id, normalized URL, and normalized title.
+ *
+ * Important: ALL bundles are queried regardless of `deps.targetCount`. The
+ * previous early-stop ("break when targetCount reached") meant that when a
+ * site had `articles_per_day=1` and N subscribed bundles, only bundle 1 was
+ * ever queried — content rotation across bundles was impossible.
+ *
+ * After collecting items from every bundle, we **round-robin merge** them
+ * (item 0 from each bundle, then item 1 from each, …) so coverage is balanced
+ * across bundles even when targetCount is smaller than the bundle count.
+ *
+ * To rotate WHICH bundle wins the first slot across runs (e.g. with
+ * targetCount=1 and 3 bundles, you want a different bundle on the front each
+ * run), the bundle order is shuffled by a stable hour-of-day rotation. Over
+ * a day the rotation visits every bundle position; over many runs each
+ * bundle gets fair representation in the first slot.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function fetchNewItemsUnion(
+  useTagIds: string[] | undefined,
+  label: string,
+  deps: FetchUnionDeps,
+  pagination: FetchPagination = {},
+): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
+  // Rotate bundle order by hour-of-day so the "first slot" wins fairly over
+  // time when targetCount < bundleCount. Deterministic per hour for the same
+  // run, which makes tests stable when overridden via deps.bundleOrderSeed.
+  const rotation = deps.bundleOrderSeed ?? new Date().getUTCHours();
+  const orderedBundles = rotateArray(deps.bundleIds, rotation);
+
+  // Query EVERY bundle. No early-stop on the outer loop.
+  const perBundleResults: ContentItem[][] = [];
+  let totalFetched = 0;
+  let duplicateCount = 0;
+  for (const bid of orderedBundles) {
+    const result = await fetchNewItemsForBundle(bid, useTagIds, label, deps, pagination);
+    totalFetched += result.totalFetched;
+    duplicateCount += result.duplicateCount;
+    perBundleResults.push(result.newItems);
+  }
+
+  // Round-robin merge: item 0 from bundle 0, item 0 from bundle 1, …, item 1
+  // from bundle 0, item 1 from bundle 1, … Stops once targetCount is reached.
+  const merged: ContentItem[] = [];
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+  const maxLen = perBundleResults.reduce((m, b) => Math.max(m, b.length), 0);
+  outer: for (let i = 0; i < maxLen; i++) {
+    for (let b = 0; b < perBundleResults.length; b++) {
+      const item = perBundleResults[b]?.[i];
+      if (!item) continue;
+      const urlKey = normalizeUrl(item.url);
+      const titleKey = normalizeTitleKey(item.title);
+      if (seenIds.has(item.id) || seenUrls.has(urlKey) || seenTitles.has(titleKey)) {
+        duplicateCount++;
+        continue;
+      }
+      seenIds.add(item.id);
+      seenUrls.add(urlKey);
+      seenTitles.add(titleKey);
+      merged.push(item);
+      if (merged.length >= deps.targetCount) break outer;
+    }
+  }
+
+  return { newItems: merged, totalFetched, duplicateCount };
+}
 
 // ---------------------------------------------------------------------------
 // Main entry point
@@ -781,10 +1064,32 @@ export async function runContentGeneration(
       }
     }
 
-    // Step 4: Fetch enriched items with pagination — skip past duplicates
-    const PAGE_SIZE = 20;
-    const MAX_PAGES = 5;
+    // Per-topic dispatcher. When brief.topics_v2 is present, take the new path
+    // and skip the legacy flat-bundle fan-out entirely. Legacy sites (no topics_v2)
+    // continue through the existing fan-out below unchanged.
+    {
+      const { isPerTopicSite } = await import("./per-topic-fetch.js");
+      if (isPerTopicSite(brief)) {
+        return await runPerTopicGeneration({
+          siteDomain,
+          siteName,
+          author: siteAuthor,
+          brief,
+          branch,
+          count,
+          jobId,
+          config,
+          existing,
+          tagIds,
+          topicName: params.topicName,
+          bypassSchedule: params.bypassSchedule ?? false,
+          timezone: params.timezone,
+          source: params.source ?? "dashboard",
+        });
+      }
+    }
 
+    // Step 4: Fetch enriched items with pagination — skip past duplicates
     const settings = await getSettings();
 
     // Post-2026-04-29: vertical_id is now a tier-1 category ID — merge it
@@ -794,72 +1099,37 @@ export async function runContentGeneration(
       ? [brief.vertical_id, ...categoryIds.filter((id) => id !== brief.vertical_id)]
       : categoryIds;
 
-    // Helper: paginated fetch + dedup against existing articles
-    async function fetchNewItems(
-      useTagIds: string[] | undefined,
-      label: string,
-    ): Promise<{ newItems: ContentItem[]; totalFetched: number; duplicateCount: number }> {
-      const newItems: ContentItem[] = [];
-      let totalFetched = 0;
-      let duplicateCount = 0;
+    // bundle_ids is the new multi-bundle model. We fan out per bundle and
+    // dedupe across the union. An empty/missing bundle_ids array falls back
+    // to a single category-only query (the no-bundle path).
+    const bundleIds: (string | undefined)[] =
+      brief.bundle_ids && brief.bundle_ids.length > 0
+        ? brief.bundle_ids
+        : [undefined];
 
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        console.log(`[agent] [${label}] Fetching page ${page} (${PAGE_SIZE} items) from aggregator (target: ${targetCount})`);
+    const fetchDeps: FetchUnionDeps = {
+      targetCount,
+      existing,
+      bundleIds,
+      mergedCategoryIds,
+      language: brief.language ?? "EN",
+    };
 
-        const response = await getContent({
-          limit: PAGE_SIZE,
-          page,
-          language: brief.language ?? "EN",
-          bundle_id: brief.bundle_id,
-          category_ids: mergedCategoryIds.length > 0 ? mergedCategoryIds : undefined,
-          tag_ids: useTagIds,
-        });
+    // Narrow search: each bundle with tags applied.
+    let { newItems, totalFetched, duplicateCount } = await fetchNewItemsUnion(tagIds, "narrow", fetchDeps);
 
-        const pageItems = response.items;
-        totalFetched += pageItems.length;
-
-        if (pageItems.length === 0) break;
-
-        for (const item of pageItems) {
-          if (existing.urls.has(normalizeUrl(item.url))) { duplicateCount++; continue; }
-          if (existing.titles.has(normalizeTitleKey(item.title))) { duplicateCount++; continue; }
-          newItems.push(item);
-        }
-
-        const totalPages = response.total_pages ?? 1;
-        if (newItems.length >= targetCount || page >= totalPages) break;
-
-        console.log(
-          `[agent] [${label}] Page ${page}: found ${newItems.length} new so far ` +
-          `(${duplicateCount} dupes), need ${targetCount - newItems.length} more — fetching next page`,
-        );
-      }
-
-      return { newItems, totalFetched, duplicateCount };
-    }
-
-    // Narrow search: categories + tags
-    let { newItems, totalFetched, duplicateCount } = await fetchNewItems(tagIds, "narrow");
-
-    // Fallback: if narrow search yielded no usable items (either 0 results
-    // from the API or all duplicates), retry with a broader search
-    // (categories only, drop tags) to find fresh content.
+    // Broader fallback: drop tags if narrow returned nothing usable.
     if (newItems.length === 0 && tagIds && tagIds.length > 0) {
       const reason = totalFetched === 0
         ? "returned 0 items"
         : `returned ${totalFetched} items but all ${duplicateCount} were duplicates`;
       console.log(
-        `[agent] Narrow search (categories + tags) ${reason}. ` +
-        `Retrying with broader search (categories only, no tags)…`,
+        `[agent] Narrow search ${reason} — falling back to broad (no tag filter)`,
       );
-      const broad = await fetchNewItems(undefined, "broad");
+      const broad = await fetchNewItemsUnion(undefined, "broad", fetchDeps);
       newItems = broad.newItems;
       totalFetched += broad.totalFetched;
       duplicateCount += broad.duplicateCount;
-
-      if (newItems.length > 0) {
-        console.log(`[agent] Broad search found ${newItems.length} new item(s) — proceeding`);
-      }
     }
 
     if (totalFetched === 0) {
@@ -897,7 +1167,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor, undefined, { source: params.source ?? "dashboard" }),
       (result) => result.status === "created",
     );
 
@@ -932,4 +1202,354 @@ export async function runContentGeneration(
       results: [{ status: "error", message }],
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Per-topic generation path
+// ---------------------------------------------------------------------------
+
+/** Per-topic generation path. Iterates brief.topics_v2, fetches per topic,
+ *  computes cross-topic membership, writes articles with `topics: []` frontmatter. */
+async function runPerTopicGeneration(args: {
+  siteDomain: string;
+  siteName: string;
+  author?: string;
+  brief: SiteBrief;
+  branch?: string;
+  count?: number;
+  jobId?: string;
+  config: AgentConfig;
+  existing: ExistingArticles;
+  tagIds: string[] | undefined;
+  /** When set, runs only this topic and bypasses date-based eligibility.
+   *  Used by the dashboard "Generate" button on individual topic rows. */
+  topicName?: string;
+  /** When true, skip the date eligibility check for ALL topics. Used by the
+   *  dashboard's general "Generate N Articles" button so users can fire it
+   *  any day; the cron sets this to false so it still honors preferred_days. */
+  bypassSchedule?: boolean;
+  /** Scheduler timezone for day-of-week calculation. */
+  timezone?: string;
+  /** Origin of this run — threaded into per-item cost recording. */
+  source?: GenerationSource;
+}): Promise<BatchContentGenerationResult> {
+  const { brief, siteDomain, config, existing } = args;
+  const topics = brief.topics_v2 ?? [];
+
+  const {
+    isTopicEligibleToday,
+    computePerRunTarget,
+    resolveArticleTopics,
+    describeZeroResultFetch,
+  } = await import("./per-topic-fetch.js");
+
+  const settings = await getSettings();
+
+  // Decide which topics run this tick. If a specific topicName was passed in,
+  // restrict to that one topic and bypass `isTopicEligibleToday` — that's a
+  // manual on-demand trigger from the dashboard, the user wants it now
+  // regardless of `preferred_days`.
+  let eligibleTopics: TopicV2[];
+  let isRoundRobin = false;
+  let roundRobinNewNextIndex = 0;
+  if (args.topicName) {
+    const wantName = args.topicName.trim().toLowerCase();
+    const target =
+      topics.find((t) => t.name === args.topicName) ??
+      topics.find((t) => t.name.trim().toLowerCase() === wantName);
+    if (!target) {
+      const available = topics.map((t) => t.name).join(", ");
+      console.warn(
+        `[agent] [per-topic] manual gen: topic "${args.topicName}" not found.` +
+        ` Site ${siteDomain} has topics: [${available}]`,
+      );
+      return {
+        siteDomain,
+        requested: args.count ?? 1,
+        totalSourced: 0,
+        duplicateCount: 0,
+        availableNew: 0,
+        n8nImagesTriggered: 0,
+        results: [{
+          status: "skipped",
+          reason: `topic "${args.topicName}" not found on this site (available: ${available || "none"})`,
+        }],
+      };
+    }
+    console.log(
+      `[agent] [per-topic] manual gen for topic "${target.name}" on ${siteDomain}` +
+      ` (count=${args.count ?? 1}, bypassing schedule)`,
+    );
+    eligibleTopics = [target];
+  } else if (args.bypassSchedule) {
+    // Manual dashboard trigger without a specific topic: run ALL topics
+    // regardless of today's date.
+    console.log(
+      `[agent] [per-topic] manual gen (all topics) on ${siteDomain}` +
+      ` — bypassing schedule, ${topics.length} topic(s)`,
+    );
+    eligibleTopics = topics;
+  } else {
+    // Scheduler path — round-robin topic selection
+    isRoundRobin = true;
+    const count = args.count ?? topics.length;
+    const rotation = await readTopicRotation(siteDomain);
+    const startIndex = rotation?.nextIndex ?? 0;
+    const topicNames = topics.map((t) => t.name);
+    const { selected, newNextIndex } = selectTopicsRoundRobin(topicNames, count, startIndex);
+    roundRobinNewNextIndex = newNextIndex;
+
+    // Map selected names back to TopicV2 objects (preserves rotation order)
+    const topicByName = new Map(topics.map((t) => [t.name, t]));
+    eligibleTopics = selected.map((name) => topicByName.get(name)!).filter(Boolean);
+
+    console.log(
+      `[agent] [per-topic] round-robin on ${siteDomain}: ` +
+      `picked ${eligibleTopics.map((t) => t.name).join(", ")} ` +
+      `(nextIndex was ${startIndex}, advancing to ${newNextIndex})`,
+    );
+  }
+
+  // Aggregate counters for the batch result.
+  let totalSourced = 0;
+  let duplicateCount = 0;
+  const allResults: ContentGenerationResult[] = [];
+
+  // Per-run dedupe sets shared across topics so the same item doesn't go to
+  // two topics' primary slots.
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  // Total-articles cap. When the caller specified `count` (manual dashboard
+  // trigger), don't exceed it across all topics combined — otherwise
+  // "Generate 1 Article" on a 4-topic site would produce 4. Cron passes no
+  // `count` and gets the unbounded per-topic scheduled targets as before.
+  let remainingTotal = args.count != null ? args.count : Infinity;
+
+  for (const topic of eligibleTopics) {
+    if (remainingTotal <= 0) break;
+    // When the caller passed an explicit topicName, the user picked the count
+    // (default 1). Otherwise fall back to the topic's scheduled per-run target.
+    const scheduledPerRun = args.topicName
+      ? Math.max(1, args.count ?? 1)
+      : isRoundRobin
+        ? 1  // Round-robin: 1 article per topic per turn
+        : computePerRunTarget(topic.schedule ?? { articles_per_week: 0, preferred_days: [] });
+    // When schedule says 0 (e.g. articles_per_week=0) and we're in bypass mode,
+    // still allow 1 article so the manual trigger isn't blocked by an unset
+    // schedule.
+    const baseTarget =
+      scheduledPerRun === 0 && args.bypassSchedule ? 1 : scheduledPerRun;
+    const perRunTarget = Math.min(baseTarget, remainingTotal);
+    if (perRunTarget === 0) continue;
+
+    // Fetch per the topic's source.
+    const perTopicItems: ContentItem[] = [];
+    let fetchedFromBundleId: string | undefined;
+    // Count candidates the aggregator returned for THIS topic (across pages) so
+    // a 0-result outcome can be diagnosed: empty filter vs. matched-but-all-dupes
+    // vs. filter matched nothing in the aggregator.
+    let topicSourcedCount = 0;
+
+    const PAGE_SIZE = 20;
+    const MAX_PAGES = 5;
+
+    if (topic.source.type === "filter") {
+      const source = topic.source;
+      const fetchFilterPages = async (tagIds: string[] | undefined): Promise<void> => {
+        for (let page = 1; page <= MAX_PAGES; page++) {
+          const response = await getContent({
+            limit: PAGE_SIZE,
+            page,
+            language: brief.language ?? "EN",
+            category_ids:
+              source.category_ids.length > 0 ? source.category_ids : undefined,
+            tag_ids: tagIds && tagIds.length > 0 ? tagIds : undefined,
+          });
+          totalSourced += response.items.length;
+          topicSourcedCount += response.items.length;
+          if (response.items.length === 0) break;
+          for (const item of response.items) {
+            if (existing.ids.has(item.id)) {
+              duplicateCount++;
+              continue;
+            }
+            if (existing.urls.has(normalizeUrl(item.url))) {
+              duplicateCount++;
+              continue;
+            }
+            if (existing.titles.has(normalizeTitleKey(item.title))) {
+              duplicateCount++;
+              continue;
+            }
+            if (
+              seenIds.has(item.id) ||
+              seenUrls.has(normalizeUrl(item.url)) ||
+              seenTitles.has(normalizeTitleKey(item.title))
+            ) {
+              duplicateCount++;
+              continue;
+            }
+            seenIds.add(item.id);
+            seenUrls.add(normalizeUrl(item.url));
+            seenTitles.add(normalizeTitleKey(item.title));
+            perTopicItems.push(item);
+            if (perTopicItems.length >= perRunTarget) break;
+          }
+          if (perTopicItems.length >= perRunTarget) break;
+          if (page >= (response.total_pages ?? 1)) break;
+        }
+      };
+
+      // Narrow search: the topic's categories AND tags. The aggregator ANDs
+      // dimensions, so miscurated tag_ids (e.g. cross-vertical tags from
+      // seed-time inference) can zero out an otherwise-valid category filter.
+      await fetchFilterPages(source.tag_ids);
+
+      // Broad fallback: drop the tag filter and retry with categories only —
+      // mirrors the legacy path's narrow→broad fallback. Only when the topic
+      // has categories to fall back on (tags alone dropping to nothing would
+      // query the whole aggregator unfiltered).
+      if (
+        perTopicItems.length === 0 &&
+        source.tag_ids.length > 0 &&
+        source.category_ids.length > 0
+      ) {
+        console.log(
+          `[agent] [per-topic] topic="${topic.name}" — narrow filter (categories AND tags) matched nothing new; retrying with categories only`,
+        );
+        await fetchFilterPages(undefined);
+      }
+    } else {
+      // bundle source
+      fetchedFromBundleId = topic.source.bundle_id;
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        const response = await getContent({
+          limit: PAGE_SIZE,
+          page,
+          language: brief.language ?? "EN",
+          bundle_id: topic.source.bundle_id,
+        });
+        totalSourced += response.items.length;
+        topicSourcedCount += response.items.length;
+        if (response.items.length === 0) break;
+        for (const item of response.items) {
+          if (existing.ids.has(item.id)) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.urls.has(normalizeUrl(item.url))) {
+            duplicateCount++;
+            continue;
+          }
+          if (existing.titles.has(normalizeTitleKey(item.title))) {
+            duplicateCount++;
+            continue;
+          }
+          if (
+            seenIds.has(item.id) ||
+            seenUrls.has(normalizeUrl(item.url)) ||
+            seenTitles.has(normalizeTitleKey(item.title))
+          ) {
+            duplicateCount++;
+            continue;
+          }
+          seenIds.add(item.id);
+          seenUrls.add(normalizeUrl(item.url));
+          seenTitles.add(normalizeTitleKey(item.title));
+          perTopicItems.push(item);
+          if (perTopicItems.length >= perRunTarget) break;
+        }
+        if (perTopicItems.length >= perRunTarget) break;
+        if (page >= (response.total_pages ?? 1)) break;
+      }
+    }
+
+    if (perTopicItems.length === 0) {
+      const outcome = describeZeroResultFetch(topic, topicSourcedCount);
+      if (outcome.kind === "empty-filter") {
+        // Configuration problem (e.g. a re-propose that dropped categories),
+        // NOT a content shortage — warn so it stands out.
+        console.warn(`[agent] [per-topic] topic="${topic.name}" — EMPTY FILTER: ${outcome.reason}`);
+      } else {
+        console.log(
+          `[agent] [per-topic] topic="${topic.name}" — no new items this run (${outcome.kind}; sourced ${topicSourcedCount})`,
+        );
+      }
+      allResults.push({ status: "skipped", reason: outcome.reason });
+      continue;
+    }
+
+    // Generate articles for each item; tag with cross-topic membership.
+    // For manual "Generate for this topic" clicks (args.topicName set), we
+    // scope tags to just the chosen topic so the article appears only under
+    // it — cross-topic auto-tagging surprises users who explicitly picked
+    // one topic. The scheduled cron path (no topicName) keeps cross-topic
+    // membership as designed for efficient fan-out.
+    for (const item of perTopicItems) {
+      const topicNames = args.topicName
+        ? [topic.name]
+        : resolveArticleTopics(item, topic, topics, fetchedFromBundleId);
+      const result = await processItem(
+        item,
+        settings,
+        config,
+        siteDomain,
+        args.siteName,
+        brief,
+        args.branch,
+        args.author,
+        topicNames,
+        { source: args.source ?? "dashboard" },
+      );
+      allResults.push(result);
+      if (result.status === "created") {
+        remainingTotal--;
+        if (remainingTotal <= 0) break;
+      }
+    }
+  }
+
+  const requestedCount =
+    args.count ??
+    eligibleTopics.reduce(
+      (s, t) => s + computePerRunTarget(t.schedule ?? { articles_per_week: 0, preferred_days: [] }),
+      0,
+    );
+
+  // Ensure the caller always gets at least one explicit result so the UI can
+  // distinguish "ran but found nothing" from "didn't run at all".
+  if (allResults.length === 0) {
+    allResults.push({
+      status: "skipped",
+      reason: args.topicName
+        ? `topic "${args.topicName}": no new items from aggregator`
+        : eligibleTopics.length === 0
+          ? "no topics configured on this site"
+          : "no new items from aggregator for any eligible topic",
+    });
+  }
+
+  // Persist round-robin rotation state (uses newNextIndex from the single read above)
+  if (isRoundRobin && topics.length > 0) {
+    await saveTopicRotation(siteDomain, {
+      nextIndex: roundRobinNewNextIndex,
+      lastServed: eligibleTopics.map((t) => t.name),
+      updatedAt: new Date(),
+    }).catch((err) => {
+      console.error(`[agent] Failed to save topic rotation for ${siteDomain}:`, err);
+    });
+  }
+
+  return {
+    siteDomain,
+    requested: requestedCount,
+    totalSourced,
+    duplicateCount,
+    availableNew: allResults.length,
+    n8nImagesTriggered: 0,
+    eligibleTopicCount: eligibleTopics.length,
+    results: allResults,
+  };
 }

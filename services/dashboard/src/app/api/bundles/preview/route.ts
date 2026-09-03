@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 const AGGREGATOR_URL =
   process.env.CONTENT_API_BASE_URL ??
   process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
+  "https://content-aggregator-v2-34cd--atomic.cloudgrid.io";
 
 /**
  * GET /api/bundles/preview?category_ids=a,b&tag_ids=c,d

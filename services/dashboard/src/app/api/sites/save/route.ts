@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  readDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   triggerWorkflowViaPush,
+  updateSiteInIndex,
 } from "@/lib/github";
 import { upsertDnsTxtRecord, deleteDnsTxtRecord } from "@/lib/cloudflare";
 import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
+import { uploadToR2 } from "@/lib/r2-upload";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 
 interface SaveRequestBody {
   domain: string;
@@ -130,6 +134,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         }
         existing.theme = theme;
       }
+      if (configUpdates.theme_menu_item_font_size !== undefined) {
+        const theme = (existing.theme ?? {}) as Record<string, unknown>;
+        theme.menu_item_font_size = configUpdates.theme_menu_item_font_size;
+        existing.theme = theme;
+      }
       if (configUpdates.layout !== undefined) {
         existing.layout = configUpdates.layout;
       }
@@ -217,8 +226,47 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.categoryIds !== undefined) brief.category_ids = configUpdates.categoryIds;
       if (configUpdates.tagIds !== undefined) brief.tag_ids = configUpdates.tagIds;
       if (configUpdates.seoKeywords !== undefined) brief.seo_keywords_focus = configUpdates.seoKeywords;
-      if (configUpdates.bundleId !== undefined) {
-        (existing as Record<string, unknown>).bundle_id = configUpdates.bundleId || undefined;
+      if (configUpdates.bundleIds !== undefined) {
+        const ids = configUpdates.bundleIds.filter((x): x is string => !!x);
+        if (ids.length > 0) {
+          brief.bundle_ids = ids;
+        } else {
+          delete (brief as Record<string, unknown>).bundle_ids;
+        }
+        // Strip legacy singular fields so saved yaml uses the new shape only.
+        delete (existing as Record<string, unknown>).bundle_id;
+        delete (brief as Record<string, unknown>).bundle_id;
+      }
+
+      // Per-topic-filter model. When topics_v2 is provided (non-empty array),
+      // this site is on the new model — write `brief.theme` and `brief.topics_v2`
+      // and strip every legacy niche-targeting field (bundle_ids, category_ids,
+      // tag_ids, plus the singular legacy bundle_id at top level and brief level).
+      if (configUpdates.topics_v2 !== undefined) {
+        if (configUpdates.topics_v2.length > 0) {
+          brief.topics_v2 = configUpdates.topics_v2;
+          // Keep the legacy `topics` array in sync with topic names. The site
+          // nav menu (Header.astro) and category-page routing read
+          // `brief.topics`, so without this the live menu shows stale values
+          // and per-topic add/remove/reorder never reaches the site.
+          brief.topics = configUpdates.topics_v2.map((t) => t.name);
+        } else {
+          delete (brief as Record<string, unknown>).topics_v2;
+        }
+        // Legacy fields are out on per-topic sites.
+        delete (brief as Record<string, unknown>).bundle_ids;
+        delete (brief as Record<string, unknown>).bundle_id;
+        delete (brief as Record<string, unknown>).category_ids;
+        delete (brief as Record<string, unknown>).tag_ids;
+        delete (existing as Record<string, unknown>).bundle_id;
+      }
+
+      if (configUpdates.theme !== undefined) {
+        if (configUpdates.theme.trim().length > 0) {
+          brief.theme = configUpdates.theme;
+        } else {
+          delete (brief as Record<string, unknown>).theme;
+        }
       }
     }
 
@@ -294,23 +342,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     ];
 
+    // Logos/favicons are R2-native: upload bytes directly to R2 (binary-safe),
+    // never commit them to git. Only site.yaml (theme refs) goes to git below.
     if (processedLogoBase64) {
-      files.push({
-        path: `sites/${domain}/assets/logo.png`,
-        content: Buffer.from(processedLogoBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/logo.png`, Buffer.from(processedLogoBase64, "base64"), "image/png");
     }
     if (processedFooterLogoBase64) {
-      files.push({
-        path: `sites/${domain}/assets/logo-footer.png`,
-        content: Buffer.from(processedFooterLogoBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/logo-footer.png`, Buffer.from(processedFooterLogoBase64, "base64"), "image/png");
     }
     if (effectiveFaviconBase64) {
-      files.push({
-        path: `sites/${domain}/assets/favicon.png`,
-        content: Buffer.from(effectiveFaviconBase64, "base64"),
-      });
+      await uploadToR2(`${domain}/assets/favicon.png`, Buffer.from(effectiveFaviconBase64, "base64"), "image/png");
     }
 
     const hasAssets = processedLogoBase64 || effectiveFaviconBase64;
@@ -327,6 +368,33 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
     await triggerWorkflowViaPush(site.staging_branch, domain);
+
+    // Dual-write: mirror site config to MongoDB (soft-fail)
+    if (configUpdates) {
+      await upsertSiteConfig(domain, existing as Record<string, unknown>);
+    }
+
+    // Propagate vertical (category label) to dashboard-index so the Sites grid
+    // reflects category changes immediately. Compare against `site.vertical`
+    // (the value we read at the start) so we only write when it actually
+    // changed.
+    if (
+      configUpdates?.vertical !== undefined &&
+      configUpdates.vertical !== site.vertical
+    ) {
+      try {
+        await updateSiteInIndex(domain, { vertical: configUpdates.vertical });
+        // Dual-write: mirror vertical to MongoDB dashboard index (soft-fail)
+        await updateDashboardIndexEntry(domain, { vertical: configUpdates.vertical });
+      } catch (err) {
+        console.warn(
+          `[sites/save] Failed to update dashboard-index.vertical for ${domain}:`,
+          err instanceof Error ? err.message : err,
+        );
+        // Don't fail the save — site.yaml has the new vertical; the index can be
+        // backfilled later.
+      }
+    }
 
     // Auto-upsert Facebook domain verification DNS TXT record when the
     // tracking field is set and the site has a Cloudflare zone.

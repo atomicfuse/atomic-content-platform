@@ -29,6 +29,7 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
   const [deletePending, startDeleteTransition] = useTransition();
   const [actionDomain, setActionDomain] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeletedSiteEntry | null>(null);
+  const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
 
   function handleRestore(domain: string): void {
     setActionDomain(domain);
@@ -50,9 +51,14 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
     setActionDomain(domain);
     startDeleteTransition(async () => {
       try {
-        await permanentlyDeleteSite(domain);
-        toast(`Permanently deleted ${domain} and all site files`, "success");
-        setDeleteTarget(null);
+        const result = await permanentlyDeleteSite(domain);
+        setDeleteSteps(result.steps);
+        const allSuccess = result.steps.every((s) => s.success);
+        if (allSuccess) {
+          toast(`Permanently deleted ${domain}`, "success");
+        } else {
+          toast(`Deleted ${domain} with some warnings`, "info");
+        }
       } catch (error) {
         toast(error instanceof Error ? error.message : "Failed to delete", "error");
       } finally {
@@ -61,13 +67,18 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
     });
   }
 
+  function closeDeleteModal(): void {
+    setDeleteTarget(null);
+    setDeleteSteps(null);
+  }
+
   return (
     <>
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[80vh]">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border-secondary)]">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Domain
                 </th>
@@ -147,11 +158,11 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
       {/* Permanent delete confirmation modal */}
       <Modal
         open={deleteTarget !== null}
-        onClose={(): void => setDeleteTarget(null)}
-        title="Permanently Delete Domain"
+        onClose={closeDeleteModal}
+        title={deleteSteps ? "Permanent Delete Complete" : "Permanently Delete Site"}
         size="sm"
       >
-        {deleteTarget && (
+        {deleteTarget && !deleteSteps && (
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
@@ -161,36 +172,25 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
               </div>
               <div>
                 <p className="text-[var(--text-primary)] font-medium">
-                  Are you sure you want to permanently delete{" "}
-                  <strong>{deleteTarget.domain}</strong>?
+                  Permanently delete <strong>{deleteTarget.domain}</strong>?
                 </p>
                 <p className="text-sm text-[var(--text-muted)] mt-2">
-                  This action will:
+                  This will destroy:
                 </p>
                 <ul className="text-sm text-[var(--text-muted)] mt-1 list-disc list-inside space-y-1">
-                  <li>
-                    Delete all site files from Git{" "}
-                    <span className="text-[var(--text-secondary)]">
-                      (site.yaml, skill.md, articles, assets)
-                    </span>
-                  </li>
-                  <li>Remove the domain from the dashboard entirely</li>
-                  <li>
-                    <strong className="text-red-400">
-                      This cannot be undone
-                    </strong>{" "}
-                    (except via Git history)
-                  </li>
+                  <li>Staging branch and all draft content</li>
+                  <li>All images from R2 storage</li>
+                  <li>All KV cache entries (staging + production)</li>
+                  <li>CF Pages project (if exists)</li>
                 </ul>
-                <p className="text-sm text-[var(--text-muted)] mt-2">
-                  Note: This does <strong className="text-[var(--text-secondary)]">not</strong>{" "}
-                  delete the Cloudflare zone or DNS records.
+                <p className="text-sm text-red-400 mt-3 font-medium">
+                  This cannot be undone. The site will only remain in the history log.
                 </p>
               </div>
             </div>
 
             <div className="flex justify-end gap-3 pt-2 border-t border-[var(--border-secondary)]">
-              <Button variant="ghost" onClick={(): void => setDeleteTarget(null)}>
+              <Button variant="ghost" onClick={closeDeleteModal}>
                 Cancel
               </Button>
               <Button
@@ -199,6 +199,39 @@ export function TrashList({ items }: TrashListProps): React.ReactElement {
                 className="!bg-red-500 hover:!bg-red-600 !text-white"
               >
                 Delete Forever
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {deleteSteps && (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {deleteSteps.map((step, i) => (
+                <div key={i} className="flex items-start gap-2.5 text-sm">
+                  {step.success ? (
+                    <svg className="w-4 h-4 text-green-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                  )}
+                  <div>
+                    <span className={step.success ? "text-[var(--text-secondary)]" : "text-red-400"}>
+                      {step.label}
+                    </span>
+                    {step.error && (
+                      <p className="text-xs text-red-400/70 mt-0.5">{step.error}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end pt-2 border-t border-[var(--border-secondary)]">
+              <Button variant="ghost" onClick={closeDeleteModal}>
+                Close
               </Button>
             </div>
           </div>

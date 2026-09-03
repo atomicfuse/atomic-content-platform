@@ -242,8 +242,9 @@ export function GeneralImagesClient(): React.ReactElement {
         </div>
       ) : (
         <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
+          <div className="overflow-auto max-h-[80vh]">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-elevated)]">
                 <th className="text-left px-5 py-3 text-xs font-medium text-[var(--text-muted)] uppercase tracking-wider">
                   Site
@@ -364,6 +365,7 @@ export function GeneralImagesClient(): React.ReactElement {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

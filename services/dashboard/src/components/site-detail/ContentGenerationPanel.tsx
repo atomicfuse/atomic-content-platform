@@ -129,6 +129,8 @@ export function ContentGenerationPanel({
   const [history, setHistory] = useState<PipelineState[]>([]);
   const [isPublishing, startPublish] = useTransition();
   const { toast } = useToast();
+  const [dedicatedMode, setDedicatedMode] = useState(false);
+  const [dedicatedPrompt, setDedicatedPrompt] = useState("");
 
   // pagesProject / pagesSubdomain were used to construct the legacy
   // *.pages.dev preview URL + drive the Pages build-poll loop. After
@@ -357,14 +359,14 @@ export function ContentGenerationPanel({
       const stagingMessage = `${batchSummary} — committed to staging branch. The Worker preview will reflect the new article(s) once sync-kv runs (~60s).`;
 
       // Check if any articles are published (high quality) — auto-deploy those to production
-      const hasPublished = result.results.some(
-        (r) => r.status === "created" && r.articleStatus === "published",
+      const hasApproved = result.results.some(
+        (r) => r.status === "created" && (r.articleStatus === "published"),
       );
       const hasReviewOnly = result.results.some(
         (r) => r.status === "created" && r.articleStatus === "review",
       );
 
-      if (hasPublished) {
+      if (hasApproved) {
         // Auto-deploy to production — review articles are filtered out by the site builder
         advancePipeline("deploying_production", `${batchSummary} — deploying published articles to production...`, {
           stagingUrl,
@@ -437,6 +439,158 @@ export function ContentGenerationPanel({
 
         toast(`${batchSummary} for ${domain} — review on staging`, "success");
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Generation failed";
+      setPipeline({
+        step: "error",
+        message,
+        error: message,
+        startedAt: startTime,
+        completedAt: Date.now(),
+      });
+      toast(message, "error");
+    }
+  }
+
+  async function handleDedicatedGenerate(): Promise<void> {
+    if (!dedicatedPrompt.trim()) {
+      toast("Please enter a prompt before generating.", "error");
+      return;
+    }
+
+    const startTime = Date.now();
+    setPipeline({
+      step: "reading_brief",
+      message: `Loading site brief for ${domain}...`,
+      startedAt: startTime,
+    });
+
+    try {
+      advancePipeline("reading_brief", `Loading site brief for ${domain}...`);
+      await delay(300);
+
+      advancePipeline(
+        "generating_article",
+        "Generating article with Claude based on your prompt..."
+      );
+
+      // Start cycling through live generation sub-messages
+      const generationMessages = [
+        { msg: "Reading your prompt and site brief...", delay: 2000 },
+        { msg: "Planning article structure...", delay: 2500 },
+        { msg: "Claude is crafting headlines...", delay: 3000 },
+        { msg: "Writing article introductions...", delay: 3000 },
+        { msg: "Expanding main body paragraphs...", delay: 4000 },
+        { msg: "Adding relevant examples and detail...", delay: 3500 },
+        { msg: "Writing conclusions...", delay: 2500 },
+        { msg: "Generating SEO descriptions and tags...", delay: 2000 },
+        { msg: "Formatting markdown output...", delay: 2000 },
+        { msg: "Almost done — finalizing article...", delay: 5000 },
+      ];
+
+      let messageIndex = 0;
+      let cancelled = false;
+      const messageTimer = setInterval(() => {
+        if (cancelled) return;
+        if (messageIndex < generationMessages.length) {
+          const current = generationMessages[messageIndex]!;
+          setPipeline((prev) =>
+            prev.step === "generating_article"
+              ? { ...prev, message: current.msg }
+              : prev
+          );
+          messageIndex++;
+        }
+      }, 2500);
+
+      const res = await fetch("/api/agent/generate-dedicated", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteDomain: domain,
+          branch: stagingBranch,
+          userPrompt: dedicatedPrompt,
+        }),
+      });
+
+      cancelled = true;
+      clearInterval(messageTimer);
+
+      advancePipeline("scoring_quality", "Scoring article against quality criteria...");
+      await delay(400);
+
+      const result = (await res.json()) as {
+        siteDomain?: string;
+        results?: Array<{
+          status: string;
+          slug?: string;
+          path?: string;
+          message?: string;
+          reason?: string;
+          qualityScore?: number;
+          articleStatus?: string;
+        }>;
+        message?: string;
+      };
+
+      if (!result.results) {
+        throw new Error(result.message ?? `Agent error (${res.status})`);
+      }
+
+      const created = result.results.filter((r) => r.status === "created");
+      const errors = result.results.filter((r) => r.status === "error");
+
+      if (created.length === 0 && errors.length === 0) {
+        const reason = result.results[0]?.reason ?? "No article was generated";
+        setPipeline({
+          step: "error",
+          message: reason,
+          startedAt: startTime,
+          completedAt: Date.now(),
+        });
+        toast(reason, "info");
+        return;
+      }
+
+      if (created.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]?.message ?? "Article failed to generate");
+      }
+
+      const firstCreated = created[0];
+      const batchSummary = `Created 1 article`;
+
+      advancePipeline("writing_article", `Article committed to staging branch`, {
+        articleSlug: firstCreated?.slug,
+        articlePath: firstCreated?.path,
+        batchSummary,
+        batchResults: result.results,
+      });
+      await delay(500);
+
+      advancePipeline(
+        "triggering_build",
+        "Syncing to KV via sync-kv.yml (~30–60s)..."
+      );
+
+      const stagingUrl = workerPreviewUrl(domain);
+
+      const completedState: PipelineState = {
+        step: "complete",
+        message: `Dedicated article committed to staging branch!`,
+        articleSlug: firstCreated?.slug,
+        articlePath: firstCreated?.path,
+        stagingUrl,
+        startedAt: startTime,
+        completedAt: Date.now(),
+        batchSummary,
+        batchResults: result.results,
+      };
+
+      setPipeline(completedState);
+      setHistory((prev) => [completedState, ...prev]);
+      setDedicatedPrompt("");
+      toast(`Dedicated article staged for ${domain}`, "success");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Generation failed";
@@ -560,6 +714,79 @@ export function ContentGenerationPanel({
                 sites/{domain}/articles/
               </code>
             </p>
+          </div>
+
+          {/* Dedicated Article Section */}
+          <div className="border-t border-[var(--border-primary)] pt-4">
+            <button
+              type="button"
+              onClick={(): void => setDedicatedMode((v) => !v)}
+              className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors w-full text-left"
+            >
+              <svg
+                className="w-4 h-4 shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+                />
+              </svg>
+              Generate Dedicated Article
+              <svg
+                className={`w-4 h-4 ml-auto transition-transform ${dedicatedMode ? "rotate-180" : ""}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+                />
+              </svg>
+            </button>
+
+            {dedicatedMode && (
+              <div className="mt-3 space-y-3">
+                <textarea
+                  rows={4}
+                  value={dedicatedPrompt}
+                  onChange={(e): void => setDedicatedPrompt(e.target.value)}
+                  placeholder="Describe the article you want to generate. Be specific: include the topic, angle, target audience, key points to cover, or any other details that will guide the AI."
+                  className="w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-primary)] text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-cyan/40 focus:border-cyan/60 transition"
+                />
+                <div className="flex items-center gap-3">
+                  <Button
+                    onClick={handleDedicatedGenerate}
+                    disabled={!dedicatedPrompt.trim()}
+                  >
+                    <svg
+                      className="w-4 h-4 mr-2"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
+                      />
+                    </svg>
+                    Generate Dedicated Article
+                  </Button>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Writes a single article directly from your prompt — no aggregator sourcing needed.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

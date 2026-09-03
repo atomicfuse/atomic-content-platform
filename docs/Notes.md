@@ -300,3 +300,43 @@ It's just `timestamp + 3 random digits` — a throwaway unique ID with no real m
 2. **Cloudflare Pages project name** — like `coolnews-dev`
 3. **A custom ID defined per site** in Jira or an internal system
 4. **Remove it entirely** — domain is already a unique identifier
+
+---
+
+## Parking lot (added 2026-07-16, six-bugs session)
+
+- **Content types:** aggregator `trend` items are generated as plain articles with zero trend-specific handling (no prompt branch, no citation); `social_post` has a prompt branch but no embed/storage; consider genre packs per content_type when prioritized. Persist the source `content_type` in frontmatter so downstream surfaces can tell article/video/trend apart.
+- **Dead code:** `services/content-pipeline/src/lib/aggregator.ts` (legacy `/api/articles` client with its own `content_format` model) is never imported outside its tests — delete when convenient.
+- **Doc rot:** the top of this file ("There is no database", React Query caching) predates the MongoDB read layer and the current caching reality — rewrite when someone next touches team docs.
+- **Per-topic AND semantics:** category+tag AND-across-dimensions is fragile by design; if the drop-tags fallback fires often (watch pipeline logs), consider per-topic configurable combination semantics.
+
+## Staging-branch hygiene (added 2026-07-19, banner investigation)
+
+- **Durable banner fix — tree-SHA compare:** `staging-status` still derives `hasPendingChanges` from GitHub's compare `files` list (300-file cap, silent truncation). Today's fix was operational (merged main into 8 polluted branches to advance their merge-bases). If pollution ever recurs, the durable fix is comparing the Git tree SHA of `sites/<domain>/` between `main` and the staging branch — exact and cheap. Same cap applies to the staging-diff modal listing.
+- **Writer guard against cross-domain pollution:** nothing prevents a batch op from committing files outside `sites/<domain>/` onto `staging/<domain>` (that's what broke the banner). A path guard in the pipeline writer / batch tooling would make the fix permanent.
+- **Cleanup script alone is insufficient:** `scripts/cleanup-staging-crossdomain.sh` reverts *content* but doesn't advance the *merge-base*, so GitHub's three-dot compare still shows the polluted paths. A `git merge origin/main` into the staging branch is what actually clears the compare. Learned 2026-07-19; the script is now env-overridable via `NETWORK_REPO`.
+- **Skipped branches pending site deletion:** `staging/chaibeseret` and `staging/travelingfoodie2` were left polluted on 2026-07-19 because Asaf plans to delete both sites (demo/mock). If deletion doesn't happen, their banners stay broken until they get the same merge treatment (both have own-domain conflicts needing manual review).
+
+## Alerting gaps (added 2026-08-27, sync-kv + image-alert investigation)
+
+- **Detect absence, not just failure.** All four bugs of 2026-08-27 reported
+  success while doing the wrong thing: cancelled CI runs skip `if: failure()`,
+  stale-snapshot syncs verify against their own checkout, a dead cron logs
+  nothing, and per-replica alert state cannot see the other four replicas. Any
+  alerting rebuild should watch for expected-things-not-happening.
+- **`run-alerts` cron has not fired since 2026-06-08.** Four of seven alert
+  conditions are cron-only and have therefore never been evaluated since. Split
+  the diagnosis: `curl localhost:5000/run-alerts` under `cloudgrid dev` proves
+  the code; temporarily shortening the schedule and re-plugging proves
+  registration. A dashboard `api/run-alerts` proxy would give a permanent
+  trigger — there is none today, and `grid ssh` 403s even for a grid admin.
+- **Alert thresholds are untuned:** `in_review` fires above 15/site when the
+  real maximum is 6; `general_images` nags weekly on `> 0`;
+  `create_new_site` is an unconditional 14-day calendar ping. All three are
+  settable in `scheduler/alerts.yaml` **without a deploy** — that file does not
+  exist yet, so every run also logs a "failed to load" warning.
+- **`monthly_creation_alert` is self-inconsistent:** it fires on *failure*
+  count exceeding 70% of expected, but the message reports *articles created*.
+- **Never edit `main` directly for a live site.** Auto-publish copies the whole
+  `sites/<domain>/` tree from staging, so a main-only edit reverts at the next
+  publish. Apply to both branches.

@@ -1,7 +1,8 @@
 import { FlowProducer, Worker } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
-import { createOctokit, readFile, commitFile, listFilesRecursive, commitBatch, clearTreeCache, parseRepo } from "../lib/github.js";
+import { createOctokit, readFile, readFileBase64, commitFile, listFilesRecursive, commitBatch, clearTreeCache, parseRepo } from "../lib/github.js";
+import type { BatchFileEntry, BatchBinaryEntry } from "../lib/github.js";
 import type { Octokit } from "@octokit/rest";
 import type { AgentConfig } from "../lib/config.js";
 import type { SiteRunResult } from "../agents/scheduled-publisher/history.js";
@@ -14,13 +15,35 @@ import {
 } from "./types.js";
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
 import { notifyError, notifySummary } from "../lib/notifications.js";
+import { updateWeeklySummary } from "../stats/weekly-summary.js";
+import matter from "gray-matter";
+import { upsertArticlesBatch, deleteArticlesForSiteBranch } from "../lib/db/articles.js";
 
 const HISTORY_PATH = "scheduler/history.json";
 const MAX_ENTRIES = 50;
+const DASHBOARD_URL = process.env.DASHBOARD_URL ?? "http://dashboard-app";
+const CACHE_INVALIDATE_SECRET = process.env.CACHE_INVALIDATE_SECRET;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+async function invalidateDashboardCache(domain: string, branch?: string): Promise<void> {
+  if (!CACHE_INVALIDATE_SECRET) return;
+  try {
+    await fetch(`${DASHBOARD_URL}/api/cache/invalidate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${CACHE_INVALIDATE_SECRET}`,
+      },
+      body: JSON.stringify({ domain, branch }),
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch (err) {
+    console.warn(`[scheduler] Failed to invalidate dashboard cache for ${domain}:`, err);
+  }
+}
 
 /** Deterministic run ID — hourly granularity. */
 export function buildRunId(): string {
@@ -63,6 +86,7 @@ export async function createSchedulerFlow(
       runId,
       triggeredBy: (forced ? "scheduled-forced" : "scheduled") as GenerateJobData["triggeredBy"],
       briefJson: site.briefJson,
+      timezone,
     },
     opts: DEFAULT_JOB_OPTIONS,
   }));
@@ -74,7 +98,7 @@ export async function createSchedulerFlow(
       runId,
       timezone,
       forced,
-      enqueuedDomains: sites.map((s) => s.domain),
+      enqueuedDomains: sites.map((s) => ({ domain: s.domain, count: s.count })),
       skipped,
     } satisfies SchedulerRunData,
     opts: {
@@ -104,59 +128,260 @@ export function shouldAutoPublish(
   return true;
 }
 
+/** File extensions whose bytes must be preserved as base64, never decoded
+ *  as UTF-8. Decoding binary as text corrupts it (~1.8x inflation) — this is
+ *  what mangled every site logo during auto-publish. Mirrors the dashboard's
+ *  BINARY_EXTENSIONS in actions/wizard.ts. */
+const BINARY_EXTENSIONS = new Set([
+  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
+  ".woff", ".woff2", ".ttf", ".eot", ".otf",
+  ".pdf", ".zip",
+]);
+
+export function isBinaryPath(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return false;
+  return BINARY_EXTENSIONS.has(path.slice(dot).toLowerCase());
+}
+
+/** Image assets (logos, favicons, footer logos, article images) are
+ *  R2-native — they live in R2 directly and must NEVER be committed to git.
+ *  auto-publish skips them so it can't carry (or corrupt) image bytes. */
+const IMAGE_ASSET_RE = /\.(png|jpe?g|gif|webp|svg|ico|avif|bmp)$/i;
+export function isImageAsset(path: string): boolean {
+  return IMAGE_ASSET_RE.test(path);
+}
+
+/** Only .md files under /articles/ are articles — placeholder files like
+ *  articles/.gitkeep must never be dual-written to Mongo as article docs. */
+export function isArticleMarkdownPath(path: string): boolean {
+  return path.includes("/articles/") && path.endsWith(".md");
+}
+
+/**
+ * Partition site files into text (UTF-8) and binary (base64) sets for commit,
+ * reading each via the appropriate binary-safe primitive. Pure aside from the
+ * injected readers, so it's unit-testable without a live Octokit.
+ */
+export async function collectFilesForPublish(
+  filePaths: string[],
+  readText: (path: string) => Promise<string>,
+  readBinaryBase64: (path: string) => Promise<string>,
+): Promise<{ files: BatchFileEntry[]; binaryFiles: BatchBinaryEntry[] }> {
+  const files: BatchFileEntry[] = [];
+  const binaryFiles: BatchBinaryEntry[] = [];
+  for (const filePath of filePaths) {
+    // Image assets are R2-native — never copy them into a git commit.
+    if (isImageAsset(filePath)) continue;
+    if (isBinaryPath(filePath)) {
+      binaryFiles.push({ path: filePath, base64: await readBinaryBase64(filePath) });
+    } else {
+      files.push({ path: filePath, content: await readText(filePath) });
+    }
+  }
+  return { files, binaryFiles };
+}
+
 /**
  * Copy sites/<domain>/ from staging branch to main, then reset staging branch.
  * This is the content-pipeline equivalent of the dashboard's publishStagingToProduction.
  */
-async function autoPublishSite(
+/** Maximum snapshot -> commit -> verify attempts before giving up on the reset. */
+const MAX_PUBLISH_ATTEMPTS = 3;
+
+/** What to do with the staging branch after copying its content to main. */
+export type StagingResetDecision =
+  | { action: "reset" }
+  | { action: "recopy" }
+  | { action: "skip"; reason: string };
+
+/**
+ * Decide whether the staging branch can safely be force-reset to main.
+ *
+ * The reset is destructive: anything committed to staging after the snapshot
+ * was taken is erased. n8n image callbacks commit `featuredImage` to the
+ * staging branch ~20s after an article is created, which overlaps the copy
+ * window -- on 2026-08-27 that silently cost 5 of 12 articles their images
+ * even though every image generated successfully.
+ *
+ * Comparing the ref SHA before and after the copy detects those commits. When
+ * drift is present we re-copy; if it persists we skip the reset entirely,
+ * because leaving staging ahead of main loses nothing (the preview stays
+ * correct and the next publish copies the commits over) whereas resetting
+ * destroys them.
+ *
+ * An unknown SHA on either side yields `reset`, preserving the previous
+ * behaviour including the create-branch fallback for a missing branch.
+ */
+export function decideStagingReset(
+  shaAtSnapshot: string | null,
+  shaNow: string | null,
+  attempt: number,
+  maxAttempts: number,
+): StagingResetDecision {
+  if (shaAtSnapshot === null || shaNow === null) return { action: "reset" };
+  if (shaAtSnapshot === shaNow) return { action: "reset" };
+  if (attempt < maxAttempts) return { action: "recopy" };
+  return {
+    action: "skip",
+    reason:
+      `staging branch advanced during publish (${shaAtSnapshot.slice(0, 7)} -> ${shaNow.slice(0, 7)}) ` +
+      `after ${maxAttempts} attempt(s) -- skipping reset so the new commits survive`,
+  };
+}
+
+/**
+ * Read a branch's head SHA. Returns null when the branch is absent or the
+ * read fails, which callers treat as "cannot compare".
+ */
+async function getBranchSha(
+  octokit: Octokit,
+  owner: string,
+  repoName: string,
+  branch: string,
+): Promise<string | null> {
+  try {
+    const ref = await octokit.rest.git.getRef({ owner, repo: repoName, ref: `heads/${branch}` });
+    return ref.data.object.sha;
+  } catch {
+    return null;
+  }
+}
+
+export async function autoPublishSite(
   octokit: Octokit,
   repo: string,
   domain: string,
   stagingBranch: string,
 ): Promise<void> {
+  const { owner, repo: repoName } = parseRepo(repo);
   const siteDir = `sites/${domain}`;
-  const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
 
-  if (filePaths.length === 0) {
-    console.warn(`[auto-publish] No files found in ${siteDir} on ${stagingBranch}`);
+  for (let attempt = 1; attempt <= MAX_PUBLISH_ATTEMPTS; attempt++) {
+    // Record where staging is BEFORE snapshotting so commits landing during the
+    // copy can be detected before the destructive reset below.
+    const shaAtSnapshot = await getBranchSha(octokit, owner, repoName, stagingBranch);
+
+    // Force a fresh tree fetch -- child jobs (content generation) and n8n image
+    // callbacks commit to the staging branch while this runs, so a cached
+    // snapshot would silently miss them.
+    clearTreeCache(stagingBranch);
+
+    const filePaths = await listFilesRecursive(octokit, repo, siteDir, stagingBranch);
+
+    if (filePaths.length === 0) {
+      console.warn(`[auto-publish] No files found in ${siteDir} on ${stagingBranch}`);
+      return;
+    }
+
+    // Binary assets (logos, favicons, images) MUST be read as base64 and
+    // committed as base64 blobs -- reading them as UTF-8 corrupts the bytes.
+    const { files, binaryFiles } = await collectFilesForPublish(
+      filePaths,
+      (p) => readFile(octokit, repo, p, stagingBranch),
+      (p) => readFileBase64(octokit, repo, p, stagingBranch),
+    );
+    const totalFiles = files.length + binaryFiles.length;
+
+    await commitBatch(
+      octokit,
+      repo,
+      files,
+      binaryFiles,
+      `scheduler: auto-publish ${domain} (${totalFiles} files)`,
+      "main",
+    );
+
+    // Dual-write: copy article metadata to MongoDB under branch "main"
+    const articleFiles = files.filter((f) => isArticleMarkdownPath(f.path));
+    if (articleFiles.length > 0) {
+      const articleDocs = articleFiles.map((f) => {
+        const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";
+        const parsed = matter(f.content);
+        return {
+          domain,
+          slug,
+          branch: "main",
+          frontmatter: {
+            title: parsed.data.title,
+            description: parsed.data.description,
+            status: parsed.data.status,
+            type: parsed.data.type,
+            publish_date: parsed.data.publishDate ?? parsed.data.publish_date,
+            author: parsed.data.author,
+            tags: parsed.data.tags,
+            featured_image: parsed.data.featuredImage ?? parsed.data.featured_image,
+            quality_score: parsed.data.quality_score,
+            videos: parsed.data.videos,
+            scripts: parsed.data.scripts,
+          },
+        };
+      });
+      await upsertArticlesBatch(articleDocs);
+      console.log(`[auto-publish] Dual-write: upserted ${articleDocs.length} article(s) to MongoDB (main) for ${domain}`);
+    }
+
+    // Compare-and-swap: did anything land on staging while we were copying?
+    const shaNow = await getBranchSha(octokit, owner, repoName, stagingBranch);
+    const decision = decideStagingReset(shaAtSnapshot, shaNow, attempt, MAX_PUBLISH_ATTEMPTS);
+
+    if (decision.action === "recopy") {
+      console.warn(
+        `[auto-publish] ${domain}: staging advanced during publish ` +
+        `(${shaAtSnapshot?.slice(0, 7)} -> ${shaNow?.slice(0, 7)}) -- re-copying ` +
+        `(attempt ${attempt + 1}/${MAX_PUBLISH_ATTEMPTS})`,
+      );
+      continue;
+    }
+
+    if (decision.action === "skip") {
+      // Deliberately NOT resetting, and NOT deleting the staging article docs:
+      // staging still holds commits that main does not. The next auto-publish
+      // for this site copies them over.
+      console.warn(`[auto-publish] ${domain}: ${decision.reason}`);
+      clearTreeCache(stagingBranch);
+      clearTreeCache("main");
+      await invalidateDashboardCache(domain, stagingBranch);
+      await invalidateDashboardCache(domain, "main");
+      console.log(`[auto-publish] Published ${domain}: ${totalFiles} files -> main, staging left ahead`);
+      return;
+    }
+
+    // Reset staging branch to main HEAD.
+    // Use force-update instead of delete+recreate -- the atomic ref update
+    // avoids a window where the branch doesn't exist, which races with n8n
+    // image callbacks trying to read from the staging branch.
+    const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
+    const mainSha = mainRef.data.object.sha;
+
+    try {
+      await octokit.rest.git.updateRef({
+        owner,
+        repo: repoName,
+        ref: `heads/${stagingBranch}`,
+        sha: mainSha,
+        force: true,
+      });
+    } catch {
+      // Branch may not exist yet -- create it
+      await octokit.rest.git.createRef({
+        owner,
+        repo: repoName,
+        ref: `refs/heads/${stagingBranch}`,
+        sha: mainSha,
+      });
+    }
+
+    // Dual-write: staging branch was reset -- remove stale staging article docs
+    await deleteArticlesForSiteBranch(domain, stagingBranch);
+
+    clearTreeCache(stagingBranch);
+    clearTreeCache("main");
+    await invalidateDashboardCache(domain, stagingBranch);
+    await invalidateDashboardCache(domain, "main");
+    console.log(`[auto-publish] Published ${domain}: ${totalFiles} files -> main, staging reset`);
     return;
   }
-
-  const files: Array<{ path: string; content: string }> = [];
-  for (const filePath of filePaths) {
-    const content = await readFile(octokit, repo, filePath, stagingBranch);
-    files.push({ path: filePath, content });
-  }
-
-  await commitBatch(
-    octokit,
-    repo,
-    files,
-    [],
-    `scheduler: auto-publish ${domain} (${files.length} files)`,
-    "main",
-  );
-
-  // Reset staging branch to main HEAD
-  const { owner, repo: repoName } = parseRepo(repo);
-  const mainRef = await octokit.rest.git.getRef({ owner, repo: repoName, ref: "heads/main" });
-  const mainSha = mainRef.data.object.sha;
-
-  try {
-    await octokit.rest.git.deleteRef({ owner, repo: repoName, ref: `heads/${stagingBranch}` });
-  } catch {
-    // Branch may already be gone
-  }
-  await octokit.rest.git.createRef({
-    owner,
-    repo: repoName,
-    ref: `refs/heads/${stagingBranch}`,
-    sha: mainSha,
-  });
-
-  clearTreeCache(stagingBranch);
-  clearTreeCache("main");
-  console.log(`[auto-publish] Published ${domain}: ${files.length} files → main, staging reset`);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,7 +416,11 @@ export async function processSchedulerRun(
 
     if (genResult.totalSourced === 0) {
       siteStatus = "no_content";
-      siteMessage = "Aggregator returned 0 items for this site's topics";
+      if (genResult.eligibleTopicCount === 0) {
+        siteMessage = "No topics eligible to run today (check per-topic preferred_days)";
+      } else {
+        siteMessage = `Aggregator returned 0 items for ${genResult.eligibleTopicCount ?? "all"} eligible topic(s)`;
+      }
     } else if (created === 0 && genErrors.length > 0) {
       siteStatus = "error";
       siteMessage = genErrors
@@ -221,13 +450,13 @@ export async function processSchedulerRun(
   // parent's data. Any domain not in the completed set permanently failed.
   const { enqueuedDomains } = job.data;
   const completedDomains = new Set(sites.map((s) => s.domain));
-  for (const domain of enqueuedDomains) {
-    if (!completedDomains.has(domain)) {
+  for (const entry of enqueuedDomains) {
+    if (!completedDomains.has(entry.domain)) {
       sites.push({
-        domain,
+        domain: entry.domain,
         status: "error",
         articlesCreated: 0,
-        articlesRequested: 0,
+        articlesRequested: entry.count,
         message: "Child job failed (all retries exhausted)",
       });
     }
@@ -242,8 +471,11 @@ export async function processSchedulerRun(
     skipped,
   };
 
-  // Write to GitHub
+  // Write to GitHub — clear main tree cache first so we read the latest
+  // history.json, not a stale version cached during brief reading or an
+  // earlier auto-publish in this same run.
   const octokit = createOctokit(config.github);
+  clearTreeCache("main");
   let history: unknown[] = [];
   try {
     const raw = await readFile(octokit, config.networkRepo, HISTORY_PATH);
@@ -266,8 +498,22 @@ export async function processSchedulerRun(
     `[scheduler-run] History written: ${sites.length} site(s), ${skipped.length} skipped`,
   );
 
-  // Auto-publish: merge staging → main for Live sites with new articles
+  // Fetch all active sites (used by weekly summary + auto-publish)
   const activeSites = await listActiveSites(octokit, config.networkRepo);
+
+  // Update weekly summary in MongoDB
+  await updateWeeklySummary({
+    allSiteDomains: activeSites.map((s) => s.domain),
+    siteResults: sites.map((s) => ({
+      domain: s.domain,
+      articlesRequested: s.articlesRequested,
+      articlesCreated: s.articlesCreated,
+    })),
+    skipped,
+    timezone,
+  });
+
+  // Auto-publish: merge staging → main for Live sites with new articles
   const siteStatusMap = new Map(activeSites.map((s) => [s.domain, s.status]));
   const siteBranchMap = new Map(activeSites.map((s) => [s.domain, s.branch]));
 
@@ -290,6 +536,16 @@ export async function processSchedulerRun(
 
   if (autoPublished.length > 0) {
     console.log(`[scheduler-run] Auto-published ${autoPublished.length} site(s): ${autoPublished.join(", ")}`);
+  }
+
+  // Invalidate dashboard caches for sites that had new content (non-published
+  // sites — autoPublishSite already invalidates for published ones)
+  const autoPublishedSet = new Set(autoPublished);
+  for (const siteResult of sites) {
+    if (siteResult.articlesCreated > 0 && !autoPublishedSet.has(siteResult.domain)) {
+      const branch = siteBranchMap.get(siteResult.domain);
+      if (branch) void invalidateDashboardCache(siteResult.domain, branch);
+    }
   }
 
   // Notify if any sites errored or produced zero articles

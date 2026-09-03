@@ -28,8 +28,10 @@ export default function NewOverridePage(): React.ReactElement {
         name: name || overrideId,
         priority,
         targets: { groups: [], sites: [] },
+        // Only include empty objects — no empty arrays that would wipe
+        // inherited values when this override is applied as a merge layer.
         tracking: {},
-        scripts: { head: [], body_start: [], body_end: [] },
+        scripts: {},
         scripts_vars: {},
         ads_config: {},
         ads_txt: [],

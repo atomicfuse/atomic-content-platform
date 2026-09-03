@@ -16,6 +16,7 @@ import matter from "gray-matter";
 import { generateContent } from "../../lib/ai.js";
 import { createOctokit, readFile, commitFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
+import { upsertArticleMeta } from "../../lib/db/articles.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { SiteBrief } from "../../types.js";
 import { buildRevisionSystemPrompt, buildRevisionUserPrompt } from "./prompts.js";
@@ -70,7 +71,7 @@ export async function regenerateArticle(
 
     console.log(`[regen] Revising article: ${articlePath}`);
 
-    const rawResponse = await generateContent({
+    const { text: rawResponse } = await generateContent({
       systemPrompt,
       userPrompt,
       maxTokens: 4096,
@@ -112,6 +113,17 @@ export async function regenerateArticle(
     });
 
     console.log(`[regen] Revision committed: ${articlePath}`);
+
+    // Dual-write to MongoDB (supplementary — never fails the pipeline)
+    const slug = articlePath.split("/").pop()?.replace(".md", "") ?? "";
+    await upsertArticleMeta(siteDomain, slug, branch ?? "main", {
+      title: updatedFrontmatter.title,
+      description: updatedFrontmatter.description,
+      tags: updatedFrontmatter.tags,
+      status: updatedFrontmatter.status,
+      reviewer_notes: updatedFrontmatter.reviewer_notes,
+      quality_note: updatedFrontmatter.quality_note,
+    });
 
     return { status: "revised", articlePath };
   } catch (err) {

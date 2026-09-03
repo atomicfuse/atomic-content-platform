@@ -30,13 +30,28 @@ const displayName =
   allTopics.find((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()) ??
   topicSlug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
+// Returns true if the article belongs to the given topic page.
+// New model: article frontmatter carries an explicit `topics` array.
+// Legacy model: falls back to tag-slug matching.
+function articleBelongsToTopic(a: ArticleIndexEntry, slug: string, displayName: string): boolean {
+  if (Array.isArray(a.topics) && a.topics.length > 0) {
+    return a.topics.some(
+      (n) =>
+        n.toLowerCase().replace(/\s+/g, '-') === slug.toLowerCase() ||
+        n.toLowerCase() === displayName.toLowerCase(),
+    );
+  }
+  // Legacy model: tag-slug match.
+  return a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === slug.toLowerCase());
+}
+
 // Fetch & filter articles by tag
 const allArticles =
   (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
 
 const matching = allArticles
   .filter((a) => preview || isVisibleArticle(a.status))
-  .filter((a) => a.tags.some((t) => t.toLowerCase().replace(/\s+/g, '-') === topicSlug.toLowerCase()))
+  .filter((a) => articleBelongsToTopic(a, topicSlug, displayName))
   .sort((a, b) => new Date(b.publishDate).getTime() - new Date(a.publishDate).getTime());
 
 // Pagination

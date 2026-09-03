@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Octokit } from "@octokit/rest";
-import { readDashboardIndex } from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { NETWORK_REPO_OWNER, NETWORK_REPO_NAME } from "@/lib/constants";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -45,9 +45,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       basehead: `main...${stagingBranch}`,
     });
 
+    // Only count files belonging to this domain — staging branches may
+    // contain cross-domain changes from batch operations (e.g. topic backfill).
+    const domainPrefix = `sites/${domain}/`;
+    const domainFiles = (data.files ?? []).filter((f) =>
+      f.filename.startsWith(domainPrefix),
+    );
+
     return NextResponse.json(
       {
-        hasPendingChanges: data.ahead_by > 0,
+        hasPendingChanges: domainFiles.length > 0,
         aheadBy: data.ahead_by,
         domain,
       },

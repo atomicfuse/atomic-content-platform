@@ -90,15 +90,24 @@ function statusVariant(
   status: string
 ): "success" | "warning" | "error" | "default" {
   switch (status) {
+    case "approved":
     case "published":
       return "success";
     case "review":
       return "warning";
+    case "deleted":
+      return "error";
     case "draft":
       return "default";
     default:
       return "default";
   }
+}
+
+function statusLabel(status: string): string {
+  if (status === "published" || status === "approved") return "Published";
+  if (status === "deleted") return "Deleted";
+  return status;
 }
 
 export function ContentTab({
@@ -134,7 +143,13 @@ export function ContentTab({
       const q = filters.search.toLowerCase();
       result = result.filter((a) => a.title.toLowerCase().includes(q) || a.slug.includes(q));
     }
-    if (filters.status) result = result.filter((a) => a.status === filters.status);
+    if (filters.status) {
+      if (filters.status === "approved") {
+        result = result.filter((a) => a.status === "approved" || a.status === "published");
+      } else {
+        result = result.filter((a) => a.status === filters.status);
+      }
+    }
     if (filters.type) result = result.filter((a) => a.type === filters.type);
     if (filters.generalImage === "yes") result = result.filter((a) => isGeneralImage(a.featuredImage, domain));
     else if (filters.generalImage === "no") result = result.filter((a) => !isGeneralImage(a.featuredImage, domain));
@@ -169,7 +184,8 @@ export function ContentTab({
     if (allSelected) {
       setSelectedSlugs(new Set());
     } else {
-      setSelectedSlugs(new Set(filtered.map((a) => a.slug)));
+      // Exclude already-deleted articles from bulk selection
+      setSelectedSlugs(new Set(filtered.filter((a) => a.status !== "deleted").map((a) => a.slug)));
     }
   }
 
@@ -240,9 +256,10 @@ export function ContentTab({
       )}
 
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
+        <div className="overflow-auto max-h-[80vh]">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border-secondary)]">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
               {stagingBranch && (
                 <th className="w-10 px-4 py-3">
                   <input
@@ -304,11 +321,12 @@ export function ContentTab({
                       type="checkbox"
                       checked={selectedSlugs.has(article.slug)}
                       onChange={(): void => toggleSelect(article.slug)}
-                      className="rounded border-[var(--border-primary)] accent-cyan-500"
+                      disabled={article.status === "deleted"}
+                      className="rounded border-[var(--border-primary)] accent-cyan-500 disabled:opacity-40"
                     />
                   </td>
                 )}
-                <td className="px-4 py-3 font-medium max-w-xs truncate">
+                <td className={`px-4 py-3 font-medium max-w-xs truncate${article.status === "deleted" ? " opacity-50 line-through" : ""}`}>
                   <Link
                     href={`/sites/${domain}/articles/${article.slug}`}
                     className="text-[var(--text-primary)] hover:text-cyan hover:underline"
@@ -331,7 +349,7 @@ export function ContentTab({
                 </td>
                 <td className="px-4 py-3">
                   <Badge
-                    label={article.status}
+                    label={statusLabel(article.status)}
                     variant={statusVariant(article.status)}
                   />
                 </td>
@@ -352,21 +370,26 @@ export function ContentTab({
                 </td>
                 {stagingBranch && (
                   <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={(): void => setDeleteTarget({ slug: article.slug, title: article.title })}
-                      className="text-[var(--text-muted)] hover:text-red-400 transition-colors"
-                      title={`Delete ${article.title}`}
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
-                      </svg>
-                    </button>
+                    {article.status === "deleted" ? (
+                      <span className="text-[var(--text-muted)] opacity-40 text-xs">—</span>
+                    ) : (
+                      <button
+                        onClick={(): void => setDeleteTarget({ slug: article.slug, title: article.title })}
+                        className="text-[var(--text-muted)] hover:text-red-400 transition-colors"
+                        title={`Delete ${article.title}`}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">

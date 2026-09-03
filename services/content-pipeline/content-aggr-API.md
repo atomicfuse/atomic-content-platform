@@ -8,7 +8,7 @@
 > sorted tier-1 first. Bundle rules are 2 dimensions: `category_ids[]` +
 > `tag_ids[]`.
 
-Base URL: `https://<your-domain>` (Cloud Grid deployment) or `http://content-aggregator-v2-34cd.atomic.cloudgrid.io` (local dev)
+Base URL: `https://<your-domain>` (Cloud Grid deployment) or `http://content-aggregator-v2-34cd--atomic.cloudgrid.io` (local dev)
 
 ## Authentication
 
@@ -44,17 +44,18 @@ All errors follow a consistent structure:
 
 Common error codes:
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `validation_error` | 400 | Invalid input — malformed ObjectId, unknown enum value, malformed JSON body, missing required field |
-| `unauthorized` | 401 | Missing / invalid cron token on a token-gated route |
-| `not_found` | 404 | Resource does not exist |
-| `duplicate` | 409 | Resource with that name already exists |
-| `referenced_by_bundle` | 409 | Category cannot be deleted while a bundle references it |
-| `health_check_failed` | 503 | `/health` could not reach MongoDB |
-| `internal_error` | 500 | Server error |
+| Code                   | HTTP Status | Description                                                                                         |
+| ---------------------- | ----------- | --------------------------------------------------------------------------------------------------- |
+| `validation_error`     | 400         | Invalid input — malformed ObjectId, unknown enum value, malformed JSON body, missing required field |
+| `unauthorized`         | 401         | Missing / invalid cron token on a token-gated route                                                 |
+| `not_found`            | 404         | Resource does not exist                                                                             |
+| `duplicate`            | 409         | Resource with that name already exists                                                              |
+| `referenced_by_bundle` | 409         | Category cannot be deleted while a bundle references it                                             |
+| `health_check_failed`  | 503         | `/health` could not reach MongoDB                                                                   |
+| `internal_error`       | 500         | Server error                                                                                        |
 
 Validation behavior:
+
 - Path/query/body ObjectIds are validated as 24-character hex; malformed values return 400.
 - Enum-style query params (`status`, `content_type`, `sort`, `order`, `language`, `type`, `group`, suggestion `status`/`type`/`action`) are validated against an allow-list; unknown values return 400. Empty string (`?status=`) is treated as "not provided" so the dashboard's blank-default behavior still resolves to the route's default.
 - Comma-separated multi-value enum params (e.g. `?content_type=video,article`) reject the whole request if ANY value is unknown — they don't silently filter to the valid subset.
@@ -64,10 +65,10 @@ Validation behavior:
 
 All list endpoints support pagination with these query parameters:
 
-| Parameter | Default | Max | Description |
-|-----------|---------|-----|-------------|
-| `page` | `1` | -- | Page number (1-indexed) |
-| `page_size` | `20` | `100` | Items per page |
+| Parameter   | Default | Max   | Description             |
+| ----------- | ------- | ----- | ----------------------- |
+| `page`      | `1`     | --    | Page number (1-indexed) |
+| `page_size` | `20`    | `100` | Items per page          |
 
 Paginated responses include:
 
@@ -87,79 +88,79 @@ Paginated responses include:
 
 ### Content
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/content` | Query content items with filters, pagination, search |
-| GET | `/api/content/:id` | Get a single content item |
-| PATCH | `/api/content` | Update content items (status, taxonomy overrides) |
-| DELETE | `/api/content/:id` | Permanently delete a content item |
-| DELETE | `/api/content/bulk` | Bulk permanent delete |
-| POST | `/api/content/enrich` | Trigger the AI enrichment pipeline |
-| GET | `/api/content/enrich` | Cron entrypoint — runs the enrichment pipeline (token-gated; see Authentication) |
-| POST | `/api/content/lifecycle` | Run lifecycle jobs (archive, purge) |
-| GET | `/api/content/lifecycle` | Cron entrypoint — runs lifecycle jobs (token-gated; see Authentication) |
+| Method | Path                     | Description                                                                      |
+| ------ | ------------------------ | -------------------------------------------------------------------------------- |
+| GET    | `/api/content`           | Query content items with filters, pagination, search                             |
+| GET    | `/api/content/:id`       | Get a single content item                                                        |
+| PATCH  | `/api/content`           | Update content items (status, taxonomy overrides)                                |
+| DELETE | `/api/content/:id`       | Permanently delete a content item                                                |
+| DELETE | `/api/content/bulk`      | Bulk permanent delete                                                            |
+| POST   | `/api/content/enrich`    | Trigger the AI enrichment pipeline                                               |
+| GET    | `/api/content/enrich`    | Cron entrypoint — runs the enrichment pipeline (token-gated; see Authentication) |
+| POST   | `/api/content/lifecycle` | Run lifecycle jobs (archive, purge)                                              |
+| GET    | `/api/content/lifecycle` | Cron entrypoint — runs lifecycle jobs (token-gated; see Authentication)          |
 
 ### Sources
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/sources` | List sources with content counts |
-| GET | `/api/sources/:id` | Get a single source by ID |
-| POST | `/api/sources` | Create a new source |
-| PUT | `/api/sources/:id` | Update a source |
-| DELETE | `/api/sources/:id` | Deactivate a source (soft delete) |
-| DELETE | `/api/sources/:id/content` | Delete all content from a source (keeps source) |
-| POST | `/api/sources/discover` | Auto-discover RSS feeds from a website URL |
-| POST | `/api/sources/fetch` | Trigger content collection |
-| GET | `/api/sources/fetch` | Cron entrypoint — runs the fetch pipeline (token-gated; see Authentication) |
+| Method | Path                       | Description                                                                 |
+| ------ | -------------------------- | --------------------------------------------------------------------------- |
+| GET    | `/api/sources`             | List sources with content counts                                            |
+| GET    | `/api/sources/:id`         | Get a single source by ID                                                   |
+| POST   | `/api/sources`             | Create a new source                                                         |
+| PUT    | `/api/sources/:id`         | Update a source                                                             |
+| DELETE | `/api/sources/:id`         | Deactivate a source (soft delete)                                           |
+| DELETE | `/api/sources/:id/content` | Delete all content from a source (keeps source)                             |
+| POST   | `/api/sources/discover`    | Auto-discover RSS feeds from a website URL                                  |
+| POST   | `/api/sources/fetch`       | Trigger content collection                                                  |
+| GET    | `/api/sources/fetch`       | Cron entrypoint — runs the fetch pipeline (token-gated; see Authentication) |
 
 ### Taxonomy
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/categories` | List categories. `?parent_id=null` narrows to tier-1 (top-level / renamed "vertical"); `?parent_id=<id>` narrows to children of that parent. |
-| POST | `/api/categories` | Create a category (omit `parent_id` or set to null to create a tier-1) |
-| PUT | `/api/categories/:id` | Update a category |
-| DELETE | `/api/categories/:id` | Soft-delete a category. 409 `referenced_by_bundle` if any bundle references it. |
-| GET | `/api/tags` | List tags |
-| POST | `/api/tags` | Create a tag |
-| PUT | `/api/tags/:id` | Update a tag |
-| DELETE | `/api/tags/:id` | Hard delete a tag (auto-strips from referencing bundles) |
-| GET | `/api/audiences` | List audience types |
-| POST | `/api/audiences` | Create an audience type |
-| PUT | `/api/audiences/:id` | Update an audience type |
-| DELETE | `/api/audiences/:id` | Soft-delete an audience type |
+| Method | Path                  | Description                                                                                                                                  |
+| ------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/categories`     | List categories. `?parent_id=null` narrows to tier-1 (top-level / renamed "vertical"); `?parent_id=<id>` narrows to children of that parent. |
+| POST   | `/api/categories`     | Create a category (omit `parent_id` or set to null to create a tier-1)                                                                       |
+| PUT    | `/api/categories/:id` | Update a category                                                                                                                            |
+| DELETE | `/api/categories/:id` | Soft-delete a category. 409 `referenced_by_bundle` if any bundle references it.                                                              |
+| GET    | `/api/tags`           | List tags                                                                                                                                    |
+| POST   | `/api/tags`           | Create a tag                                                                                                                                 |
+| PUT    | `/api/tags/:id`       | Update a tag                                                                                                                                 |
+| DELETE | `/api/tags/:id`       | Hard delete a tag (auto-strips from referencing bundles)                                                                                     |
+| GET    | `/api/audiences`      | List audience types                                                                                                                          |
+| POST   | `/api/audiences`      | Create an audience type                                                                                                                      |
+| PUT    | `/api/audiences/:id`  | Update an audience type                                                                                                                      |
+| DELETE | `/api/audiences/:id`  | Soft-delete an audience type                                                                                                                 |
 
-All categories: https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/categories?parent_id=null
-Subcategories per category: https://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/categories?parent_id=<category_id>
+All categories: https://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/categories?parent_id=null
+Subcategories per category: https://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/categories?parent_id=<category_id>
 
 ### Content Bundles
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/bundles` | List bundles (pagination, `?active=true|false`) |
-| GET | `/api/bundles/:id` | Get a single bundle |
-| POST | `/api/bundles` | Create a bundle (validates min-rule + referenced categories/tags; 409 on duplicate name) |
-| PUT | `/api/bundles/:id` | Update a bundle (targeted inline re-evaluation on rule / active change) |
-| DELETE | `/api/bundles/:id` | Soft-delete (default, `active: false`) or `?hard=true` permanent |
-| POST | `/api/bundles/:id/reevaluate` | Force full reevaluation; refreshes `content_count` + `last_evaluated_at` |
-| POST | `/api/bundles/preview` | Count matching content for a rule set (no bundle persisted) |
+| Method | Path                          | Description                                                                              |
+| ------ | ----------------------------- | ---------------------------------------------------------------------------------------- | ------- |
+| GET    | `/api/bundles`                | List bundles (pagination, `?active=true                                                  | false`) |
+| GET    | `/api/bundles/:id`            | Get a single bundle                                                                      |
+| POST   | `/api/bundles`                | Create a bundle (validates min-rule + referenced categories/tags; 409 on duplicate name) |
+| PUT    | `/api/bundles/:id`            | Update a bundle (targeted inline re-evaluation on rule / active change)                  |
+| DELETE | `/api/bundles/:id`            | Soft-delete (default, `active: false`) or `?hard=true` permanent                         |
+| POST   | `/api/bundles/:id/reevaluate` | Force full reevaluation; refreshes `content_count` + `last_evaluated_at`                 |
+| POST   | `/api/bundles/preview`        | Count matching content for a rule set (no bundle persisted)                              |
 
 ### Taxonomy Suggestions
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/taxonomy/suggestions` | List AI-proposed taxonomy items |
-| POST | `/api/taxonomy/suggestions/:id/approve` | Approve or reject a suggestion |
+| Method | Path                                    | Description                     |
+| ------ | --------------------------------------- | ------------------------------- |
+| GET    | `/api/taxonomy/suggestions`             | List AI-proposed taxonomy items |
+| POST   | `/api/taxonomy/suggestions/:id/approve` | Approve or reject a suggestion  |
 
 ### System
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/settings` | Get system settings |
-| PUT | `/api/settings` | Update system settings (deep merge) |
-| GET | `/api/stats` | System metrics and enrichment cost |
-| GET | `/health` | Health check |
+| Method | Path            | Description                         |
+| ------ | --------------- | ----------------------------------- |
+| GET    | `/api/settings` | Get system settings                 |
+| PUT    | `/api/settings` | Update system settings (deep merge) |
+| GET    | `/api/stats`    | System metrics and enrichment cost  |
+| GET    | `/health`       | Health check                        |
 
 ---
 
@@ -171,24 +172,24 @@ Query content items with filters, pagination, and text search. Returns consumer-
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `status` | string | `active` | Filter by status: `active`, `inactive`, `archived` |
-| `content_type` | string | -- | Comma-separated: `article`, `video`, `social_post`, `discussion`, `trend`. 400 if any value is unknown. |
-| `category_ids` | string | -- | Comma-separated category IDs. OR logic across values. To filter by tier-1 (the renamed "vertical") pass that tier-1 id. |
-| `tag_ids` | string | -- | Comma-separated tag IDs. OR logic across values. |
-| `bundle_id` | string | -- | Filter by a single bundle ID (24-hex; 400 on malformed). Automatically scoped to active bundles — an unknown or inactive bundle returns an empty result with `total_count: 0` (no 404). |
-| `audience_type_id` | string | -- | Filter by audience type ID (24-hex; 400 on malformed) |
-| `source_id` | string | -- | Filter by source ID (24-hex; 400 on malformed) |
-| `enriched` | string | `true` | `true` (default — only enriched items) or `false` (all items including unenriched). "Golden plate" philosophy: consumers get ready-to-use content by default. |
-| `language` | string | -- | ISO 639-1 language code, validated against the supported set (EN/ES/FR/DE/PT/IT/NL/RU/ZH/JA/KO/AR/HE/TR/TH). Auto-uppercased. 400 on unknown. |
-| `sort` | string | `published_at` | `published_at` \| `created_at` \| `title`. 400 on unknown. |
-| `order` | string | `desc` | `asc` \| `desc`. 400 on unknown. |
-| `search` | string | -- | Text search across title, description, url, and exact content ID |
-| `category_id` | string | -- | Single-value alias for `category_ids`. |
-| `tag_id` | string | -- | Single-value alias for `tag_ids`. |
+| Parameter          | Type    | Default        | Description                                                                                                                                                                             |
+| ------------------ | ------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `page`             | integer | `1`            | Page number                                                                                                                                                                             |
+| `page_size`        | integer | `20`           | Items per page (max 100)                                                                                                                                                                |
+| `status`           | string  | `active`       | Filter by status: `active`, `inactive`, `archived`                                                                                                                                      |
+| `content_type`     | string  | --             | Comma-separated: `article`, `video`, `social_post`, `discussion`, `trend`. 400 if any value is unknown.                                                                                 |
+| `category_ids`     | string  | --             | Comma-separated category IDs. OR logic across values. To filter by tier-1 (the renamed "vertical") pass that tier-1 id.                                                                 |
+| `tag_ids`          | string  | --             | Comma-separated tag IDs. OR logic across values.                                                                                                                                        |
+| `bundle_id`        | string  | --             | Filter by a single bundle ID (24-hex; 400 on malformed). Automatically scoped to active bundles — an unknown or inactive bundle returns an empty result with `total_count: 0` (no 404). |
+| `audience_type_id` | string  | --             | Filter by audience type ID (24-hex; 400 on malformed)                                                                                                                                   |
+| `source_id`        | string  | --             | Filter by source ID (24-hex; 400 on malformed)                                                                                                                                          |
+| `enriched`         | string  | `true`         | `true` (default — only enriched items) or `false` (all items including unenriched). "Golden plate" philosophy: consumers get ready-to-use content by default.                           |
+| `language`         | string  | --             | ISO 639-1 language code, validated against the supported set (EN/ES/FR/DE/PT/IT/NL/RU/ZH/JA/KO/AR/HE/TR/TH). Auto-uppercased. 400 on unknown.                                           |
+| `sort`             | string  | `published_at` | `published_at` \| `created_at` \| `title`. 400 on unknown.                                                                                                                              |
+| `order`            | string  | `desc`         | `asc` \| `desc`. 400 on unknown.                                                                                                                                                        |
+| `search`           | string  | --             | Text search across title, description, url, and exact content ID                                                                                                                        |
+| `category_id`      | string  | --             | Single-value alias for `category_ids`.                                                                                                                                                  |
+| `tag_id`           | string  | --             | Single-value alias for `tag_ids`.                                                                                                                                                       |
 
 **Response** `200 OK`
 
@@ -227,18 +228,28 @@ Query content items with filters, pagination, and text search. Returns consumer-
         "type": "rss"
       },
       "categories": [
-        { "id": "6650a...", "name": "Technology & Computing", "iab_code": "596", "parent_id": null },
-        { "id": "6650c...", "name": "Artificial Intelligence", "iab_code": "597", "parent_id": "6650a..." }
+        {
+          "id": "6650a...",
+          "name": "Technology & Computing",
+          "iab_code": "596",
+          "parent_id": null
+        },
+        {
+          "id": "6650c...",
+          "name": "Artificial Intelligence",
+          "iab_code": "597",
+          "parent_id": "6650a..."
+        }
       ],
-      "tags": [
-        { "id": "6650d...", "name": "machine learning" }
-      ],
+      "tags": [{ "id": "6650d...", "name": "machine learning" }],
       "audience_types": [
-        { "id": "6650e...", "name": "Tech professionals", "group": "profession" }
+        {
+          "id": "6650e...",
+          "name": "Tech professionals",
+          "group": "profession"
+        }
       ],
-      "bundles": [
-        { "id": "6651c...", "name": "AI for Healthcare" }
-      ]
+      "bundles": [{ "id": "6651c...", "name": "AI for Healthcare" }]
     }
   ]
 }
@@ -249,7 +260,7 @@ Query content items with filters, pagination, and text search. Returns consumer-
 **curl example**
 
 ```bash
-curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content?status=active&content_type=article,video&enriched=true&page_size=10"
+curl "http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/content?status=active&content_type=article,video&enriched=true&page_size=10"
 ```
 
 ---
@@ -264,9 +275,9 @@ Returns a single `ContentItemResponse` object (same shape as items in the list r
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | ID does not exist |
+| Status | Code        | When              |
+| ------ | ----------- | ----------------- |
+| 404    | `not_found` | ID does not exist |
 
 ---
 
@@ -312,10 +323,10 @@ All fields except `id` are optional. Operators override the broad-bucket assignm
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Invalid status or transition |
-| 404 | `not_found` | Content item not found |
+| Status | Code               | When                         |
+| ------ | ------------------ | ---------------------------- |
+| 400    | `validation_error` | Invalid status or transition |
+| 404    | `not_found`        | Content item not found       |
 
 ---
 
@@ -354,9 +365,9 @@ Bulk permanent delete.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | `ids` array missing or empty |
+| Status | Code               | When                         |
+| ------ | ------------------ | ---------------------------- |
+| 400    | `validation_error` | `ids` array missing or empty |
 
 ---
 
@@ -383,7 +394,7 @@ Returns an enrichment summary with counts of processed, succeeded, and failed it
 **curl example**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content/enrich \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/content/enrich \
   -H "Content-Type: application/json" \
   -d '{"batch_size": 5}'
 ```
@@ -410,12 +421,12 @@ List sources with pagination and content counts.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `25` | Items per page (max 100) |
-| `type` | string | -- | Filter by source type: `rss`, `youtube`, `reddit`, `social`, `google_trends`. 400 on unknown. |
-| `active` | string | -- | `true` or `false` |
+| Parameter   | Type    | Default | Description                                                                                   |
+| ----------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
+| `page`      | integer | `1`     | Page number                                                                                   |
+| `page_size` | integer | `25`    | Items per page (max 100)                                                                      |
+| `type`      | string  | --      | Filter by source type: `rss`, `youtube`, `reddit`, `social`, `google_trends`. 400 on unknown. |
+| `active`    | string  | --      | `true` or `false`                                                                             |
 
 **Response** `200 OK`
 
@@ -492,28 +503,39 @@ Fetch a single source by ID. Mirrors the per-item shape from `GET /api/sources`,
   "created_at": "2026-04-01T10:00:00.000Z",
   "last_fetched_at": "2026-04-15T08:00:00.000Z",
   "config": { "feed_url": "https://techcrunch.com/feed/" },
-  "settings": { "schedule": { "cron": "0 */1 * * *" }, "max_items": 50, "filters": {}, "default_expiration_days": null, "retention_days": null },
+  "settings": {
+    "schedule": { "cron": "0 */1 * * *" },
+    "max_items": 50,
+    "filters": {},
+    "default_expiration_days": null,
+    "retention_days": null
+  },
   "category_ids": ["6650a..."],
   "audience_type_ids": [],
   "classification_override": null,
   "classification_filter": null,
   "auto_tags": null,
-  "enrichment": { "auto_summarize": true, "auto_classify": true, "auto_tag": true, "summary_language": null },
+  "enrichment": {
+    "auto_summarize": true,
+    "auto_classify": true,
+    "auto_tag": true,
+    "summary_language": null
+  },
   "content_count": 42
 }
 ```
 
 **Errors**
 
-| Status | Code | Description |
-|--------|------|-------------|
-| 400 | `validation_error` | `id` is not a 24-character hex ObjectId |
-| 404 | `not_found` | Source not found |
+| Status | Code               | Description                             |
+| ------ | ------------------ | --------------------------------------- |
+| 400    | `validation_error` | `id` is not a 24-character hex ObjectId |
+| 404    | `not_found`        | Source not found                        |
 
 **curl example**
 
 ```bash
-curl http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/6650b1234567890123456789
+curl http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources/6650b1234567890123456789
 ```
 
 ---
@@ -560,23 +582,23 @@ Create a new source.
 
 **Per-source classification gate** (all three optional, all default null = pure additive AI-only behavior):
 
-| Field | Type | Behavior |
-|-------|------|---------|
-| `classification_override` | `ObjectId[]` \| `null` | When set, the AI classifier is **skipped entirely**. The supplied category ids are stamped on every enriched item with `classification_source: 'source_inherited'` (tier-1 first by operator-supplied order). |
-| `classification_filter` | `{ mode: "include" \| "exclude", category_ids: ObjectId[] }` \| `null` | Only fires when override is null. After the AI classifier runs, items are include-or-exclude-filtered by category overlap. **Rejected items are permanently deleted** (reported as `enrichment_type: 'skipped'`, `success: true` — the source's intent succeeded). |
-| `auto_tags` | `ObjectId[]` \| `null` | Additively merged into every enriched item's `tag_ids` after classification (or on its own when override is set). Deduped. Runs even on the AI path. |
+| Field                     | Type                                                                   | Behavior                                                                                                                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `classification_override` | `ObjectId[]` \| `null`                                                 | When set, the AI classifier is **skipped entirely**. The supplied category ids are stamped on every enriched item with `classification_source: 'source_inherited'` (tier-1 first by operator-supplied order).                                                      |
+| `classification_filter`   | `{ mode: "include" \| "exclude", category_ids: ObjectId[] }` \| `null` | Only fires when override is null. After the AI classifier runs, items are include-or-exclude-filtered by category overlap. **Rejected items are permanently deleted** (reported as `enrichment_type: 'skipped'`, `success: true` — the source's intent succeeded). |
+| `auto_tags`               | `ObjectId[]` \| `null`                                                 | Additively merged into every enriched item's `tag_ids` after classification (or on its own when override is set). Deduped. Runs even on the AI path.                                                                                                               |
 
 The handler validates that every referenced category and tag id exists. On bad refs the response is `400 validation_error` with `missing_category_ids[]` / `missing_tag_ids[]` in the error envelope (mirrors the bundle validation envelope).
 
 **Type-specific config requirements**:
 
-| Source Type | Required Config Fields |
-|------------|----------------------|
-| `rss` | `feed_url` |
-| `youtube` | `channel_handle` or `channel_id` |
-| `reddit` | `subreddit` |
-| `social` | `handle` and `platform` |
-| `google_trends` | `region` |
+| Source Type     | Required Config Fields           |
+| --------------- | -------------------------------- |
+| `rss`           | `feed_url`                       |
+| `youtube`       | `channel_handle` or `channel_id` |
+| `reddit`        | `subreddit`                      |
+| `social`        | `handle` and `platform`          |
+| `google_trends` | `region`                         |
 
 **Response** `201 Created`
 
@@ -595,14 +617,14 @@ The handler validates that every referenced category and tag id exists. On bad r
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing required fields or invalid type/config |
+| Status | Code               | When                                           |
+| ------ | ------------------ | ---------------------------------------------- |
+| 400    | `validation_error` | Missing required fields or invalid type/config |
 
 **curl example**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources \
   -H "Content-Type: application/json" \
   -d '{
     "name": "TechCrunch",
@@ -644,9 +666,9 @@ Returns the full updated source object.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Source not found |
+| Status | Code        | When             |
+| ------ | ----------- | ---------------- |
+| 404    | `not_found` | Source not found |
 
 ---
 
@@ -656,9 +678,9 @@ Soft-delete a source by default (sets `active: false`). The source row stays so 
 
 **Query params:**
 
-| Param | Description |
-|-------|-------------|
-| `hard=true` | Permanently remove the source row (hard delete) |
+| Param                 | Description                                                                |
+| --------------------- | -------------------------------------------------------------------------- |
+| `hard=true`           | Permanently remove the source row (hard delete)                            |
 | `delete_content=true` | Also delete every content item from this source (independent of hard/soft) |
 
 **Response** `200 OK`
@@ -668,6 +690,7 @@ Soft-delete a source by default (sets `active: false`). The source row stays so 
 ```
 
 Combinations:
+
 - No query → soft-delete source, content preserved.
 - `?hard=true` → hard-delete source, content preserved (becomes unlinked).
 - `?delete_content=true` → soft-delete source + wipe its content.
@@ -692,9 +715,9 @@ Delete all content items from a source while keeping the source itself.
 
 **Errors**
 
-| Status | Code | Description |
-|--------|------|-------------|
-| 404 | not_found | Source not found |
+| Status | Code      | Description      |
+| ------ | --------- | ---------------- |
+| 404    | not_found | Source not found |
 
 ---
 
@@ -708,9 +731,9 @@ Auto-discover RSS feeds from a website URL. Probes the page's `<link rel="altern
 { "url": "https://techcrunch.com" }
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `url` | string | yes | Website URL (with or without scheme — `https://` is assumed when missing) |
+| Field | Type   | Required | Description                                                               |
+| ----- | ------ | -------- | ------------------------------------------------------------------------- |
+| `url` | string | yes      | Website URL (with or without scheme — `https://` is assumed when missing) |
 
 **Response** `200 OK`
 
@@ -718,21 +741,25 @@ Auto-discover RSS feeds from a website URL. Probes the page's `<link rel="altern
 {
   "url": "https://techcrunch.com",
   "feeds": [
-    { "url": "https://techcrunch.com/feed/", "title": "TechCrunch", "type": "rss" }
+    {
+      "url": "https://techcrunch.com/feed/",
+      "title": "TechCrunch",
+      "type": "rss"
+    }
   ]
 }
 ```
 
 **Errors**
 
-| Status | Code | Description |
-|--------|------|-------------|
-| 400 | `validation_error` | Body is malformed JSON or `url` is missing |
+| Status | Code               | Description                                |
+| ------ | ------------------ | ------------------------------------------ |
+| 400    | `validation_error` | Body is malformed JSON or `url` is missing |
 
 **curl example**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/discover \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources/discover \
   -H "Content-Type: application/json" \
   -d '{"url": "https://techcrunch.com"}'
 ```
@@ -746,16 +773,19 @@ Trigger content collection from sources. The matching `GET /api/sources/fetch` i
 **Request Body Variants**
 
 Fetch a single source:
+
 ```json
 { "source_id": "6650b..." }
 ```
 
 Fetch multiple sources:
+
 ```json
 { "source_ids": ["6650b...", "6650f..."] }
 ```
 
 Fetch all active sources (empty body or no body):
+
 ```json
 {}
 ```
@@ -766,18 +796,18 @@ Returns a fetch summary with per-source results (items found, new items ingested
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Source ID not found (single source mode) |
+| Status | Code        | When                                     |
+| ------ | ----------- | ---------------------------------------- |
+| 404    | `not_found` | Source ID not found (single source mode) |
 
 **curl example**
 
 ```bash
 # Fetch all active sources
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources/fetch
 
 # Fetch a specific source
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources/fetch \
   -H "Content-Type: application/json" \
   -d '{"source_id": "6650b..."}'
 ```
@@ -798,12 +828,12 @@ List categories.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `parent_id` | string | -- | `null` (literal string) narrows to tier-1; a 24-hex id narrows to children of that parent. Malformed → 400. |
-| `active` | string | -- | `true` or `false` |
+| Parameter   | Type    | Default | Description                                                                                                 |
+| ----------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `page`      | integer | `1`     | Page number                                                                                                 |
+| `page_size` | integer | `20`    | Items per page (max 100)                                                                                    |
+| `parent_id` | string  | --      | `null` (literal string) narrows to tier-1; a 24-hex id narrows to children of that parent. Malformed → 400. |
+| `active`    | string  | --      | `true` or `false`                                                                                           |
 
 **Response** `200 OK`
 
@@ -851,11 +881,11 @@ Create a category. Omit `parent_id` (or set to `null`) to create a tier-1 (top-l
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing name, malformed JSON body, or malformed `parent_id` |
-| 404 | `not_found` | Parent category does not exist |
-| 409 | `duplicate` | Category name already exists |
+| Status | Code               | When                                                        |
+| ------ | ------------------ | ----------------------------------------------------------- |
+| 400    | `validation_error` | Missing name, malformed JSON body, or malformed `parent_id` |
+| 404    | `not_found`        | Parent category does not exist                              |
+| 409    | `duplicate`        | Category name already exists                                |
 
 ---
 
@@ -881,10 +911,10 @@ Blocks if the category is referenced by any content bundle — operator must edi
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Category id unknown |
-| 409 | `referenced_by_bundle` | One or more bundles reference this category |
+| Status | Code                   | When                                        |
+| ------ | ---------------------- | ------------------------------------------- |
+| 404    | `not_found`            | Category id unknown                         |
+| 409    | `referenced_by_bundle` | One or more bundles reference this category |
 
 **409 body**
 
@@ -911,14 +941,14 @@ List tags. Tags are flat post-collapse — no parent dimension.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `search` | string | -- | Search tag names (case-insensitive) |
-| `sort` | string | `name` | `name` \| `usage_count` \| `created_at` |
-| `order` | string | -- | `asc` \| `desc` (default `asc` for `name`, `desc` for the other sorts) |
-| `include_usage` | string | -- | Set to `true` to include `usage_count` |
+| Parameter       | Type    | Default | Description                                                            |
+| --------------- | ------- | ------- | ---------------------------------------------------------------------- |
+| `page`          | integer | `1`     | Page number                                                            |
+| `page_size`     | integer | `20`    | Items per page (max 100)                                               |
+| `search`        | string  | --      | Search tag names (case-insensitive)                                    |
+| `sort`          | string  | `name`  | `name` \| `usage_count` \| `created_at`                                |
+| `order`         | string  | --      | `asc` \| `desc` (default `asc` for `name`, `desc` for the other sorts) |
+| `include_usage` | string  | --      | Set to `true` to include `usage_count`                                 |
 
 **Response** `200 OK`
 
@@ -965,10 +995,10 @@ Create a tag. Names are auto-lowercased and trimmed.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing name |
-| 409 | `duplicate` | Tag already exists (after normalization) |
+| Status | Code               | When                                     |
+| ------ | ------------------ | ---------------------------------------- |
+| 400    | `validation_error` | Missing name                             |
+| 409    | `duplicate`        | Tag already exists (after normalization) |
 
 ---
 
@@ -1010,12 +1040,12 @@ List audience types. Seeded with 80+ entries across 10 groups.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `group` | string | -- | Filter by group (see valid groups below) |
-| `active` | string | -- | `true` or `false` |
+| Parameter   | Type    | Default | Description                              |
+| ----------- | ------- | ------- | ---------------------------------------- |
+| `page`      | integer | `1`     | Page number                              |
+| `page_size` | integer | `20`    | Items per page (max 100)                 |
+| `group`     | string  | --      | Filter by group (see valid groups below) |
+| `active`    | string  | --      | `true` or `false`                        |
 
 **Valid groups**: `age`, `generation`, `life_stage`, `profession`, `education`, `family`, `income`, `lifestyle`, `digital`, `interests`
 
@@ -1043,9 +1073,9 @@ List audience types. Seeded with 80+ entries across 10 groups.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Invalid group value |
+| Status | Code               | When                |
+| ------ | ------------------ | ------------------- |
+| 400    | `validation_error` | Invalid group value |
 
 ---
 
@@ -1069,10 +1099,10 @@ Create an audience type.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing name/group or invalid group |
-| 409 | `duplicate` | Name already exists |
+| Status | Code               | When                                |
+| ------ | ------------------ | ----------------------------------- |
+| 400    | `validation_error` | Missing name/group or invalid group |
+| 409    | `duplicate`        | Name already exists                 |
 
 ---
 
@@ -1106,11 +1136,11 @@ List bundles.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `active` | string | -- | `true` → active only; `false` → inactive only; omit → all |
+| Parameter   | Type    | Default | Description                                               |
+| ----------- | ------- | ------- | --------------------------------------------------------- |
+| `page`      | integer | `1`     | Page number                                               |
+| `page_size` | integer | `20`    | Items per page (max 100)                                  |
+| `active`    | string  | --      | `true` → active only; `false` → inactive only; omit → all |
 
 **Response** `200 OK`
 
@@ -1142,7 +1172,7 @@ List bundles.
 **curl**
 
 ```bash
-curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/bundles?active=true"
+curl "http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/bundles?active=true"
 ```
 
 ---
@@ -1155,9 +1185,9 @@ Get a single bundle by id.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Bundle id unknown |
+| Status | Code        | When              |
+| ------ | ----------- | ----------------- |
+| 404    | `not_found` | Bundle id unknown |
 
 ---
 
@@ -1180,6 +1210,7 @@ Create a bundle.
 ```
 
 **Rules shape (2 dimensions, post-collapse 2026-04-29):**
+
 - `category_ids[]` — OR within: content must share at least one category id (a tier-1 / `parent_id:null` id matches every item that classified into that broad bucket — the renamed "vertical" semantic).
 - `tag_ids[]` — OR within: content must share at least one tag id.
 - AND across: if both dims are specified, BOTH must match.
@@ -1193,15 +1224,15 @@ On successful create with `active !== false`, an inline re-evaluation runs immed
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Missing `name`, empty rules (both arrays empty), or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
-| 409 | `duplicate` | A bundle with this name already exists |
+| Status | Code               | When                                                                                                                                                                   |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `validation_error` | Missing `name`, empty rules (both arrays empty), or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 409    | `duplicate`        | A bundle with this name already exists                                                                                                                                 |
 
 **curl**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/bundles \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/bundles \
   -H "Content-Type: application/json" \
   -d '{
     "name": "AI for Healthcare",
@@ -1219,6 +1250,7 @@ curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/bundles \
 Update a bundle. All fields optional: `name`, `description`, `active`, `rules`.
 
 If `rules` or `active` changes, the server runs a **targeted** re-evaluation:
+
 - `true → false`: strips this bundle id from every content item carrying it; `content_count` → 0.
 - Still-active or `false → true`: `$pull` from items that no longer match, `$addToSet` onto items that now match. Both operations are indexed and bounded to affected rows.
 
@@ -1226,11 +1258,11 @@ If `rules` or `active` changes, the server runs a **targeted** re-evaluation:
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Empty rules (both dims empty) or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
-| 404 | `not_found` | Bundle id unknown |
-| 409 | `duplicate` | Renaming to a name that already exists |
+| Status | Code               | When                                                                                                                                                |
+| ------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `validation_error` | Empty rules (both dims empty) or referenced category/tag does not exist. Body includes `missing_category_ids` / `missing_tag_ids` where applicable. |
+| 404    | `not_found`        | Bundle id unknown                                                                                                                                   |
+| 409    | `duplicate`        | Renaming to a name that already exists                                                                                                              |
 
 ---
 
@@ -1240,9 +1272,9 @@ Delete a bundle. Soft by default; `?hard=true` for permanent removal. Both paths
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `hard` | string | -- | Set to `true` to permanently delete. Default (omitted/`false`) is a soft delete (`active: false`). |
+| Parameter | Type   | Default | Description                                                                                        |
+| --------- | ------ | ------- | -------------------------------------------------------------------------------------------------- |
+| `hard`    | string | --      | Set to `true` to permanently delete. Default (omitted/`false`) is a soft delete (`active: false`). |
 
 **Response** `200 OK`
 
@@ -1258,9 +1290,9 @@ With `?hard=true`, `deleted` is `"hard"`.
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Bundle id unknown |
+| Status | Code        | When              |
+| ------ | ----------- | ----------------- |
+| 404    | `not_found` | Bundle id unknown |
 
 ---
 
@@ -1276,7 +1308,10 @@ Force a full re-evaluation of the bundle against all content items. Refreshes `c
     "id": "6651c...",
     "name": "AI for Healthcare",
     "active": true,
-    "rules": { "category_ids": ["6650a...", "6650c..."], "tag_ids": ["6650d..."] },
+    "rules": {
+      "category_ids": ["6650a...", "6650c..."],
+      "tag_ids": ["6650d..."]
+    },
     "content_count": 49,
     "last_evaluated_at": "2026-04-19T18:00:00.000Z",
     "created_at": "2026-04-15T09:12:00.000Z",
@@ -1292,9 +1327,9 @@ Force a full re-evaluation of the bundle against all content items. Refreshes `c
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 404 | `not_found` | Bundle id unknown |
+| Status | Code        | When              |
+| ------ | ----------- | ----------------- |
+| 404    | `not_found` | Bundle id unknown |
 
 ---
 
@@ -1331,12 +1366,12 @@ List AI-proposed taxonomy items awaiting human review.
 
 **Query Parameters**
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `page` | integer | `1` | Page number |
-| `page_size` | integer | `20` | Items per page (max 100) |
-| `status` | string | `pending` | Filter: `pending` \| `approved` \| `rejected`. 400 on unknown. |
-| `type` | string | -- | Filter: `category` \| `audience_type` \| `tag`. 400 on unknown. The legacy `vertical` type was removed in the 2026-04-29 collapse — `category` suggestions with `parent_id: null` create tier-1 rows on approve. |
+| Parameter   | Type    | Default   | Description                                                                                                                                                                                                      |
+| ----------- | ------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `page`      | integer | `1`       | Page number                                                                                                                                                                                                      |
+| `page_size` | integer | `20`      | Items per page (max 100)                                                                                                                                                                                         |
+| `status`    | string  | `pending` | Filter: `pending` \| `approved` \| `rejected`. 400 on unknown.                                                                                                                                                   |
+| `type`      | string  | --        | Filter: `category` \| `audience_type` \| `tag`. 400 on unknown. The legacy `vertical` type was removed in the 2026-04-29 collapse — `category` suggestions with `parent_id: null` create tier-1 rows on approve. |
 
 **Response** `200 OK`
 
@@ -1373,21 +1408,25 @@ Approve or reject a taxonomy suggestion. Approving creates the taxonomy item aut
 `action` is validated against `["approve", "reject"]`. Omitting `action` defaults to `"approve"`. Any other value returns 400 `validation_error` (previously a typo silently approved).
 
 Approve (default):
+
 ```json
 {}
 ```
 
 Reject:
+
 ```json
 { "action": "reject" }
 ```
 
 For category suggestions, `parent_id` is optional. Null/omitted creates a **tier-1** (top-level / renamed "vertical") row; otherwise the new category is created under that parent:
+
 ```json
 { "parent_id": "6650a..." }
 ```
 
 For audience_type suggestions, `group` is required:
+
 ```json
 { "group": "profession" }
 ```
@@ -1413,10 +1452,10 @@ Or for rejection:
 
 **Errors**
 
-| Status | Code | When |
-|--------|------|------|
-| 400 | `validation_error` | Already resolved, or missing required fields for approval |
-| 404 | `not_found` | Suggestion not found |
+| Status | Code               | When                                                      |
+| ------ | ------------------ | --------------------------------------------------------- |
+| 400    | `validation_error` | Already resolved, or missing required fields for approval |
+| 404    | `not_found`        | Suggestion not found                                      |
 
 ---
 
@@ -1577,7 +1616,15 @@ Liveness + readiness probe. Pings the MongoDB connection — returns **503** if 
 **Response** `503 Service Unavailable`
 
 ```json
-{ "status": "error", "checks": { "mongodb": "fail" }, "error": { "code": "health_check_failed", "message": "database check failed" }, "latency_ms": 5001 }
+{
+  "status": "error",
+  "checks": { "mongodb": "fail" },
+  "error": {
+    "code": "health_check_failed",
+    "message": "database check failed"
+  },
+  "latency_ms": 5001
+}
 ```
 
 The error envelope is intentionally generic. Driver internals (host, replica set, auth source) are logged server-side via `console.error` but never echoed in the response — `/health` is reachable from external probes and shouldn't leak topology.
@@ -1589,7 +1636,7 @@ The error envelope is intentionally generic. Driver internals (host, replica set
 1. **Create a source**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Hacker News",
@@ -1601,7 +1648,7 @@ curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources \
 2. **Fetch content from it**
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/fetch \
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/sources/fetch \
   -H "Content-Type: application/json" \
   -d '{"source_id": "SOURCE_ID_FROM_STEP_1"}'
 ```
@@ -1609,17 +1656,17 @@ curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/sources/f
 3. **Enrich with AI** (generates content briefs, classifies, estimates expiration)
 
 ```bash
-curl -X POST http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content/enrich
+curl -X POST http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/content/enrich
 ```
 
 4. **Query enriched content**
 
 ```bash
-curl "http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/content?enriched=true&content_type=article&page_size=5"
+curl "http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/content?enriched=true&content_type=article&page_size=5"
 ```
 
 5. **Check system stats**
 
 ```bash
-curl http://content-aggregator-v2-34cd.atomic.cloudgrid.io/api/stats
+curl http://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/stats
 ```

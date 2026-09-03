@@ -127,3 +127,58 @@ export function normalizeAdsConfig(raw: Record<string, unknown> | undefined): Ad
     }),
   };
 }
+
+/**
+ * Strips config sections that contain only normalizer defaults from an
+ * override config before saving. Prevents the form from silently injecting
+ * destructive defaults (e.g. `ad_placements: []`) into overrides when the
+ * user never touched those sections.
+ *
+ * Only used for override mode — site and group configs always need all fields.
+ */
+export function stripDefaultOverrideFields(config: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...config };
+
+  // ads_config: strip if it only has normalizer defaults (no placements, interstitial off, standard layout)
+  const ads = out.ads_config as Record<string, unknown> | undefined;
+  if (ads && typeof ads === "object") {
+    const placements = ads.ad_placements;
+    const hasNoPlacements = !Array.isArray(placements) || placements.length === 0;
+    const interstitialOff = ads.interstitial !== true;
+    const defaultLayout = !ads.layout || ads.layout === "standard";
+    if (hasNoPlacements && interstitialOff && defaultLayout) {
+      out.ads_config = {};
+    }
+  }
+
+  // scripts: strip if all position arrays are empty
+  const scripts = out.scripts as Record<string, unknown> | undefined;
+  if (scripts && typeof scripts === "object") {
+    const positions = ["head", "body_start", "body_end", "before_footer"];
+    const allEmpty = positions.every((p) => {
+      const arr = scripts[p];
+      return !Array.isArray(arr) || arr.length === 0;
+    });
+    if (allEmpty) {
+      out.scripts = {};
+    }
+  }
+
+  // tracking: strip if all IDs are null and custom is empty
+  const tracking = out.tracking as Record<string, unknown> | undefined;
+  if (tracking && typeof tracking === "object") {
+    const ids = ["ga4", "gtm", "google_ads", "facebook_pixel", "facebook_domain_verification"];
+    const allNull = ids.every((k) => tracking[k] === null || tracking[k] === undefined);
+    const customs = Array.isArray(tracking.custom) ? tracking.custom : [];
+    if (allNull && customs.length === 0) {
+      out.tracking = {};
+    }
+  }
+
+  // ads_txt: strip if empty array
+  if (Array.isArray(out.ads_txt) && out.ads_txt.length === 0) {
+    out.ads_txt = [];
+  }
+
+  return out;
+}

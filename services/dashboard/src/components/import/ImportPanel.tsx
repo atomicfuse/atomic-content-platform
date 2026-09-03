@@ -31,7 +31,7 @@ interface ArticleImportProgress {
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  fetching: "Fetching articles from WordPress",
+  fetching: "Fetching articles",
   converting: "Converting & cleaning up articles",
   "generating-image": "Generating hero images",
   "uploading-image": "Uploading images to R2",
@@ -267,10 +267,10 @@ export function ImportPanel(): React.ReactElement {
       <div className="rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-elevated)] p-6 space-y-5">
         <div>
           <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-            Import Articles from WordPress
+            Import Articles
           </h2>
           <p className="text-sm text-[var(--text-secondary)] mt-1">
-            Select a site and its WordPress API URL to migrate articles.
+            Select a site and its API URL to import articles.
             Import runs in the background — you can close this tab safely.
           </p>
         </div>
@@ -297,7 +297,7 @@ export function ImportPanel(): React.ReactElement {
 
         <div>
           <label className="block text-sm font-medium text-[var(--text-primary)] mb-1.5">
-            WordPress Posts API URL
+            Posts API URL
           </label>
           <input
             type="text"

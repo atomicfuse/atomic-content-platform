@@ -3,6 +3,7 @@ import matter from "gray-matter";
 import type { AgentConfig } from "../../lib/config.js";
 import { createOctokit, readFile, listFiles } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
+import { isGeneralImage } from "../../lib/general-image.js";
 import { triggerN8nImage, registerBulkRun, removeBulkExpected, scheduleBulkFlush } from "./n8n-image.js";
 
 /* ------------------------------------------------------------------ */
@@ -22,6 +23,10 @@ export interface ScannedArticle {
   description: string;
   summary: string;
   branch: string;
+  /** Primary topic from the article's frontmatter `topics[]` array (per-topic-
+   *  filter model). Used as the image-generation style cue when present;
+   *  otherwise the worker falls back to the site brief's `vertical`. */
+  primaryTopic?: string;
 }
 
 interface SkippedArticle {
@@ -104,14 +109,9 @@ function clearBulkJob(): void {
 /*  General image detection                                            */
 /* ------------------------------------------------------------------ */
 
-/** Returns true if the article uses the site's default general image or has no image. */
-export function isGeneralImage(
-  featuredImage: string | undefined,
-  _domain: string,
-): boolean {
-  if (!featuredImage) return true;
-  return featuredImage.includes("general-article");
-}
+// The predicate moved to lib/general-image.ts so n8n-image.ts can use it too
+// without a circular import. Re-exported here for existing callers.
+export { isGeneralImage };
 
 /* ------------------------------------------------------------------ */
 /*  Scan phase                                                         */
@@ -214,6 +214,11 @@ export async function scanArticlesForGeneralImages(
 
       const description = (parsed.data.description as string) ?? title;
       const summary = parsed.content.slice(0, 500);
+      const topicsArr = parsed.data.topics;
+      const primaryTopic =
+        Array.isArray(topicsArr) && topicsArr.length > 0 && typeof topicsArr[0] === "string"
+          ? (topicsArr[0] as string)
+          : undefined;
 
       articles.push({
         domain: site.domain,
@@ -222,6 +227,7 @@ export async function scanArticlesForGeneralImages(
         description,
         summary,
         branch,
+        primaryTopic,
       });
     }
   }
@@ -258,7 +264,7 @@ export function startBulkImageGeneration(
   const webhookUrl = config.n8nImageWebhookUrl!;
   const callbackUrl =
     config.imageCallbackUrl ??
-    "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   registerBulkRun(articles, config.github);
   setBulkJobActive(articles.length);
@@ -321,10 +327,15 @@ async function processBatches(
 
       for (const article of batch) {
         try {
-          const { vertical, imageGuidelines } = await getSiteBrief(
+          const { vertical: briefVertical, imageGuidelines } = await getSiteBrief(
             article.domain,
             article.branch,
           );
+
+          // Style cue for image generation. Prefer the article's primary topic
+          // (per-topic-filter model); fall back to the site brief's vertical
+          // for legacy articles or articles without a topics frontmatter.
+          const styleVertical = article.primaryTopic ?? briefVertical;
 
           const accepted = await triggerN8nImage(webhookUrl, {
             request_id: randomUUID(),
@@ -337,7 +348,7 @@ async function processBatches(
               title: article.title,
               description: article.description,
               summary: article.summary,
-              vertical,
+              vertical: styleVertical,
               source_thumbnail_url: null,
               image_guidelines: imageGuidelines ?? null,
             },

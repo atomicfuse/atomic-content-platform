@@ -49,6 +49,9 @@ export type {
   SiteConfig,
   ResolvedConfig,
   DeepPartial,
+  TopicV2,
+  TopicV2Source,
+  TopicV2Schedule,
 } from "./config.js";
 
 export { LAYOUT_DEFAULTS } from "./config.js";

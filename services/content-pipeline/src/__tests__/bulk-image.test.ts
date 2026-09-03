@@ -28,6 +28,9 @@ vi.mock("../lib/site-brief.js", () => ({
 
 vi.mock("../agents/content-generation/n8n-image.js", () => ({
   triggerN8nImage: vi.fn(),
+  registerBulkRun: vi.fn(),
+  removeBulkExpected: vi.fn(),
+  scheduleBulkFlush: vi.fn(),
 }));
 
 import { createOctokit, readFile, listFiles } from "../lib/github.js";

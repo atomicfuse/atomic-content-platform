@@ -287,9 +287,10 @@ export default function SettingsEmailPage(): React.ReactElement {
           </p>
         ) : (
           <div className="border border-[var(--border-primary)] rounded-lg overflow-hidden">
+            <div className="overflow-auto max-h-[80vh]">
             <table className="w-full">
-              <thead>
-                <tr className="border-b border-[var(--border-secondary)]">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-primary)]">
                   <th className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
                     Site
                   </th>
@@ -324,6 +325,7 @@ export default function SettingsEmailPage(): React.ReactElement {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>

@@ -65,8 +65,20 @@ export interface SiteBrief {
     category_ids?: string[];
     /** Content Aggregator tag IDs — all tags the site targets. */
     tag_ids?: string[];
-    /** Content Aggregator bundle ID — when set, articles are fetched from this bundle. */
+    /** @deprecated Use bundle_ids instead. Read-shim migrates this on load. */
     bundle_id?: string;
+    /** Content Aggregator bundle IDs — articles are fetched from the union of these bundles, deduped. */
+    bundle_ids?: string[];
+    /** Free-text site theme (1–2 lines). Drives AI proposals in the per-topic model.
+     *  Required on sites that have `topics_v2` set. */
+    theme?: string;
+    /** Per-topic filters — the new editorial model. Presence of this field
+     *  switches the site to the per-topic path everywhere (UI, content fetch).
+     *  Absence means the site uses the legacy `bundle_ids` model.
+     *  Migration is opt-in per site; the two shapes never need to coexist on the
+     *  same site (a `topics_v2` save strips `bundle_ids` and the legacy niche
+     *  fields). */
+    topics_v2?: TopicV2[];
     /** Target audience type for aggregator API queries. */
     audience_type?: "Young 18-24" | "Adult 25-44" | "Mature 45+" | "Parents" | "Professionals";
     /** Content Aggregator audience type IDs — preferred over name for API queries. */
@@ -77,6 +89,46 @@ export interface SiteBrief {
     quality_threshold?: number;
     /** Per-criterion weight overrides for quality scoring. Must sum to 100. */
     quality_weights?: QualityWeights;
+}
+/** One topic (menu section) in the per-topic model.
+ *  Carries its own filter (where to source content from) and its own schedule
+ *  (when + how much to publish). */
+export interface TopicV2 {
+    /** Display name of the topic. Also used as the menu item label on the site
+     *  and as a membership key in article frontmatter. Unique per site (case-insensitive). */
+    name: string;
+    /** Optional 1-line description that helps the AI propose better filters.
+     *  Not shown anywhere on the live site. */
+    description?: string;
+    /** Where this topic pulls its content from. */
+    source: TopicV2Source;
+    /** @deprecated Per-topic schedule is deprecated. Use site-level brief.schedule
+     *  with round-robin rotation instead. Kept optional for backward compatibility. */
+    schedule?: TopicV2Schedule;
+}
+/** A topic's filter source — either raw categories+tags (default) or a pointer
+ *  to a shared aggregator bundle (power-user path). */
+export type TopicV2Source = {
+    type: "filter";
+    category_ids: string[];
+    tag_ids: string[];
+    /** @deprecated Legacy denormalized id→name maps. No longer written — the
+     *  dashboard resolves names live via the aggregator `?ids=` endpoint at
+     *  display time. Kept optional so older site.yaml files still parse and can
+     *  seed instant display; stripped on the next save. Persisting these caused
+     *  noisy staging↔main git conflicts (config duplicated aggregator state). */
+    category_names?: Record<string, string>;
+    tag_names?: Record<string, string>;
+} | {
+    type: "bundle";
+    bundle_id: string;
+};
+export interface TopicV2Schedule {
+    /** Target articles per calendar week. */
+    articles_per_week: number;
+    /** Days of the week (full names: "Monday"..."Sunday") on which this topic
+     *  is eligible to publish. Empty array = never publish. */
+    preferred_days: string[];
 }
 /**
  * Visual theme configuration for a site.
@@ -102,6 +154,9 @@ export interface ThemeConfig {
     logo_height?: number;
     /** Footer logo height in pixels. Defaults to ~92% of `logo_height` (≈48 when logo_height is 52). */
     logo_height_footer?: number;
+    /** Navigation menu item font size in pixels. Defaults to 14. Lets the menu
+     *  items scale up next to a larger logo. */
+    menu_item_font_size?: number;
     /** URL or path to the site favicon. */
     favicon?: string;
     /** Font family overrides. */
@@ -129,6 +184,8 @@ export interface ResolvedThemeConfig {
     logo_height: number;
     /** Footer logo height in pixels. `null` means auto-derive (CSS calc 92% of header). */
     logo_height_footer: number | null;
+    /** Navigation menu item font size in pixels. */
+    menu_item_font_size: number;
     /** URL or path to the site favicon. */
     favicon: string;
     /** Font family settings. */

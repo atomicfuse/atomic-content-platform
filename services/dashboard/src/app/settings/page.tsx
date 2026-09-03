@@ -4,12 +4,21 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
+import dynamic from "next/dynamic";
 import { GeneralForm } from "@/components/settings/GeneralForm";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
-import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
-import { ColorPickerField } from "@/components/wizard/ColorPickerField";
-import { FontPickerField } from "@/components/wizard/FontPickerField";
+
+const UnifiedConfigForm = dynamic(
+  () => import("@/components/config/UnifiedConfigForm").then((m) => m.UnifiedConfigForm),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
+const ColorPickerField = dynamic(
+  () => import("@/components/wizard/ColorPickerField").then((m) => m.ColorPickerField),
+);
+const FontPickerField = dynamic(
+  () => import("@/components/wizard/FontPickerField").then((m) => m.FontPickerField),
+);
 
 interface OrgConfig {
   [key: string]: unknown;
@@ -378,7 +387,7 @@ export default function OrgSettingsPage(): React.ReactElement {
         </div>
       )}
 
-      <Tabs tabs={tabs} defaultTab="general" />
+      <Tabs tabs={tabs} defaultTab="general" keepMounted />
 
       <div className="flex items-center justify-between">
         {dirty ? (

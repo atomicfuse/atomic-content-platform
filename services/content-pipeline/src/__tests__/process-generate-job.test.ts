@@ -21,13 +21,27 @@ vi.mock("../lib/site-brief.js", () => ({
     mockReadSiteBriefWithFallback(...args),
 }));
 
+const mockGetAllExistingArticles = vi.fn().mockResolvedValue({
+  urls: new Set(["example.com/existing-1", "example.com/existing-2"]),
+  titles: new Set(["existing article one", "existing article two"]),
+  ids: new Set(["existing-id-1"]),
+});
+
 vi.mock("../agents/content-generation/agent.js", () => ({
   runContentGeneration: (...args: unknown[]): unknown =>
     mockRunContentGeneration(...args),
   normalizeUrl: (url: string) => url,
   normalizeTitleKey: (title: string) => title.toLowerCase(),
   dedupIndexPath: (domain: string) => `sites/${domain}/dedup-index.json`,
-  serializeDedupIndex: () => "{}",
+  serializeDedupIndex: (existing: { urls: Set<string>; titles: Set<string>; ids: Set<string> }) =>
+    JSON.stringify({
+      version: 2,
+      urls: Array.from(existing.urls),
+      titles: Array.from(existing.titles),
+      ids: Array.from(existing.ids ?? []),
+    }),
+  getAllExistingArticles: (...args: unknown[]): unknown =>
+    mockGetAllExistingArticles(...args),
 }));
 
 vi.mock("../lib/github.js", () => ({
@@ -120,6 +134,11 @@ describe("processGenerateJob", () => {
     (mockRedis.get as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     (mockRedis.set as ReturnType<typeof vi.fn>).mockResolvedValue("OK");
     (mockRedis.del as ReturnType<typeof vi.fn>).mockResolvedValue(1);
+    mockGetAllExistingArticles.mockResolvedValue({
+      urls: new Set(["example.com/existing-1", "example.com/existing-2"]),
+      titles: new Set(["existing article one", "existing article two"]),
+      ids: new Set(["existing-id-1"]),
+    });
   });
 
   it("throws UnrecoverableError when site brief not found", async () => {
@@ -385,5 +404,51 @@ describe("processGenerateJob", () => {
     expect(result.results[0]).not.toHaveProperty("_pendingArticle");
     expect(result.results[0]).not.toHaveProperty("_imageRequest");
     expect(result.results[0]!.slug).toBe("article-1");
+  });
+
+  it("dedup index includes existing articles merged with new ones", async () => {
+    const mockResult = {
+      siteDomain: "test.com",
+      requested: 1,
+      totalSourced: 5,
+      duplicateCount: 0,
+      availableNew: 5,
+      n8nImagesTriggered: 0,
+      results: [
+        {
+          status: "created",
+          slug: "new-article",
+          _pendingArticle: {
+            siteDomain: "test.com",
+            slug: "new-article",
+            content:
+              "---\ntitle: New Article\nsource_title: Original Wire Title\nsource_url: https://example.com/new\nsource_item_id: agg-new-1\n---\nBody",
+          },
+        },
+      ],
+    };
+    mockReadSiteBriefWithFallback.mockResolvedValue(makeBriefResult());
+    mockRunContentGeneration.mockResolvedValue(mockResult);
+
+    await processGenerateJob(makeJob(), config, mockRedis);
+
+    // writeArticleBatch should be called with extraFiles containing the dedup index
+    expect(mockWriteArticleBatch).toHaveBeenCalled();
+    const callArgs = mockWriteArticleBatch.mock.calls[0]!;
+    const extraFiles = callArgs[4] as Array<{ path: string; content: string }>;
+    expect(extraFiles).toHaveLength(1);
+    const dedupIndex = JSON.parse(extraFiles[0]!.content);
+    // Must include BOTH existing articles AND the new one
+    expect(dedupIndex.urls).toContain("example.com/existing-1");
+    expect(dedupIndex.urls).toContain("example.com/existing-2");
+    expect(dedupIndex.urls).toContain("https://example.com/new");
+    expect(dedupIndex.titles).toContain("existing article one");
+    expect(dedupIndex.titles).toContain("existing article two");
+    expect(dedupIndex.titles).toContain("new article");
+    // v2 fields: the aggregator item id and the ORIGINAL source title must be
+    // merged in, so cross-run dedup works even when the URL differs.
+    expect(dedupIndex.ids).toContain("existing-id-1");
+    expect(dedupIndex.ids).toContain("agg-new-1");
+    expect(dedupIndex.titles).toContain("original wire title");
   });
 });

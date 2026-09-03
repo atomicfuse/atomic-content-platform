@@ -325,7 +325,7 @@ interface ProcessedArticle {
   file: BatchFileEntry;
   image?: { slug: string; title: string; description: string };
   qualityScore?: number;
-  articleStatus: "published" | "review";
+  articleStatus: "approved" | "review";
 }
 
 async function processImport(
@@ -355,7 +355,7 @@ async function processImport(
   let quality_score: number | undefined;
   let score_breakdown: QualityScoreBreakdown | undefined;
   let quality_note: string | undefined;
-  let articleStatus: "published" | "review" = "published";
+  let articleStatus: "approved" | "review" = "approved";
 
   if (brief) {
     try {
@@ -452,7 +452,7 @@ async function processGenerate(
   let quality_score: number | undefined;
   let score_breakdown: QualityScoreBreakdown | undefined;
   let quality_note: string | undefined;
-  let articleStatus: "published" | "review" = "published";
+  let articleStatus: "approved" | "review" = "approved";
 
   try {
     await sleep(INTER_REQUEST_DELAY_MS);
@@ -525,7 +525,7 @@ async function main(): Promise<void> {
   const networkPath = process.env.LOCAL_NETWORK_PATH;
   const n8nUrl = process.env.N8N_IMAGE_WEBHOOK_URL;
   const callbackUrl = process.env.IMAGE_CALLBACK_URL
-    ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
   if (!githubToken) { console.error("Missing GITHUB_TOKEN"); process.exit(1); }
   if (!args.dryRun && !anthropicApiKey) { console.error("Missing ANTHROPIC_API_KEY"); process.exit(1); }

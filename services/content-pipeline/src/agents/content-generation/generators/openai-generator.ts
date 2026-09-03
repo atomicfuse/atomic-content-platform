@@ -6,10 +6,10 @@
  */
 
 import OpenAI from "openai";
-import { buildPromptContext, parseGeneratedArticle } from "./base-generator.js";
+import { parseGeneratedArticle } from "./base-generator.js";
 import type { Generator, GeneratorConfig } from "./base-generator.js";
 import type { ContentItem, GeneratedArticle } from "../types.js";
-import { buildGeneralSystemPrompt, buildGeneralUserPrompt } from "../prompts/general-article.js";
+import { buildArticlePrompts } from "../prompts/build-prompts.js";
 
 const MODEL = "gpt-4o-mini";
 
@@ -30,19 +30,23 @@ export class OpenAIGenerator implements Generator {
   readonly name = "openai";
 
   async generate(item: ContentItem, config: GeneratorConfig): Promise<GeneratedArticle> {
-    const ctx = buildPromptContext(item);
-    const systemPrompt = buildGeneralSystemPrompt(config.siteName, config.brief);
-    const userPrompt = buildGeneralUserPrompt(ctx);
+    const { system, user, genre } = buildArticlePrompts({
+      siteName: config.siteName,
+      brief: config.brief,
+      mode: "sourced",
+      item,
+      isFactual: config.isFactual ?? false,
+    });
 
-    console.log(`[openai-gen] Generating general article: "${item.title}"`);
+    console.log(`[openai-gen] Generating ${genre} article: "${item.title}"`);
 
     const client = getClient();
     const response = await client.chat.completions.create({
       model: MODEL,
       max_tokens: 4096,
       messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+        { role: "system", content: system },
+        { role: "user", content: user },
       ],
     });
 
@@ -51,6 +55,14 @@ export class OpenAIGenerator implements Generator {
       throw new Error("Empty response from OpenAI");
     }
 
-    return parseGeneratedArticle(rawText);
+    const article = parseGeneratedArticle(rawText);
+    if (response.usage) {
+      article.usage = {
+        inputTokens: response.usage.prompt_tokens,
+        outputTokens: response.usage.completion_tokens,
+        estimated: false,
+      };
+    }
+    return article;
   }
 }

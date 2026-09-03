@@ -23,6 +23,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 import { loadConfig } from "../../lib/config.js";
 import { runContentGeneration } from "./agent.js";
+import { recordGeneration } from "../../stats/recorder.js";
+import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
@@ -36,6 +38,11 @@ import {
 } from "../migration/handler.js";
 import { handleImageCallback, triggerN8nImage } from "./n8n-image.js";
 import type { N8nCallbackPayload } from "./n8n-image.js";
+import { parseSiteStatsPath } from "../../stats/route-path.js";
+import { getSiteStats, getAllSiteStats } from "../../stats/repo.js";
+import { ensureStatsIndexes, ensureCostIndexes, getMongoDb } from "../../lib/mongo.js";
+import { COLLECTIONS } from "../../stats/types.js";
+import { getSiteCosts, getAllSiteCosts } from "../../costs/repo.js";
 import {
   type BulkImageRequest,
   scanArticlesForGeneralImages,
@@ -46,8 +53,15 @@ import {
 } from "./bulk-image.js";
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
-import { createOctokit, readFile } from "../../lib/github.js";
-import { readSiteBrief } from "../../lib/site-brief.js";
+import { createOctokit, readFile, listFiles, clearTreeCache } from "../../lib/github.js";
+import { readSiteBrief, readSiteBriefWithFallback, listActiveSites } from "../../lib/site-brief.js";
+import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
+import { runAlerts, runAfterRun } from "../../alerts/run.js";
+import { getAttention, getAllAttention } from "../../alerts/repo.js";
+import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
+import { runBackfillR2 } from "../../stats/backfill-r2.js";
+import { getWeeklySummary, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
+import { upsertArticlesBatch } from "../../lib/db/articles.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -75,6 +89,54 @@ function readBody(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<st
     req.on("end", () => resolve(body));
     req.on("error", reject);
   });
+}
+
+async function handleProposeFilter(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  if (req.method !== "POST") {
+    sendJson(res, 405, { status: "error", message: "Method not allowed" });
+    return;
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await readBody(req);
+  } catch {
+    sendJson(res, 413, { status: "error", message: "Payload too large" });
+    return;
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+    return;
+  }
+
+  const p = payload as Record<string, unknown>;
+  if (typeof p.siteTheme !== "string" || typeof p.topicName !== "string") {
+    sendJson(res, 400, { status: "error", message: "siteTheme and topicName are required strings" });
+    return;
+  }
+
+  try {
+    const { proposeFilter } = await import("./propose-filter.js");
+    const result = await proposeFilter({
+      siteTheme: p.siteTheme,
+      topicName: p.topicName,
+      topicDescription: typeof p.topicDescription === "string" ? p.topicDescription : undefined,
+      categories: Array.isArray(p.categories) ? (p.categories as Parameters<typeof proposeFilter>[0]["categories"]) : [],
+      tags: Array.isArray(p.tags) ? (p.tags as Parameters<typeof proposeFilter>[0]["tags"]) : [],
+    });
+    sendJson(res, 200, result as unknown as Record<string, unknown>);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[propose-filter] Error:", message);
+    sendJson(res, 502, { status: "error", message });
+  }
 }
 
 async function handleRequest(
@@ -449,14 +511,21 @@ async function handleRequest(
       description = (parsed.data.description as string) ?? articleTitle;
       summary = parsed.content.slice(0, 500);
 
-      // Try to get vertical from site brief
-      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, branch);
-      vertical = briefData?.brief?.vertical ?? "";
+      // Style cue for image generation. Prefer the article's primary topic
+      // (per-topic sites carry `topics: string[]` in frontmatter); fall back
+      // to the site brief's vertical for legacy articles.
+      const articleTopics = parsed.data.topics;
+      if (Array.isArray(articleTopics) && articleTopics.length > 0 && typeof articleTopics[0] === "string") {
+        vertical = articleTopics[0];
+      } else {
+        const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, branch);
+        vertical = briefData?.brief?.vertical ?? "";
+      }
     } catch {
       // Use defaults if article or brief can't be read
     }
 
-    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+    const callbackUrl = config.imageCallbackUrl ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
     const accepted = await triggerN8nImage(webhookUrl, {
       request_id: randomUUID(),
@@ -625,6 +694,700 @@ async function handleRequest(
     return;
   }
 
+  // Site stats — GET /site-stats (all) or GET /site-stats/:domain (one)
+  //
+  // Enriches sites with null schedule from site briefs (handles both per-topic
+  // and legacy schedule models). This ensures the API always returns schedule
+  // data when the brief has it, even if MongoDB lacks a snapshot.
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET") {
+      const ss = parseSiteStatsPath(pathname);
+      if (ss) {
+        try {
+          if (ss.kind === "all") {
+            const sites = await getAllSiteStats(new Date());
+            // Enrich sites with null schedule from site briefs
+            const needsSchedule = sites.filter((s) => s.schedule === null);
+            if (needsSchedule.length > 0) {
+              const octokit = createOctokit(config.github);
+              const CONCURRENCY = 10;
+              const domains = needsSchedule.map((s) => s.siteDomain);
+              for (let i = 0; i < domains.length; i += CONCURRENCY) {
+                const batch = domains.slice(i, i + CONCURRENCY);
+                await Promise.all(batch.map(async (domain) => {
+                  try {
+                    const { data: b } = await readSiteBriefWithFallback(
+                      octokit, config.github.repo, domain, `staging/${domain}`,
+                    );
+                    const schedule = buildScheduleFromBrief(b.brief);
+                    if (schedule) {
+                      const site = sites.find((s) => s.siteDomain === domain);
+                      if (site) site.schedule = schedule;
+                    }
+                  } catch {
+                    // Brief read failed — leave schedule as null
+                  }
+                }));
+              }
+            }
+            sendJson(res, 200, { status: "ok", sites });
+          } else {
+            const site = await getSiteStats(ss.domain, new Date());
+            // Enrich single site with schedule from brief if null
+            if (site.schedule === null) {
+              try {
+                const octokit = createOctokit(config.github);
+                const { data: b } = await readSiteBriefWithFallback(
+                  octokit, config.github.repo, ss.domain, `staging/${ss.domain}`,
+                );
+                const schedule = buildScheduleFromBrief(b.brief);
+                if (schedule) site.schedule = schedule;
+              } catch {
+                // Brief read failed — leave schedule as null
+              }
+            }
+            sendJson(res, 200, { status: "ok", site });
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          sendJson(res, 503, { status: "error", message });
+        }
+        return;
+      }
+    }
+  }
+
+  // Site checks — GET /site-checks (all) or GET /site-checks/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-checks") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAtlChecks(config) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-checks/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-checks/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAtlChecks(domain) });
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
+  // Site costs — GET /site-costs (all) or GET /site-costs/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/site-costs") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllSiteCosts(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/site-costs/")) {
+      const domain = decodeURIComponent(pathname.slice("/site-costs/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getSiteCosts(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
+  // Run alerts — called by CloudGrid cron job. Always returns 200 (even on
+  // error) so a failed run doesn't mark the cron itself as failed; the error
+  // is logged for diagnosis.
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/run-alerts") {
+      try {
+        await runAlerts(new Date());
+        sendJson(res, 200, { status: "ok" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[server] Run alerts error:", message);
+        sendJson(res, 200, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+  // Attention — GET /attention (all sites) or GET /attention/:domain (one)
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/attention") {
+      try {
+        sendJson(res, 200, { status: "ok", sites: await getAllAttention(new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+    if (req.method === "GET" && pathname.startsWith("/attention/")) {
+      const domain = decodeURIComponent(pathname.slice("/attention/".length));
+      try {
+        sendJson(res, 200, { status: "ok", site: await getAttention(domain, new Date()) } as Record<string, unknown>);
+      } catch (err) {
+        sendJson(res, 503, { status: "error", message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+  }
+
+
+  // Scheduler weekly summary — GET /scheduler-summary
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/scheduler-summary") {
+      try {
+        const timezone = await getSchedulerTimezone(config);
+        // Schedule data lives in site_stats.schedule (updated on each scheduler
+        // run via recordGeneration). No need to re-fetch all briefs from Git —
+        // getWeeklySummary reads schedules from MongoDB directly.
+        const summary = await getWeeklySummary(timezone, new Date());
+        sendJson(res, 200, summary as unknown as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        sendJson(res, 500, { error: message });
+      }
+      return;
+    }
+  }
+
+  // Backfill weekly summaries from scheduler/history.json — POST /backfill-weekly-summary
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-weekly-summary") {
+      try {
+        console.log("[backfill] Starting weekly summary backfill from history.json...");
+        const result = await backfillWeeklySummary(config);
+        console.log(`[backfill] Done: ${result.entriesProcessed} entries → ${result.weeksWritten} weeks`);
+        sendJson(res, 200, { status: "ok", ...result } as unknown as Record<string, unknown>);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[backfill] Failed: ${message}`);
+        sendJson(res, 500, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+
+  // GET /r2-usage
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/r2-usage") {
+      try {
+        const usage = await getR2Usage();
+        return sendJson(res, 200, { status: "ok", ...usage });
+      } catch (err) {
+        return sendJson(res, 503, { status: "error", error: String(err) });
+      }
+    }
+  }
+
+  // POST /r2-tally-increment
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/r2-tally-increment") {
+      try {
+        const body = await readBody(req);
+        const { bytes, count } = JSON.parse(body) as { bytes?: unknown; count?: unknown };
+        await incrementR2Tally(Number(bytes) || 0, Number(count) || 0);
+        return sendJson(res, 200, { ok: true });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /backfill-r2 — scan entire R2 bucket and overwrite the r2_usage tally
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-r2") {
+      try {
+        const result = await runBackfillR2();
+        return sendJson(res, 200, {
+          status: "ok",
+          totalBytes: result.totalBytes,
+          totalImages: result.totalImages,
+          totalMB: result.totalMB,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { status: "error", error: String(err) });
+      }
+    }
+  }
+
+  // POST /seed-kv — trigger KV re-seed via GitHub Actions workflow_dispatch
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/seed-kv") {
+      try {
+        const body = await readBody(req);
+        const { domain } = JSON.parse(body) as { domain?: string };
+        if (!domain) {
+          return sendJson(res, 400, { ok: false, error: "Missing domain" });
+        }
+        // Trigger the sync-kv.yml workflow in the network repo via GitHub API
+        const token = process.env.GITHUB_TOKEN;
+        if (!token) {
+          return sendJson(res, 500, { ok: false, error: "GITHUB_TOKEN not configured" });
+        }
+        const owner = "atomicfuse";
+        const repo = "atomic-labs-network";
+        const resp = await fetch(
+          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/sync-kv.yml/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github.v3+json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ref: "main",
+              inputs: { site: domain, force_all: "false" },
+            }),
+          },
+        );
+        if (!resp.ok) {
+          const errText = await resp.text();
+          return sendJson(res, 502, { ok: false, error: `GitHub API ${resp.status}: ${errText}` });
+        }
+        return sendJson(res, 200, { ok: true, message: `Triggered sync-kv for ${domain}` });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // POST /backfill-history — one-time import of scheduler/history.json into MongoDB
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-history") {
+      try {
+        const octokit = createOctokit(config.github);
+
+        // 1. Read history + dashboard-index in parallel (2 Git calls)
+        const [historyRaw, indexRaw] = await Promise.all([
+          readFile(octokit, config.github.repo, "scheduler/history.json"),
+          readFile(octokit, config.github.repo, "dashboard-index.yaml"),
+        ]);
+        const history = JSON.parse(historyRaw) as Array<{
+          timestamp: string;
+          forced: boolean;
+          sites: Array<{
+            domain: string;
+            status: string;
+            articlesCreated: number;
+            articlesRequested: number;
+            message?: string;
+          }>;
+        }>;
+        const { parse: parseYaml } = await import("yaml");
+        const dashIndex = parseYaml(indexRaw) as { sites: Array<{ domain: string }> };
+
+        // 2. Collect all unique domains, then read briefs in parallel (concurrency 10)
+        const allDomains = new Set<string>();
+        for (const run of history) for (const s of run.sites) allDomains.add(s.domain);
+        for (const entry of dashIndex.sites) allDomains.add(entry.domain);
+
+        const briefSchedules = new Map<string, ReturnType<typeof buildScheduleFromBrief>>();
+        const domainArr = [...allDomains];
+        const CONCURRENCY = 10;
+        for (let i = 0; i < domainArr.length; i += CONCURRENCY) {
+          const batch = domainArr.slice(i, i + CONCURRENCY);
+          await Promise.all(batch.map(async (domain) => {
+            try {
+              const b = await readSiteBrief(octokit, config.github.repo, domain);
+              briefSchedules.set(domain, buildScheduleFromBrief(b.brief));
+            } catch {
+              briefSchedules.set(domain, null);
+            }
+          }));
+        }
+
+        // 3. Build all event docs in memory
+        const events: Record<string, unknown>[] = [];
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            const created = site.articlesCreated;
+            const failed = site.status === "error" ? (site.articlesRequested - created) : 0;
+            let status: "success" | "partial" | "error" | "no_content";
+            if (site.status === "success") status = "success";
+            else if (site.status === "partial") status = "partial";
+            else if (site.status === "error") status = "error";
+            else status = "no_content";
+
+            events.push({
+              siteDomain: site.domain,
+              source: "scheduler",
+              forced: run.forced,
+              topicName: null,
+              requested: site.articlesRequested,
+              created,
+              failed,
+              status,
+              message: site.message ?? null,
+              startedAt: finishedAt,
+              finishedAt,
+            });
+          }
+        }
+
+        // 4. Bulk-insert events
+        const db = await getMongoDb();
+        let eventsInserted = 0;
+        if (events.length > 0) {
+          const result = await db.collection(COLLECTIONS.generationEvents)
+            .insertMany(events as any[], { ordered: false })
+            .catch((err: any) => ({ insertedCount: err.insertedCount ?? 0 }));
+          eventsInserted = (result as any).insertedCount ?? 0;
+        }
+
+        // 5. Upsert site_stats rollups — one per domain (sequential, fast against Mongo)
+        let rollupUpserted = 0;
+        // Aggregate last successful run per domain from history
+        const lastRun = new Map<string, { at: Date; created: number; total: number }>();
+        for (const run of history) {
+          const finishedAt = new Date(run.timestamp);
+          for (const site of run.sites) {
+            const prev = lastRun.get(site.domain);
+            const total = (prev?.total ?? 0) + site.articlesCreated;
+            if (!prev || finishedAt > prev.at) {
+              lastRun.set(site.domain, { at: finishedAt, created: site.articlesCreated, total });
+            } else {
+              lastRun.set(site.domain, { ...prev, total });
+            }
+          }
+        }
+
+        for (const domain of allDomains) {
+          const schedule = briefSchedules.get(domain) ?? null;
+          const run = lastRun.get(domain);
+          const now = new Date();
+
+          await db.collection(COLLECTIONS.siteStats).updateOne(
+            { _id: domain as any },
+            {
+              $set: {
+                schedule,
+                updatedAt: now,
+                ...(run ? { lastRunAt: run.at } : {}),
+                ...(run && run.created > 0 ? {
+                  lastAddedAt: run.at,
+                  lastAddedSource: "scheduler",
+                  lastAddedCount: run.created,
+                } : {}),
+              },
+              $setOnInsert: {
+                ...(run ? {} : { lastRunAt: now }),
+                lastFailedAt: null,
+                totalCreated: run?.total ?? 0,
+                ...(!run || run.created === 0 ? {
+                  lastAddedAt: null,
+                  lastAddedSource: null,
+                  lastAddedCount: null,
+                } : {}),
+              },
+            },
+            { upsert: true },
+          );
+          rollupUpserted++;
+        }
+
+        await ensureStatsIndexes();
+
+        return sendJson(res, 200, {
+          ok: true,
+          eventsInserted,
+          rollupUpserted,
+          totalDomains: allDomains.size,
+          historyEntries: history.length,
+        });
+      } catch (err) {
+        return sendJson(res, 500, { ok: false, error: String(err) });
+      }
+    }
+  }
+
+  // ─── Reconcile MongoDB articles against Git ────────────────────────
+  if (req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === "/reconcile-mongo") {
+    const secret = process.env.CACHE_INVALIDATE_SECRET;
+    const authHeader = req.headers.authorization;
+    if (!secret || authHeader !== `Bearer ${secret}`) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return;
+    }
+
+    const start = Date.now();
+    const ARTICLES_COLLECTION = "articles";
+
+    interface MismatchEntry {
+      domain: string;
+      branch: string;
+      gitCount: number;
+      mongoCount: number;
+      resynced: boolean;
+      error?: string;
+    }
+
+    const mismatches: MismatchEntry[] = [];
+    const errors: Array<{ domain: string; branch: string; error: string }> = [];
+    let sitesChecked = 0;
+
+    try {
+      const octokit = createOctokit(config.github);
+      const repo = config.github.repo;
+      const db = await getMongoDb();
+      const coll = db.collection(ARTICLES_COLLECTION);
+
+      // 1. Get all active sites from Git
+      const activeSites = await listActiveSites(octokit, repo);
+
+      // 2. For each site, compare article counts on staging branch and main
+      for (const site of activeSites) {
+        const branches = [site.branch, "main"];
+        // Deduplicate branches (in case staging branch IS main)
+        const uniqueBranches = [...new Set(branches)];
+
+        for (const branch of uniqueBranches) {
+          try {
+            // Count articles in Git
+            let gitArticles: string[];
+            try {
+              gitArticles = await listFiles(octokit, repo, `sites/${site.domain}/articles`, branch);
+              gitArticles = gitArticles.filter((f) => f.endsWith(".md"));
+            } catch {
+              // Branch or directory doesn't exist — normal for unpublished sites on main
+              gitArticles = [];
+            }
+
+            // Count articles in MongoDB
+            const mongoCount = await coll.countDocuments({ domain: site.domain, branch });
+
+            sitesChecked++;
+
+            if (gitArticles.length !== mongoCount) {
+              console.log(
+                `[reconcile] Mismatch for ${site.domain}@${branch}: git=${gitArticles.length} mongo=${mongoCount}`,
+              );
+
+              // Re-backfill: read each article from Git, parse frontmatter, upsert to MongoDB
+              let resynced = false;
+              try {
+                const docs: Array<{ domain: string; slug: string; branch: string; frontmatter: Record<string, unknown> }> = [];
+
+                for (const fileName of gitArticles) {
+                  const slug = fileName.replace(/\.md$/, "");
+                  const filePath = `sites/${site.domain}/articles/${fileName}`;
+                  try {
+                    const content = await readFile(octokit, repo, filePath, branch);
+                    const { data: frontmatter } = matter(content);
+                    docs.push({ domain: site.domain, slug, branch, frontmatter });
+                  } catch (readErr) {
+                    const msg = readErr instanceof Error ? readErr.message : String(readErr);
+                    console.warn(`[reconcile] Skip ${filePath}@${branch}: ${msg}`);
+                  }
+                }
+
+                // Upsert all articles for this site+branch
+                if (docs.length > 0) {
+                  await upsertArticlesBatch(docs);
+                }
+
+                // Remove MongoDB docs for slugs not in Git
+                const gitSlugs = new Set(gitArticles.map((f) => f.replace(/\.md$/, "")));
+                const mongoDocs = await coll.find(
+                  { domain: site.domain, branch },
+                  { projection: { slug: 1 } },
+                ).toArray();
+                const orphanedSlugs = mongoDocs
+                  .map((d) => d.slug as string)
+                  .filter((s) => !gitSlugs.has(s));
+
+                if (orphanedSlugs.length > 0) {
+                  await coll.deleteMany({
+                    domain: site.domain,
+                    branch,
+                    slug: { $in: orphanedSlugs },
+                  });
+                  console.log(
+                    `[reconcile] Removed ${orphanedSlugs.length} orphaned docs for ${site.domain}@${branch}`,
+                  );
+                }
+
+                resynced = true;
+              } catch (syncErr) {
+                const msg = syncErr instanceof Error ? syncErr.message : String(syncErr);
+                console.error(`[reconcile] Resync failed for ${site.domain}@${branch}: ${msg}`);
+                mismatches.push({
+                  domain: site.domain,
+                  branch,
+                  gitCount: gitArticles.length,
+                  mongoCount,
+                  resynced: false,
+                  error: msg,
+                });
+                continue;
+              }
+
+              mismatches.push({
+                domain: site.domain,
+                branch,
+                gitCount: gitArticles.length,
+                mongoCount,
+                resynced,
+              });
+            }
+          } catch (branchErr) {
+            const msg = branchErr instanceof Error ? branchErr.message : String(branchErr);
+            console.error(`[reconcile] Error checking ${site.domain}@${branch}: ${msg}`);
+            errors.push({ domain: site.domain, branch, error: msg });
+          }
+        }
+
+        // Clear tree cache between sites to avoid memory buildup
+        clearTreeCache();
+      }
+
+      // 3. Check for orphaned MongoDB domains (domains not in dashboard-index)
+      const activeDomains = new Set(activeSites.map((s) => s.domain));
+      const mongoDomains = await coll.distinct("domain") as string[];
+      const orphaned = mongoDomains.filter((d) => !activeDomains.has(d));
+
+      const duration_ms = Date.now() - start;
+      console.log(
+        `[reconcile] Done in ${duration_ms}ms: checked=${sitesChecked}, mismatches=${mismatches.length}, orphaned=${orphaned.length}`,
+      );
+
+      sendJson(res, 200, {
+        status: "ok",
+        sitesChecked,
+        mismatches,
+        orphaned,
+        errors: errors.length > 0 ? errors : undefined,
+        duration_ms,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[reconcile] Fatal error:", message);
+      sendJson(res, 500, {
+        status: "error",
+        message,
+        sitesChecked,
+        mismatches,
+        duration_ms: Date.now() - start,
+      });
+    }
+    return;
+  }
+
+  // ─── Backfill MongoDB from Git (synchronous for debugging) ──────
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/backfill-mongo") {
+      // Parse optional body: { domains: string[], phases: string[] }
+      let domains: string[] | undefined;
+      let phases: string[] | undefined;
+      try {
+        const body = await readBody(req);
+        const parsed = body ? JSON.parse(body) : {};
+        if (Array.isArray(parsed.domains) && parsed.domains.length > 0) {
+          domains = parsed.domains;
+        }
+        if (Array.isArray(parsed.phases) && parsed.phases.length > 0) {
+          phases = parsed.phases;
+        }
+      } catch { /* empty body is fine — backfill all */ }
+
+      try {
+        const { runBackfillMongo } = await import("../../scripts/backfill-mongo.js");
+        const summary = await runBackfillMongo(phases as any, domains);
+        console.log("[backfill-mongo] Completed:", JSON.stringify(summary));
+        sendJson(res, 200, { status: "completed", summary });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[backfill-mongo] Error:", message);
+        sendJson(res, 500, { status: "error", error: message });
+      }
+      return;
+    }
+  }
+
+  if (req.url === "/propose-filter") {
+    await handleProposeFilter(req, res);
+    return;
+  }
+
+  // Dedicated article generation — user provides a prompt, Claude generates original content
+  if (req.method === "POST" && req.url === "/content-generate-dedicated") {
+    let rawBody: string;
+    try {
+      rawBody = await readBody(req);
+    } catch {
+      sendJson(res, 413, { status: "error", message: "Payload too large" });
+      return;
+    }
+
+    let payload: { siteDomain?: unknown; branch?: unknown; userPrompt?: unknown };
+    try {
+      payload = JSON.parse(rawBody) as typeof payload;
+    } catch {
+      sendJson(res, 400, { status: "error", message: "Invalid JSON body" });
+      return;
+    }
+
+    const { siteDomain, branch, userPrompt } = payload;
+
+    if (!siteDomain || typeof siteDomain !== "string") {
+      sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
+      return;
+    }
+
+    if (!userPrompt || typeof userPrompt !== "string" || !userPrompt.trim()) {
+      sendJson(res, 400, { status: "error", message: "userPrompt is required (non-empty string)" });
+      return;
+    }
+
+    const branchStr = typeof branch === "string" && branch.trim()
+      ? branch.trim()
+      : `staging/${siteDomain}`;
+
+    console.log(
+      `[server] POST /content-generate-dedicated — site: ${siteDomain}, branch: ${branchStr}`,
+    );
+
+    try {
+      const { runDedicatedGeneration } = await import("./dedicated-agent.js");
+      const result = await runDedicatedGeneration(
+        { siteDomain, branch: branchStr, userPrompt },
+        config,
+      );
+
+      if (result.status === "created") {
+        sendJson(res, 201, result as unknown as Record<string, unknown>);
+      } else {
+        sendJson(res, 500, result as unknown as Record<string, unknown>);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[server] Dedicated generation error:", message);
+      sendJson(res, 502, { status: "error", message });
+    }
+    return;
+  }
+
   if (req.method !== "POST" || req.url !== "/content-generate") {
     sendJson(res, 404, { status: "error", message: "Not found. Use POST /content-generate" });
     return;
@@ -639,7 +1402,13 @@ async function handleRequest(
     return;
   }
 
-  let payload: { siteDomain?: unknown; branch?: unknown; count?: unknown };
+  let payload: {
+    siteDomain?: unknown;
+    branch?: unknown;
+    count?: unknown;
+    topicName?: unknown;
+    bypassSchedule?: unknown;
+  };
   try {
     payload = JSON.parse(rawBody) as typeof payload;
   } catch {
@@ -648,7 +1417,7 @@ async function handleRequest(
   }
 
   // Validate
-  const { siteDomain, branch, count } = payload;
+  const { siteDomain, branch, count, topicName, bypassSchedule } = payload;
   if (!siteDomain || typeof siteDomain !== "string") {
     sendJson(res, 400, { status: "error", message: "siteDomain is required (string)" });
     return;
@@ -656,18 +1425,62 @@ async function handleRequest(
 
   const branchStr = typeof branch === "string" ? branch : undefined;
   const countNum = typeof count === "number" && count > 0 ? Math.min(count, 50) : undefined;
+  const topicNameStr = typeof topicName === "string" && topicName.trim().length > 0
+    ? topicName
+    : undefined;
+  const bypassScheduleBool = bypassSchedule === true;
 
   console.log(
     `[server] POST /content-generate — site: ${siteDomain}` +
     `${countNum ? `, count: ${countNum}` : ""}` +
-    `${branchStr ? `, branch: ${branchStr}` : ""}`,
+    `${branchStr ? `, branch: ${branchStr}` : ""}` +
+    `${topicNameStr ? `, topic: ${topicNameStr}` : ""}`,
   );
 
   try {
+    const startedAt = new Date();
     const result = await runContentGeneration(
-      { siteDomain, branch: branchStr, count: countNum },
+      {
+        siteDomain,
+        branch: branchStr,
+        count: countNum,
+        topicName: topicNameStr,
+        bypassSchedule: bypassScheduleBool,
+        source: "dashboard",
+      },
       config,
     );
+    const finishedAt = new Date();
+
+    // Read the brief's schedule so MongoDB stays populated even for
+    // dashboard-triggered generation (previously passed null).
+    // Uses buildScheduleFromBrief which handles both per-topic (topics_v2)
+    // and legacy (brief.schedule) models.
+    let schedule: ReturnType<typeof buildScheduleFromBrief> = null;
+    try {
+      const octokit = createOctokit(config.github);
+      const briefBranch = branchStr ?? `staging/${siteDomain}`;
+      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, briefBranch);
+      schedule = buildScheduleFromBrief(briefData.brief);
+    } catch {
+      // Brief read failed — record with null schedule (non-fatal)
+    }
+
+    await recordGeneration(
+      result,
+      {
+        source: "dashboard",
+        forced: bypassScheduleBool,
+        topicName: topicNameStr ?? null,
+        startedAt,
+        finishedAt,
+      },
+      schedule,
+    );
+
+    // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
+    // runAfterRun is failure-isolated and never alters generation behavior).
+    void runAfterRun(siteDomain, new Date());
 
     const resultBody = result as unknown as Record<string, unknown>;
     const hasCreated = result.results.some((r) => r.status === "created");
@@ -716,21 +1529,30 @@ const server = http.createServer((req, res) => {
   });
 });
 
+const FALLBACK_PORT = 5111;
+
 server.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EADDRINUSE") {
-    console.error(`[server] Port ${config.port} is already in use`);
-  } else {
-    console.error("[server] Server error:", err.message);
+    console.warn(`[server] Port ${config.port} already in use — retrying on ${FALLBACK_PORT}`);
+    server.listen(FALLBACK_PORT, () => {
+      console.log(`[server] Content generation agent running on http://localhost:${FALLBACK_PORT} (fallback)`);
+      ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
+    });
+    return;
   }
+  console.error("[server] Server error:", err.message);
   process.exit(1);
 });
 
 server.listen(config.port, () => {
   console.log(`[server] Content generation agent running on http://localhost:${config.port}`);
   console.log(`[server] POST http://localhost:${config.port}/content-generate`);
+  console.log(`[server] POST http://localhost:${config.port}/content-generate-dedicated`);
   const effectiveAggregatorUrl = process.env.CONTENT_API_BASE_URL ?? config.contentAggregatorUrl;
   console.log(`[server] Aggregator: ${effectiveAggregatorUrl}`);
   console.log(`[server] Write mode: ${config.localNetworkPath ? `local (${config.localNetworkPath})` : "GitHub API"}`);
+  ensureStatsIndexes().catch((e) => console.error(`[stats] ensureStatsIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
+  ensureCostIndexes().catch((e) => console.error(`[costs] ensureCostIndexes failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`));
 });
 
 async function shutdown(signal: string): Promise<void> {

@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
-import {
-  readDashboardIndex,
-  readSiteConfig,
-  commitSiteFiles,
-  triggerWorkflowViaPush,
-} from "@/lib/github";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
+import { commitSiteFiles, triggerWorkflowViaPush } from "@/lib/github";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
 
 /**
  * GET /api/groups/:groupId/sites
@@ -145,6 +143,9 @@ export async function POST(
             targetBranch,
           );
           await triggerWorkflowViaPush(targetBranch, domain);
+
+          // Dual-write: mirror group membership to MongoDB (soft-fail)
+          await upsertSiteConfig(domain, { groups: updated });
 
           results.push({ domain, status: "ok", groups: updated });
         } catch (err) {

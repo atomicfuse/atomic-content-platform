@@ -39,3 +39,4 @@ pnpm-debug.log*
 .cloudgrid-dev.lock
 .superpowers/
 .cloudgrid/
+.worktrees/

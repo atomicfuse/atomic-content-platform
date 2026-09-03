@@ -32,11 +32,14 @@ export interface ArticleIndexEntry {
   featuredImage?: string;
   tags: string[];
   type: 'listicle' | 'how-to' | 'review' | 'standard';
-  status: 'draft' | 'review' | 'published';
+  status: 'draft' | 'review' | 'approved' | 'published';
   /** Editorial featured flags. Empty/missing = not featured (auto-fallback fills the slot). */
   featured?: ('hero' | 'must-read')[];
   scripts?: ArticleScript[];
   videos?: ArticleVideo[];
+  /** Per-topic-filter model: explicit topic membership.
+   *  Absent on legacy-site articles; renderer falls back to tag matching. */
+  topics?: string[];
 }
 
 /** Article stored body (markdown, already parsed-out frontmatter).

@@ -1,11 +1,18 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 
 interface TooltipProps {
   content: React.ReactNode;
   children: React.ReactNode;
   maxWidth?: number;
+}
+
+interface Coords {
+  top: number;
+  left: number;
+  placement: "top" | "bottom";
 }
 
 export function Tooltip({
@@ -14,16 +21,23 @@ export function Tooltip({
   maxWidth = 320,
 }: TooltipProps): React.ReactElement {
   const [visible, setVisible] = useState(false);
-  const [position, setPosition] = useState<"top" | "bottom">("top");
+  const [coords, setCoords] = useState<Coords | null>(null);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  const reposition = useCallback((): void => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const placement = rect.top < 200 ? "bottom" : "top";
+    const left = rect.left + rect.width / 2;
+    const top = placement === "top" ? rect.top - 8 : rect.bottom + 8;
+    setCoords({ top, left, placement });
+  }, []);
 
   const show = useCallback((): void => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setPosition(rect.top < 200 ? "bottom" : "top");
-    }
+    reposition();
     setVisible(true);
-  }, []);
+  }, [reposition]);
 
   const hide = useCallback((): void => setVisible(false), []);
 
@@ -37,6 +51,18 @@ export function Tooltip({
     return (): void => document.removeEventListener("keydown", handleKey);
   }, [visible]);
 
+  // Clamp tooltip horizontally so it doesn't overflow the viewport
+  useEffect(() => {
+    if (!visible || !tooltipRef.current) return;
+    const el = tooltipRef.current;
+    const r = el.getBoundingClientRect();
+    if (r.left < 8) {
+      el.style.transform = `translateX(${8 - r.left}px)`;
+    } else if (r.right > window.innerWidth - 8) {
+      el.style.transform = `translateX(${window.innerWidth - 8 - r.right}px)`;
+    }
+  }, [visible, coords]);
+
   return (
     <span
       ref={triggerRef}
@@ -47,18 +73,23 @@ export function Tooltip({
       onBlur={hide}
     >
       {children}
-      {visible && (
+      {visible && coords && createPortal(
         <div
+          ref={tooltipRef}
           role="tooltip"
-          className={`absolute z-50 px-3 py-2.5 text-sm text-left leading-relaxed rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-xl ${
-            position === "top"
-              ? "bottom-full mb-2"
-              : "top-full mt-2"
-          } left-1/2 -translate-x-1/2`}
-          style={{ maxWidth, width: "max-content" }}
+          className="fixed z-[9999] px-3 py-2.5 text-sm text-left leading-relaxed rounded-lg border border-[var(--border-primary)] bg-[var(--bg-surface)] text-[var(--text-secondary)] shadow-xl"
+          style={{
+            top: coords.placement === "top" ? undefined : coords.top,
+            bottom: coords.placement === "top" ? `${window.innerHeight - coords.top}px` : undefined,
+            left: coords.left,
+            transform: "translateX(-50%)",
+            maxWidth,
+            width: "max-content",
+          }}
         >
           {content}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   );

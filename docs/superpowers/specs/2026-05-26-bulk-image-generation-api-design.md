@@ -191,7 +191,7 @@ let bulkJob: {
 |----------|---------|-------------|
 | `BULK_IMAGE_API_KEY` | content-pipeline | Required for non-dry-run requests. Shared secret for authenticating bulk requests. Added to `AgentConfig` via `loadConfig()`. |
 | `N8N_IMAGE_WEBHOOK_URL` | content-pipeline | Existing. Must be set for webhooks to fire. Returns 503 if missing on non-dry-run requests. |
-| `IMAGE_CALLBACK_URL` | content-pipeline | Existing. Callback URL passed to each n8n trigger. Defaults to `https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback`. |
+| `IMAGE_CALLBACK_URL` | content-pipeline | Existing. Callback URL passed to each n8n trigger. Defaults to `https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback`. |
 
 The dashboard proxy does not validate the API key itself — it forwards the `X-API-Key` header to the content-pipeline, which validates it.
 
@@ -227,7 +227,7 @@ curl -X POST http://localhost:5000/bulk-generate-images \
 ### Via dashboard proxy (production)
 
 ```bash
-curl -X POST https://sites-platform-e297.atomic.cloudgrid.io/api/agent/bulk-generate-images \
+curl -X POST https://sites-platform-e297--atomic.cloudgrid.io/api/agent/bulk-generate-images \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secret-key" \
   -d '{"scope": "site", "domain": "wineoceans"}'

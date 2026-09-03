@@ -4,20 +4,10 @@ export const STATUS_CONFIG: Record<
   SiteStatus,
   { label: string; color: string; bgColor: string }
 > = {
-  New: {
-    label: "New",
-    color: "text-gray-600 dark:text-gray-300",
-    bgColor: "bg-gray-200 dark:bg-gray-500/20",
-  },
   Staging: {
     label: "Staging",
     color: "text-amber-700 dark:text-amber-300",
     bgColor: "bg-amber-100 dark:bg-amber-500/20",
-  },
-  Preview: {
-    label: "Preview",
-    color: "text-purple-700 dark:text-purple-300",
-    bgColor: "bg-purple-100 dark:bg-purple-500/20",
   },
   Ready: {
     label: "Ready",
@@ -28,11 +18,6 @@ export const STATUS_CONFIG: Record<
     label: "Live",
     color: "text-green-700 dark:text-green-300",
     bgColor: "bg-green-100 dark:bg-green-500/20",
-  },
-  WordPress: {
-    label: "WordPress",
-    color: "text-orange-700 dark:text-orange-300",
-    bgColor: "bg-orange-100 dark:bg-orange-500/20",
   },
 };
 
@@ -51,12 +36,9 @@ export const VERTICALS: Vertical[] = [
 ];
 
 export const STATUSES: SiteStatus[] = [
-  "New",
   "Staging",
-  "Preview",
   "Ready",
   "Live",
-  "WordPress",
 ];
 
 export const NETWORK_REPO_OWNER = "atomicfuse";

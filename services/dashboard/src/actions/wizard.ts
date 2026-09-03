@@ -1,11 +1,11 @@
 "use server";
 
 import { stringify as stringifyYaml } from "yaml";
+import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
+import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  readDashboardIndex,
   writeDashboardIndex,
-  readSiteConfig as readSiteConfigFromGit,
   updateSiteInIndex,
   addSitesToIndex,
   createBranch,
@@ -13,22 +13,25 @@ import {
   branchExists,
   triggerWorkflowViaPush,
   readFileBase64,
-  listNetworkDirectory,
   readFileContent,
   commitNetworkFiles,
+  copySiteTreeToMain,
 } from "@/lib/github";
 import {
   listZones,
   registerWorkerCustomDomain,
   deregisterWorkerCustomDomain,
+  deleteConflictingDnsRecords,
   putKVEntry,
   deleteKVEntry,
   getKVEntry,
   listKVKeys,
   bulkPutKV,
+  bulkDeleteKV,
+  deleteR2Objects,
 } from "@/lib/cloudflare";
-import { workerPreviewUrl, getKvNamespaces } from "@/lib/constants";
-import type { WizardFormData, DashboardSiteEntry } from "@/types/dashboard";
+import { workerPreviewUrl, getKvNamespaces, R2_BUCKET_PROD } from "@/lib/constants";
+import type { WizardFormData, DashboardSiteEntry, TopicV2 } from "@/types/dashboard";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
@@ -38,100 +41,16 @@ import {
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
-
-// CONTENT_API_BASE_URL first: CloudGrid auto-injects CONTENT_AGGREGATOR_URL
-// as a platform read-only env pointing to a stale entity URL.
-const RAW_AGGREGATOR_URL =
-  process.env.CONTENT_API_BASE_URL ??
-  process.env.CONTENT_AGGREGATOR_URL ??
-  "https://content-aggregator-v2-34cd.atomic.cloudgrid.io";
-const AGGREGATOR_URL = RAW_AGGREGATOR_URL.replace(/\/api\/?$/, "");
+import { uploadToR2 } from "@/lib/r2-upload";
+import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
+import { upsertSiteConfig } from "@/lib/db/site-configs";
+import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
+import { deleteArticlesMeta } from "@/lib/db/articles";
 
 interface StagingResult {
   stagingUrl: string;
   /** The network-repo folder name and dashboard-index `domain` for the new site. */
   siteFolder: string;
-}
-
-/** Create a content bundle on the aggregator. Handles 409 duplicate by appending " (2)".
- *  Post-2026-04-29: vertical_ids removed from bundle rules. Tier-1 category ID
- *  is included in category_ids alongside child IDs. */
-async function createBundle(
-  name: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
-  tagIds: string[],
-): Promise<{ id: string; name: string } | null> {
-  // Merge tier-1 ID with child category IDs (deduped)
-  const allCategoryIds = [tier1CategoryId, ...childCategoryIds.filter((id) => id !== tier1CategoryId)];
-  const payload = {
-    name,
-    description: `Auto-created content bundle for ${name}`,
-    active: true,
-    rules: {
-      category_ids: allCategoryIds,
-      tag_ids: tagIds,
-    },
-  };
-
-  try {
-    const url = `${AGGREGATOR_URL}/api/bundles`;
-    console.log("[wizard] POST", url, JSON.stringify(payload, null, 2));
-
-    let res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    console.log("[wizard] Bundle creation response:", res.status, res.statusText);
-
-    // Handle 409 (duplicate name) — retry with " (2)" suffix
-    if (res.status === 409) {
-      payload.name = `${name} (2)`;
-      console.log("[wizard] 409 duplicate — retrying POST", url, JSON.stringify(payload, null, 2));
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      console.log("[wizard] Retry response:", res.status, res.statusText);
-    }
-
-    // Accept both 200 and 201 as success — aggregators vary
-    if (res.ok) {
-      return (await res.json()) as { id: string; name: string };
-    }
-    const errorBody = await res.text().catch(() => "");
-    console.error("[wizard] Bundle creation failed:", res.status, errorBody);
-    return null;
-  } catch (err) {
-    console.error("[wizard] Bundle creation error:", err);
-    return null;
-  }
-}
-
-/** Create a content bundle for an existing site from the site settings page.
- *  Uses the niche targeting selections (category, subcategories, tags)
- *  already configured in the Content Brief tab. Returns the new bundleId
- *  on success, or throws on failure. */
-export async function createBundleForSite(
-  siteName: string,
-  tier1CategoryId: string,
-  childCategoryIds: string[],
-  tagIds: string[],
-): Promise<{ id: string; name: string }> {
-  if (!tier1CategoryId) {
-    throw new Error("A category must be selected before creating a bundle.");
-  }
-  if (childCategoryIds.length === 0) {
-    throw new Error("At least one subcategory must be selected before creating a bundle.");
-  }
-  const bundle = await createBundle(siteName, tier1CategoryId, childCategoryIds, tagIds);
-  if (!bundle) {
-    throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
-  }
-  return bundle;
 }
 
 /** Create site files in a staging branch and trigger sync-kv to seed
@@ -147,42 +66,20 @@ export async function createSiteAndBuildStaging(
   // can resolve the right config when the hostname matches.
   const siteFolder = projectName;
 
-  // 0. Resolve niche targeting: existing bundle or create new
-  let bundleId: string | undefined = data.bundleId || undefined;
-  let categoryIds: string[] = data.selectedCategories.map((c) => c.id);
-  let tagIds: string[] = data.selectedTags.map((t) => t.id);
-  const iabCategoryCodes = data.selectedCategories
-    .map((c) => c.iabCode)
-    .filter(Boolean);
+  // 0. Per-topic model — the wizard writes brief.topics_v2 directly.
+  // No bundle is created from the wizard anymore; topics carry raw filters.
+  const topics_v2 = data.topics_v2;
 
-  if (bundleId) {
-    // Existing bundle — fetch its rules for site.yaml fields
-    try {
-      const res = await fetch(`${AGGREGATOR_URL}/api/bundles/${bundleId}`);
-      if (res.ok) {
-        const bundle = (await res.json()) as {
-          rules?: { category_ids?: string[]; tag_ids?: string[] };
-        };
-        categoryIds = bundle.rules?.category_ids ?? categoryIds;
-        tagIds = bundle.rules?.tag_ids ?? tagIds;
-      }
-    } catch {
-      // Best-effort — proceed with what we have
-    }
-  } else if (data.verticalId && categoryIds.length > 0) {
-    // Create new bundle
-    const bundle = await createBundle(
-      data.siteName,
-      data.verticalId,
-      categoryIds,
-      tagIds,
-    );
-    if (bundle) {
-      bundleId = bundle.id;
-    } else {
-      throw new Error("Failed to create content bundle. Check the Content Aggregator service and try again.");
-    }
-  }
+  // For the dashboard Sites grid (Category column) and the per-site brief,
+  // derive a display-only label when the wizard didn't pick a category.
+  // Order of preference: explicit `data.vertical` → first topic_v2 name →
+  // first plain topic → undefined. This is for organization/sort only; it
+  // does not affect aggregator filtering, which lives entirely in topics_v2.
+  const displayVertical: string | undefined =
+    data.vertical ||
+    topics_v2[0]?.name ||
+    data.topics[0] ||
+    undefined;
 
   // 1. Build site.yaml content. `domain` is the site folder identifier
   // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
@@ -193,10 +90,7 @@ export async function createSiteAndBuildStaging(
     author: generateAuthorName(),
     groups: data.groups.length > 0 ? data.groups : [],
     active: true,
-    bundle_id: bundleId || undefined,
     iab_vertical_code: data.iabVerticalCode || undefined,
-    iab_category_codes:
-      iabCategoryCodes.length > 0 ? iabCategoryCodes : undefined,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
     brief: {
       audiences: data.audiences,
@@ -208,7 +102,12 @@ export async function createSiteAndBuildStaging(
         "how-to": 20,
         review: 10,
       },
-      topics: data.topics,
+      // For per-topic sites the nav menu + category routing read `topics`, so
+      // it must mirror topics_v2 names. Fall back to the raw collected topics
+      // for legacy (non-per-topic) sites.
+      topics: topics_v2.length > 0 ? topics_v2.map((t) => t.name) : data.topics,
+      theme: data.theme || undefined,
+      topics_v2: topics_v2.length > 0 ? topics_v2 : undefined,
       seo_keywords_focus: [],
       content_guidelines: data.contentGuidelines
         ? data.contentGuidelines.split("\n").filter(Boolean)
@@ -216,11 +115,8 @@ export async function createSiteAndBuildStaging(
       image_guidelines: data.imageGuidelines
         ? data.imageGuidelines.split("\n").filter(Boolean)
         : undefined,
-      vertical: data.vertical || undefined,
+      vertical: displayVertical,
       vertical_id: data.verticalId || undefined,
-      category_ids: categoryIds.length > 0 ? categoryIds : undefined,
-      tag_ids: tagIds.length > 0 ? tagIds : undefined,
-      bundle_id: bundleId || undefined,
       review_percentage: 5,
       schedule: {
         articles_per_day: data.articlesPerDay,
@@ -232,6 +128,7 @@ export async function createSiteAndBuildStaging(
       base: data.themePreset,
       colors: data.themeColors,
       logo_height: data.logoHeight ?? 52,
+      menu_item_font_size: data.menuItemFontSize ?? 14,
       // Omit logo_height_footer entirely when auto so saved YAML signals
       // "let CSS auto-derive (92% of header)".
       ...(data.logoHeightFooter != null ? { logo_height_footer: data.logoHeightFooter } : {}),
@@ -327,12 +224,12 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     },
   ];
 
-  // Add logo if generated/uploaded and update site config to reference it
+  // Logos/favicons are R2-native: upload bytes directly to R2 (binary-safe),
+  // never commit them to git. The Worker serves them at
+  // /<siteId>/assets/<file> straight from R2. theme.* config refs still point
+  // at /assets/<file> (seed-kv rewrites them to the per-site R2 path).
   if (logoBuffer) {
-    files.push({
-      path: `sites/${siteFolder}/assets/logo.png`,
-      content: logoBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/logo.png`, logoBuffer, "image/png");
     siteConfig.theme.logo = "/assets/logo.png";
     // Default favicon to logo unless a separate favicon was uploaded
     if (!faviconBuffer) {
@@ -348,19 +245,13 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     } catch {
       footerLogoBuffer = Buffer.from(data.footerLogoBase64, "base64");
     }
-    files.push({
-      path: `sites/${siteFolder}/assets/logo-footer.png`,
-      content: footerLogoBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/logo-footer.png`, footerLogoBuffer, "image/png");
     siteConfig.theme.footer_logo = "/assets/logo-footer.png";
   }
 
   // Add separate favicon if uploaded
   if (faviconBuffer) {
-    files.push({
-      path: `sites/${siteFolder}/assets/favicon.png`,
-      content: faviconBuffer,
-    });
+    await uploadToR2(`${siteFolder}/assets/favicon.png`, faviconBuffer, "image/png");
     siteConfig.theme.favicon = "/assets/favicon.png";
   }
 
@@ -446,7 +337,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   const siteEntry: DashboardSiteEntry = {
     domain: siteFolder,
     company: data.company || null,
-    vertical: data.vertical,
+    vertical: displayVertical ?? "",
     status: "Staging",
     site_id: `${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
     exclusivity: null,
@@ -468,15 +359,17 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
   // EC-4: Retry index update once on failure. If still failing, surface a
   // specific message so the user knows files are deployed but the index
   // needs manual attention.
+  let wasExistingEntry = false;
   for (let indexAttempt = 0; indexAttempt < 2; indexAttempt++) {
     try {
       const index = await readDashboardIndex({ fresh: true });
       const existing = index.sites.find((s) => s.domain === siteFolder);
       if (existing) {
+        wasExistingEntry = true;
         await updateSiteInIndex(siteFolder, {
           status: "Staging",
           company: data.company || null,
-          vertical: data.vertical,
+          vertical: displayVertical,
           staging_branch: stagingBranch,
           preview_url: previewUrl,
         });
@@ -497,81 +390,98 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     }
   }
 
+  // Dual-write: mirror site config + dashboard index entry to MongoDB (soft-fail).
+  // On a wizard re-run of an existing site, mirror ONLY the fields the git
+  // path updated — upserting the freshly-built siteEntry would clobber
+  // preserved fields in Mongo (custom_domain, site_id, created_at, …).
+  await upsertSiteConfig(siteFolder, siteConfig as unknown as Record<string, unknown>);
+  if (wasExistingEntry) {
+    await upsertDashboardIndexEntry(siteFolder, {
+      status: "Staging",
+      company: data.company || null,
+      vertical: displayVertical ?? "",
+      staging_branch: stagingBranch,
+      preview_url: previewUrl,
+      last_updated: now,
+    });
+  } else {
+    await upsertDashboardIndexEntry(siteFolder, siteEntry as unknown as Record<string, unknown>);
+  }
+
   revalidatePath("/");
 
   // 10. Return result
   return { stagingUrl: previewUrl, siteFolder };
 }
 
-/** Binary file extensions that must be read as base64, not UTF-8. */
-const BINARY_EXTENSIONS = new Set([
-  ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".svg",
-  ".woff", ".woff2", ".ttf", ".eot", ".otf",
-  ".pdf", ".zip",
-]);
-
-function isBinaryFile(path: string): boolean {
-  const ext = path.slice(path.lastIndexOf(".")).toLowerCase();
-  return BINARY_EXTENSIONS.has(ext);
-}
-
-/**
- * Read a file from the network repo, preserving binary content.
- * Text files are read as UTF-8 strings; binary files as Buffers.
- */
-async function readFilePreservingBinary(
-  path: string,
-  branch: string,
-): Promise<{ path: string; content: string | Buffer } | null> {
-  if (isBinaryFile(path)) {
-    const base64 = await readFileBase64(path, branch);
-    if (base64 === null) return null;
-    return { path, content: Buffer.from(base64, "base64") };
-  }
-  const text = await readFileContent(path, branch);
-  if (text === null) return null;
-  return { path, content: text };
-}
-
 /**
  * Publish a single site's files from staging to main.
  *
  * Instead of merging the entire staging branch (which drags in stale
- * copies of OTHER sites' files), we read only sites/{domain}/ from
- * the staging branch and commit those files directly to main.
+ * copies of OTHER sites' files), we copy only sites/{domain}/ from
+ * the staging branch's tree to main using blob SHA references.
  */
+/** Returns the slugs of articles that were deleted on staging (and now removed from main). */
 async function mergeOrCopySiteToMain(
   domain: string,
   stagingBranch: string,
   commitMessage: string,
+): Promise<string[]> {
+  // Uses the Git Tree API: one recursive tree fetch to get all blob SHAs,
+  // then creates a new commit on main referencing those SHAs directly.
+  // This is O(1) reads instead of O(N) per-file reads, avoiding gateway
+  // timeouts on sites with 100+ articles.
+  return copySiteTreeToMain(domain, stagingBranch, commitMessage);
+}
+
+/** Best-effort cleanup of deleted articles after publishing to production.
+ *  Order: prod KV → MongoDB → R2 images (R2 last so the live site never
+ *  shows broken images if an earlier step fails). */
+async function cleanupDeletedArticles(
+  domain: string,
+  deletedSlugs: string[],
+  stagingBranch?: string,
 ): Promise<void> {
-  const siteFiles: Array<{ path: string; content: string | Buffer }> = [];
-  const topLevel = await listNetworkDirectory(`sites/${domain}`, stagingBranch);
+  if (deletedSlugs.length === 0) return;
 
-  for (const entry of topLevel) {
-    if (entry.type === "file") {
-      const file = await readFilePreservingBinary(entry.path, stagingBranch);
-      if (file) siteFiles.push(file);
-    } else if (entry.type === "dir") {
-      const children = await listNetworkDirectory(entry.path, stagingBranch);
-      for (const child of children) {
-        if (child.type === "file") {
-          const file = await readFilePreservingBinary(child.path, stagingBranch);
-          if (file) siteFiles.push(file);
-        }
-      }
-    }
-  }
-
-  if (siteFiles.length === 0) {
-    throw new Error(`No site files found on ${stagingBranch} for ${domain}`);
-  }
-
-  await commitNetworkFiles(
-    siteFiles,
-    commitMessage,
-    "main",
+  console.log(
+    `[wizard] Cleaning up ${deletedSlugs.length} deleted articles for ${domain}`,
   );
+
+  // Step 4: Delete from production KV (article stops being served)
+  let prodKvOk = true;
+  try {
+    const kv = getKvNamespaces(domain);
+    const kvKeys = deletedSlugs.map((slug) => `article:${domain}:${slug}`);
+    await bulkDeleteKV(kv.prod, kvKeys, domain);
+  } catch (err) {
+    prodKvOk = false;
+    console.warn(
+      `[wizard] Failed to delete prod KV entries for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
+  // If prod KV deletion failed the articles are still being served —
+  // skip MongoDB + R2 to avoid broken images on the live site.
+  if (!prodKvOk) return;
+
+  // Step 5: Delete from MongoDB — both main and staging branch records (soft-fail)
+  await deleteArticlesMeta(domain, deletedSlugs, "main");
+  if (stagingBranch) {
+    await deleteArticlesMeta(domain, deletedSlugs, stagingBranch);
+  }
+
+  // Step 6: Delete R2 images last
+  try {
+    const keys = deletedSlugs.map((s) => `${domain}/assets/images/${s}.webp`);
+    await deleteR2Objects(R2_BUCKET_PROD, keys, domain);
+  } catch (err) {
+    console.warn(
+      `[wizard] Failed to delete R2 images for ${domain}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 /**
@@ -592,17 +502,27 @@ export async function goLive(domain: string): Promise<void> {
   }
 
   // 3. Merge staging branch to main (with conflict fallback)
-  await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
+  const deletedSlugs = await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
+
+  // 3b. Clean up any articles that were deleted on staging before go-live
+  await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
 
   // 4. Delete and recreate staging branch from the new main HEAD
   // This resets it to be in sync with production, ready for future edits
   await deleteBranch(stagingBranch);
   await createBranch(stagingBranch, "main");
 
-  // 5. Update index: status = Ready, KEEP staging_branch and preview_url
+  // 5. Update index, KEEP staging_branch and preview_url. A site with a
+  // custom domain attached is serving production traffic — publishing staged
+  // edits must not demote it from Live back to Ready (that stranded sites on
+  // "Ready" with no path back, since only attachCustomDomain sets Live).
+  const postPublishStatus = site.custom_domain ? "Live" : "Ready";
   await updateSiteInIndex(domain, {
-    status: "Ready",
+    status: postPublishStatus,
   });
+
+  // Dual-write: mirror status to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, { status: postPublishStatus });
 
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
@@ -622,12 +542,15 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // Merge staging → main with conflict fallback (triggers production deploy via GitHub Actions)
-  await mergeOrCopySiteToMain(
+  // Step 3: Merge staging → main (handles additions + deletions via tree copy)
+  const deletedSlugs = await mergeOrCopySiteToMain(
     domain,
     stagingBranch,
     `site(${domain}): publish staging edits to production`,
   );
+
+  // Steps 4-6: Clean up deleted articles (prod KV → MongoDB → R2 images)
+  await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
 
   // Reset staging branch to match main (clean slate for next edit cycle)
   await deleteBranch(stagingBranch);
@@ -668,19 +591,26 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
     preview_url: workerPreviewUrl(domain),
   });
 
+  // Dual-write: mirror staging branch info to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    staging_branch: stagingBranch,
+    preview_url: workerPreviewUrl(domain),
+  });
+
   revalidatePath(`/sites/${domain}`);
   return stagingBranch;
 }
 
 /** Fetch Cloudflare zones not already used as a site identifier or as
- *  another site's custom_domain. */
+ *  another site's custom_domain, and not blacklisted. */
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
-  const [assetsZones, dev1Zones, index] = await Promise.all([
+  const [assetsZones, dev1Zones, index, blacklisted] = await Promise.all([
     listZones(),
     listZones("financenewsbase"), // any Dev1 domain triggers Dev1 creds
     readDashboardIndex(),
+    fetchBlacklistedDomains(),
   ]);
 
   const usedCustomDomains = new Set(
@@ -696,7 +626,12 @@ export async function getAvailableZones(): Promise<
   });
 
   return allZones
-    .filter((z) => z.status === "active" && !usedCustomDomains.has(z.name))
+    .filter(
+      (z) =>
+        z.status === "active" &&
+        !usedCustomDomains.has(z.name) &&
+        !blacklisted.has(z.name),
+    )
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }
 
@@ -828,6 +763,24 @@ export async function attachCustomDomain(
   const previousZoneId = site.zone_id;
   const previousPendingDns = site.worker_pending_dns;
 
+  // Revert git index AND the MongoDB mirror. The success path mirrors the
+  // attach to Mongo before CF/KV work — a git-only rollback would leave the
+  // UI permanently showing Live + an attached domain that never registered.
+  const rollbackAttach = async (commitMessage: string): Promise<void> => {
+    site.custom_domain = previousCustomDomain;
+    site.status = previousStatus;
+    site.zone_id = previousZoneId;
+    site.worker_pending_dns = previousPendingDns;
+    site.last_updated = new Date().toISOString();
+    await writeDashboardIndex(index, commitMessage);
+    await updateDashboardIndexEntry(domain, {
+      custom_domain: previousCustomDomain ?? null,
+      status: previousStatus,
+      zone_id: previousZoneId ?? null,
+      worker_pending_dns: previousPendingDns ?? null,
+    });
+  };
+
   site.custom_domain = customDomain;
   site.zone_id = resolvedZoneId;
   site.status = 'Live';
@@ -839,33 +792,51 @@ export async function attachCustomDomain(
     `dashboard: attach ${customDomain} to ${domain}`,
   );
 
+  // Dual-write: mirror domain attachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: customDomain,
+    zone_id: resolvedZoneId,
+    status: "Live",
+    worker_pending_dns: false,
+  });
+
   // --- Step 2: Register custom domain on CF worker ---
-  // For WordPress migration domains that already have DNS records (A/CNAME),
+  // If the zone already has A/AAAA/CNAME records for the hostname,
   // CF Custom Domain registration fails with "externally managed DNS records".
-  // This is expected — those domains use Routes (not Custom Domains) to reach
-  // the manager worker. Skip registration and continue with KV seeding.
+  // Auto-delete conflicting records and retry once before giving up.
   try {
     await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const isExternalDns = message.includes('externally managed DNS');
     if (isExternalDns) {
+      // Attempt auto-cleanup: delete conflicting A/AAAA/CNAME records and retry
       console.warn(
-        `[attachCustomDomain] Skipping CF Custom Domain registration for ${customDomain} — ` +
-        `domain has existing DNS records (WordPress migration). Traffic must reach the manager via Routes.`,
+        `[attachCustomDomain] CF Custom Domain registration failed for ${customDomain} — ` +
+        `zone has conflicting DNS records. Attempting auto-cleanup and retry…`,
       );
+      try {
+        const deleted = await deleteConflictingDnsRecords(resolvedZoneId, customDomain, domain);
+        console.log(
+          `[attachCustomDomain] Deleted ${deleted} conflicting DNS record(s) for ${customDomain}`,
+        );
+        await registerWorkerCustomDomain(customDomain, resolvedZoneId, domain);
+        console.log(
+          `[attachCustomDomain] CF Custom Domain registration succeeded for ${customDomain} after DNS cleanup`,
+        );
+      } catch (retryErr) {
+        // Cleanup or retry failed — roll back
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        console.error('[attachCustomDomain] CF registration failed after DNS cleanup, rolling back index', retryErr);
+        await rollbackAttach(`dashboard: rollback attach ${customDomain} from ${domain}`);
+        throw new Error(
+          `Failed to register ${customDomain} on Cloudflare after DNS cleanup: ${retryMsg}`,
+        );
+      }
     } else {
       // Unexpected error — roll back index write
       console.error('[attachCustomDomain] CF registration failed, rolling back index', err);
-      site.custom_domain = previousCustomDomain;
-      site.status = previousStatus;
-      site.zone_id = previousZoneId;
-      site.worker_pending_dns = previousPendingDns;
-      site.last_updated = new Date().toISOString();
-      await writeDashboardIndex(
-        index,
-        `dashboard: rollback attach ${customDomain} from ${domain}`,
-      );
+      await rollbackAttach(`dashboard: rollback attach ${customDomain} from ${domain}`);
       throw new Error(
         `Failed to register ${customDomain} on Cloudflare: ${message}`,
       );
@@ -898,14 +869,8 @@ export async function attachCustomDomain(
       );
     }
 
-    // Revert index
-    site.custom_domain = previousCustomDomain;
-    site.status = previousStatus;
-    site.zone_id = previousZoneId;
-    site.worker_pending_dns = previousPendingDns;
-    site.last_updated = new Date().toISOString();
-    await writeDashboardIndex(
-      index,
+    // Revert index (git + Mongo mirror)
+    await rollbackAttach(
       `dashboard: rollback attach ${customDomain} from ${domain} (KV seed failed)`,
     );
 
@@ -979,6 +944,13 @@ export async function detachCustomDomain(
     `dashboard: detach ${removedDomain} from ${domain}`,
   );
 
+  // Dual-write: mirror domain detachment to MongoDB (soft-fail)
+  await updateDashboardIndexEntry(domain, {
+    custom_domain: null,
+    status: "Ready",
+    worker_pending_dns: true,
+  });
+
   // --- Step 3: Deregister from CF worker (best-effort) ---
   try {
     await deregisterWorkerCustomDomain(removedDomain, domain);
@@ -1025,6 +997,11 @@ export async function saveStagingPreview(
   previews.push({ url, label, saved_at: new Date().toISOString() });
 
   await updateSiteInIndex(domain, { saved_previews: previews });
+
+  // Dual-write: mirror to MongoDB (soft-fail) — the UI reads the index from
+  // Mongo under USE_MONGO_READS.
+  await updateDashboardIndexEntry(domain, { saved_previews: previews });
+
   revalidatePath(`/sites/${domain}`);
 }
 
@@ -1058,8 +1035,8 @@ export interface StagingSiteConfig {
   tagIds?: string[];
   /** SEO keywords focus list. */
   seoKeywords?: string[];
-  /** Content bundle ID. */
-  bundleId?: string;
+  /** Content Aggregator bundle IDs subscribed by this site. */
+  bundleIds?: string[];
   // Phase 1 config fields
   groups?: string[];
   tracking?: Record<string, unknown>;
@@ -1074,7 +1051,15 @@ export interface StagingSiteConfig {
   theme_logo_height?: number;
   /** `null` clears the field (auto-derive). `undefined` leaves it untouched. */
   theme_logo_height_footer?: number | null;
+  /** Navigation menu item font size in pixels. */
+  theme_menu_item_font_size?: number;
   layout?: Record<string, unknown>;
+  /** Free-text site theme (per-topic model — drives AI proposals). */
+  theme?: string;
+  /** Per-topic filters list. When provided on save, the site config is
+   *  rewritten to the new per-topic shape and legacy bundle_ids/category_ids/
+   *  tag_ids are stripped. */
+  topics_v2?: TopicV2[];
 }
 
 /** Read the current site config from the staging branch. */
@@ -1324,10 +1309,8 @@ export async function saveAllStagingEdits(
       console.warn("[wizard] removeBackground failed, using original image:", bgErr);
       processed = raw;
     }
-    files.push({
-      path: `sites/${domain}/assets/logo.png`,
-      content: processed,
-    });
+    // R2-native: upload logo bytes to R2, never commit to git.
+    await uploadToR2(`${domain}/assets/logo.png`, processed, "image/png");
   }
 
   const commitMsg = logoBase64 && configUpdates
@@ -1336,8 +1319,12 @@ export async function saveAllStagingEdits(
       ? "update logo"
       : "update site config";
 
-  await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
+  // files now only ever contains site.yaml (logo went to R2). Skip the commit
+  // entirely if there's nothing textual to write.
+  if (files.length > 0) {
+    await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
+    await triggerWorkflowViaPush(site.staging_branch, domain);
+  }
 }
 
 /** Upload a custom logo to the staging branch. Expects base64-encoded image data. */
@@ -1359,15 +1346,11 @@ export async function uploadStagingLogo(
     logoBuffer = raw;
   }
 
-  // Read existing config to update theme references
-  const config = await readSiteConfigFromGit(domain, site.staging_branch);
+  // R2-native: upload logo bytes straight to R2 (binary-safe), never git.
+  await uploadToR2(`${domain}/assets/logo.png`, logoBuffer, "image/png");
 
-  const files: Array<{ path: string; content: string | Buffer }> = [
-    {
-      path: `sites/${domain}/assets/logo.png`,
-      content: logoBuffer,
-    },
-  ];
+  // Read existing config to update theme references (committed to git).
+  const config = await readSiteConfigFromGit(domain, site.staging_branch);
 
   if (config) {
     const theme = (config.theme ?? {}) as Record<string, unknown>;
@@ -1376,14 +1359,14 @@ export async function uploadStagingLogo(
       theme.favicon = "/assets/logo.png";
     }
     config.theme = theme;
-    files.push({
-      path: `sites/${domain}/site.yaml`,
-      content: stringifyYaml(config, { lineWidth: 0 }),
-    });
+    await commitSiteFiles(
+      domain,
+      [{ path: `sites/${domain}/site.yaml`, content: stringifyYaml(config, { lineWidth: 0 }) }],
+      "upload custom logo",
+      site.staging_branch,
+    );
+    await triggerWorkflowViaPush(site.staging_branch, domain);
   }
-
-  await commitSiteFiles(domain, files, "upload custom logo", site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
 
   revalidatePath(`/sites/${domain}`);
 }
@@ -1404,6 +1387,9 @@ interface TopicSuggestionContext {
   siteName: string;
   siteTagline?: string;
   vertical: string;
+  /** Free-text site theme — the per-topic model uses this as the primary signal
+   *  (replaces vertical as the editorial-angle input). */
+  theme?: string;
   company?: string;
   audience?: string;
   tone?: string;
@@ -1419,15 +1405,26 @@ export async function suggestTopics(
   context: TopicSuggestionContext
 ): Promise<string[]> {
   const geminiKey = process.env.GEMINI_API_KEY;
+  console.log(
+    `[wizard:suggestTopics] siteName="${context.siteName}" vertical="${context.vertical}"` +
+    ` theme="${(context.theme ?? "").slice(0, 80)}" gemini=${geminiKey ? "yes" : "no"}`,
+  );
   if (!geminiKey) {
-    return getFallbackTopics(context.siteName, context.vertical);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] no GEMINI_API_KEY — fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   }
 
-  // Build rich context from ALL available fields
+  // Build rich context from ALL available fields. The site theme (free-text
+  // editorial angle) is the strongest signal when present — it captures intent
+  // more precisely than category dropdowns ever did.
   const contextParts = [
     `Website name: "${context.siteName}"`,
   ];
   if (context.siteTagline) contextParts.push(`Tagline: "${context.siteTagline}"`);
+  if (context.theme && context.theme.trim()) {
+    contextParts.push(`Site theme / editorial angle: ${context.theme.trim()}`);
+  }
   if (context.vertical && context.vertical !== "Other") {
     contextParts.push(`Category: ${context.vertical}`);
   }
@@ -1435,19 +1432,32 @@ export async function suggestTopics(
   if (context.tone) contextParts.push(`Tone: ${context.tone}`);
   if (context.contentGuidelines) contextParts.push(`Content guidelines: ${context.contentGuidelines}`);
 
+  // Use theme as the primary anchor when present; fall back to category framing.
+  const anchorPhrase = context.theme && context.theme.trim()
+    ? `Based on the site theme above`
+    : (context.vertical && context.vertical !== "Other"
+        ? `Based on the website name and its "${context.vertical}" category`
+        : `Based on the website name`);
+
   const prompt = `You are a content strategist helping launch a new content website.
 
 Website info:
 ${contextParts.join("\n")}
 
-Based on the website name${context.vertical !== "Other" ? ` and its "${context.vertical}" category` : ""}, suggest exactly 4 specific content topics that this site should cover. Topics should be:
-- Specific to THIS site (not generic like "How-To Guides" or "Trending Topics")
-- Short (2-4 words each)
-- Suitable as article categories / content pillars
-- Diverse — cover different angles of the site's niche
+${anchorPhrase}, suggest exactly 4 specific content topics for this site. The site theme is the PRIMARY signal — topics must clearly reflect the subject matter described in the theme. Ignore the website name if it conflicts with the theme.
+
+Topics must be:
+- Tightly tied to the theme's subject matter (a "funny memes" site MUST get meme/humor topics, NOT generic content categories)
+- Short (2–4 words each)
+- Diverse across different angles of the niche
+- Specific, not generic. NEVER output any of these: "Expert Guides", "Latest News", "Tips & Advice", "In-Depth Reviews", "How-To Guides", "Trending Topics", "Industry Insights"
 
 Reply with ONLY a JSON array of exactly 4 strings. No markdown, no explanation.
-Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Health Guide", "Pet Nutrition", "Breed Spotlights"]`;
+
+Examples:
+- Theme "Travel and eating while traveling" → ["Destinations", "Food Around the World", "Wine & Beer Tours", "Travel Guides"]
+- Theme "Funny meme website, showing memes and funny videos" → ["Trending Memes", "Viral Videos", "Reaction Clips", "Meme Culture"]
+- Theme "Personal finance for millennials" → ["Budgeting Hacks", "Crypto & Investing", "Side Hustles", "Debt-Free Living"]`;
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_TEXT_MODEL}:generateContent?key=${geminiKey}`;
@@ -1462,7 +1472,7 @@ Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Healt
 
     if (!response.ok) {
       console.warn(`[wizard] Topic suggestion failed: ${response.status}`);
-      return getFallbackTopics(context.siteName, context.vertical);
+      return getFallbackTopics(context.siteName, context.vertical, context.theme);
     }
 
     const data = (await response.json()) as {
@@ -1481,14 +1491,37 @@ Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Healt
         const clean = topics
           .map((t) => String(t).trim())
           .filter((t) => t.length > 0 && t !== "undefined" && t !== "null");
-        if (clean.length >= 2) return clean.slice(0, 4);
+        // Reject the exact known-bad generic list — Gemini sometimes ignores the
+        // prompt's negative instructions and returns these verbatim. Treat as
+        // a parse failure and use the smarter theme-aware fallback instead.
+        const BAD_GENERIC = new Set([
+          "expert guides",
+          "latest news",
+          "tips & advice",
+          "in-depth reviews",
+          "how-to guides",
+          "trending topics",
+        ]);
+        const allGeneric =
+          clean.length === 4 && clean.every((t) => BAD_GENERIC.has(t.toLowerCase()));
+        if (clean.length >= 2 && !allGeneric) {
+          console.log(`[wizard:suggestTopics] gemini returned: ${JSON.stringify(clean.slice(0, 4))}`);
+          return clean.slice(0, 4);
+        }
+        if (allGeneric) {
+          console.warn("[wizard:suggestTopics] gemini returned generic list — falling back");
+        }
       }
     }
 
-    return getFallbackTopics(context.siteName, context.vertical);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] gemini parse failed — fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   } catch (err) {
-    console.warn("[wizard] Topic suggestion error:", err);
-    return getFallbackTopics(context.siteName, context.vertical);
+    console.warn("[wizard:suggestTopics] error:", err);
+    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
+    console.log(`[wizard:suggestTopics] error fallback returned: ${JSON.stringify(fallback)}`);
+    return fallback;
   }
 }
 
@@ -1496,7 +1529,7 @@ Example for a site called "PawPals" in Animals: ["Dog Training Tips", "Cat Healt
  * Smart fallback topics — uses vertical-specific defaults
  * but also incorporates the site name for "Other" vertical.
  */
-function getFallbackTopics(siteName: string, vertical: string): string[] {
+function getFallbackTopics(siteName: string, vertical: string, theme?: string): string[] {
   const topicMap: Record<string, string[]> = {
     Lifestyle: ["Health & Wellness", "Home & Living", "Personal Growth", "Style & Fashion"],
     Travel: ["Destination Guides", "Travel Tips", "Local Culture", "Adventure Activities"],
@@ -1510,8 +1543,37 @@ function getFallbackTopics(siteName: string, vertical: string): string[] {
 
   if (topicMap[vertical]) return topicMap[vertical]!;
 
-  // For "Other" vertical, derive topics from the site name
-  // This is better than generic "Trending Topics" etc.
+  // Match against theme + name keywords combined. Theme is the stronger signal
+  // when present (the per-topic model's primary editorial input).
+  const haystack = `${theme ?? ""} ${siteName}`.toLowerCase();
+
+  // Theme-keyword routing first — broader coverage than name-only matching.
+  if (/\balien|\bufo|\bconspirac|\bpyramid|\bunexplain|\bparanormal|\bsupernatur|\bmyster/.test(haystack)) {
+    return ["Unexplained Events", "Ancient Mysteries", "Conspiracy Theories", "Strange Phenomena"];
+  }
+  if (/\bscience|\bspace|\bcosmos|\bphysics|\biolog|\bchemistry|\bresearch/.test(haystack)) {
+    return ["New Discoveries", "Space & Cosmos", "Health Science", "Environment & Climate"];
+  }
+  if (/\btravel|\bdestination|\btourism|\bvacation/.test(haystack)) {
+    return ["Destinations", "Travel Tips", "Local Culture", "Adventure Activities"];
+  }
+  if (/\bfood|\bwine|\beer|\bculinary|\brestaurant|\brecipe/.test(haystack)) {
+    return ["Recipes & Cooking", "Restaurant Reviews", "Food Culture", "Drinks & Pairings"];
+  }
+  if (/\bpet|\bdog|\bcat|\banimal|\bwildlif/.test(haystack)) {
+    return ["Pet Care & Health", "Animal Behavior", "Breed Guides", "Wildlife Stories"];
+  }
+  if (/\bmovie|\bfilm|\bcelebri|\bmusic|\bstream|\btv\b|\bentertain/.test(haystack)) {
+    return ["Movie Reviews", "TV & Streaming", "Music Spotlight", "Celebrity Culture"];
+  }
+  if (/\bfunny|\bfail|\bviral|\bmeme|\bcompilation|\bblooper|\bprank/.test(haystack)) {
+    return ["Funny Fails", "Viral Clips", "Compilations", "Pranks & Reactions"];
+  }
+  if (/\bvideo|\byoutube|\btiktok|\bshorts|\breels/.test(haystack)) {
+    return ["Trending Clips", "Creator Spotlights", "Channel Picks", "Behind the Scenes"];
+  }
+
+  // Fall through to legacy site-name keyword routing
   const name = siteName.toLowerCase();
   if (name.includes("tech") || name.includes("digital") || name.includes("cyber")) {
     return ["Tech Reviews", "Industry News", "How-To Tutorials", "Future Trends"];

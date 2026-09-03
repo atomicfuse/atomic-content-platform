@@ -6,8 +6,12 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { estimateTokens } from "../costs/estimate.js";
+import type { TokenUsage } from "../costs/usage.js";
 
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+
+export type { TokenUsage } from "../costs/usage.js";
 
 export interface GenerateArticleParams {
   systemPrompt: string;
@@ -24,7 +28,7 @@ let useCloudGrid: boolean | null = null;
  */
 export async function generateContent(
   params: GenerateArticleParams,
-): Promise<string> {
+): Promise<{ text: string; usage: TokenUsage }> {
   // Try CloudGrid first (only in production / when gateway is available)
   if (useCloudGrid !== false) {
     try {
@@ -38,7 +42,14 @@ export async function generateContent(
         },
       );
       useCloudGrid = true;
-      return (result as { text: string }).text;
+      const text = (result as { text: string }).text;
+      // Gateway doesn't return usage — estimate from prompt + output text.
+      const usage: TokenUsage = {
+        inputTokens: estimateTokens(params.systemPrompt + params.userPrompt),
+        outputTokens: estimateTokens(text),
+        estimated: true,
+      };
+      return { text, usage };
     } catch (err) {
       if (useCloudGrid === true) {
         // Was working before — rethrow with details
@@ -71,5 +82,10 @@ export async function generateContent(
   if (!textBlock || textBlock.type !== "text") {
     throw new Error("No text in Anthropic response");
   }
-  return textBlock.text;
+  const usage: TokenUsage = {
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    estimated: false,
+  };
+  return { text: textBlock.text, usage };
 }

@@ -1,5 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import Anthropic from "@anthropic-ai/sdk";
+import matter from "gray-matter";
 import type {
   CsvSiteRow,
   MigrationProgress,
@@ -17,7 +18,9 @@ import { generateImageWithGemini } from "../../lib/gemini.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { commitBatch } from "../../lib/github.js";
 import type { BatchFileEntry } from "../../lib/github.js";
+import { upsertArticlesBatch } from "../../lib/db/articles.js";
 import { triggerN8nImage } from "../content-generation/n8n-image.js";
+import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex } from "../content-generation/agent.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import type { SiteBrief, QualityScoreBreakdown } from "../../types.js";
@@ -210,7 +213,7 @@ export async function runMigration(
           console.log(`[migration] Quality: ${qualityScore}/100 → ${articleStatus} (${slug})`);
         } catch (scoreErr) {
           const errMsg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
-          console.warn(`[migration] Quality scoring failed for ${slug}, defaulting to published: ${errMsg}`);
+          console.warn(`[migration] Quality scoring failed for ${slug}, defaulting to approved: ${errMsg}`);
         }
       }
 
@@ -264,6 +267,25 @@ export async function runMigration(
 
   // Step 4: Batch commit all articles
   if (files.length > 0) {
+    // Build dedup index from the imported articles so subsequent content
+    // generation runs can detect duplicates without a full file scan.
+    const dedupUrls = new Set<string>();
+    const dedupTitles = new Set<string>();
+    for (const f of files) {
+      const { data: fm } = matter(f.content);
+      if (fm.source_url) {
+        try { dedupUrls.add(normalizeUrl(fm.source_url as string)); } catch { /* skip invalid URLs */ }
+      }
+      if (fm.title) dedupTitles.add(normalizeTitleKey(fm.title as string));
+    }
+    if (dedupUrls.size > 0 || dedupTitles.size > 0) {
+      files.push({
+        path: dedupIndexPath(siteId),
+        // Imported (WordPress) articles have no aggregator item ids.
+        content: serializeDedupIndex({ urls: dedupUrls, titles: dedupTitles, ids: new Set() }),
+      });
+    }
+
     progress.phase = "committing";
     emit();
 
@@ -276,6 +298,20 @@ export async function runMigration(
       console.log(`[migration] Also committing to ${config.alsoCommitTo}`);
       await commitBatch(config.octokit, config.networkRepo, files, [], commitMsg, config.alsoCommitTo);
     }
+
+    // Dual-write to MongoDB (supplementary — never fails the pipeline)
+    const mongoArticles = files.map((f) => {
+      const { data: fm } = matter(f.content);
+      // Extract slug from path: sites/<domain>/articles/<slug>.md
+      const pathSlug = f.path.split("/").pop()?.replace(".md", "") ?? "";
+      return {
+        domain: siteId,
+        slug: pathSlug,
+        branch: config.branch,
+        frontmatter: fm as Record<string, unknown>,
+      };
+    });
+    await upsertArticlesBatch(mongoArticles);
   }
 
   // Step 5: Fire n8n image triggers (post-commit, fire-and-forget)
@@ -286,7 +322,7 @@ export async function runMigration(
 
     const webhookUrl = config.n8nImageWebhookUrl!;
     const callbackUrl = config.imageCallbackUrl
-      ?? "https://sites-platform-e297.atomic.cloudgrid.io/api/agent/image-callback";
+      ?? "https://sites-platform-e297--atomic.cloudgrid.io/api/agent/image-callback";
 
     console.log(`[migration] Triggering ${pendingImageRequests.length} n8n image request(s) → ${webhookUrl}`);
 

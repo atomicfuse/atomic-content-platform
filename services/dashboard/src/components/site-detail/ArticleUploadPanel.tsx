@@ -177,7 +177,7 @@ export function ArticleUploadPanel({
         <div>
           <h3 className="text-lg font-bold">Upload Article</h3>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">
-            Upload a markdown file directly as an article with optional featured image
+            Upload a markdown file with a featured image as an article
           </p>
         </div>
         {(mdFile || result) && (
@@ -210,13 +210,13 @@ export function ArticleUploadPanel({
             <div className="flex items-center justify-between">
               <span className="font-semibold">{preview.title || "(no title)"}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full ${
-                preview.status === "published"
+                preview.status === "approved" || preview.status === "published"
                   ? "bg-green-500/10 text-green-400"
                   : preview.status === "review"
                     ? "bg-amber-500/10 text-amber-400"
                     : "bg-zinc-500/10 text-zinc-400"
               }`}>
-                {preview.status}
+                {preview.status === "published" || preview.status === "approved" ? "Published" : preview.status}
               </span>
             </div>
             <div className="text-xs text-[var(--text-muted)] space-y-1">
@@ -239,7 +239,7 @@ export function ArticleUploadPanel({
         {/* Image file picker */}
         <div>
           <label className="block text-sm font-medium mb-1.5">
-            Featured Image <span className="text-[var(--text-muted)] font-normal">(optional)</span>
+            Featured Image <span className="text-red-400 font-normal">*</span>
           </label>
           <input
             ref={imgInputRef}
@@ -260,7 +260,7 @@ export function ArticleUploadPanel({
         <div className="flex items-center gap-3 pt-2">
           <Button
             onClick={handleUpload}
-            disabled={!mdFile || !preview || uploadState === "uploading"}
+            disabled={!mdFile || !preview || !imageFile || uploadState === "uploading"}
           >
             {uploadState === "uploading" ? (
               <>

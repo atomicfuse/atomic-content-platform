@@ -108,7 +108,10 @@ function topicHref(topic: string): string {
     left: 0;
     right: 0;
     z-index: 100;
-    background: var(--color-primary, #1a1a2e);
+    /* --color-header_bg_gradient is an optional CSS background value shipped
+       by gradient-tier presets; falls back to the solid primary color when
+       missing. See Footer.astro for the same pattern. */
+    background: var(--color-header_bg_gradient, var(--color-primary, #1a1a2e));
     color: var(--color-nav_link, #fff);
   }
 
@@ -161,7 +164,7 @@ function topicHref(topic: string): string {
 
   .nav-link {
     padding: 0.5rem 0.875rem;
-    font-size: 0.875rem;
+    font-size: var(--menu-item-font-size, 0.875rem);
     font-weight: 500;
     color: var(--color-nav_link, #fff);
     border-radius: 6px;
@@ -260,7 +263,9 @@ function topicHref(topic: string): string {
   .drawer-link {
     display: block;
     padding: 0.875rem 1.5rem;
-    font-size: 1rem;
+    /* Scales up with the configured menu size, but never below 1rem so mobile
+     * tap targets stay comfortable. */
+    font-size: max(var(--menu-item-font-size, 1rem), 1rem);
     font-weight: 500;
     color: var(--color-nav_link, #fff);
     text-decoration: none;

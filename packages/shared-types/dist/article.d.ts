@@ -28,13 +28,19 @@ export interface ArticleFrontmatter {
     /** Content format of the article. */
     type: ArticleType;
     /** Editorial workflow status. */
-    status: "draft" | "review" | "published";
+    status: "draft" | "review" | "approved" | "published";
     /** Scheduled or actual publish date. */
     publishDate: Date | string;
     /** Display name of the article author. */
     author: string;
     /** Taxonomy tags for categorisation and filtering. */
     tags: string[];
+    /** Topic-membership list (per-topic-filter model). The first entry is the
+     *  primary topic (the one the article was fetched against); subsequent
+     *  entries are secondary topics whose filters also matched this article.
+     *  Absent on legacy-site articles, which are filtered to topic pages via
+     *  the `tags` field instead. */
+    topics?: string[];
     /** URL or path to the hero / featured image. */
     featuredImage?: string;
     /** Notes left by a human or AI reviewer. */

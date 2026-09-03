@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stringify as stringifyYaml } from "yaml";
 import sharp from "sharp";
 import { commitNetworkFiles, readFileContent } from "@/lib/github";
+import { revalidatePath } from "next/cache";
 import { uploadToR2 } from "@/lib/r2-upload";
 import {
   parseFrontmatter,
@@ -11,6 +12,17 @@ import {
   buildImageR2Key,
   buildImageFrontmatterPath,
 } from "@/lib/article-upload";
+import { upsertArticleMeta } from "@/lib/db/articles";
+
+const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
+const isLocalDev = process.env.NODE_ENV === "development";
+
+function getAgentUrl(): string {
+  if (isLocalDev && CONTENT_AGENT_URL.includes("content-pipeline-app")) {
+    return "http://localhost:5000";
+  }
+  return CONTENT_AGENT_URL;
+}
 
 /** Allowed image MIME types and their extensions. */
 const IMAGE_TYPES: Record<string, string> = {
@@ -123,6 +135,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const uploaded = await uploadToR2(r2Key, optimized, "image/webp", domain);
       if (uploaded) {
         imagePath = buildImageFrontmatterPath(slug, "webp");
+        // Increment R2 tally (fire-and-forget)
+        fetch(`${getAgentUrl()}/r2-tally-increment`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bytes: optimized.length, count: 1 }),
+        }).catch(() => {/* non-blocking */});
       }
       // If R2 upload fails, continue without image (non-blocking)
     }
@@ -150,8 +168,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!fm.type) fm.type = "standard";
     fm.slug = slug;
 
-    // Inject uploaded image path into frontmatter if provided and not already set
-    if (imagePath && !fm.featuredImage) {
+    // Inject uploaded image path into frontmatter — always overwrite when user
+    // explicitly uploads an image, even if the markdown already had a
+    // featuredImage field (it may reference a stale/different name).
+    if (imagePath) {
       fm.featuredImage = imagePath;
     }
 
@@ -165,6 +185,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       `feat(content): upload article ${slug} for ${domain}`,
       targetBranch,
     );
+
+    // Dual-write to MongoDB (soft-fail)
+    await upsertArticleMeta(domain, slug, targetBranch, {
+      title: fm.title,
+      description: fm.description,
+      status: fm.status,
+      type: fm.type,
+      publish_date: fm.publishDate ?? fm.publish_date,
+      author: fm.author,
+      tags: fm.tags,
+      featured_image: fm.featuredImage ?? fm.featured_image,
+      quality_score: fm.quality_score,
+      videos: fm.videos,
+      scripts: fm.scripts,
+      source_url: fm.source_url,
+    });
+
+    revalidatePath(`/sites/${domain}`);
 
     return NextResponse.json(
       {

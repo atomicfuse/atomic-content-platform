@@ -1,4 +1,4 @@
-import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getR2Client } from "@/lib/cloudflare";
 
 /** The single R2 bucket for all site assets. The site-worker's
@@ -38,5 +38,31 @@ export async function uploadToR2(
       err instanceof Error ? err.message : err,
     );
     return false;
+  }
+}
+
+/**
+ * Read an object from R2 (atl-assets-prod) as a Buffer. Returns null if R2 is
+ * not configured or the object doesn't exist. Used to serve site assets
+ * (logos/favicons) in the dashboard now that they're R2-native, not in git.
+ */
+export async function readFromR2(key: string, domain?: string): Promise<Buffer | null> {
+  const client = getR2Client(domain);
+  if (!client) {
+    console.warn("[r2-upload] R2 not configured — cannot read");
+    return null;
+  }
+  try {
+    const res = await client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+    if (!res.Body) return null;
+    const bytes = await res.Body.transformToByteArray();
+    return Buffer.from(bytes);
+  } catch (err) {
+    // NoSuchKey / NotFound → treat as missing.
+    if ((err as { name?: string }).name === "NoSuchKey" || (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) {
+      return null;
+    }
+    console.error(`[r2-upload] Failed to read ${key}:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }

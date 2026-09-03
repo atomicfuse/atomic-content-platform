@@ -71,6 +71,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
   const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
   const [lastArticlesSort, setLastArticlesSort] = useState<"asc" | "desc" | null>(null);
+  const [createdSort, setCreatedSort] = useState<"asc" | "desc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -182,8 +183,15 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         return lastArticlesSort === "asc" ? aTime - bTime : bTime - aTime;
       });
     }
+    if (createdSort) {
+      filtered.sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return createdSort === "asc" ? aTime - bTime : bTime - aTime;
+      });
+    }
     return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded]);
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded, createdSort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -196,25 +204,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   }, [totalPages]);
 
   function handleRowClick(site: DashboardSiteEntry): void {
-    switch (site.status) {
-      case "New":
-        router.push(`/wizard?domain=${encodeURIComponent(site.domain)}`);
-        break;
-      case "Staging":
-        router.push(`/sites/${encodeURIComponent(site.domain)}?tab=staging`);
-        break;
-      case "Preview":
-        router.push(`/sites/${encodeURIComponent(site.domain)}?tab=preview`);
-        break;
-      case "Ready":
-        router.push(`/sites/${encodeURIComponent(site.domain)}`);
-        break;
-      case "Live":
-        router.push(`/sites/${encodeURIComponent(site.domain)}`);
-        break;
-      case "WordPress":
-        // Tooltip handled inline
-        break;
+    if (site.status === "Staging") {
+      router.push(`/sites/${encodeURIComponent(site.domain)}?tab=staging`);
+    } else {
+      router.push(`/sites/${encodeURIComponent(site.domain)}`);
     }
   }
 
@@ -232,14 +225,14 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       />
 
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[80vh]">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border-secondary)]">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setCreatedSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Website
@@ -267,7 +260,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setCreatedSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
                   >
                     Articles
@@ -283,7 +276,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <button
                     type="button"
-                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setCreatedSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
                     className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
                   >
                     Last Articles
@@ -300,6 +293,22 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                  <button
+                    type="button"
+                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort(null); setCreatedSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+                  >
+                    Created
+                    <svg className={`w-3.5 h-3.5 transition-opacity ${createdSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      {createdSort === "desc" ? (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      ) : (
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+                      )}
+                    </svg>
+                  </button>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
                 </th>
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -311,7 +320,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -358,11 +367,6 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={site.status} />
-                    {site.status === "WordPress" && (
-                      <span className="invisible group-hover:visible absolute z-10 ml-2 px-2 py-1 text-xs bg-[var(--bg-elevated)] border border-[var(--border-primary)] rounded-md shadow-lg whitespace-nowrap">
-                        Migration coming soon
-                      </span>
-                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums">
                     {countsLoaded
@@ -378,6 +382,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
                     {site.site_id || "—"}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
+                    {formatRelativeDate(site.created_at ?? "")}
                   </td>
                   <td className="px-4 py-3 text-[var(--text-muted)]">
                     {formatRelativeDate(site.last_updated)}
@@ -466,7 +473,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       <Modal
         open={deleteTarget !== null}
         onClose={closeDeleteModal}
-        title={deleteSteps ? "Delete Complete" : "Delete Site"}
+        title={deleteSteps ? "Move to Trash Complete" : "Move to Trash"}
         size="sm"
       >
         <div className="space-y-4">
@@ -474,40 +481,37 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
           {!deleteSteps && (
             <>
               <div className="flex items-start gap-3">
-                <div className="mt-0.5 w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
-                  <svg className="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <div className="mt-0.5 w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
                   </svg>
                 </div>
                 <div>
                   <p className="text-[var(--text-primary)] font-medium">
-                    Are you sure you want to delete <strong>{deleteTarget}</strong>?
+                    Move <strong>{deleteTarget}</strong> to trash?
                   </p>
                   <p className="text-sm text-[var(--text-muted)] mt-2">
-                    This will permanently remove:
+                    This will:
                   </p>
                   <ul className="text-sm text-[var(--text-muted)] mt-1 space-y-1.5">
-                    {deleteTargetSite?.staging_branch && (
-                      <li className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                        Staging branch: <span className="font-mono text-xs">{deleteTargetSite.staging_branch}</span>
-                      </li>
-                    )}
-                    <li className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
-                      Site files from Git (site.yaml, articles, assets)
-                    </li>
-                    {deleteTargetSite?.pages_project && (
+                    {deleteTargetSite?.custom_domain && (
                       <li className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0" />
-                        CF Pages project: <span className="font-mono text-xs">{deleteTargetSite.pages_project}</span>
+                        Disconnect domain: <span className="font-mono text-xs">{deleteTargetSite.custom_domain}</span>
                       </li>
                     )}
                     <li className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                      Dashboard entry (moved to trash)
+                      Remove published files from Git main
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                      Take domain offline (remove from KV)
                     </li>
                   </ul>
+                  <p className="text-sm text-green-400/80 mt-3">
+                    Staging branch and images are preserved. You can restore from trash.
+                  </p>
                 </div>
               </div>
 
@@ -518,9 +522,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                 <Button
                   onClick={confirmDelete}
                   loading={isPending}
-                  className="!bg-red-500 hover:!bg-red-600 !text-white"
+                  className="!bg-amber-600 hover:!bg-amber-700 !text-white"
                 >
-                  Delete Site
+                  Move to Trash
                 </Button>
               </div>
             </>

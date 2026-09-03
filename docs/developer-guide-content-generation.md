@@ -92,10 +92,10 @@ This is the most non-obvious choice in the migration, so it gets a section to it
 
 CloudGrid v0.8 supports Redis via `requires:` declaration in `cloudgrid.yaml`. Two modes:
 
-| Mode | Memory | Persistence | Eviction policy |
-|---|---|---|---|
-| Shared (`requires: [redis]`) | shared cluster | (depends on cluster config) | (depends) |
-| Private (`requires: [redis: private]`) | **64 MB cap** | **None — memory-only** | **`allkeys-lru`** |
+| Mode                                   | Memory         | Persistence                 | Eviction policy   |
+| -------------------------------------- | -------------- | --------------------------- | ----------------- |
+| Shared (`requires: [redis]`)           | shared cluster | (depends on cluster config) | (depends)         |
+| Private (`requires: [redis: private]`) | **64 MB cap**  | **None — memory-only**      | **`allkeys-lru`** |
 
 For caching, rate limiting, session storage — CloudGrid Redis is fine. **For a job queue, those three private-mode properties are footguns:**
 
@@ -105,15 +105,16 @@ For caching, rate limiting, session storage — CloudGrid Redis is fine. **For a
 
 ### Upstash gives us what BullMQ needs
 
-| Property | Upstash | CloudGrid private Redis |
-|---|---|---|
-| Persistence | Yes (AOF) | No |
-| Replication | Yes (multi-AZ on paid tiers) | No |
-| Eviction policy | `noeviction` (configurable) | `allkeys-lru` (fixed) |
-| Memory | 256 MB+ entry tier, scales | 64 MB hard cap |
-| Cost | Free tier covers dev; ~$5-10/mo for our prod load | Included in CloudGrid |
+| Property        | Upstash                                           | CloudGrid private Redis |
+| --------------- | ------------------------------------------------- | ----------------------- |
+| Persistence     | Yes (AOF)                                         | No                      |
+| Replication     | Yes (multi-AZ on paid tiers)                      | No                      |
+| Eviction policy | `noeviction` (configurable)                       | `allkeys-lru` (fixed)   |
+| Memory          | 256 MB+ entry tier, scales                        | 64 MB hard cap          |
+| Cost            | Free tier covers dev; ~$5-10/mo for our prod load | Included in CloudGrid   |
 
 The cost difference (~$5-10/mo) is trivial compared to:
+
 - Anthropic spend on lost-then-regenerated articles
 - Editorial trust in the system (silent job loss is the worst class of bug)
 - Engineering time investigating "why did this site not publish today" mysteries
@@ -121,6 +122,7 @@ The cost difference (~$5-10/mo) is trivial compared to:
 ### When CloudGrid Redis would be the right answer
 
 We're not anti-CloudGrid-Redis on principle. Use it for:
+
 - The dashboard's session store (if we ever add Redis-backed sessions)
 - AI Gateway response caching
 - Any **cache-style** workload where eviction is desired and persistence isn't required
@@ -137,7 +139,7 @@ content-pipeline:
   path: /pipeline
   env:
     NETWORK_REPO: atomicfuse/atomic-labs-network
-    CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd.atomic.cloudgrid.io
+    CONTENT_AGGREGATOR_URL: https://content-aggregator-v2-34cd--atomic.cloudgrid.io
   # Secrets: GITHUB_TOKEN, GEMINI_API_KEY, REDIS_URL ←─── new
 ```
 
@@ -248,10 +250,10 @@ Same payload regardless of which path enqueued it:
 ```ts
 // queue: "content-generation"
 type GenerateJobData = {
-  siteDomain: string;          // e.g. "coolnews-atl"
-  count: number;               // articles to produce in this batch
-  branch: string;              // "staging/<domain>" — required, prevents local-FS write path
-  runId?: string;              // present only when scheduler enqueued (parent flow ID)
+  siteDomain: string; // e.g. "coolnews-atl"
+  count: number; // articles to produce in this batch
+  branch: string; // "staging/<domain>" — required, prevents local-FS write path
+  runId?: string; // present only when scheduler enqueued (parent flow ID)
   triggeredBy: "manual" | "scheduled" | "scheduled-forced";
 };
 
@@ -264,24 +266,30 @@ The job's processor wraps `runContentGeneration(jobData, config)`. The agent fun
 **Important:** `runContentGeneration` has a top-level try/catch — it never throws. It returns a result object with `status: "error"` on failure. For BullMQ to see failures (and trigger retries / dead-lettering), the worker processor wrapper must inspect the result and throw when appropriate:
 
 ```ts
-async function processGenerateJob(job: Job<GenerateJobData>): Promise<BatchContentGenerationResult> {
+async function processGenerateJob(
+  job: Job<GenerateJobData>,
+): Promise<BatchContentGenerationResult> {
   const { siteDomain, branch, count } = job.data;
 
   // Pre-flight checks — throw UnrecoverableError BEFORE calling the agent
   const siteEntry = await findSiteEntry(siteDomain);
-  if (!siteEntry) throw new UnrecoverableError(`Site "${siteDomain}" not in dashboard-index`);
+  if (!siteEntry)
+    throw new UnrecoverableError(`Site "${siteDomain}" not in dashboard-index`);
 
   const brief = await readSiteBrief(siteDomain, branch);
-  if (!brief?.schedule) throw new UnrecoverableError(`No publishing schedule for ${siteDomain}`);
+  if (!brief?.schedule)
+    throw new UnrecoverableError(`No publishing schedule for ${siteDomain}`);
 
   // Call the agent — it returns a result, never throws
   const result = await runContentGeneration(config, siteDomain, branch, count);
 
   // Inspect result — if ZERO articles created and errors present, surface to BullMQ
-  const created = result.results.filter(r => r.status === "created").length;
+  const created = result.results.filter((r) => r.status === "created").length;
   if (created === 0 && result.results.length > 0) {
     // All articles failed — likely transient (LLM down, rate limit)
-    throw new Error(`All ${result.results.length} articles failed for ${siteDomain}`);
+    throw new Error(
+      `All ${result.results.length} articles failed for ${siteDomain}`,
+    );
   }
 
   // Partial success (some articles created, some failed) — treat as success.
@@ -411,12 +419,12 @@ Recall the three layers from the wizard guide. Content generation has its own ve
 
 ### What changed vs. the old model
 
-| Old | New |
-|---|---|
-| Layer 2 = the entire generation work, blocking | Layer 2 = just enqueue. Generation moved to Layer 3. |
-| No durable handoff between enqueuer and worker | Redis is the durable handoff. |
-| Enqueuer crash mid-run = lost work | Enqueuer crash = jobs already in queue, workers continue. |
-| One process did everything | Enqueuer (HTTP handler) and worker (BullMQ consumer) are separate concurrent paths in the same Node process. They communicate only through Redis. |
+| Old                                            | New                                                                                                                                               |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Layer 2 = the entire generation work, blocking | Layer 2 = just enqueue. Generation moved to Layer 3.                                                                                              |
+| No durable handoff between enqueuer and worker | Redis is the durable handoff.                                                                                                                     |
+| Enqueuer crash mid-run = lost work             | Enqueuer crash = jobs already in queue, workers continue.                                                                                         |
+| One process did everything                     | Enqueuer (HTTP handler) and worker (BullMQ consumer) are separate concurrent paths in the same Node process. They communicate only through Redis. |
 
 ### Why dashboard uses `waitUntilFinished` instead of always returning a jobId
 
@@ -436,14 +444,14 @@ The scheduler doesn't run in a request context where someone is waiting on a res
 
 This was a real architectural decision. Per-article would seem more granular and fault-tolerant — each article fails or succeeds independently, retries don't drag siblings down. But:
 
-| Concern | Per-site | Per-article |
-|---|---|---|
-| Maps to existing `runContentGeneration` boundary | ✅ One-line change | ❌ Major rewrite |
-| Aggregator API calls per generation run | 1 (paginate, 20 items, dedup, pick N) | N+ (each article needs its own item) |
-| GitHub commits per run | 1 batch commit per site | N commits per site, OR a coordinator job to batch (complex) |
-| `sync-kv.yml` runs per day at 10K articles | ~100 (one per site batch) | ~10,000 (one per article) → CI billing explosion |
-| Per-article failure isolation | **Already provided by `processItem`'s try/catch** — failures are returned as `{ status: "error" }`, don't throw | Granular but overkill given the existing isolation |
-| Retry token cost on real failure | Bounded per batch (~$3-8 worst case, rare) | Bounded per article — slightly cheaper, but the case is rare anyway |
+| Concern                                          | Per-site                                                                                                        | Per-article                                                         |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Maps to existing `runContentGeneration` boundary | ✅ One-line change                                                                                              | ❌ Major rewrite                                                    |
+| Aggregator API calls per generation run          | 1 (paginate, 20 items, dedup, pick N)                                                                           | N+ (each article needs its own item)                                |
+| GitHub commits per run                           | 1 batch commit per site                                                                                         | N commits per site, OR a coordinator job to batch (complex)         |
+| `sync-kv.yml` runs per day at 10K articles       | ~100 (one per site batch)                                                                                       | ~10,000 (one per article) → CI billing explosion                    |
+| Per-article failure isolation                    | **Already provided by `processItem`'s try/catch** — failures are returned as `{ status: "error" }`, don't throw | Granular but overkill given the existing isolation                  |
+| Retry token cost on real failure                 | Bounded per batch (~$3-8 worst case, rare)                                                                      | Bounded per article — slightly cheaper, but the case is rare anyway |
 
 **Decision: per-site jobs.** The existing `processItem` already isolates per-article failures inside a site batch. We don't need BullMQ to give us granularity the agent already provides. And avoiding the aggregator/CI/git-history multiplication is a substantial win.
 
@@ -502,11 +510,13 @@ parent: scheduler-run-<runId>            ← created by /scheduled-publish handl
 ```
 
 When all children resolve (success or terminal failure), BullMQ marks the parent ready. Parent's processor:
+
 1. Reads each child's `returnvalue` (success) or `failedReason` (failure)
 2. Builds the `SchedulerRunEntry`
 3. Writes to GitHub **once**
 
 For mid-run visibility (when editorial WANTS fresh state): a new endpoint `/api/scheduler/active-run`:
+
 ```ts
 // queries Redis directly, no GitHub flush
 // returns: { runId, total, completed, inFlight, failed, sites: [...] }
@@ -516,14 +526,14 @@ This is fresher than YAML snapshots ever could be (real-time, not flush-cadence-
 
 ### Why this is better
 
-| Property | Redis-accumulator | BullMQ Flows + live API |
-|---|---|---|
-| GitHub commits per run | N (or batched, ~5-20) | **1** |
-| Race conditions on YAML file | Yes (handled with retry) | None |
-| Mid-run visibility | YAML snapshots, stale by N seconds | Live API, real-time |
-| Implementation complexity | Custom flush coordination | Built into BullMQ Flows |
-| Editorial UX | Reads YAML | Reads YAML for history; live API for "what's happening now" |
-| Engineer UX | Reads YAML + log-grep | Bull Board + live API + YAML |
+| Property                     | Redis-accumulator                  | BullMQ Flows + live API                                     |
+| ---------------------------- | ---------------------------------- | ----------------------------------------------------------- |
+| GitHub commits per run       | N (or batched, ~5-20)              | **1**                                                       |
+| Race conditions on YAML file | Yes (handled with retry)           | None                                                        |
+| Mid-run visibility           | YAML snapshots, stale by N seconds | Live API, real-time                                         |
+| Implementation complexity    | Custom flush coordination          | Built into BullMQ Flows                                     |
+| Editorial UX                 | Reads YAML                         | Reads YAML for history; live API for "what's happening now" |
+| Engineer UX                  | Reads YAML + log-grep              | Bull Board + live API + YAML                                |
 
 Decision: Flows. The "incremental git history" feature isn't a feature — it was a workaround for not having a queue.
 
@@ -540,7 +550,7 @@ await flowProducer.add({
   queueName: "scheduler-run",
   data: { runId, timezone: schedCfg.timezone, forced: force, skipped },
   opts: {
-    jobId: `scheduler-run-${runId}`,  // deterministic — BullMQ rejects duplicate
+    jobId: `scheduler-run-${runId}`, // deterministic — BullMQ rejects duplicate
   },
   children,
 });
@@ -578,6 +588,7 @@ import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
 ```
 
 Capabilities engineers use:
+
 - Live state of every job
 - Retry a failed job manually
 - Drain the queue (emergency)
@@ -593,6 +604,7 @@ For the small "what's happening right now?" use case (unusual but real — e.g. 
 ### Manual generation users (the dashboard's existing toast)
 
 For the manual flow, the existing toast pattern works:
+
 - Success: "5 articles created — check the Worker Preview in 60s"
 - Permanent fail: "Generation failed: <reason>" (BullMQ's `failedReason` propagates through)
 
@@ -606,25 +618,25 @@ We're not adding Slack/email alerts in v1. Add when we observe a pattern that wa
 
 ## What changes vs. stays exactly the same
 
-| Concern | Today | After migration |
-|---|---|---|
-| `runContentGeneration()` agent function | Called directly from HTTP handler | **Unchanged.** Called from BullMQ worker. |
-| `processItem` per-article logic (route → generate → image → SEO → score) | Sequential awaits, cross-model fallback | **Unchanged.** |
-| `processWithConcurrency` (3 in-flight per agent run) | Used | **Unchanged.** |
-| Aggregator pagination + dedup | Per-site | **Unchanged.** |
-| Batch git commit at end | One commit per site batch | **Unchanged.** |
-| `sync-kv.yml` CI flow | Triggered by commit on staging branch | **Unchanged.** |
-| KV / R2 / Worker-side | (unrelated) | **Unchanged.** |
-| Dashboard `/api/agent/generate` route | Sync proxy to content-pipeline via HTTP | Enqueues directly to Redis (bypasses content-pipeline HTTP). `waitUntilFinished(90s)` + 202 fallback. `getAgentUrl()` pattern no longer used for this route. |
-| Dashboard `/api/agent/job/[id]` (new) | — | Queries BullMQ for state/progress |
-| `/scheduled-publish` endpoint | Inline runs `runScheduledPublish` synchronously | Enqueues a Flow, returns runId |
-| `runScheduledPublish` function | Iterates sites, calls runContentGeneration sequentially | Iterates sites, enqueues child jobs as Flow children |
-| `RunHistoryAccumulator` | In-memory, flushes per site | **Deleted.** Replaced by parent-job processor at end of run. |
-| `writeRunHistory(...)` | Called incrementally during run | Called once by parent-job processor at run end |
-| `/api/scheduler/active-run` (new) | — | Queries BullMQ for in-progress run state |
-| ContentGenerationPanel.tsx | Fake progress timer + 60s blocking fetch | **Unchanged for v1** (waitUntilFinished keeps the contract). Real polling deferred. |
-| Scheduler dashboard page | Reads `scheduler/history.json` | Same + adds optional "Current run" card calling the new API |
-| cloudgrid.yaml | (current) | + `REDIS_URL` secret on dashboard + content-pipeline |
+| Concern                                                                  | Today                                                   | After migration                                                                                                                                              |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `runContentGeneration()` agent function                                  | Called directly from HTTP handler                       | **Unchanged.** Called from BullMQ worker.                                                                                                                    |
+| `processItem` per-article logic (route → generate → image → SEO → score) | Sequential awaits, cross-model fallback                 | **Unchanged.**                                                                                                                                               |
+| `processWithConcurrency` (3 in-flight per agent run)                     | Used                                                    | **Unchanged.**                                                                                                                                               |
+| Aggregator pagination + dedup                                            | Per-site                                                | **Unchanged.**                                                                                                                                               |
+| Batch git commit at end                                                  | One commit per site batch                               | **Unchanged.**                                                                                                                                               |
+| `sync-kv.yml` CI flow                                                    | Triggered by commit on staging branch                   | **Unchanged.**                                                                                                                                               |
+| KV / R2 / Worker-side                                                    | (unrelated)                                             | **Unchanged.**                                                                                                                                               |
+| Dashboard `/api/agent/generate` route                                    | Sync proxy to content-pipeline via HTTP                 | Enqueues directly to Redis (bypasses content-pipeline HTTP). `waitUntilFinished(90s)` + 202 fallback. `getAgentUrl()` pattern no longer used for this route. |
+| Dashboard `/api/agent/job/[id]` (new)                                    | —                                                       | Queries BullMQ for state/progress                                                                                                                            |
+| `/scheduled-publish` endpoint                                            | Inline runs `runScheduledPublish` synchronously         | Enqueues a Flow, returns runId                                                                                                                               |
+| `runScheduledPublish` function                                           | Iterates sites, calls runContentGeneration sequentially | Iterates sites, enqueues child jobs as Flow children                                                                                                         |
+| `RunHistoryAccumulator`                                                  | In-memory, flushes per site                             | **Deleted.** Replaced by parent-job processor at end of run.                                                                                                 |
+| `writeRunHistory(...)`                                                   | Called incrementally during run                         | Called once by parent-job processor at run end                                                                                                               |
+| `/api/scheduler/active-run` (new)                                        | —                                                       | Queries BullMQ for in-progress run state                                                                                                                     |
+| ContentGenerationPanel.tsx                                               | Fake progress timer + 60s blocking fetch                | **Unchanged for v1** (waitUntilFinished keeps the contract). Real polling deferred.                                                                          |
+| Scheduler dashboard page                                                 | Reads `scheduler/history.json`                          | Same + adds optional "Current run" card calling the new API                                                                                                  |
+| cloudgrid.yaml                                                           | (current)                                               | + `REDIS_URL` secret on dashboard + content-pipeline                                                                                                         |
 
 The thing to internalize: **the agent itself doesn't change.** We're putting a queue in front of it. The blast radius of the migration is the orchestration layer (HTTP handlers, scheduler entry function), not the generation logic.
 
@@ -632,17 +644,17 @@ The thing to internalize: **the agent itself doesn't change.** We're putting a q
 
 ## Failure modes — what happens if X breaks
 
-| Failure | Detection | Recovery |
-|---|---|---|
-| Worker process crashes mid-job | BullMQ lease expires (~30s) | Another worker picks up, retries from start. Token cost: ~30s of LLM work re-spent. Article slugs are idempotent so no duplicates. |
-| Anthropic API down | `processItem` cross-model fallback to OpenAI | If both fail: per-article error captured in batch result, batch continues. No retry needed. |
-| GitHub commit fails (rate limit, transient) | `runContentGeneration` returns error result; worker wrapper throws | BullMQ retries with exponential backoff (30s, 60s). After 3 attempts → failed. |
-| Site missing from dashboard-index | Worker wrapper throws `UnrecoverableError` before calling agent | No retry. Job moves straight to failed-permanent. Visible in Bull Board. |
-| Redis connection lost | Worker pause; jobs queue up at producers | Workers reconnect when Redis back. Queue continues. Producers (dashboard, scheduler) error out cleanly. |
-| Upstash Redis dies / data loss | Hard failure — we lose the queue | Recovery: GitHub commits are still source of truth for content. Editor manually re-runs scheduler. We don't have an audit log of "what was enqueued" — accept this; Upstash uptime is high. |
-| `scheduler/history.json` GitHub write fails (parent-job processor) | BullMQ retries the parent | Children's results are still in BullMQ. Worst case: history entry delayed a few minutes. |
-| Two cron ticks overlap (run takes >1 hour) | Deterministic `jobId` rejects duplicate | Parent job uses `jobId: scheduler-run-YYYY-MM-DD-HH`. BullMQ rejects the duplicate `add()` if a job with that ID is still active. Cron tick returns early with `{ status: "skipped", reason: "active run in progress" }`. |
-| Content-pipeline down, dashboard up | Dashboard enqueues to Redis, but no worker consuming | `waitUntilFinished` times out at 90s, returns 202 + jobId. Jobs queue up in Redis. Once pipeline restarts, worker drains the backlog. User sees "still working" during the gap. |
+| Failure                                                            | Detection                                                          | Recovery                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Worker process crashes mid-job                                     | BullMQ lease expires (~30s)                                        | Another worker picks up, retries from start. Token cost: ~30s of LLM work re-spent. Article slugs are idempotent so no duplicates.                                                                                        |
+| Anthropic API down                                                 | `processItem` cross-model fallback to OpenAI                       | If both fail: per-article error captured in batch result, batch continues. No retry needed.                                                                                                                               |
+| GitHub commit fails (rate limit, transient)                        | `runContentGeneration` returns error result; worker wrapper throws | BullMQ retries with exponential backoff (30s, 60s). After 3 attempts → failed.                                                                                                                                            |
+| Site missing from dashboard-index                                  | Worker wrapper throws `UnrecoverableError` before calling agent    | No retry. Job moves straight to failed-permanent. Visible in Bull Board.                                                                                                                                                  |
+| Redis connection lost                                              | Worker pause; jobs queue up at producers                           | Workers reconnect when Redis back. Queue continues. Producers (dashboard, scheduler) error out cleanly.                                                                                                                   |
+| Upstash Redis dies / data loss                                     | Hard failure — we lose the queue                                   | Recovery: GitHub commits are still source of truth for content. Editor manually re-runs scheduler. We don't have an audit log of "what was enqueued" — accept this; Upstash uptime is high.                               |
+| `scheduler/history.json` GitHub write fails (parent-job processor) | BullMQ retries the parent                                          | Children's results are still in BullMQ. Worst case: history entry delayed a few minutes.                                                                                                                                  |
+| Two cron ticks overlap (run takes >1 hour)                         | Deterministic `jobId` rejects duplicate                            | Parent job uses `jobId: scheduler-run-YYYY-MM-DD-HH`. BullMQ rejects the duplicate `add()` if a job with that ID is still active. Cron tick returns early with `{ status: "skipped", reason: "active run in progress" }`. |
+| Content-pipeline down, dashboard up                                | Dashboard enqueues to Redis, but no worker consuming               | `waitUntilFinished` times out at 90s, returns 202 + jobId. Jobs queue up in Redis. Once pipeline restarts, worker drains the backlog. User sees "still working" during the gap.                                           |
 
 ---
 

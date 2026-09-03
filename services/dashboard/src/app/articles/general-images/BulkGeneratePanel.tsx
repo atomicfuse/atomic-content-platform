@@ -273,7 +273,7 @@ export function BulkGeneratePanel({
               </h3>
               <div className="rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden max-h-60 overflow-y-auto">
                 <table className="w-full text-xs">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-elevated)]">
                       <th className="text-left px-3 py-2 text-[var(--text-muted)] font-medium">
                         Site

@@ -3,10 +3,48 @@
  * or when errors occur in the pipeline.
  */
 
+import { DASHBOARD_PUBLIC_URL } from "./config.js";
+
 export interface NotificationConfig {
   telegramBotToken?: string;
   telegramChatId?: string;
   slackWebhookUrl?: string;
+}
+
+/**
+ * Alert severity. `critical` is for site-down / serving-broken conditions
+ * (e.g. a KV sync failure); `not_critical` is for content shortfalls that
+ * leave the live site unaffected (no/partial articles, default images,
+ * generation job errors). Rendered as a prefix on every Slack/Telegram message.
+ */
+export type Severity = "critical" | "not_critical";
+
+const SEVERITY_PREFIX: Record<Severity, string> = {
+  critical: "🔴 CRITICAL — ",
+  not_critical: "🟡 NOT CRITICAL — ",
+};
+
+/** Prepend the severity label to a message body. */
+function withSeverity(severity: Severity, message: string): string {
+  return SEVERITY_PREFIX[severity] + message;
+}
+
+/** Dispatch a message to all configured channels (Telegram + Slack). */
+async function dispatch(config: NotificationConfig, text: string): Promise<void> {
+  const channels = ["telegram", "slack"] as const;
+  const results = await Promise.allSettled([
+    config.telegramBotToken ? sendTelegram(config, text) : Promise.resolve(),
+    config.slackWebhookUrl ? sendSlack(config, text) : Promise.resolve(),
+  ]);
+
+  // allSettled deliberately swallows failures so one dead channel never blocks
+  // the other — but an UNLOGGED failure makes a delivery outage indistinguishable
+  // from "nothing was wrong", which is how a revoked webhook would present.
+  results.forEach((result, i) => {
+    if (result.status === "rejected") {
+      console.error(`[notifications] ${channels[i]} delivery failed:`, result.reason);
+    }
+  });
 }
 
 /**
@@ -24,12 +62,7 @@ export async function notifyReviewNeeded(
     params.dashboardUrl ? `\n${params.dashboardUrl}` : ""
   }`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 /**
@@ -41,16 +74,15 @@ export async function notifyError(
     agent: string;
     error: string;
     site?: string;
+    /** Flag a site-down / serving-broken condition as 🔴 CRITICAL. Pipeline
+     *  job/generation errors leave the live site up, so they default to
+     *  🟡 NOT CRITICAL. */
+    critical?: boolean;
   },
 ): Promise<void> {
   const message = `Pipeline error in ${params.agent}${params.site ? ` (${params.site})` : ""}: ${params.error}`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity(params.critical ? "critical" : "not_critical", message));
 }
 
 /**
@@ -88,10 +120,7 @@ export async function notifySummary(
 
   const message = lines.join("\n");
 
-  await Promise.allSettled([
-    config.telegramBotToken ? sendTelegram(config, message) : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 export async function notifyImageDefaultFallback(
@@ -103,19 +132,19 @@ export async function notifyImageDefaultFallback(
     reason: string;
   },
 ): Promise<void> {
-  const articleUrl = `https://${params.site}/articles/${params.slug}`;
+  // A live article URL is NOT derivable from `params.site`: that is the siteId
+  // (folder name), not a hostname, and articles are served at /<slug>/ — not
+  // /articles/<slug>. The old template produced a dead link in every alert
+  // (https://dogslabs/articles/<slug> — no such host, and the path 404s).
+  // Link the dashboard instead: always valid, and it is where the image is fixed.
+  const reviewUrl = `${DASHBOARD_PUBLIC_URL}/articles/general-images`;
   const message =
     `Image generation failed for site: ${params.site}\n` +
-    `Article: "${params.articleTitle}" (${articleUrl})\n` +
+    `Article: "${params.articleTitle}" (${params.slug})\n` +
     `Reason: ${params.reason}\n` +
-    `The article is using the default site image.`;
+    `The article is using the default site image — review: ${reviewUrl}`;
 
-  await Promise.allSettled([
-    config.telegramBotToken
-      ? sendTelegram(config, message)
-      : Promise.resolve(),
-    config.slackWebhookUrl ? sendSlack(config, message) : Promise.resolve(),
-  ]);
+  await dispatch(config, withSeverity("not_critical", message));
 }
 
 async function sendTelegram(
@@ -138,15 +167,44 @@ async function sendTelegram(
   );
 }
 
+/**
+ * Post a message to Slack VERBATIM — no severity prefix added.
+ * Use this for alert templates that already carry their own emoji prefix.
+ * Returns `true` on a successful post, `false` if no webhook is configured
+ * or the send fails (never throws).
+ */
+export async function notifyAttention(config: NotificationConfig, message: string): Promise<boolean> {
+  if (!config.slackWebhookUrl) return false;
+  try {
+    await sendSlack(config, message);
+    return true;
+  } catch (e) {
+    console.error(`[alerts] slack send failed: ${e instanceof Error ? e.message : String(e)}`);
+    return false;
+  }
+}
+
 async function sendSlack(
   config: NotificationConfig,
   text: string,
 ): Promise<void> {
   if (!config.slackWebhookUrl) return;
 
-  await fetch(config.slackWebhookUrl, {
+  const response = await fetch(config.slackWebhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
   });
+
+  // A revoked webhook, a deleted channel or a removed app answers with a 4xx
+  // BODY rather than a network error, so fetch RESOLVES. Without this check the
+  // caller treats the post as delivered: notifyAttention returns true, the
+  // alert state records lastFiredAt, and nothing ever retries or complains.
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(
+      `Slack webhook returned ${response.status} ${response.statusText}` +
+      (body ? `: ${body.slice(0, 200)}` : ""),
+    );
+  }
 }

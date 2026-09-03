@@ -17,10 +17,16 @@ import {
   readFile,
   commitFile,
   commitBatch,
+  clearTreeCache,
 } from "../../lib/github.js";
 import type { GitHubConfig } from "../../lib/github.js";
 import { notifyImageDefaultFallback } from "../../lib/notifications.js";
 import type { NotificationConfig } from "../../lib/notifications.js";
+import { isGeneralImage } from "../../lib/general-image.js";
+import { recordImageGenEvent } from "../../stats/recorder.js";
+import { recordImageUsage } from "../../costs/recorder.js";
+import { incrementR2Tally } from "../../stats/r2-tally.js";
+import { upsertArticleMeta, upsertArticlesBatch } from "../../lib/db/articles.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,27 +108,128 @@ const pendingImages = new Map<string, PendingImage>();
  * Track a triggered image request. If no callback arrives within the timeout,
  * fires a Slack/Telegram alert so the failure is visible.
  */
+/**
+ * Reads an article's current `featuredImage` from the authoritative store.
+ * Resolves to the value, `undefined` when the article has no image, or `null`
+ * when it could not be read at all.
+ */
+export type ImageVerifier = (
+  siteDomain: string,
+  slug: string,
+) => Promise<string | undefined | null>;
+
+/**
+ * Decide whether a timed-out image request warrants an alert.
+ *
+ * The in-process flag is only trustworthy when it says "succeeded". This service
+ * runs 5 replicas and n8n's callback is load-balanced, so it usually lands on a
+ * different replica than the one holding the timer — "no success seen here"
+ * means nothing on its own. That is what fired 4 false alerts on 2026-08-27 for
+ * articles whose images had been delivered in ~22s.
+ *
+ * `featuredImage` read from Git is the authoritative answer. An unverifiable
+ * read alerts rather than staying quiet: every failure in this subsystem so far
+ * has been a silence, and a false positive is cheaper than a lost image.
+ */
+export function shouldAlertOnImageTimeout(
+  succeededInThisProcess: boolean,
+  featuredImage: string | undefined | null,
+  domain: string,
+): boolean {
+  if (succeededInThisProcess) return false;
+  if (featuredImage === null) return true;
+  return isGeneralImage(featuredImage, domain);
+}
+
+/**
+ * Build an {@link ImageVerifier} that reads the article's frontmatter from Git.
+ *
+ * Git rather than KV: KV is only re-seeded minutes later by CI, so at the 300s
+ * mark it is not yet authoritative. Tries the staging branch (where the image
+ * callback commits) before main (where auto-publish copies it); after a publish
+ * the two are identical, so either answers correctly.
+ */
+export function createGitImageVerifier(
+  github: GitHubConfig,
+  networkRepo: string,
+): ImageVerifier {
+  return async (siteDomain, slug) => {
+    const octokit = createOctokit(github);
+    const path = `sites/${siteDomain}/articles/${slug}.md`;
+
+    for (const branch of [`staging/${siteDomain}`, "main"]) {
+      try {
+        clearTreeCache(branch);
+        const raw = await readFile(octokit, networkRepo, path, branch);
+        const featured = matter(raw).data.featuredImage ?? matter(raw).data.featured_image;
+        return typeof featured === "string" ? featured : undefined;
+      } catch {
+        // Not on this branch (or unreadable) — try the next one.
+      }
+    }
+    return null;
+  };
+}
+
+/**
+ * Track a triggered image request. If no callback arrives within the timeout,
+ * verify the article against Git and alert only if it really has no image.
+ */
 export function trackPendingImage(
   requestId: string,
   siteDomain: string,
   slug: string,
   articleTitle: string,
   notifications: NotificationConfig,
+  verifier?: ImageVerifier,
 ): void {
   const timer = setTimeout(() => {
-    pendingImages.delete(requestId);
-    const reason = `n8n image callback not received within ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s — ` +
-      `n8n may have failed to deliver the result (timeout, network error, or crash)`;
-    console.error(
-      `[n8n-image] TIMEOUT — no callback for ${siteDomain}/${slug} ` +
-      `(request_id=${requestId}) after ${IMAGE_CALLBACK_TIMEOUT_MS / 1000}s`,
-    );
-    void notifyImageDefaultFallback(notifications, {
-      site: siteDomain,
-      articleTitle,
-      slug,
-      reason,
-    });
+    // Async work is fired-and-contained: this callback must never throw into
+    // the timer queue.
+    void (async () => {
+      pendingImages.delete(requestId);
+
+      const imageKey = `${siteDomain}/${slug}`;
+      const succeeded = successfulImages.has(imageKey);
+
+      // `succeeded` is per-replica and therefore only meaningful when true.
+      // Otherwise ask Git what the article actually looks like.
+      let featuredImage: string | undefined | null = null;
+      let verified = false;
+      if (!succeeded && verifier) {
+        try {
+          featuredImage = await verifier(siteDomain, slug);
+          verified = featuredImage !== null;
+        } catch (err) {
+          console.error(`[n8n-image] image verification failed for ${imageKey}:`, err);
+          featuredImage = null;
+        }
+      }
+
+      if (!shouldAlertOnImageTimeout(succeeded, featuredImage, siteDomain)) {
+        console.log(
+          `[n8n-image] TIMEOUT for ${imageKey} but the article has a real image — ` +
+          `no alert (callback was handled by another replica)`,
+        );
+        return;
+      }
+
+      const seconds = IMAGE_CALLBACK_TIMEOUT_MS / 1000;
+      const reason = verified
+        ? `n8n image callback not received within ${seconds}s and the article still uses the default image`
+        : `n8n image callback not received within ${seconds}s — could not verify the article's current image`;
+
+      console.error(
+        `[n8n-image] TIMEOUT — no callback for ${imageKey} ` +
+        `(request_id=${requestId}) after ${seconds}s`,
+      );
+      void notifyImageDefaultFallback(notifications, {
+        site: siteDomain,
+        articleTitle,
+        slug,
+        reason,
+      });
+    })();
   }, IMAGE_CALLBACK_TIMEOUT_MS);
 
   // Don't let the timer prevent process exit
@@ -370,6 +477,21 @@ async function flushBulkBuffer(): Promise<void> {
       console.log(
         `[n8n-image] Bulk commit OK → ${files.length} files on branch ${branch}`,
       );
+
+      // Dual-write to MongoDB (supplementary — never fails the pipeline)
+      const mongoDocs = files.map((f) => {
+        const parsed = matter(f.content);
+        // Extract siteDomain from path: sites/<domain>/articles/<slug>.md
+        const parts = f.path.split("/");
+        const domain = parts[1] ?? "";
+        return {
+          domain,
+          slug: f.slug,
+          branch,
+          frontmatter: { featuredImage: parsed.data["featuredImage"], image_alt: parsed.data["image_alt"] } as Record<string, unknown>,
+        };
+      });
+      await upsertArticlesBatch(mongoDocs);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
@@ -498,11 +620,24 @@ export async function handleImageCallback(
     return { ok: false, message: "Missing required fields: site_domain, slug, branch" };
   }
 
+  // Fire-and-forget recorder helper — site_domain and slug are guaranteed present here.
+  const recordOutcome = (ok: boolean, error: string | null): void => {
+    void recordImageGenEvent({
+      siteDomain: site_domain,
+      slug,
+      ok,
+      provider: payload.meta?.provider ?? null,
+      error,
+      at: new Date(),
+    });
+  };
+
   // Check for error status from n8n
   if (status && status !== "ok") {
     const reason = payload.error ?? `n8n status: ${status}`;
     console.error(`${tag} FAIL — n8n error: ${reason} (provider=${provider}, duration=${durationMs ?? "?"}ms)`);
     alertFailure(`n8n image generation failed: ${reason}`);
+    recordOutcome(false, reason);
     markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: reason };
   }
@@ -510,12 +645,20 @@ export async function handleImageCallback(
   if (!payload.data_base64) {
     console.error(`${tag} FAIL — no image data in payload`);
     alertFailure("n8n returned no image data");
+    recordOutcome(false, "No image data in callback");
     markBulkCallbackReceived(site_domain, slug);
     return { ok: false, message: "No image data in callback" };
   }
 
   const imageData = Buffer.from(payload.data_base64, "base64");
   const rawSizeKB = (imageData.length / 1024).toFixed(0);
+
+  // Mark success immediately — n8n delivered a valid callback with image data.
+  // This prevents the 300s "callback not received" timer from firing a false
+  // alert if processN8nImageResult partially fails (e.g., R2 upload succeeds
+  // but Git commit fails due to SHA conflict). The image is valid regardless.
+  const imageKey = `${site_domain}/${slug}`;
+  markImageSuccess(imageKey);
 
   try {
     await processN8nImageResult({
@@ -526,12 +669,14 @@ export async function handleImageCallback(
       branch,
       github,
     });
-    const imageKey = `${site_domain}/${slug}`;
-    markImageSuccess(imageKey);
     console.log(
       `${tag} SUCCESS — image delivered (provider=${provider}, ` +
       `n8n_duration=${durationMs ?? "?"}ms, raw_size=${rawSizeKB}KB)`,
     );
+    recordOutcome(true, null);
+    // source approximation: most images originate from the scheduler; dashboard-triggered
+    // images share the same callback path but are not distinguishable here.
+    void recordImageUsage({ siteDomain: site_domain, source: "scheduler", model: "gemini-2.5-flash-image", images: 1 });
     markBulkCallbackReceived(site_domain, slug);
     return { ok: true, message: `Image processed for ${site_domain}/${slug}` };
   } catch (err) {
@@ -583,14 +728,39 @@ export async function processN8nImageResult(
   }
   console.log(`${tag} R2 upload OK → ${r2Key}`);
 
+  // Increment R2 usage tally (fire-and-forget, non-blocking)
+  incrementR2Tally(optimized.length, 1).catch((err) =>
+    console.warn("[r2-tally] increment failed:", err),
+  );
+
   // 3. Read article, update frontmatter, commit (or buffer for bulk mode).
   const octokit = createOctokit(github);
   const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
   const imageUrl = `/assets/images/${slug}.webp`;
 
+  // Force a fresh tree fetch — the cache may be stale from auto-publish or a
+  // prior operation that ran between the article commit and this callback
+  // (the tree cache has no TTL and is only cleared by explicit calls).
+  clearTreeCache(branch);
+
   if (isPartOfBulkRun(siteDomain, slug)) {
     // Bulk mode: buffer for single batch commit when all callbacks arrive
-    const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+    let rawContent: string;
+    try {
+      rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
+    } catch (readErr) {
+      const readMsg = readErr instanceof Error ? readErr.message : String(readErr);
+      const isNotFound = readMsg.includes("got nothing") || readMsg.includes("Not Found") || readMsg.includes("404");
+      if (isNotFound) {
+        // Article lost (auto-publish race reset the staging branch before this
+        // callback arrived). Image is already in R2 — persist to MongoDB so the
+        // article can pick it up if regenerated, and move on.
+        console.warn(`${tag} Article not found on any branch — image saved to R2 only (${r2Key})`);
+        await upsertArticleMeta(siteDomain, slug, branch, { featuredImage: imageUrl, image_alt: altText });
+        return;
+      }
+      throw readErr;
+    }
     const parsed = matter(rawContent);
     parsed.data["featuredImage"] = imageUrl;
     parsed.data["image_alt"] = altText;
@@ -606,7 +776,10 @@ export async function processN8nImageResult(
     const MAX_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const rawContent = await readFile(octokit, github.repo, articlePath, branch);
+        // Clear again inside the queue — another operation may have re-populated
+        // the cache while this callback waited in the per-branch queue.
+        clearTreeCache(branch);
+        const rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
 
         const parsed = matter(rawContent);
         parsed.data["featuredImage"] = imageUrl;
@@ -622,6 +795,13 @@ export async function processN8nImageResult(
         });
 
         console.log(`${tag} Git commit OK → ${articlePath} (branch: ${branch})`);
+
+        // Dual-write to MongoDB (supplementary — never fails the pipeline)
+        await upsertArticleMeta(siteDomain, slug, branch, {
+          featuredImage: imageUrl,
+          image_alt: altText,
+        });
+
         return; // success
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -633,8 +813,53 @@ export async function processN8nImageResult(
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
+
+        // Article gone (auto-publish race). Image is already in R2 — persist
+        // to MongoDB and succeed instead of triggering a noisy alert.
+        const isNotFound = msg.includes("got nothing") || msg.includes("Not Found") || msg.includes("404");
+        if (isNotFound) {
+          console.warn(`${tag} Article not found on any branch — image saved to R2 only (${r2Key})`);
+          await upsertArticleMeta(siteDomain, slug, branch, { featuredImage: imageUrl, image_alt: altText });
+          return;
+        }
         throw err;
       }
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// readArticleWithFallback — try staging branch first, fall back to main
+// ---------------------------------------------------------------------------
+
+/**
+ * Read an article file from the given branch, falling back to `main` if the
+ * file isn't found on the staging branch. Auto-publish may have merged the
+ * article to main and reset the staging branch between the article commit
+ * and this image callback arriving.
+ */
+async function readArticleWithFallback(
+  octokit: ReturnType<typeof createOctokit>,
+  repo: string,
+  articlePath: string,
+  branch: string,
+  tag: string,
+): Promise<string> {
+  try {
+    return await readFile(octokit, repo, articlePath, branch);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Only fall back for "file not found" — not for auth errors, network issues, etc.
+    if (!msg.includes("got nothing") && !msg.includes("Not Found") && !msg.includes("404")) {
+      throw err;
+    }
+    if (branch === "main") throw err; // already on main, no fallback
+
+    console.warn(
+      `${tag} Article not found on ${branch}, trying main ` +
+      `(auto-publish may have reset staging)`,
+    );
+    clearTreeCache("main");
+    return await readFile(octokit, repo, articlePath, "main");
+  }
 }

@@ -36,9 +36,9 @@ export function DomainsTable({ initialDomains }: DomainsTableProps): React.React
         </button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-[var(--border-secondary)]">
+      <div className="overflow-auto max-h-[80vh] rounded-lg border border-[var(--border-secondary)]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-elevated)]">
               <th className="text-left px-4 py-2.5 font-medium text-[var(--text-secondary)]">Domain</th>
               <th className="text-left px-4 py-2.5 font-medium text-[var(--text-secondary)]">Status</th>
