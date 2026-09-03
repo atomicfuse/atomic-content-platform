@@ -719,6 +719,10 @@ async function patchSiteConfigDomain(siteId: string, customDomain: string): Prom
         `dashboard: update domain to ${customDomain}`,
         stagingBranch,
       );
+      // Dual-write: without this the next save reads the stale Mongo doc and
+      // reverts site.yaml to the TLD-less siteId (see CLAUDE.md, "Mongo
+      // Dual-Write After Git Mutations").
+      await upsertSiteConfig(siteId, siteConfig);
     }
   } catch (err) {
     console.warn('[patchSiteConfigDomain] Failed to update site.yaml', err);

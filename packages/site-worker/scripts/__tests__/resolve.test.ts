@@ -11,6 +11,7 @@ import {
   selectConditionalOverrides,
   stripModeKeys,
   stripOverrideMetaFields,
+  resolveCanonicalDomain,
   type OverrideConfig,
 } from '../lib/resolve';
 
@@ -602,5 +603,102 @@ describe('resolveSharedPageVars', () => {
   it('returns unchanged HTML when vars is empty', () => {
     const html = '<p>{{site_name}}</p>';
     expect(resolveSharedPageVars(html, {})).toBe('<p>{{site_name}}</p>');
+  });
+});
+
+// ---------- resolveCanonicalDomain ----------
+
+describe('resolveCanonicalDomain', () => {
+  it('prefers site.yaml domain when it is a real domain', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'buzzsoaps',
+        siteDomain: 'buzzsoaps.com',
+        indexDomain: 'other.com',
+        hostnames: ['third.com'],
+      }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('falls back to the dashboard-index custom_domain when site.yaml has no TLD', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'buzzsoaps',
+        siteDomain: 'buzzsoaps',
+        indexDomain: 'buzzsoaps.com',
+        hostnames: [],
+      }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('does not assume the custom domain is siteId + .com', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'muvizzcom',
+        siteDomain: 'muvizzcom',
+        indexDomain: 'muvizz.com',
+        hostnames: [],
+      }),
+    ).toBe('muvizz.com');
+  });
+
+  it('falls back to a CLI hostname when neither config source has a TLD', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'buzzsoaps',
+        siteDomain: 'buzzsoaps',
+        hostnames: ['buzzsoaps', 'buzzsoaps.com'],
+      }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('never picks a preview hostname over the siteId', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'buzzsoaps',
+        siteDomain: 'buzzsoaps',
+        hostnames: ['buzzsoaps-preview.pages.dev', 'atomic-site-worker.workers.dev'],
+      }),
+    ).toBe('buzzsoaps');
+  });
+
+  it('skips preview hostnames but still finds a real one after them', () => {
+    expect(
+      resolveCanonicalDomain({
+        siteId: 'buzzsoaps',
+        siteDomain: 'buzzsoaps',
+        hostnames: ['buzzsoaps.pages.dev', 'buzzsoaps.com'],
+      }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('falls back to the siteId when nothing else has a TLD', () => {
+    expect(resolveCanonicalDomain({ siteId: 'buzzsoaps', siteDomain: 'buzzsoaps' })).toBe(
+      'buzzsoaps',
+    );
+  });
+
+  it('tolerates a missing site.yaml domain', () => {
+    expect(
+      resolveCanonicalDomain({ siteId: 'buzzsoaps', indexDomain: 'buzzsoaps.com' }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('normalises case and surrounding whitespace', () => {
+    expect(
+      resolveCanonicalDomain({ siteId: 'buzzsoaps', siteDomain: '  BuzzSoaps.COM ' }),
+    ).toBe('buzzsoaps.com');
+  });
+
+  it('ignores a trailing dot, which is not a real TLD', () => {
+    expect(resolveCanonicalDomain({ siteId: 'buzzsoaps', siteDomain: 'buzzsoaps.' })).toBe(
+      'buzzsoaps',
+    );
+  });
+
+  it('supports multi-part TLDs', () => {
+    expect(
+      resolveCanonicalDomain({ siteId: 'coolnews', indexDomain: 'coolnews.co.uk' }),
+    ).toBe('coolnews.co.uk');
   });
 });

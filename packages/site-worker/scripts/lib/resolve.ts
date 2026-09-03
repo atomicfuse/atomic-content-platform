@@ -391,3 +391,65 @@ export function stripOverrideMetaFields(config: Record<string, unknown>): Record
   void override_id; void name; void priority; void targets; void activation;
   return rest;
 }
+
+// ---------- Canonical domain ----------
+
+/** Hostnames that identify a preview deployment, never a site's real domain. */
+const PREVIEW_HOST_SUFFIXES = ['.pages.dev', '.workers.dev'] as const;
+
+/**
+ * A value is usable as a domain only if it has a real TLD — i.e. a dot with
+ * something after it. `buzzsoaps` and `buzzsoaps.` both fail; `buzzsoaps.com`
+ * and `coolnews.co.uk` both pass.
+ */
+export function isRealDomain(value: string | undefined): boolean {
+  if (!value) return false;
+  const dot = value.lastIndexOf('.');
+  return dot > 0 && dot < value.length - 1;
+}
+
+function normaliseHost(value: string | undefined): string | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  return trimmed ? trimmed : undefined;
+}
+
+export interface CanonicalDomainSources {
+  /** Site folder name — the KV siteId. Last-resort fallback. */
+  siteId: string;
+  /** `domain:` from sites/<siteId>/site.yaml. */
+  siteDomain?: string;
+  /** `custom_domain` for this site from dashboard-index.yaml. */
+  indexDomain?: string;
+  /** Hostnames passed positionally to `seed:kv <siteId> [hostname ...]`. */
+  hostnames?: string[];
+}
+
+/**
+ * Resolves the hostname a site should present as — the value that feeds
+ * `support_email`, newsletter forms, and canonical URLs.
+ *
+ * Sites scaffolded from CSV import store the *siteId* in `site.yaml`'s
+ * `domain:` (the importer strips the TLD), so that field alone yields
+ * `info@buzzsoaps`. `dashboard-index.yaml` holds the authoritative
+ * `custom_domain`, and CI already passes it to seed-kv positionally, so both
+ * are consulted before giving up.
+ *
+ * Mirrors `getCanonicalDomain()` in `src/lib/config.ts`, which applies the same
+ * precedence at request time.
+ */
+export function resolveCanonicalDomain(sources: CanonicalDomainSources): string {
+  const siteDomain = normaliseHost(sources.siteDomain);
+  if (isRealDomain(siteDomain)) return siteDomain!;
+
+  const indexDomain = normaliseHost(sources.indexDomain);
+  if (isRealDomain(indexDomain)) return indexDomain!;
+
+  for (const raw of sources.hostnames ?? []) {
+    const host = normaliseHost(raw);
+    if (!isRealDomain(host)) continue;
+    if (PREVIEW_HOST_SUFFIXES.some((suffix) => host!.endsWith(suffix))) continue;
+    return host!;
+  }
+
+  return sources.siteId;
+}

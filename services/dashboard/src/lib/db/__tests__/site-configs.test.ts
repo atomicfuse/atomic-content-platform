@@ -79,6 +79,70 @@ describe("site-config DB helpers", () => {
     warnSpy.mockRestore();
   });
 
+  // The collection is keyed on the siteId (the site folder name), which for
+  // CSV-imported sites is the domain with its TLD stripped. Stamping that key
+  // over config.domain is what reverted `buzzsoaps.com` back to `buzzsoaps`
+  // in site.yaml on every dashboard save.
+  it("upsertSiteConfig preserves the config's real domain alongside the key", async () => {
+    const { upsertSiteConfig } = await import("../site-configs.js");
+    mockUpdateOne.mockResolvedValueOnce({ acknowledged: true });
+    await upsertSiteConfig("buzzsoaps", { domain: "buzzsoaps.com", theme: "dark" });
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { domain: "buzzsoaps" },
+      {
+        $set: expect.objectContaining({
+          domain: "buzzsoaps",
+          site_domain: "buzzsoaps.com",
+          theme: "dark",
+        }),
+      },
+      { upsert: true },
+    );
+  });
+
+  it("upsertSiteConfig does not record a site_domain that is only the siteId", async () => {
+    const { upsertSiteConfig } = await import("../site-configs.js");
+    mockUpdateOne.mockResolvedValueOnce({ acknowledged: true });
+    await upsertSiteConfig("buzzsoaps", { domain: "buzzsoaps", theme: "dark" });
+    const [, update] = mockUpdateOne.mock.calls[0]!;
+    expect(update.$set.domain).toBe("buzzsoaps");
+    expect(update.$set.site_domain).toBeUndefined();
+  });
+
+  it("getSiteConfig restores the real domain from site_domain", async () => {
+    const { getSiteConfig } = await import("../site-configs.js");
+    mockFindOne.mockResolvedValueOnce({
+      _id: "x",
+      domain: "buzzsoaps",
+      site_domain: "buzzsoaps.com",
+      theme: "dark",
+      updatedAt: new Date(),
+    });
+    const result = await getSiteConfig("buzzsoaps");
+    expect(result).toEqual({ domain: "buzzsoaps.com", theme: "dark" });
+  });
+
+  it("getSiteConfig round-trips a real domain unchanged", async () => {
+    const { upsertSiteConfig, getSiteConfig } = await import("../site-configs.js");
+    mockUpdateOne.mockResolvedValueOnce({ acknowledged: true });
+    await upsertSiteConfig("buzzsoaps", { domain: "buzzsoaps.com", theme: "dark" });
+    const [, update] = mockUpdateOne.mock.calls[0]!;
+    mockFindOne.mockResolvedValueOnce({ _id: "x", ...update.$set });
+    expect(await getSiteConfig("buzzsoaps")).toEqual({
+      domain: "buzzsoaps.com",
+      theme: "dark",
+    });
+  });
+
+  it("getSiteConfig leaves legacy docs without site_domain untouched", async () => {
+    const { getSiteConfig } = await import("../site-configs.js");
+    mockFindOne.mockResolvedValueOnce({ _id: "x", domain: "buzzsoaps", theme: "dark" });
+    expect(await getSiteConfig("buzzsoaps")).toEqual({
+      domain: "buzzsoaps",
+      theme: "dark",
+    });
+  });
+
   it("deleteSiteConfig deletes by domain", async () => {
     const { deleteSiteConfig } = await import("../site-configs.js");
     mockDeleteOne.mockResolvedValueOnce({ acknowledged: true });

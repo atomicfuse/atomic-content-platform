@@ -14,6 +14,7 @@
     "deploy:staging": "IS_STAGING=true pnpm build && wrangler deploy --config dist/server/wrangler.staging.json",
     "deploy:production": "pnpm build && wrangler deploy --config dist/server/wrangler.production.json",
     "seed:kv": "tsx scripts/seed-kv.ts",
+    "backfill:domains": "tsx scripts/backfill-site-domains.ts",
     "pretypecheck": "wrangler types",
     "typecheck": "astro check && tsc --noEmit",
     "test": "vitest run --project unit",

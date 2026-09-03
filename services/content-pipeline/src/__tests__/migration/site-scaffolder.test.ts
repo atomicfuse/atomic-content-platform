@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { parse } from "yaml";
 import {
   domainToSiteId,
+  resolveSiteDomain,
   buildSiteYaml,
+  buildFullSiteConfig,
 } from "../../agents/migration/site-scaffolder.js";
 import type { CsvSiteRow } from "../../agents/migration/types.js";
 
@@ -82,9 +84,9 @@ describe("buildSiteYaml", () => {
     expect(typeof parsed).toBe("object");
   });
 
-  it("sets domain to the site ID (stripped TLD, lowercased)", () => {
+  it("sets domain to the full hostname, not the TLD-stripped site ID", () => {
     const parsed = parse(buildSiteYaml(fullRow));
-    expect(parsed.domain).toBe("travelbeautytips");
+    expect(parsed.domain).toBe("travelbeautytips.com");
   });
 
   it("sets active to true", () => {
@@ -149,5 +151,77 @@ describe("buildSiteYaml", () => {
     const parsed = parse(buildSiteYaml(row));
     expect(parsed.theme.colors.primary).toBe("#333333");
     expect(parsed.theme.colors.secondary).toBe("#666666");
+  });
+});
+
+describe("resolveSiteDomain", () => {
+  const base: Pick<CsvSiteRow, "name" | "domain"> = {
+    name: "travelbeautytips.com",
+    domain: "travelbeautytips.com",
+  };
+
+  it("prefers the domain column", () => {
+    expect(resolveSiteDomain({ ...base, domain: "real.com", name: "Other Name" })).toBe(
+      "real.com",
+    );
+  });
+
+  it("falls back to name when the domain column is empty", () => {
+    expect(resolveSiteDomain({ ...base, domain: "" })).toBe("travelbeautytips.com");
+  });
+
+  it("falls back to the site ID when neither value has a TLD", () => {
+    expect(resolveSiteDomain({ domain: "", name: "Travel Beauty Tips" })).toBe(
+      "travelbeautytips",
+    );
+  });
+
+  it("ignores a name without a TLD when the domain column has one", () => {
+    expect(resolveSiteDomain({ domain: "shop.co.uk", name: "Shop" })).toBe("shop.co.uk");
+  });
+
+  it("lowercases and trims", () => {
+    expect(resolveSiteDomain({ domain: "  TravelBeautyTips.COM ", name: "" })).toBe(
+      "travelbeautytips.com",
+    );
+  });
+
+  it("preserves multi-part TLDs", () => {
+    expect(resolveSiteDomain({ domain: "shop.co.uk", name: "shop.co.uk" })).toBe(
+      "shop.co.uk",
+    );
+  });
+});
+
+describe("buildFullSiteConfig domain", () => {
+  const row: CsvSiteRow = {
+    name: "buzzsoaps.com",
+    domain: "buzzsoaps.com",
+    company: "ATL",
+    websiteCategory: "Entertainment",
+    menuItems: ["Culture Buzz"],
+    iabCategories: ["Entertainment"],
+    subCategories: [],
+    colorPalette: {},
+    logoUrl: "",
+    faviconUrl: "",
+    postsApiUrl: "",
+    gaInfo: {},
+  };
+
+  it("stores the full hostname, so support_email resolves to info@buzzsoaps.com", () => {
+    const config = buildFullSiteConfig(row, null, "Julia Bennett", false, false);
+    expect(config.domain).toBe("buzzsoaps.com");
+  });
+
+  it("still falls back to the site ID when the CSV has no real domain", () => {
+    const config = buildFullSiteConfig(
+      { ...row, domain: "", name: "Buzz Soaps" },
+      null,
+      "Julia Bennett",
+      false,
+      false,
+    );
+    expect(config.domain).toBe("buzzsoaps");
   });
 });

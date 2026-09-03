@@ -4,6 +4,7 @@
 // Temporary endpoint — remove after production sync is done.
 import { NextResponse, type NextRequest } from "next/server";
 import { getMongoDb } from "@/lib/mongo";
+import { buildSiteConfigDoc } from "@/lib/db/site-configs";
 
 /** Extract schedule snapshot from a site config's brief.schedule. */
 function extractSchedule(config: Record<string, unknown>): {
@@ -64,9 +65,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       try {
         // 1. Upsert site_configs
+        // buildSiteConfigDoc keeps config.domain (the hostname) from being
+        // overwritten by the collection key (the siteId).
         await siteConfigsColl.updateOne(
           { domain },
-          { $set: { ...config, domain, updatedAt: new Date() } },
+          { $set: buildSiteConfigDoc(domain, config) },
           { upsert: true },
         );
         configsUpdated++;
