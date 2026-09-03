@@ -55,6 +55,7 @@ import {
   selectConditionalOverrides,
   stripModeKeys,
   stripOverrideMetaFields,
+  resolveCanonicalDomain,
   type MergeModes,
   type OverrideConfig,
 } from './lib/resolve';
@@ -435,9 +436,35 @@ function buildSharedPageVars(config: ResolvedConfig): Record<string, string> {
   };
 }
 
+// ---------- dashboard-index lookup ----------
+
+interface DashboardIndexEntry {
+  domain?: string;
+  custom_domain?: string | null;
+}
+
+/**
+ * Reads `custom_domain` for a site from the network repo's dashboard-index.yaml
+ * — the authoritative list of which hostname each site actually serves.
+ *
+ * Non-fatal by design: a missing or malformed index just means this source is
+ * skipped. `sync-kv.yml` checks the file out from main even on staging-branch
+ * runs, so it is normally present.
+ */
+async function readIndexCustomDomain(siteId: string): Promise<string | undefined> {
+  const index = await readYaml<{ sites?: DashboardIndexEntry[] }>(
+    join(NETWORK_DATA_PATH, 'dashboard-index.yaml'),
+  );
+  const entry = index?.sites?.find((s) => s.domain === siteId);
+  return entry?.custom_domain ?? undefined;
+}
+
 // ---------- Group + site config resolution ----------
 
-async function resolveSiteConfig(siteId: string): Promise<{
+async function resolveSiteConfig(
+  siteId: string,
+  hostnames: string[] = [],
+): Promise<{
   config: ResolvedConfig;
   site: Record<string, unknown>;
   conditionalOverrides: ConditionalOverrideEntry[];
@@ -573,6 +600,24 @@ async function resolveSiteConfig(siteId: string): Promise<{
   // the override layer (override_id, name, priority, targets).
   const merged = stripOverrideMetaFields(mergedRaw);
 
+  // The site folder name is NOT a domain — CSV-imported sites store the
+  // TLD-stripped siteId in site.yaml's `domain:`, which would render
+  // `info@buzzsoaps` on every legal page. dashboard-index.yaml holds the
+  // authoritative custom_domain; CI also passes it positionally.
+  const canonicalDomain = resolveCanonicalDomain({
+    siteId,
+    siteDomain: site.domain == null ? undefined : String(site.domain),
+    indexDomain: await readIndexCustomDomain(siteId),
+    hostnames,
+  });
+  if (canonicalDomain === siteId) {
+    console.warn(
+      `[seed-kv] No real domain for "${siteId}" in site.yaml, dashboard-index.yaml, ` +
+      `or the CLI hostnames — falling back to the siteId. support_email and ` +
+      `newsletter forms will use "${siteId}" verbatim.`,
+    );
+  }
+
   const config: ResolvedConfig = {
     ad_placeholder_heights: {
       'above-content': 90,
@@ -603,7 +648,7 @@ async function resolveSiteConfig(siteId: string): Promise<{
     theme: {
       ...(merged.theme as Record<string, unknown> | undefined ?? {}),
     } as ResolvedConfig['theme'],
-    domain: String(site.domain ?? siteId),
+    domain: canonicalDomain,
     site_name: String(site.site_name ?? siteId),
     site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
     pages_project: String(site.pages_project ?? siteId),
@@ -669,7 +714,7 @@ async function main(): Promise<void> {
   console.log(`[seed-kv] siteId=${siteId}, hostnames=${hostnames.join(',') || '(none)'}`);
 
   // 1. Resolve config
-  const { config, conditionalOverrides } = await resolveSiteConfig(siteId);
+  const { config, conditionalOverrides } = await resolveSiteConfig(siteId, hostnames);
 
   // Validate resolved config — warn about dangerous patterns.
   const configWarnings = validateResolvedConfig(config as unknown as Record<string, unknown>, siteId);

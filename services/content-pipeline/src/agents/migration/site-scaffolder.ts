@@ -15,6 +15,27 @@ export function domainToSiteId(domain: string): string {
   return stripped.replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Resolve the hostname a site actually serves — the value that belongs in
+ * `site.yaml`'s `domain:`.
+ *
+ * NOT the same as the site ID. `domainToSiteId()` strips the TLD to produce a
+ * folder/KV key (`buzzsoaps`); using that as the domain rendered
+ * `info@buzzsoaps` on every legal page, because seed-kv expands the org-level
+ * `support_email_pattern: "info@{{domain}}"` against it.
+ *
+ * Prefers the CSV's `domain` column, then `name` (which is usually a hostname
+ * too), and only falls back to the site ID when neither carries a TLD.
+ */
+export function resolveSiteDomain(row: Pick<CsvSiteRow, "name" | "domain">): string {
+  for (const candidate of [row.domain, row.name]) {
+    const normalised = candidate?.trim().toLowerCase() ?? "";
+    const lastDot = normalised.lastIndexOf(".");
+    if (lastDot > 0 && lastDot < normalised.length - 1) return normalised;
+  }
+  return domainToSiteId(row.domain || row.name);
+}
+
 interface SiteYamlShape {
   domain: string;
   active: boolean;
@@ -52,11 +73,8 @@ interface SiteYamlShape {
  * Build a site.yaml string from a parsed CSV row.
  */
 export function buildSiteYaml(row: CsvSiteRow): string {
-  const siteId = domainToSiteId(row.name);
-  const siteName = row.name.replace(/\.[^.]+$/, ""); // strip last TLD segment for display
-
   const doc: SiteYamlShape = {
-    domain: siteId,
+    domain: resolveSiteDomain(row),
     active: true,
     groups: [],
     brief: {
@@ -174,7 +192,7 @@ export function buildFullSiteConfig(
   const siteId = row.domain ? domainToSiteId(row.domain) : domainToSiteId(row.name);
 
   const config: FullSiteConfig = {
-    domain: siteId,
+    domain: resolveSiteDomain(row),
     site_name: row.name || siteId,
     site_tagline: null,
     author,

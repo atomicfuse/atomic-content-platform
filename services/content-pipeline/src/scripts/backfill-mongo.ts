@@ -188,11 +188,20 @@ async function backfillSiteConfigs(
         continue;
       }
 
-      await coll.updateOne(
-        { domain: site.domain },
-        { $set: { ...config, domain: site.domain, updatedAt: new Date() } },
-        { upsert: true },
-      );
+      // site.domain here is the siteId (the collection key). Keep the config's
+      // own hostname in site_domain so the key never overwrites it — see
+      // services/dashboard/src/lib/db/site-configs.ts.
+      const doc: Record<string, unknown> = {
+        ...config,
+        domain: site.domain,
+        updatedAt: new Date(),
+      };
+      const configDomain = (config as Record<string, unknown>).domain;
+      if (typeof configDomain === "string" && /\.[^.]+$/.test(configDomain)) {
+        doc.site_domain = configDomain;
+      }
+
+      await coll.updateOne({ domain: site.domain }, { $set: doc }, { upsert: true });
       console.log(`[backfill] site-configs: upserted ${site.domain}`);
       summary.siteConfigsBackfilled += 1;
     } catch (err) {

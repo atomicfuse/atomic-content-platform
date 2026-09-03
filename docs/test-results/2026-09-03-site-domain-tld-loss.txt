@@ -1,0 +1,201 @@
+=== 2026-09-03T14:22:43Z — site-domain TLD loss ===
+
+### typecheck (all packages)
+@atomic-platform/site-worker:typecheck: > astro check && tsc --noEmit
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: 17:22:48 [@astrojs/cloudflare] Enabling compile-time image optimization. Images will be pre-optimized at build time.
+@atomic-platform/site-worker:typecheck: 17:22:48 [@astrojs/cloudflare] Enabling sessions with Cloudflare KV with the "SESSION" KV binding.
+@atomic-platform/site-worker:typecheck: 17:22:49 [types] Generated 480ms
+@atomic-platform/site-worker:typecheck: 17:22:49 [check] Getting diagnostics for Astro files in /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/packages/site-worker...
+@atomic-platform/site-worker:typecheck: [96msrc/middleware.ts[0m:[93m179[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'hasTemplateVars' is declared but its value is never read.
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: [7m179[0m   const hasTemplateVars = templateParams.length > 0;
+@atomic-platform/site-worker:typecheck: [7m   [0m [93m        ~~~~~~~~~~~~~~~[0m
+@atomic-platform/site-worker:typecheck: [96msrc/middleware.ts[0m:[93m147[0m:[93m9[0m - [93mwarning[0m[90m ts(6133): [0m'hasConditionalOverride' is declared but its value is never read.
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: [7m147[0m   const hasConditionalOverride = matchedActivationParams.length > 0;
+@atomic-platform/site-worker:typecheck: [7m   [0m [93m        ~~~~~~~~~~~~~~~~~~~~~~[0m
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: [96msrc/pages/api/search.ts[0m:[93m3[0m:[93m10[0m - [93mwarning[0m[90m ts(6133): [0m'getConfig' is declared but its value is never read.
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: [7m3[0m import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
+@atomic-platform/site-worker:typecheck: [7m [0m [93m         ~~~~~~~~~[0m
+@atomic-platform/site-worker:typecheck: 
+@atomic-platform/site-worker:typecheck: Result (65 files): 
+@atomic-platform/site-worker:typecheck: - 0 errors
+@atomic-platform/site-worker:typecheck: - 0 warnings
+@atomic-platform/site-worker:typecheck: - 3 hints
+@atomic-platform/site-worker:typecheck: 
+
+ Tasks:    5 successful, 5 total
+Cached:    2 cached, 5 total
+  Time:    8.029s 
+
+
+### full test suite (turbo run test)
+@atomic-platform/content-pipeline:test: [wp-migrate] Enqueued article import for site-a.com (job 371845de)
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test: stdout | src/__tests__/migration/handler.test.ts > handleEnqueueArticleImport > allows import for different site while one is running
+@atomic-platform/content-pipeline:test: [wp-migrate] Enqueued article import for site-b.com (job 1329a78a)
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/migration/handler.test.ts (9 tests) 7ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/auto-publish.test.ts (17 tests) 4ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/migration/csv-parser.test.ts (12 tests) 3ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/build-prompts.test.ts (17 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/notifications-severity.test.ts (6 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/alerts/__tests__/run.test.ts (16 tests) 1500ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/migration/article-cleanup.test.ts (20 tests) 2ms
+@atomic-platform/content-pipeline:test: stderr | src/costs/__tests__/pricing.test.ts > costFor > unknown model → cost 0, known false
+@atomic-platform/content-pipeline:test: [costFor] Unknown model "mystery" (canonical: "mystery") — cost tracked as $0. Add it to the PRICES table in costs/pricing.ts.
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test:  ✓ src/costs/__tests__/pricing.test.ts (7 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/checks/__tests__/repo.test.ts (4 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/migration/batch-import.test.ts (5 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/alerts/__tests__/engine.test.ts (6 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/legacy-path-regression.test.ts (4 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/checks/__tests__/tracking.test.ts (4 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/prompts.test.ts (9 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/dedup-index.test.ts (14 tests) 3ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/select-genre.test.ts (9 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/route-path.test.ts (4 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/topic-rotation.test.ts (7 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/templates.test.ts (2 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/build-event.test.ts (4 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/costs/__tests__/estimate.test.ts (3 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/source-from-triggered-by.test.ts (4 tests) 1ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/content-validation.test.ts (6 tests) 2ms
+@atomic-platform/content-pipeline:test:  ✓ src/__tests__/migration/r2-upload.test.ts (3 tests) 1ms
+@atomic-platform/content-pipeline:test: stderr | src/stats/__tests__/record-image.test.ts > recordImageGenEvent > never throws when Mongo unreachable (failure isolation)
+@atomic-platform/content-pipeline:test: [stats] recordImageGenEvent failed (non-fatal): connect ECONNREFUSED 127.0.0.1:1
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/record-image.test.ts (3 tests) 7047ms
+@atomic-platform/content-pipeline:test:    ✓ recordImageGenEvent > never throws when Mongo unreachable (failure isolation)  5008ms
+@atomic-platform/content-pipeline:test: stderr | src/costs/__tests__/recorder.test.ts > recordTextUsage > never throws when Mongo unreachable
+@atomic-platform/content-pipeline:test: [costs] recordTextUsage failed (non-fatal): connect ECONNREFUSED 127.0.0.1:1
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test: stderr | src/stats/__tests__/record-generation.test.ts > recordGeneration > never throws when Mongo is unreachable (failure isolation)
+@atomic-platform/content-pipeline:test: [stats] recordGeneration failed (non-fatal): connect ECONNREFUSED 127.0.0.1:1
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test:  ✓ src/costs/__tests__/recorder.test.ts (3 tests) 7297ms
+@atomic-platform/content-pipeline:test:    ✓ recordTextUsage > records text usage: event + rollup  472ms
+@atomic-platform/content-pipeline:test:    ✓ recordTextUsage > never throws when Mongo unreachable  5006ms
+@atomic-platform/content-pipeline:test:  ✓ src/stats/__tests__/record-generation.test.ts (4 tests) 7469ms
+@atomic-platform/content-pipeline:test:    ✓ recordGeneration > inserts an event and upserts rollup with lastAdded set when created>0  534ms
+@atomic-platform/content-pipeline:test:    ✓ recordGeneration > never throws when Mongo is unreachable (failure isolation)  5005ms
+@atomic-platform/content-pipeline:test: 
+@atomic-platform/content-pipeline:test:  Test Files  76 passed (76)
+@atomic-platform/content-pipeline:test:       Tests  662 passed (662)
+@atomic-platform/content-pipeline:test:    Start at  17:22:58
+@atomic-platform/content-pipeline:test:    Duration  8.48s (transform 1.87s, setup 0ms, collect 14.20s, tests 52.12s, environment 7ms, prepare 4.17s)
+@atomic-platform/content-pipeline:test: 
+
+ Tasks:    4 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    8.884s 
+
+
+### dashboard (vitest run)
+ ✓ src/lib/__tests__/site-checks.test.ts (6 tests) 2ms
+ ✓ src/components/settings/__tests__/ad-loader.test.ts (29 tests) 2ms
+ ✓ src/actions/__tests__/go-live-status.test.ts (2 tests) 2ms
+ ✓ src/components/wizard/__tests__/themePresets.test.ts (2 tests) 1ms
+ ✓ src/lib/__tests__/domains-dashboard.test.ts (10 tests) 2ms
+ ✓ src/actions/__tests__/sync-status.test.ts (9 tests) 1ms
+
+ Test Files  25 passed (25)
+      Tests  319 passed (319)
+   Start at  17:23:20
+   Duration  2.11s (transform 890ms, setup 1.46s, collect 2.27s, tests 1.32s, environment 14.07s, prepare 1.36s)
+
+
+### site-worker (vitest run --project unit)
+ ✓ |unit| scripts/__tests__/resolve.test.ts (79 tests) 9ms
+ ✓ |unit| src/lib/__tests__/category-and-layout.test.ts (90 tests) 19ms
+ ✓ |unit| src/lib/__tests__/url.test.ts (6 tests) 1ms
+ ✓ |unit| src/lib/__tests__/deep-merge.test.ts (4 tests) 1ms
+ ✓ |unit| src/lib/__tests__/contrast.test.ts (5 tests) 1ms
+ ✓ |unit| scripts/__tests__/theme-asset-rewrite.test.ts (2 tests) 1ms
+
+ Test Files  17 passed (17)
+      Tests  315 passed (315)
+   Start at  17:23:23
+   Duration  428ms (transform 470ms, setup 0ms, collect 873ms, tests 57ms, environment 1ms, prepare 906ms)
+
+
+### shared-types
+
+### lint (dashboard)
+For existing projects, migrate to the ESLint CLI:
+npx @next/codemod@canary next-lint-to-eslint-cli .
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/asafcohen/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/pnpm-lock.yaml
+
+? How would you like to configure ESLint? https://nextjs.org/docs/app/api-reference/config/eslint
+[?25l❯  Strict (recommended)
+   Base
+   Cancel ⚠ If you set up ESLint yourself, we recommend adding the Next.js ESLint plugin. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+ ELIFECYCLE  Command failed with exit code 1.
+
+
+NOTE on lint: `pnpm lint` in services/dashboard is not configured — `next lint`
+drops into its interactive ESLint setup prompt and exits 1. Pre-existing, not
+introduced by this change; no ESLint config exists in the repo. `tsc --noEmit`
+is the enforced static gate here and passes with 0 errors.
+
+### build
+@atomic-platform/dashboard:build: ├ ƒ /shared-pages/[name]                                 4.51 kB         107 kB
+@atomic-platform/dashboard:build: ├ ○ /shared-pages/ads-txt                                3.83 kB         106 kB
+@atomic-platform/dashboard:build: ├ ƒ /sites                                               8.98 kB         111 kB
+@atomic-platform/dashboard:build: ├ ƒ /sites/[domain]                                      4.09 kB         106 kB
+@atomic-platform/dashboard:build: ├ ƒ /sites/[domain]/articles/[slug]                      5.02 kB         111 kB
+@atomic-platform/dashboard:build: ├ ƒ /sites/[domain]/migrate-per-topic                    1.49 kB         109 kB
+@atomic-platform/dashboard:build: ├ ○ /tools                                                 367 B         103 kB
+@atomic-platform/dashboard:build: ├ ○ /tools/copy-articles                                 3.48 kB         106 kB
+@atomic-platform/dashboard:build: ├ ƒ /trash                                               4.28 kB         107 kB
+@atomic-platform/dashboard:build: └ ○ /wizard                                                21 kB         129 kB
+@atomic-platform/dashboard:build: + First Load JS shared by all                             102 kB
+@atomic-platform/dashboard:build:   ├ chunks/6356-1b9681514181cba2.js                      45.9 kB
+@atomic-platform/dashboard:build:   ├ chunks/bd374a37-9a2c672a05a5f7da.js                  54.2 kB
+@atomic-platform/dashboard:build:   └ other shared chunks (total)                          2.23 kB
+@atomic-platform/dashboard:build: 
+@atomic-platform/dashboard:build: 
+@atomic-platform/dashboard:build: ○  (Static)   prerendered as static content
+@atomic-platform/dashboard:build: ƒ  (Dynamic)  server-rendered on demand
+@atomic-platform/dashboard:build: 
+
+ Tasks:    4 successful, 4 total
+Cached:    1 cached, 4 total
+  Time:    22.247s 
+
+ WARNING  no output files found for task @atomic-platform/dashboard#build. Please check your `outputs` key in `turbo.json`
+
+=== RE-RUN after pre-commit self-review (2026-09-03T14:24:59Z) ===
+### dashboard
+
+ Test Files  25 passed (25)
+      Tests  319 passed (319)
+   Start at  17:25:00
+   Duration  3.44s (transform 1.83s, setup 3.40s, collect 8.62s, tests 2.75s, environment 19.70s, prepare 2.19s)
+
+### site-worker
+
+ Test Files  17 passed (17)
+      Tests  315 passed (315)
+   Start at  17:25:04
+   Duration  905ms (transform 653ms, setup 0ms, collect 5.80s, tests 61ms, environment 1ms, prepare 1.78s)
+
+### content-pipeline
+
+ Test Files  76 passed (76)
+      Tests  662 passed (662)
+   Start at  17:25:05
+   Duration  11.30s (transform 1.25s, setup 0ms, collect 19.78s, tests 89.16s, environment 6ms, prepare 3.26s)
+
+### typecheck
+@atomic-platform/site-worker:typecheck: - 0 errors
+ Tasks:    5 successful, 5 total

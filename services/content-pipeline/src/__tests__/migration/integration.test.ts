@@ -77,8 +77,9 @@ describe("integration: WP article → .md conversion pipeline", () => {
     const siteYamlStr = buildSiteYaml(site);
     const siteYaml = yamlParse(siteYamlStr);
 
-    expect(siteYaml.domain).toBe(domainToSiteId("tvshowbox.com"));
-    expect(siteYaml.domain).toBe("tvshowbox");
+    // site.yaml carries the real hostname; the site ID is the folder/KV key.
+    expect(siteYaml.domain).toBe("tvshowbox.com");
+    expect(domainToSiteId(siteYaml.domain)).toBe("tvshowbox");
     expect(siteYaml.tracking).toBeDefined();
     expect(siteYaml.tracking.ga4).toBe("G-HL2D8CQ0Z9");
     expect(siteYaml.tracking.gtm).toBe("GT-5R65N74B");

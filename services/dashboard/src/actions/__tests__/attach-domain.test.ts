@@ -118,6 +118,30 @@ describe("attachCustomDomain", () => {
     vi.clearAllMocks();
   });
 
+  // patchSiteConfigDomain used to write the corrected domain to KV and to the
+  // staging branch but never to MongoDB. With USE_MONGO_READS=true the next
+  // dashboard save read the stale doc and reverted site.yaml to the siteId.
+  it("mirrors the corrected domain to MongoDB", async () => {
+    const site = makeSite({ status: "Ready", custom_domain: null, zone_id: null });
+    setupIndex([site]);
+    mockRegisterWorkerCustomDomain.mockResolvedValue(undefined);
+    mockDeleteConflictingDnsRecords.mockResolvedValue(undefined);
+
+    const { getSiteConfig, upsertSiteConfig } = await import("@/lib/db/site-configs");
+    vi.mocked(getSiteConfig).mockResolvedValue({
+      domain: "trendscores",
+      site_name: "TrendScores",
+    });
+
+    const { attachCustomDomain } = await import("../wizard");
+    await attachCustomDomain("trendscores", "trendscores.com", "zone-123");
+
+    expect(upsertSiteConfig).toHaveBeenCalledWith(
+      "trendscores",
+      expect.objectContaining({ domain: "trendscores.com" }),
+    );
+  });
+
   it("mirrors the rollback to MongoDB when CF registration fails", async () => {
     const site = makeSite({ status: "Ready", custom_domain: null, zone_id: null });
     setupIndex([site]);
