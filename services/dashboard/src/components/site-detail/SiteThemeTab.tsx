@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { ColorPickerField } from "@/components/wizard/ColorPickerField";
@@ -14,6 +16,17 @@ import {
   type ColorState,
 } from "@/components/wizard/themePresets";
 import { ThemePresetPicker } from "@/components/wizard/ThemePresetPicker";
+import { TemplateSelector } from "@/components/shared/TemplateSelector";
+import { GRID_ONLY_COLOR_KEYS, type GridCardFields } from "@/types/grid";
+
+const GridThemeFields = dynamic(
+  () => import("./grid/GridThemeFields").then((m) => m.GridThemeFields),
+  { ssr: false },
+);
+const GridCardLookFields = dynamic(
+  () => import("./grid/GridCardLookFields").then((m) => m.GridCardLookFields),
+  { ssr: false },
+);
 
 interface LayoutState {
   hero: { enabled: boolean; count: 3 | 4 };
@@ -41,6 +54,10 @@ interface ThemeState {
   logoHeightFooter: number | null;
   /** Navigation menu item font size in pixels. Defaults to 14. */
   menuItemFontSize: number;
+  /** Site template: Modern (magazine layout) or Grid (network card feed). */
+  template: "modern" | "grid";
+  /** Grid card-look overrides. Ignored in Modern mode. */
+  card: GridCardFields;
 }
 
 const DEFAULT_LAYOUT: LayoutState = {
@@ -97,6 +114,7 @@ function parseLayout(raw: Record<string, unknown> | undefined): LayoutState {
 
 export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement {
   const { toast } = useToast();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -109,6 +127,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     logoHeight: 52,
     logoHeightFooter: null,
     menuItemFontSize: 14,
+    template: "modern",
+    card: {},
   });
   const [topicInput, setTopicInput] = useState("");
   // Footer logo upload state — tracked separately from ThemeState because
@@ -118,6 +138,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
   const [footerLogoPending, setFooterLogoPending] = useState<string | null>(null);
   const footerLogoInputRef = useRef<HTMLInputElement>(null);
   const initialState = useRef<ThemeState | null>(null);
+  // Shown once per session, the first time the user flips Modern -> Grid.
+  const [justSwitchedToGrid, setJustSwitchedToGrid] = useState(false);
 
   // Compute on every render — avoids stale memoization issues.
   const dirty = initialState.current !== null
@@ -146,6 +168,11 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         for (const key of GRADIENT_KEYS) {
           if (colors[key]) resolved[key] = colors[key];
         }
+        // Carry through Grid-only colour keys (card_bg, pill_border, ...) — they
+        // never participate in preset detection (see grid-preset-compat.test.ts).
+        for (const key of GRID_ONLY_COLOR_KEYS) {
+          if (colors[key]) resolved[key] = colors[key];
+        }
 
         const loaded: ThemeState = {
           colors: resolved,
@@ -158,6 +185,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             typeof theme.logo_height_footer === "number" ? theme.logo_height_footer : null,
           menuItemFontSize:
             typeof theme.menu_item_font_size === "number" ? theme.menu_item_font_size : 14,
+          template: theme.template === "grid" ? "grid" : "modern",
+          card: (theme.card ?? {}) as GridCardFields,
         };
         setState(loaded);
         initialState.current = JSON.parse(JSON.stringify(loaded)) as ThemeState;
@@ -173,6 +202,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           logoHeight: 52,
           logoHeightFooter: null,
           menuItemFontSize: 14,
+          template: "modern",
+          card: {},
         };
       } finally {
         setLoading(false);
@@ -204,6 +235,21 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
     });
   }
 
+  /** Grid colour editor handler — `null` removes the key so it inherits its fallback. */
+  function setGridColor(key: string, value: string | null): void {
+    setState((s) => {
+      const colors = { ...s.colors };
+      if (value === null) delete colors[key];
+      else colors[key] = value;
+      return { ...s, colors, preset: detectPreset(colors) };
+    });
+  }
+
+  function selectTemplate(next: "modern" | "grid"): void {
+    if (next === "grid" && state.template === "modern") setJustSwitchedToGrid(true);
+    setState((s) => ({ ...s, template: next }));
+  }
+
   function handleFooterLogoUpload(e: React.ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -230,6 +276,12 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
 
   async function save(): Promise<void> {
     setSaving(true);
+    // Capture before the request: template changed relative to what was last
+    // loaded/saved. Used after a successful save to refresh the site page (so
+    // the Grid tab appears/disappears without a manual reload) and to pick
+    // the right success copy — read before initialState.current is
+    // overwritten with the post-save snapshot below.
+    const templateChanged = initialState.current?.template !== state.template;
     try {
       // Translate pending footer-logo state into the API contract:
       //   undefined → no change      (omitted from payload)
@@ -255,12 +307,23 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             theme_logo_height_footer: state.logoHeightFooter,
             theme_menu_item_font_size: state.menuItemFontSize,
             layout: state.layout,
+            theme_template: state.template,
+            ...(state.template === "grid" ? { theme_card: state.card } : {}),
           },
         }),
       });
       const data = (await res.json()) as { status: string; message?: string };
       if (data.status === "ok") {
-        toast("Theme saved — changes will appear on the staging site in a few minutes", "success");
+        if (templateChanged) {
+          toast(
+            state.template === "grid"
+              ? "Saved. The Grid tab is now available."
+              : "Saved. The Grid tab is now removed.",
+            "success",
+          );
+        } else {
+          toast("Theme saved — changes will appear on the staging site in a few minutes", "success");
+        }
         initialState.current = JSON.parse(JSON.stringify(state)) as ThemeState;
         // Settle pending footer-logo state into the new "existing" baseline
         if (footerLogoPending !== null) {
@@ -268,6 +331,14 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             footerLogoPending === "" ? null : "/assets/logo-footer.png",
           );
           setFooterLogoPending(null);
+        }
+        if (templateChanged) {
+          // Re-render the (server-fetched) site page so the Grid tab
+          // appears/disappears immediately — no manual reload. The user
+          // stays on this tab: refresh only updates props flowing down from
+          // the server component, it doesn't reset ContentAgentTab's inner
+          // <Tabs> selection.
+          router.refresh();
         }
       } else {
         toast(data.message ?? "Failed to save", "error");
@@ -315,9 +386,42 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
 
   return (
     <div className="space-y-6">
+      {/* Template selector */}
+      <TemplateSelector
+        value={state.template}
+        onChange={selectTemplate}
+        hint={
+          justSwitchedToGrid && state.template === "grid" ? (
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              This site will stop showing its own articles and show network stories instead. Configure
+              topics in the Grid tab after saving.
+            </div>
+          ) : undefined
+        }
+      />
+
       {/* Theme Presets */}
       <ThemePresetPicker value={state.preset} onChange={applyPreset} />
 
+      {state.template === "grid" ? (
+        <>
+          {/* Grid Colors */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-[var(--text-primary)]">Grid Colors</h3>
+            <GridThemeFields colors={state.colors} onChange={setGridColor} />
+          </div>
+
+          {/* Card Look */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-bold text-[var(--text-primary)]">Card Look</h3>
+            <GridCardLookFields
+              value={state.card}
+              onChange={(card): void => setState((s) => ({ ...s, card }))}
+            />
+          </div>
+        </>
+      ) : (
+        <>
       {/* Brand Colors */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Brand Colors</h3>
@@ -446,6 +550,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           </div>
         )}
       </div>
+        </>
+      )}
 
       {/* Typography */}
       <div className="space-y-3">
@@ -594,6 +700,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
       </div>
 
       {/* Layout Knobs */}
+      {state.template === "modern" && (
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Layout</h3>
         <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
@@ -807,6 +914,7 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
           </div>
         </div>
       </div>
+      )}
 
       <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
         {dirty ? (

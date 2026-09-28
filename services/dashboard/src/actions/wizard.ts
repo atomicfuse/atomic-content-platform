@@ -46,6 +46,11 @@ import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 import { deleteArticlesMeta } from "@/lib/db/articles";
+import {
+  buildWizardSiteSections,
+  wizardDataForTemplate,
+  wizardDisplayVertical,
+} from "@/lib/wizard-site-sections";
 
 interface StagingResult {
   stagingUrl: string;
@@ -56,8 +61,14 @@ interface StagingResult {
 /** Create site files in a staging branch and trigger sync-kv to seed
  *  CONFIG_KV_STAGING + R2 for the multi-tenant site-worker. */
 export async function createSiteAndBuildStaging(
-  data: WizardFormData
+  formData: WizardFormData
 ): Promise<StagingResult> {
+  // G5: a Grid site never generates articles — clear every content-agent
+  // field (topics, tone, audiences, schedule, …) so nothing left over from
+  // an earlier pass through the Modern steps reaches site.yaml, skill.md,
+  // the logo prompt or the default-image vertical. Modern data passes
+  // through unchanged (same object).
+  const data = wizardDataForTemplate(formData);
   const projectName = data.pagesProjectName;
 
   // The site folder in the network repo uses the project name as identifier.
@@ -68,18 +79,12 @@ export async function createSiteAndBuildStaging(
 
   // 0. Per-topic model — the wizard writes brief.topics_v2 directly.
   // No bundle is created from the wizard anymore; topics carry raw filters.
-  const topics_v2 = data.topics_v2;
-
-  // For the dashboard Sites grid (Category column) and the per-site brief,
-  // derive a display-only label when the wizard didn't pick a category.
-  // Order of preference: explicit `data.vertical` → first topic_v2 name →
-  // first plain topic → undefined. This is for organization/sort only; it
-  // does not affect aggregator filtering, which lives entirely in topics_v2.
-  const displayVertical: string | undefined =
-    data.vertical ||
-    topics_v2[0]?.name ||
-    data.topics[0] ||
-    undefined;
+  // Display-only category label for the dashboard Sites grid and the brief:
+  // explicit `data.vertical` → first topic_v2 name → first plain topic →
+  // undefined. Organization/sort only; aggregator filtering lives in topics_v2.
+  const displayVertical = wizardDisplayVertical(data);
+  // brief / theme (+ grid for Grid sites) — see lib/wizard-site-sections.ts.
+  const sections = buildWizardSiteSections(data);
 
   // 1. Build site.yaml content. `domain` is the site folder identifier
   // used by sync-kv.yml + middleware (CONFIG_KV key `site:<domain>`).
@@ -92,52 +97,11 @@ export async function createSiteAndBuildStaging(
     active: true,
     iab_vertical_code: data.iabVerticalCode || undefined,
     scripts_vars: Object.keys(data.scriptsVars).length > 0 ? data.scriptsVars : undefined,
-    brief: {
-      audiences: data.audiences,
-      audience_type_ids: data.audienceIds.length > 0 ? data.audienceIds : undefined,
-      tone: data.tone,
-      article_types: {
-        listicle: 40,
-        standard: 30,
-        "how-to": 20,
-        review: 10,
-      },
-      // For per-topic sites the nav menu + category routing read `topics`, so
-      // it must mirror topics_v2 names. Fall back to the raw collected topics
-      // for legacy (non-per-topic) sites.
-      topics: topics_v2.length > 0 ? topics_v2.map((t) => t.name) : data.topics,
-      theme: data.theme || undefined,
-      topics_v2: topics_v2.length > 0 ? topics_v2 : undefined,
-      seo_keywords_focus: [],
-      content_guidelines: data.contentGuidelines
-        ? data.contentGuidelines.split("\n").filter(Boolean)
-        : [],
-      image_guidelines: data.imageGuidelines
-        ? data.imageGuidelines.split("\n").filter(Boolean)
-        : undefined,
-      vertical: displayVertical,
-      vertical_id: data.verticalId || undefined,
-      review_percentage: 5,
-      schedule: {
-        articles_per_day: data.articlesPerDay,
-        preferred_days: data.preferredDays,
-        preferred_time: "10:00",
-      },
-    },
-    theme: {
-      base: data.themePreset,
-      colors: data.themeColors,
-      logo_height: data.logoHeight ?? 52,
-      menu_item_font_size: data.menuItemFontSize ?? 14,
-      // Omit logo_height_footer entirely when auto so saved YAML signals
-      // "let CSS auto-derive (92% of header)".
-      ...(data.logoHeightFooter != null ? { logo_height_footer: data.logoHeightFooter } : {}),
-      fonts: {
-        heading: data.fontHeading,
-        body: data.fontBody,
-      },
-    } as Record<string, unknown>,
+    brief: sections.brief,
+    theme: sections.theme,
     layout: data.themeLayout,
+    // Grid only: top-level feed settings (omitted entirely for Modern).
+    ...(sections.grid ? { grid: sections.grid } : {}),
   };
 
   // 2. Build skill.md content
@@ -1058,6 +1022,12 @@ export interface StagingSiteConfig {
   /** Navigation menu item font size in pixels. */
   theme_menu_item_font_size?: number;
   layout?: Record<string, unknown>;
+  /** Grid template switch → site.yaml theme.template ("modern" removes the key). */
+  theme_template?: "modern" | "grid";
+  /** Grid card look → site.yaml theme.card. */
+  theme_card?: import("@/types/grid").GridCardFields;
+  /** Grid feed settings → site.yaml grid (replaced wholesale). */
+  grid?: import("@/types/grid").GridFields;
   /** Free-text site theme (per-topic model — drives AI proposals). */
   theme?: string;
   /** Per-topic filters list. When provided on save, the site config is

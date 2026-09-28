@@ -10,6 +10,8 @@ import { StepTheme } from "@/components/wizard/StepTheme";
 import { StepContentBrief } from "@/components/wizard/StepContentBrief";
 import { StepPreview } from "@/components/wizard/StepPreview";
 import { StepGoLive } from "@/components/wizard/StepGoLive";
+import { StepGridFeed } from "@/components/wizard/StepGridFeed";
+import { wizardStepsFor } from "@/components/wizard/wizard-steps";
 import type { WizardFormData } from "@/types/dashboard";
 
 const DEFAULT_FORM: WizardFormData = {
@@ -21,6 +23,7 @@ const DEFAULT_FORM: WizardFormData = {
   vertical: "",
   verticalId: "",
   groups: [],
+  template: "modern",
   themePreset: "classic",
   themeColors: {
     primary: "#1a1a2e", accent: "#f4c542", background: "#ffffff", secondary: "#1a1a2e",
@@ -71,14 +74,24 @@ export default function WizardPage(): React.ReactElement {
   } | null>(null);
 
   function updateForm(updates: Partial<WizardFormData>): void {
+    // A staged site was built with the old template: switching templates
+    // invalidates it, so Preview/Review don't restore a stale result.
+    if (updates.template !== undefined && updates.template !== (formData.template ?? "modern")) {
+      setStagingResult(null);
+    }
     setFormData((prev) => ({ ...prev, ...updates }));
   }
 
+  // The template can only change on "Create Site" (index 0 in both lists), so
+  // the shell's current index always stays valid when the list switches.
+  const steps = wizardStepsFor(formData.template);
+
   return (
-    <WizardShell>
-      {({ currentStep, goNext, goBack }): React.ReactNode => {
-        switch (currentStep) {
-          case 0:
+    <WizardShell steps={steps}>
+      {({ stepName, goNext, goBack }): React.ReactNode => {
+        // Render by step name, not index, so the two lists can't drift.
+        switch (stepName) {
+          case "Create Site":
             return (
               <StepIdentity
                 data={formData}
@@ -87,7 +100,7 @@ export default function WizardPage(): React.ReactElement {
                 onCancel={(): void => router.push("/")}
               />
             );
-          case 1:
+          case "Content Brief":
             return (
               <StepContentBrief
                 data={formData}
@@ -96,7 +109,7 @@ export default function WizardPage(): React.ReactElement {
                 onBack={goBack}
               />
             );
-          case 2:
+          case "Topic Filters":
             return (
               <StepTopicFilters
                 data={formData}
@@ -105,7 +118,16 @@ export default function WizardPage(): React.ReactElement {
                 onBack={goBack}
               />
             );
-          case 3:
+          case "Grid Feed":
+            return (
+              <StepGridFeed
+                data={formData}
+                onChange={updateForm}
+                onNext={goNext}
+                onBack={goBack}
+              />
+            );
+          case "Groups":
             return (
               <StepGroups
                 data={formData}
@@ -114,7 +136,7 @@ export default function WizardPage(): React.ReactElement {
                 onBack={goBack}
               />
             );
-          case 4:
+          case "Theme":
             return (
               <StepTheme
                 data={formData}
@@ -123,7 +145,7 @@ export default function WizardPage(): React.ReactElement {
                 onBack={goBack}
               />
             );
-          case 5:
+          case "Preview":
             return (
               <StepPreview
                 data={formData}
@@ -133,7 +155,7 @@ export default function WizardPage(): React.ReactElement {
                 existingResult={stagingResult}
               />
             );
-          case 6:
+          case "Review":
             return (
               <StepGoLive
                 data={formData}

@@ -10,6 +10,7 @@ import {
   presetToColors,
 } from "@/components/wizard/themePresets";
 import { ThemePresetPicker } from "@/components/wizard/ThemePresetPicker";
+import { GridCardLookFields } from "@/components/site-detail/grid/GridCardLookFields";
 import type { WizardFormData } from "@/types/dashboard";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +37,9 @@ export function StepTheme({
   const faviconInputRef = useRef<HTMLInputElement>(null);
 
   const colors = data.themeColors;
+  // The template is chosen on the first step. Grid replaces the Modern-only
+  // Layout section with the card look; everything else is shared.
+  const isGrid = data.template === "grid";
 
   function applyPreset(id: string): void {
     const preset = PRESETS[id];
@@ -341,113 +345,121 @@ export function StepTheme({
         </div>
       </div>
 
-      {/* Layout */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-bold text-[var(--text-primary)]">Layout</h3>
-        <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
-          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
-            <input
-              type="checkbox"
-              checked={data.themeLayout.hero.enabled}
-              onChange={(e): void =>
-                setLayout({ hero: { ...data.themeLayout.hero, enabled: e.target.checked } })
-              }
-              className="accent-cyan"
-            />
-            Show hero grid
-          </label>
-          {data.themeLayout.hero.enabled && (
-            <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
-              <span>Hero count:</span>
-              <select
-                value={data.themeLayout.hero.count}
-                onChange={(e): void =>
-                  setLayout({ hero: { ...data.themeLayout.hero, count: parseInt(e.target.value, 10) as 3 | 4 } })
-                }
-                className="px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-              >
-                <option value={3}>3</option>
-                <option value={4}>4</option>
-              </select>
-            </div>
-          )}
-
-          <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
-            <input
-              type="checkbox"
-              checked={data.themeLayout.must_reads.enabled}
-              onChange={(e): void =>
-                setLayout({ must_reads: { ...data.themeLayout.must_reads, enabled: e.target.checked } })
-              }
-              className="accent-cyan"
-            />
-            Show Must Reads section
-          </label>
-
-          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-            <span>Load more page size:</span>
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={data.themeLayout.load_more.page_size}
-              onChange={(e): void =>
-                setLayout({ load_more: { page_size: parseInt(e.target.value, 10) || 10 } })
-              }
-              className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-            />
-          </div>
-
-          <div className="space-y-2">
+      {isGrid ? (
+        /* Card look (Grid only) */
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-[var(--text-primary)]">Card look</h3>
+          <GridCardLookFields value={data.card ?? {}} onChange={(card): void => onChange({ card })} />
+        </div>
+      ) : (
+        /* Layout (Modern only) */
+        <div className="space-y-3">
+          <h3 className="text-sm font-bold text-[var(--text-primary)]">Layout</h3>
+          <div className="space-y-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-secondary)] p-4">
             <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
               <input
                 type="checkbox"
-                checked={data.themeLayout.sidebar_topics.auto}
+                checked={data.themeLayout.hero.enabled}
                 onChange={(e): void =>
-                  setLayout({ sidebar_topics: { ...data.themeLayout.sidebar_topics, auto: e.target.checked } })
+                  setLayout({ hero: { ...data.themeLayout.hero, enabled: e.target.checked } })
                 }
                 className="accent-cyan"
               />
-              Auto-select sidebar topics
+              Show hero grid
             </label>
-            {!data.themeLayout.sidebar_topics.auto && (
-              <div className="ml-6 space-y-2">
-                <div className="flex flex-wrap gap-1.5">
-                  {data.themeLayout.sidebar_topics.explicit.map((tag) => (
-                    <span
-                      key={tag}
-                      className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
-                    >
-                      {tag}
-                      <button
-                        type="button"
-                        onClick={(): void => removeExplicitTopic(tag)}
-                        className="hover:text-red-400 transition-colors"
-                      >
-                        &times;
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <input
-                  type="text"
-                  value={topicInput}
-                  onChange={(e): void => setTopicInput(e.target.value)}
-                  onKeyDown={(e): void => {
-                    if ((e.key === "Enter" || e.key === ",") && topicInput.trim()) {
-                      e.preventDefault();
-                      addExplicitTopic(topicInput);
-                    }
-                  }}
-                  onBlur={(): void => { if (topicInput.trim()) addExplicitTopic(topicInput); }}
-                  placeholder="Type a topic and press Enter..."
-                  className="w-full px-2 py-1.5 border rounded text-sm bg-[var(--bg-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-                />
+            {data.themeLayout.hero.enabled && (
+              <div className="flex items-center gap-2 ml-6 text-sm text-[var(--text-secondary)]">
+                <span>Hero count:</span>
+                <select
+                  value={data.themeLayout.hero.count}
+                  onChange={(e): void =>
+                    setLayout({ hero: { ...data.themeLayout.hero, count: parseInt(e.target.value, 10) as 3 | 4 } })
+                  }
+                  className="px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+                >
+                  <option value={3}>3</option>
+                  <option value={4}>4</option>
+                </select>
               </div>
             )}
+
+            <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+              <input
+                type="checkbox"
+                checked={data.themeLayout.must_reads.enabled}
+                onChange={(e): void =>
+                  setLayout({ must_reads: { ...data.themeLayout.must_reads, enabled: e.target.checked } })
+                }
+                className="accent-cyan"
+              />
+              Show Must Reads section
+            </label>
+
+            <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+              <span>Load more page size:</span>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={data.themeLayout.load_more.page_size}
+                onChange={(e): void =>
+                  setLayout({ load_more: { page_size: parseInt(e.target.value, 10) || 10 } })
+                }
+                className="w-20 px-2 py-1 border rounded bg-[var(--bg-elevated)] text-[var(--text-primary)]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-[var(--text-primary)]">
+                <input
+                  type="checkbox"
+                  checked={data.themeLayout.sidebar_topics.auto}
+                  onChange={(e): void =>
+                    setLayout({ sidebar_topics: { ...data.themeLayout.sidebar_topics, auto: e.target.checked } })
+                  }
+                  className="accent-cyan"
+                />
+                Auto-select sidebar topics
+              </label>
+              {!data.themeLayout.sidebar_topics.auto && (
+                <div className="ml-6 space-y-2">
+                  <div className="flex flex-wrap gap-1.5">
+                    {data.themeLayout.sidebar_topics.explicit.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
+                      >
+                        {tag}
+                        <button
+                          type="button"
+                          onClick={(): void => removeExplicitTopic(tag)}
+                          className="hover:text-red-400 transition-colors"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={topicInput}
+                    onChange={(e): void => setTopicInput(e.target.value)}
+                    onKeyDown={(e): void => {
+                      if ((e.key === "Enter" || e.key === ",") && topicInput.trim()) {
+                        e.preventDefault();
+                        addExplicitTopic(topicInput);
+                      }
+                    }}
+                    onBlur={(): void => { if (topicInput.trim()) addExplicitTopic(topicInput); }}
+                    placeholder="Type a topic and press Enter..."
+                    className="w-full px-2 py-1.5 border rounded text-sm bg-[var(--bg-elevated)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Brand Colors */}
       <div className="space-y-2">

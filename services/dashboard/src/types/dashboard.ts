@@ -1,3 +1,5 @@
+import type { GridCardFields, GridFields } from "./grid";
+
 export type SiteStatus = "Staging" | "Ready" | "Live";
 
 // ---------------------------------------------------------------------------
@@ -151,6 +153,17 @@ export interface WizardFormData {
   verticalId: string;
   /** Group IDs this site belongs to (merged left-to-right). */
   groups: string[];
+  /**
+   * Site template chosen in the wizard: Modern (magazine layout) or Grid
+   * (network card feed). Optional (defaults to "modern" wherever it's read)
+   * so existing literals that predate this field — e.g. test fixtures —
+   * keep compiling without every call site listing it explicitly.
+   */
+  template?: "modern" | "grid";
+  /** Grid feed settings from the wizard's Grid Feed step → site.yaml `grid:`. Grid only. */
+  grid?: GridFields;
+  /** Grid card look from the Theme step → site.yaml `theme.card`. Grid only. */
+  card?: GridCardFields;
   themePreset: string;
   /** Full theme color state (all 19 color keys). */
   themeColors: Record<string, string>;

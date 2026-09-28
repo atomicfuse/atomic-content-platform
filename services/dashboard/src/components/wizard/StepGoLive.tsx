@@ -19,6 +19,8 @@ export function StepGoLive({
 
   const siteFolder = stagingResult?.siteFolder ?? data.pagesProjectName;
   const stagingUrl = stagingResult?.stagingUrl ?? null;
+  const isGrid = data.template === "grid";
+  const pills = (data.grid?.topics ?? []).map((t) => t.label.trim()).filter(Boolean);
 
   return (
     <div className="space-y-6">
@@ -46,10 +48,39 @@ export function StepGoLive({
             <p className="text-[var(--text-muted)]">Theme</p>
             <p className="font-medium capitalize">{data.themePreset}</p>
           </div>
-          <div>
-            <p className="text-[var(--text-muted)]">Articles/Day</p>
-            <p className="font-medium">{data.articlesPerDay}</p>
-          </div>
+          {isGrid ? (
+            <>
+              <div>
+                <p className="text-[var(--text-muted)]">Template</p>
+                <p className="font-medium">Grid</p>
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)]">Topic pills</p>
+                <p className="font-medium">
+                  {pills.length > 0 ? `${pills.length}: ${pills.join(", ")}` : "0"}
+                </p>
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)]">Included sites</p>
+                <p className="font-medium tabular-nums">{data.grid?.include_sites?.length ?? 0}</p>
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)]">Excluded sites</p>
+                <p className="font-medium tabular-nums">{data.grid?.exclude_sites?.length ?? 0}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-[var(--text-muted)]">Template</p>
+                <p className="font-medium capitalize">{data.template ?? "modern"}</p>
+              </div>
+              <div>
+                <p className="text-[var(--text-muted)]">Articles/Day</p>
+                <p className="font-medium">{data.articlesPerDay}</p>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
