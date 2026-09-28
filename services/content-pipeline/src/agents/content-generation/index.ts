@@ -62,6 +62,9 @@ import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 import { runBackfillR2 } from "../../stats/backfill-r2.js";
 import { getWeeklySummary, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
 import { upsertArticlesBatch } from "../../lib/db/articles.js";
+import { regenerateSummary, saveEditedSummary, startGridSummariesRun } from "../grid-summaries/index.js";
+import { GridSummaryError } from "../grid-summaries/errors.js";
+import { parseRegenerateBody, parseSaveBody } from "../grid-summaries/http.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -815,6 +818,30 @@ async function handleRequest(
         const message = err instanceof Error ? err.message : String(err);
         console.error("[server] Run alerts error:", message);
         sendJson(res, 200, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+  // Grid template AI summaries. The cron GET always returns 200 (never marks the cron failed).
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "GET" && pathname === "/grid-summaries") {
+      sendJson(res, 200, { status: startGridSummariesRun(config) ? "started" : "already_running" });
+      return;
+    }
+    if (req.method === "POST" && (pathname === "/grid-summaries/regenerate" || pathname === "/grid-summaries/save")) {
+      try {
+        const raw = await readBody(req);
+        const out = pathname.endsWith("/regenerate")
+          ? await (async () => { const b = parseRegenerateBody(raw); return regenerateSummary(config, b.site, b.slug); })()
+          : await saveEditedSummary(config, parseSaveBody(raw));
+        sendJson(res, 200, { status: "ok", path: out.path });
+      } catch (err) {
+        const status = err instanceof GridSummaryError ? err.status : 500;
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[server] ${pathname} error:`, message);
+        sendJson(res, status, { status: "error", message });
       }
       return;
     }

@@ -177,6 +177,7 @@ async function checkSiteEligibility(
       siteEntry.domain,
       siteEntry.branch,
     );
+    if (data.themeTemplate === "grid") return { kind: "skipped", reason: "grid template" };
     const schedule = data.brief?.schedule;
     if (!schedule) return { kind: "skipped", reason: "no publishing schedule" };
 
@@ -227,6 +228,7 @@ async function processSingleSite(
       );
       briefData = data;
       writeBranch = foundBranch;
+      if (data.themeTemplate === "grid") return { kind: "skipped", domain, reason: "grid template" };
     } catch {
       return { kind: "skipped", domain, reason: "no brief configured" };
     }
