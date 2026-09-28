@@ -1,0 +1,50 @@
+Grid template: preset x card-look theming matrix (Task 14)
+Date: 2026-09-28
+Page: / on fixture-grid (http://localhost:8788/?_atl_site=fixture-grid), local worker (--persist-to .wrangler/state)
+Screenshots: docs/test-results/screenshots/grid/theming/<preset>-<look>-<width>.png
+Presets (services/dashboard/src/components/wizard/themePresets.ts): classic = "Classic News" (light),
+  tokyo_night = "Tokyo Night" (dark), warm = "Warm Magazine" (warm). All preset colours copied into theme.colors.
+Looks: default = theme.card unset (bordered / rounded / 4:3 / top / comfortable / below)
+       alt     = { style: shadow, corners: small, image_ratio: "16:9", density: compact, source_position: badge }
+Capture: Playwright 1.62 (cached Chromium), viewport W x 2200, networkidle + 2.5s (entrance animation done).
+  Headless Chrome CLI was dropped for this run: its window has a ~500px minimum width, so its "390" shots were
+  really ~500px layouts cropped to 390 (looked like horizontal overflow). Playwright reports innerWidth 390.
+
+Legibility pairs checked (WCAG AA: 4.5:1 text, 3:1 non-text), after the grid.css token fixes:
+                                   classic   tokyo    warm
+  card title (heading on card)      16.2      14.2     15.7
+  source line (--g-muted on card)    5.5       7.0      5.2   (was 4.6 / 6.2 / 4.3 -> warm FAILED before fix)
+  card intro (text @ .7 on card)     6.1       6.9      6.2   (show_intro off on fixture; computed)
+  inactive pill (--g-pill-text)     16.2      12.6     15.7   (was nav_link: 1.05 / 12.6 / 1.1 -> FAILED before fix)
+  active pill (accent-fg on accent)  >=4.5    5.7      5.4   (was accent text on surface: 1.5 / 2.8 / 3.2 -> FAILED)
+  pill hover text (--g-pill-hover)  16.2      15.0     15.7   (was nav_link_hover: 1.5 / 4.1 / 3.2 -> FAILED)
+  card title hover                  underline, colour unchanged (was link_hover: 1.5 / 4.1 / 3.2 -> FAILED)
+  focus ring (--g-focus on page)     3.7       5.6      6.6   (was accent: 1.6 / 3.3 / 3.4 -> classic FAILED)
+  story topic (--g-accent-text)      4.5       5.6      7.4   (not on /, token-level fix)
+  footer text / links on footer_bg   6.7       7.7      6.9
+  source badge (white on .62 black)  >=6.2 over any image (worst case: white image)
+
+Checklist (preset, look, width, legible y/n, notes)
+  classic      default  1440  y  4 cols x 339px; gold active pill with dark text; navy footer
+  classic      default   390  y  1 col 366px, scrollWidth 390 (no horizontal scroll)
+  classic      alt      1440  y  6 cols x 224px; badges legible on image; shadow cards (low separation from #fff page, not a text issue)
+  classic      alt       390  y  1 col, scrollWidth 390
+  tokyo_night  default  1440  y  4 cols; red active pill white text; muted source 7.0:1
+  tokyo_night  default   390  y  1 col, scrollWidth 390; burger bars light on dark header
+  tokyo_night  alt      1440  y  6 cols; black shadow barely visible on dark page (expected; border transparent)
+  tokyo_night  alt       390  y  1 col, scrollWidth 390
+  warm         default  1440  y  4 cols; orange active pill dark text; muted source 5.2:1 after fix
+  warm         default   390  y  1 col, scrollWidth 390
+  warm         alt      1440  y  6 cols; badges legible
+  warm         alt       390  y  1 col, scrollWidth 390
+
+Fixes (all token fallbacks / preset-agnostic rules in grid.css, no per-preset CSS):
+  --g-muted            = color-mix(muted 85%, --g-text)   (mixing toward text only raises contrast)
+  --g-accent-text (new)= color-mix(accent 50%, --g-heading), used for accent-coloured text
+  --g-focus (new)      = color-mix(accent 60%, --g-text), used for focus rings and the search focus border
+  --g-pill-text/hover  = no longer fall back to nav_link / nav_link_hover (tuned for a coloured nav bar)
+  --g-pill-active-*    = accent fill + layout's auto-contrast --color-accent-fg
+  card title hover     = accent underline instead of link_hover colour
+
+Modern-page parity: <link rel="stylesheet"> list of /?_atl_site=fixture-travel-a == baseline/_home.html (identical, 3 links).
+fixture-grid/site.yaml reverted byte-identical (cmp) to its pre-task content (keeps ads_config + scripts) and re-seeded.

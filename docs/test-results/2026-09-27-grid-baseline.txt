@@ -1,0 +1,27 @@
+## site-worker
+ ✓ |unit| scripts/__tests__/content-types.test.ts (2 tests) 1ms
+ ✓ |unit| scripts/__tests__/theme-asset-rewrite.test.ts (2 tests) 1ms
+
+ Test Files  17 passed (17)
+      Tests  315 passed (315)
+   Start at  12:17:44
+   Duration  435ms (transform 485ms, setup 0ms, collect 925ms, tests 61ms, environment 2ms, prepare 837ms)
+
+## content-pipeline
+   ✓ recordGeneration > inserts an event and upserts rollup with lastAdded set when created>0  480ms
+   ✓ recordGeneration > never throws when Mongo is unreachable (failure isolation)  5007ms
+
+ Test Files  76 passed (76)
+      Tests  662 passed (662)
+   Start at  12:17:45
+   Duration  7.66s (transform 1.28s, setup 0ms, collect 7.39s, tests 49.31s, environment 6ms, prepare 2.73s)
+
+## dashboard
+ ✓ src/actions/__tests__/go-live-status.test.ts (2 tests) 2ms
+ ✓ src/components/wizard/__tests__/themePresets.test.ts (2 tests) 1ms
+
+ Test Files  25 passed (25)
+      Tests  319 passed (319)
+   Start at  12:17:53
+   Duration  2.00s (transform 1.05s, setup 1.55s, collect 2.66s, tests 1.25s, environment 13.00s, prepare 1.14s)
+

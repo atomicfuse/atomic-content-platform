@@ -1,0 +1,182 @@
+Grid template: Task 27 end-to-end run + modern parity
+Date: 2026-09-28
+Worker: local wrangler dev, IS_STAGING=true build, --persist-to .wrangler/state, port 8788
+Fixture: packages/site-worker/tests/fixtures/grid-network (fixture-grid, fixture-travel-a, fixture-travel-b, fixture-health-a)
+Seed: packages/site-worker/scripts/dev/seed-grid-fixture.sh
+
+================================================================
+STEP 2: MODERN PARITY (zero-impact proof)
+================================================================
+Command: packages/site-worker/scripts/dev/capture-parity.sh docs/test-results/grid-parity/after
+          diff -r docs/test-results/grid-parity/baseline docs/test-results/grid-parity/after
+
+Result: NOT byte-identical. `diff -rq` shows 5 of 8 files differ:
+  _about.html, _best-beaches-in-portugal.html, _category_destinations.html,
+  _home.html, _search.html
+(Footer.*.css, index@_@astro.*.css, _api_articles.html ARE identical.)
+
+ROOT CAUSE (investigated per controller ruling, no production code touched):
+The only bytes that differ are Astro server-island invocation tokens that are
+already present on these modern pages before this Grid-template project touched
+anything (PixelLoader, AdSlot — both pre-existing, unrelated to Grid):
+  - the `data-island-id="<uuid>"` attribute (and the matching argument to
+    `replaceServerIsland('<uuid>', ...)`)
+  - the encrypted `e=`, `p=`, `s=` query-string params on
+    `/_server-islands/<Name>?e=...&p=...&s=...` fetch/preload URLs
+Both are generated fresh per server render (random UUID + per-request AES
+encryption of the island's props), independent of any code path this project
+touched, the fixture data, or the calendar day.
+
+Reproduced directly: two back-to-back `curl` requests for the exact same URL
+(`/about?_atl_site=fixture-travel-a`) against the *same* unmodified running
+worker, taken seconds apart with zero deploys/reseeds in between, differ in
+exactly the same way (see below) — proving this is inherent per-request
+non-determinism, not a Grid-related regression and not a day-boundary effect
+(the ruling's "must-reads block" exception does not apply; must-reads content
+is unaffected — the only diff bytes are the island tokens).
+
+Normalized comparison (regex-masking `data-island-id="..."`,
+`replaceServerIsland('...'`, and the `e=/p=/s=` params to fixed placeholders,
+then diffing baseline vs. after):
+  -> IDENTICAL for all 5 files.
+This confirms every byte of actual markup, CSS link, inline `<style>` token
+value, and content is unchanged — the entire diff is server-island nonce
+randomness that already existed in the pre-Grid modern-site code path.
+
+Verdict: BLOCKED per controller ruling ("if it isn't [identical]... report
+BLOCKED with the diff summary — do not fix anything in production code").
+No production code was touched. Diagnosis above is offered for the
+controller's disposition (e.g. normalize island tokens in the parity script,
+or accept this class of diff as expected). Rest of the E2E checklist below
+was completed regardless, since it exercises the Grid feature itself and is
+unaffected by this pre-existing modern-site server-island behavior.
+
+================================================================
+STEP 3: GRID CHECKLIST
+================================================================
+
+1. PASS — `/?_atl_site=fixture-grid`: header + search + 3 pills (All/Travel/
+   Health, All active with aria-current="page") render; 6 `.g-card` + 3
+   `.g-tile--ad` tiles (ad after cards 2/4/6, feed_ad_every:3 -> every-2-cards
+   cadence); no "Digital Nomad Visas" (status: review) anywhere in the page.
+   Screenshots: screenshots/grid/e2e/home-{1440,390}.png.
+
+2. PASS — `/topic/travel`: 6 cards, sources only Travel A / Travel B, "Travel"
+   pill is-active + aria-current="page". `/topic/health`: 4 cards, source only
+   Health A, "Health" pill active. No off-topic sources leaked either way.
+
+3. PASS — Infinite scroll (Playwright, scripted scroll-to-bottom loop, both
+   1440 and 390): 12 total items across 2 batches (page_size 6 x 2), 0
+   duplicate titles, 6 ad tiles total, all 6 `[data-ad-id]` slots have
+   `data-ad-filled="1"` (mock-ad-fill filled every batch, incl. the batch
+   appended by the scroll fetch — confirms its MutationObserver catches
+   dynamically-inserted slots). `/api/feed?page=3` returns 0 bytes and
+   `x-grid-has-more: false` after page 2 — scroll correctly stops.
+   Screenshots: screenshots/grid/e2e/scroll-end-{1440,390}.png.
+
+4. PASS — Story excerpt mode, `/story/fixture-travel-a/best-street-food-in-
+   bangkok` (chosen over the brief's default because it has both an <iframe>
+   and an internal markdown link, exercising every sub-check):
+   - "Original story by" + source line present.
+   - CTA link: `href="https://travel-a.example.com/best-street-food-in-
+     bangkok?utm_source=fixture-grid.example.com&utm_medium=grid"
+     target="_blank" rel="noopener"`.
+   - `rel="canonical"` count: 0.
+   - `<iframe>` count: 0 (stripped); internal link `/other-article` ->
+     absolutised to `https://travel-a.example.com/other-article`.
+   Screenshots use `budget-guide-lisbon` (multi-paragraph, matches Task 12's
+   precedent): screenshots/grid/e2e/story-excerpt-{1440,390}.png.
+
+5. PASS — AI summary mode. `fixture-grid/site.yaml`: `grid.story_mode:
+   ai_summary` added, re-seeded (SITES=fixture-grid seed-grid-fixture.sh).
+   - `/story/fixture-travel-a/best-beaches-in-portugal` (pool-excluded by
+     per_site_limit:4, but the story route resolves it directly, not through
+     the pool) shows the fixture summary: h2 "Portugal's Coast, Ranked" +
+     "Fixture paragraph one"/"Fixture paragraph two".
+   - `/story/fixture-travel-a/weekend-in-kyoto` (no summary record in KV)
+     falls back to excerpt mode: original excerpt text + "Original story by"
+     still renders.
+   - Reverted: `cp` backup taken before edit, `cmp` confirmed byte-identical
+     after restoring (exit 0), re-seeded again — `storyMode` back to
+     `"excerpt"` via `/api/pool`, confirmed post-revert.
+   Screenshots (taken while ai_summary was live): screenshots/grid/e2e/
+   story-ai-{1440,390}.png.
+
+6. PASS — Related stories on the bangkok story page: exactly 3
+   `.g-related__item` inside `<aside class="g-story__side">` (desktop
+   sidebar) and exactly 3 more `.g-related__item` outside that aside
+   (rendered below the article, shown on mobile / hidden on desktop via
+   CSS) — 6 total markup nodes, 3+3 split confirmed programmatically.
+
+7. PASS — `/search?q=kyoto` (per controller ruling, in place of q=beaches):
+   200, 1 result ("A Weekend in Kyoto"). `/search?q=beaches`: 200, `g-empty`
+   state, 0 results — legitimate, since best-beaches-in-portugal is outside
+   the per_site_limit:4 pool (same reason it's absent from item 11's /api/
+   pool response — see note there). `/about`: 200, renders in Grid chrome
+   (`g-header`, "About | Grid Fixture" title).
+   Screenshots: screenshots/grid/e2e/{search,about}-{1440,390}.png.
+
+8. PASS — all five 404 as expected:
+   - `/topic/nope` -> 404
+   - `/story/fixture-travel-b/digital-nomad-visas-2026` (the review-status
+     article on Travel B) -> 404
+   - `/story/unknown/x` -> 404
+   - `/best-beaches-in-portugal` on the Grid host -> 404
+   - `/grid` on a modern host (fixture-travel-a) -> 404
+
+9. PASS — Keyboard (Playwright, real Tab/Enter/Escape key events):
+   - Desktop 1440: Tab sequence from page load is logo -> search input -> All
+     pill -> Travel pill -> Health pill -> card links, in DOM order; every
+     stop has a visible focus ring (`outline: 2px solid <accent>`, not
+     `none`/`0`/transparent) — confirms `:focus-visible` styling from
+     grid.css:63 applies to every tabbable element in the pills nav.
+   - Mobile 390: burger starts `aria-expanded="false"`; Enter opens it
+     (`aria-expanded="true"`, drawer un-hidden); Escape closes it
+     (`aria-expanded="false"`, drawer re-hidden) AND returns focus to the
+     burger button (`document.activeElement === burger` confirmed true).
+
+10. PASS — `prefers-reduced-motion: reduce` (Playwright `reducedMotion:
+    'reduce'` context, checked immediately on load with no wait): `.g-card`
+    computed `animationName: "none"`, `opacity: "1"` right away — no
+    entrance animation plays, matches grid.css:101-102.
+
+11. PASS (with a caveat worth flagging) — `/api/pool?_atl_site=fixture-grid
+    &summaries=1`: the underlying KV summary record for best-beaches-in-
+    portugal (`grid-summary:fixture-travel-a:best-beaches-in-portugal`,
+    read directly via `wrangler kv key get --local`) has `edited: false` ->
+    `statusOf()` = `"generated"`, confirming the summary itself generated
+    correctly. HOWEVER best-beaches-in-portugal does not appear in `/api/
+    pool`'s `items` array at all (12 items, all from the other 3 sites'
+    top-4-by-date slices) because `loadGridPool`/`buildPool` clamps to
+    `per_site_limit: 4` before the `summaries=1` branch ever runs — beaches
+    is the 5th-most-recent Travel A article, same reason it's excluded from
+    the main feed/pool (per the controller ruling for item 7). So the
+    endpoint cannot literally surface a pool-excluded slug's summary status,
+    even though that record does exist and is "generated". Not a code
+    change was made (pool exclusion is existing, correct, tested behavior;
+    the checklist item's premise doesn't hold for this fixture's per_site_
+    limit). Flagging for the controller in case the intent was a different
+    endpoint or a temporarily higher per_site_limit.
+
+12. Pipeline smoke (Task 20 Step 6): skipped: no throwaway repo (controller
+    ruling).
+
+Note (ad script execution, per the brief): local/workers.dev hosts are
+staging, so ad widget `code` is stripped from `scripts.head`/`body_end` at
+seed time and in-batch **script execution** timing can't be observed
+locally. Verified instead: mock-ad-fill.js (a `scripts.body_end` script,
+not stripped) fills every `[data-ad-id]` slot including ones inserted by
+later infinite-scroll batches (item 3) — the debug panel in every screenshot
+shows "Visible slots: N" all green. Real ad-widget script-tag execution on
+production is covered by the rollout runbook step 7, not here.
+
+================================================================
+CHECKPOINT
+================================================================
+E2E file complete. 11/12 checklist lines PASS (or explained per controller
+rulings); item 11 PASS-with-caveat (endpoint cannot surface a pool-excluded
+slug by design, documented above); item 12 skipped per ruling. Modern
+parity: BLOCKED — full diff summary and root-cause diagnosis above; zero
+production code touched. No commit made.
+
+Controller ruling (2026-09-28): parity = PASS. The raw HTML diffs are only Astro server-island per-request tokens (data-island-id, encrypted e/p/s params), which differ between any two requests to the same unchanged page. The CSS bundles are byte-identical, and the HTML is byte-identical after masking those tokens.
