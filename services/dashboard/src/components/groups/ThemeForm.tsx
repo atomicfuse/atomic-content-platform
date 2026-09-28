@@ -24,14 +24,17 @@ export function ThemeForm({ value, onChange }: ThemeFormProps): React.ReactEleme
           <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Theme
           </label>
-          <select
-            value={(value.theme as string) ?? "modern"}
-            onChange={(e): void => updateField("theme", e.target.value)}
-            className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
-          >
-            <option value="modern">Modern</option>
-            <option value="editorial">Editorial</option>
-          </select>
+          {/*
+           * F3: the "Theme: Modern / Editorial" select used to live here. It wrote
+           * `theme.theme`, which nothing in site-worker, seed-kv or the pipeline
+           * reads — "Editorial" was never built. Removed; `updateField` (still used
+           * below by updateColor's sibling helpers) is left untouched so any
+           * existing `theme.theme` value keeps round-tripping through `value`/`onChange`
+           * unchanged when the user edits any other field on this form.
+           */}
+          <p className="text-xs text-[var(--text-muted)]">
+            Template (Modern / Grid) is chosen per site in Site Settings → Theme.
+          </p>
         </div>
       </div>
 

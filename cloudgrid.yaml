@@ -82,6 +82,16 @@ services:
     timezone: EST
     run: http://content-pipeline-app/run-alerts
 
+  # ---------------------------------------------------------------------------
+  # grid-summaries — hourly: AI summaries for Grid sites in ai_summary mode.
+  # Fire-and-forget; no-op when no Grid site uses ai_summary.
+  # ---------------------------------------------------------------------------
+  grid-summaries:
+    type: cron
+    schedule: "30 * * * *"
+    timezone: EST
+    run: http://content-pipeline-app/grid-summaries
+
 requires:
   - redis: private
   - mongodb

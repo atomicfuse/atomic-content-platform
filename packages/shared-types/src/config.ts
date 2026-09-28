@@ -1,6 +1,7 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
 import type { AdPlaceholderHeights, InlineAdConfig } from "./monetization.js";
+import type { GridConfig, ResolvedGridConfig, GridCardConfig, ResolvedGridCardConfig } from "./grid.js";
 
 // ---------------------------------------------------------------------------
 // Quality scoring
@@ -81,7 +82,7 @@ export interface SiteBrief {
   schedule: PublishSchedule;
 
   /** Content vertical for aggregator API queries. */
-  vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
+  vertical?: string;
 
   /** Content Aggregator vertical ID — preferred over name for API queries. */
   vertical_id?: string;
@@ -179,6 +180,12 @@ export interface ThemeConfig {
   /** Base theme template to extend. */
   base?: "modern" | "editorial" | "bold" | "classic";
 
+  /** Site template. Absent or "modern" → the default template. NOT `base` (that holds preset ids). */
+  template?: "modern" | "grid";
+
+  /** Card look — read only by the Grid template. */
+  card?: GridCardConfig;
+
   /**
    * Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }).
    * Recognised keys include: primary, accent, background, secondary, text,
@@ -225,6 +232,12 @@ export interface ThemeConfig {
 export interface ResolvedThemeConfig {
   /** Base theme template. */
   base: "modern" | "editorial" | "bold" | "classic";
+
+  /** Site template. Absent or "modern" → the default template. NOT `base` (that holds preset ids). */
+  template?: "modern" | "grid";
+
+  /** Card look — read only by the Grid template. */
+  card?: ResolvedGridCardConfig;
 
   /** Named colour map. */
   colors: Record<string, string>;
@@ -570,6 +583,9 @@ export interface OrgConfig {
 
   /** Layout knobs for the new magazine-style layout. */
   layout?: LayoutConfig;
+
+  /** Default Grid template configuration. */
+  grid?: GridConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -621,6 +637,9 @@ export interface GroupConfig {
 
   /** Layout knobs for the new magazine-style layout. */
   layout?: LayoutConfig;
+
+  /** Group-level Grid template overrides. */
+  grid?: GridConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -706,6 +725,9 @@ export interface SiteConfig {
 
   /** Layout knobs for the new magazine-style layout. */
   layout?: LayoutConfig;
+
+  /** Site-level Grid template overrides. */
+  grid?: GridConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +824,9 @@ export interface ResolvedConfig {
    * without a CDN round-trip.
    */
   inlineAdConfig: InlineAdConfig;
+
+  /** Fully-resolved Grid template configuration. Present only on Grid sites. */
+  grid?: ResolvedGridConfig;
 }
 
 // ---------------------------------------------------------------------------

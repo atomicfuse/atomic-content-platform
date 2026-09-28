@@ -1,0 +1,198 @@
+---
+/**
+ * Grid template HTML shell. A copy of layouts/BaseLayout.astro with Grid changes:
+ * grid.css instead of the modern theme CSS, OG/Twitter meta, optional noindex,
+ * <body class="g-body"> with card-look data attributes, and no newsletter handler.
+ * Keep fonts / cssVars / script injection / loaders in sync with BaseLayout.
+ */
+import { getConfig, isStagingEnv } from '../../lib/config';
+import { readableTextColor } from '../../lib/contrast';
+import { getGridContext } from '../../lib/grid/context';
+import { cardBodyAttributes } from '../../lib/grid/head';
+import PixelLoader from '../../components/PixelLoader.astro';
+import InterstitialLoader from '../../components/InterstitialLoader.astro';
+import './styles/grid.css';
+
+interface Props {
+  title: string;
+  description: string;
+  pageType: 'homepage' | 'article' | 'category';
+  /** Absolute or root-relative share image. */
+  image?: string;
+  noindex?: boolean;
+}
+const { title, description, pageType, image, noindex = false } = Astro.props;
+const config = getConfig(Astro);
+const staging = isStagingEnv(Astro);
+const { theme, scripts, tracking } = config;
+const facebookDomainVerification = (tracking?.facebook_domain_verification as string | null | undefined) ?? null;
+
+// On staging (workers.dev / localhost), only allow local scripts (src starts
+// with "/") so mock-ad-fill.js works for QA. External ad SDKs and inline
+// widget loaders are suppressed to avoid burning real impressions.
+function isLocalScript(s: { src?: string }): boolean {
+  return !!s.src?.startsWith('/');
+}
+const allHeadScripts = scripts?.head ?? [];
+const allBodyStartScripts = scripts?.body_start ?? [];
+const allBodyEndScripts = scripts?.body_end ?? [];
+const headScripts = staging ? allHeadScripts.filter(isLocalScript) : allHeadScripts;
+const bodyStartScripts = staging ? allBodyStartScripts.filter(isLocalScript) : allBodyStartScripts;
+const bodyEndScripts = staging ? allBodyEndScripts.filter(isLocalScript) : allBodyEndScripts;
+
+const fontFamilies = [theme.fonts.heading, theme.fonts.body]
+  .filter((f) => f && f !== 'sans-serif' && f !== 'serif')
+  .map((f) => f.replace(/ /g, '+'))
+  .filter((v, i, a) => a.indexOf(v) === i);
+
+const googleFontsUrl =
+  fontFamilies.length > 0
+    ? `https://fonts.googleapis.com/css2?${fontFamilies.map((f) => `family=${f}:wght@400;500;600;700`).join('&')}&display=swap`
+    : null;
+
+const rawLogoHeight = typeof theme.logo_height === 'number' ? theme.logo_height : 52;
+const logoHeight = Math.min(rawLogoHeight, 104); // clamp so logo never overflows nav cap
+const logoHeightFooter = typeof theme.logo_height_footer === 'number' ? theme.logo_height_footer : null;
+// Nav grows with the logo (8px padding top + 8px bottom), min 64px (mobile), max 120px.
+const navHeight = Math.min(Math.max(64, logoHeight + 16), 120);
+
+// Menu item font size — clamped to a sane range so it scales with a larger logo
+// without breaking the nav. Default 14px (matches the prior hardcoded 0.875rem).
+const rawMenuItemFontSize = typeof theme.menu_item_font_size === 'number' ? theme.menu_item_font_size : 14;
+const menuItemFontSize = Math.min(Math.max(rawMenuItemFontSize, 10), 24);
+
+const colorVars = Object.entries(theme.colors)
+  .map(([key, value]) => `--color-${key}: ${value};`)
+  .join(' ');
+
+// Auto-contrast foreground for colors used as button/section backgrounds, so
+// text stays legible no matter what color a preset/site picks (fixes the
+// white-on-white Read More / Subscribe buttons when secondary === #ffffff).
+const secondaryBg = theme.colors.secondary ?? '#1a1a2e';
+const accentBg = theme.colors.accent ?? secondaryBg;
+const primaryBg = theme.colors.primary ?? '#1a1a2e';
+const fgVars = [
+  `--color-secondary-fg: ${readableTextColor(secondaryBg)};`,
+  `--color-accent-fg: ${readableTextColor(accentBg)};`,
+  `--color-primary-fg: ${readableTextColor(primaryBg)};`,
+].join(' ');
+
+const cssVars = [
+  colorVars,
+  fgVars,
+  `--logo-height: ${logoHeight}px;`,
+  `--nav-height: ${navHeight}px;`,
+  `--menu-item-font-size: ${menuItemFontSize}px;`,
+  logoHeightFooter != null ? `--logo-height-footer: ${logoHeightFooter}px;` : '',
+]
+  .filter(Boolean)
+  .join(' ');
+
+const gridCtx = getGridContext(Astro);
+const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={config.site_name} />
+    {image && <meta property="og:image" content={image} />}
+    <meta name="twitter:card" content={image ? 'summary_large_image' : 'summary'} />
+    {facebookDomainVerification && (
+      <meta name="facebook-domain-verification" content={facebookDomainVerification} />
+    )}
+    {theme.favicon && (
+      <>
+        <link rel="icon" type="image/png" sizes="32x32" href={theme.favicon} />
+        <link rel="apple-touch-icon" sizes="180x180" href={theme.favicon} />
+      </>
+    )}
+
+    {googleFontsUrl && (
+      <>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link rel="stylesheet" href={googleFontsUrl} />
+      </>
+    )}
+
+    <slot name="head" />
+
+    {/* Injected head scripts from config.scripts.head (org/group/override/site layers). */}
+    {headScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    {/* Server Island — GA4/GTM/Meta pixels re-render per request from KV. */}
+    <PixelLoader server:defer />
+
+    <style
+      define:vars={{
+        fontHeading: theme.fonts.heading,
+        fontBody: theme.fonts.body,
+      }}
+    >
+      :root {
+        font-family: var(--fontBody), sans-serif;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--fontHeading), sans-serif;
+      }
+    </style>
+
+    <style is:global>
+      .atl-hidden-mobile { display: block; }
+      .atl-hidden-desktop { display: none; }
+      @media (min-width: 768px) {
+        .atl-hidden-mobile { display: none; }
+        .atl-hidden-desktop { display: block; }
+      }
+    </style>
+
+    <style set:html={`:root { ${cssVars} }`}></style>
+  </head>
+
+  <body class="g-body" {...bodyAttrs}>
+    {/* Injected body_start scripts from config layers. */}
+    {bodyStartScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={s.inline} />
+          : null
+    )}
+
+    <slot />
+
+    {/* Injected body_end scripts from config layers.
+         External (src) scripts load immediately. Inline scripts are deferred
+         to the window load event so they fire AFTER Server Islands (ad slots)
+         and async head scripts (ad SDKs) have loaded. This lets users paste
+         widget code as-is without worrying about timing. */}
+    {bodyEndScripts.map((s) =>
+      s.src
+        ? <script is:inline async={s.async} src={s.src}></script>
+        : s.inline
+          ? <script is:inline set:html={`window.addEventListener('load',function(){${s.inline}});`} />
+          : null
+    )}
+
+    {/* Interstitial ad loader — trigger + frequency + external script.
+         Suppressed on staging to avoid burning real ad impressions. */}
+    {!staging && <InterstitialLoader pageType={pageType} />}
+
+  </body>
+</html>

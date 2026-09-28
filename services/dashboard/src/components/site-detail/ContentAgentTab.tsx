@@ -28,6 +28,10 @@ const ContentGenerationPanel = dynamic(
   () => import("@/components/site-detail/ContentGenerationPanel").then((m) => m.ContentGenerationPanel),
   { loading: () => <div className="h-32 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
 );
+const GridSiteTab = dynamic(
+  () => import("./grid/GridSiteTab").then((m) => m.GridSiteTab),
+  { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
+);
 import { generateLogoPreview } from "@/actions/wizard";
 import Link from "next/link";
 
@@ -1551,6 +1555,9 @@ export function ContentAgentTab({
   const tabs = [
     { id: "identity", label: "Identity", content: identityContent },
     { id: "theme", label: "Theme", content: <SiteThemeTab domain={domain} /> },
+    ...(((siteConfig?.theme as Record<string, unknown> | undefined)?.template === "grid")
+      ? [{ id: "grid", label: "Grid", content: <GridSiteTab domain={domain} /> }]
+      : []),
     { id: "brief", label: "Content Brief", content: contentBriefContent },
     { id: "groups", label: "Groups", content: groupsContent },
     { id: "overrides", label: `Overrides${!overridesLoading && overrides.length > 0 ? ` (${overrides.length})` : ""}`, content: overridesContent },

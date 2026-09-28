@@ -1,0 +1,29 @@
+---
+import { env } from 'cloudflare:workers';
+import GridLayout from '../../themes/grid/GridLayout.astro';
+import GridHeader from '../../themes/grid/components/GridHeader.astro';
+import GridFooter from '../../themes/grid/components/GridFooter.astro';
+import CardGrid from '../../themes/grid/components/CardGrid.astro';
+import AdSlot from '../../components/AdSlot.astro';
+import { getGridContext, notFound } from '../../lib/grid/context';
+import { edgeCache, kvReader, loadGridPool, NO_CACHE } from '../../lib/grid/load';
+import { renderListing } from '../../lib/grid/listing';
+export const prerender = false;
+
+const g = getGridContext(Astro);
+if (!g) return notFound();
+const now = new Date();
+const data = await loadGridPool(kvReader(env.CONFIG_KV), g.staging ? NO_CACHE : edgeCache(), g.siteId, g.grid, now);
+const listing = renderListing(data, g, null, 1, now, 'homepage');
+Astro.response.headers.set('cache-control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=600');
+const description = g.config.site_tagline || `Latest stories from ${g.config.site_name}`;
+---
+<GridLayout title={g.config.site_name} description={description} pageType="homepage" image={g.config.theme.logo ?? undefined}>
+  <GridHeader config={g.config} topics={g.grid.topics} activeTopic={null} />
+  <main class="g-main">
+    <AdSlot position="homepage-top" pageType="homepage" server:defer />
+    <CardGrid html={listing.html} hasMore={listing.hasMore} nextPage={listing.nextPage} topic={null} empty={listing.total === 0} />
+  </main>
+  <GridFooter config={g.config} />
+  <AdSlot position="sticky-bottom" pageType="homepage" server:defer />
+</GridLayout>

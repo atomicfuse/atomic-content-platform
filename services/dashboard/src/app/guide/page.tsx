@@ -35,6 +35,7 @@ const GUIDE_PAGES = [
   { slug: "21-per-topic-filters", title: "Per-Topic Filters" },
   { slug: "22-ops-console-api", title: "Ops Console API" },
   { slug: "23-topic-rotation", title: "Topic Rotation (Round-Robin)" },
+  { slug: "24-grid-template", title: "Grid Template" },
 ];
 
 export default function GuidePage(): React.ReactElement {

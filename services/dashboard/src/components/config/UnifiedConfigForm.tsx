@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import dynamic from "next/dynamic";
 import { TrackingForm } from "../settings/TrackingForm";
 import { ScriptsEditor } from "../settings/ScriptsEditor";
 import { ScriptVariablesEditor } from "../settings/ScriptVariablesEditor";
@@ -10,6 +11,12 @@ import { LegalForm } from "../settings/LegalForm";
 import { ThemeForm } from "../groups/ThemeForm";
 
 import type { AdsConfigFormValue } from "../settings/AdsConfigForm";
+import type { GridFields } from "@/types/grid";
+
+const GridSettingsSection = dynamic(
+  () => import("./grid/GridSettingsSection").then((m) => m.GridSettingsSection),
+  { ssr: false },
+);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,6 +82,7 @@ export interface UnifiedConfigFields {
   ads_txt: string[];
   theme: Record<string, unknown>;
   legal: Record<string, string>;
+  grid?: GridFields;
 }
 
 export interface UnifiedConfigFormProps {
@@ -649,6 +657,17 @@ export function UnifiedConfigForm({
           onChange={(v): void => updateField("theme", v)}
         />
       </section>
+
+      {/* 7b. Grid template settings (group-level only) */}
+      {mode === "group" && (
+        <section>
+          <SectionHeader title="Grid template" />
+          <p className="mb-3 text-xs opacity-70">
+            Applies only to sites in this group that use the Grid template. Site-level settings override these.
+          </p>
+          <GridSettingsSection value={config.grid ?? {}} onChange={(v): void => updateField("grid", v)} />
+        </section>
+      )}
 
       {/* 8. Legal */}
       <section>

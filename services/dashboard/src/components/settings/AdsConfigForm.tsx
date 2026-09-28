@@ -127,6 +127,7 @@ const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "homepage-top", label: "Homepage Top" },
   { value: "homepage-mid", label: "Homepage Mid" },
   { value: "category-top", label: "Category Top" },
+  { value: "grid-feed", label: "Grid feed — in-grid tile (Grid template only)" },
 ];
 
 export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.ReactElement {

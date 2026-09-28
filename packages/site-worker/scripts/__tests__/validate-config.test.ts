@@ -55,4 +55,23 @@ describe('validateResolvedConfig', () => {
     const warnings = validateResolvedConfig(config as Record<string, unknown>, 'testsite');
     expect(warnings.some(w => w.includes('scripts.head') && w.includes('empty'))).toBe(true);
   });
+
+  it('warns when a Grid site has no grid.topics and no grid.include_sites', () => {
+    const config = {
+      ...base,
+      theme: { template: 'grid' },
+      grid: { topics: [], include_sites: [] },
+    };
+    const warnings = validateResolvedConfig(config as Record<string, unknown>, 'testsite');
+    expect(warnings.some(w => w.includes('Grid site has no grid.topics'))).toBe(true);
+  });
+
+  it('does not warn about grid sources for a modern (non-Grid) config', () => {
+    const config = {
+      ...base,
+      theme: { template: 'modern' },
+    };
+    const warnings = validateResolvedConfig(config as Record<string, unknown>, 'testsite');
+    expect(warnings.some(w => w.includes('Grid site has no grid.topics'))).toBe(false);
+  });
 });

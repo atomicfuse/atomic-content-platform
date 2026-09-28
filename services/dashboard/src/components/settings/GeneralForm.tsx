@@ -77,19 +77,13 @@ export function GeneralForm({
         </p>
       </div>
 
-      <div className="space-y-1.5">
-        <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-          Default Theme
-        </label>
-        <select
-          value={value.default_theme ?? "modern"}
-          onChange={(e): void => updateField("default_theme", e.target.value)}
-          className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
-        >
-          <option value="modern">Modern</option>
-          <option value="editorial">Editorial</option>
-        </select>
-      </div>
+      {/*
+       * F3: the "Default Theme: Modern / Editorial" select used to live here. It
+       * wrote `default_theme`, which nothing in site-worker, seed-kv or the
+       * pipeline reads — "Editorial" was never built. Removed. `value.default_theme`
+       * is intentionally left untouched elsewhere in this file's props/state so an
+       * existing `default_theme` value on org config keeps round-tripping unchanged.
+       */}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-1.5">

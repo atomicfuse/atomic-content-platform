@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { stringify as stringifyYaml } from "yaml";
 import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
@@ -14,6 +15,7 @@ import { removeBackground } from "@/lib/remove-background";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
+import { applyGridConfigUpdates } from "@/lib/grid-config";
 
 interface SaveRequestBody {
   domain: string;
@@ -142,6 +144,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (configUpdates.layout !== undefined) {
         existing.layout = configUpdates.layout;
       }
+      applyGridConfigUpdates(existing, configUpdates);
 
       // Phase 1 config fields
       if (configUpdates.groups !== undefined) {
@@ -372,6 +375,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // Dual-write: mirror site config to MongoDB (soft-fail)
     if (configUpdates) {
       await upsertSiteConfig(domain, existing as Record<string, unknown>);
+      // F2: bust the Next.js cache for the site detail page so a client-side
+      // router.refresh() (e.g. after a Theme save that flips theme.template)
+      // re-renders it with this config instead of a stale cached RSC payload.
+      revalidatePath(`/sites/${domain}`);
     }
 
     // Propagate vertical (category label) to dashboard-index so the Sites grid

@@ -81,6 +81,11 @@ export interface ConditionalOverrideEntry {
 
 export const conditionalOverridesKey = (siteId: string): string => `cond-overrides:${siteId}`;
 
+/** Grid template: network-wide site directory (written by scripts/seed-grid.ts). */
+export const networkDirectoryKey = (): string => 'network-directory';
+/** Grid template: rendered AI summary for one source article (written by scripts/seed-grid.ts). */
+export const gridSummaryKey = (siteId: string, slug: string): string => `grid-summary:${siteId}:${slug}`;
+
 /** Shared legal/info page rendered into KV at sync time. The Worker
  *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca` | `amazon`)
  *  via the [page] route. */

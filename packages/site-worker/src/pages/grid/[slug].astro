@@ -1,0 +1,29 @@
+---
+/**
+ * Grid template shared pages (about/contact/privacy/terms/dmca/amazon) — the
+ * same KV-seeded content as the modern [slug]/index.astro, rendered in Grid
+ * chrome. Everything else 404s; Grid article URLs live at /story/….
+ */
+import { env } from 'cloudflare:workers';
+import GridLayout from '../../themes/grid/GridLayout.astro';
+import GridHeader from '../../themes/grid/components/GridHeader.astro';
+import GridFooter from '../../themes/grid/components/GridFooter.astro';
+import { getGridContext, notFound } from '../../lib/grid/context';
+import { sharedPageKey, type SharedPage } from '../../lib/kv-schema';
+export const prerender = false;
+
+// Same set as src/pages/[slug]/index.astro.
+const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon']);
+const g = getGridContext(Astro);
+if (!g) return notFound();
+const slug = Astro.params.slug ?? '';
+if (!SHARED_PAGES.has(slug)) return notFound();
+const page = await env.CONFIG_KV.get<SharedPage>(sharedPageKey(g.siteId, slug), 'json');
+if (!page) return notFound();
+Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+---
+<GridLayout title={`${page.title} | ${g.config.site_name}`} description={page.title} pageType="article">
+  <GridHeader config={g.config} topics={g.grid.topics} activeTopic={null} />
+  <main class="g-main"><article class="g-page"><h1>{page.title}</h1><div class="g-story__prose" set:html={page.html} /></article></main>
+  <GridFooter config={g.config} />
+</GridLayout>

@@ -1,0 +1,11 @@
+domain: travel-b.example.com
+site_name: Travel B
+groups: []
+theme:
+  base: classic
+brief:
+  audience: Travellers
+  tone: Friendly
+  topics: [Destinations]
+  schedule:
+    articles_per_day: 0

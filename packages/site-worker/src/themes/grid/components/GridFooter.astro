@@ -1,0 +1,27 @@
+---
+/** Grid template footer: copyright + legal links. */
+import type { ResolvedConfig } from '@atomic-platform/shared-types';
+
+interface Props {
+  config: ResolvedConfig;
+}
+const { config } = Astro.props;
+const year = new Date().getUTCFullYear();
+const links = [
+  ['About', '/about'],
+  ['Contact', '/contact'],
+  ['Privacy Policy', '/privacy'],
+  ['Terms of Service', '/terms'],
+] as const;
+---
+
+<footer class="g-footer">
+  <div class="g-footer__inner">
+    <p class="g-footer__text">&copy; {year} {config.site_name}. All rights reserved.</p>
+    <nav class="g-footer__links" aria-label="Legal">
+      {links.map(([label, href]) => (
+        <a class="g-footer__link" href={href}>{label}</a>
+      ))}
+    </nav>
+  </div>
+</footer>

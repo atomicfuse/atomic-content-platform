@@ -1,0 +1,71 @@
+---
+/**
+ * Grid feed markup + infinite-scroll client. Server-renders page 1's tiles
+ * (from listing.ts) and, when more stories exist, wires an IntersectionObserver
+ * sentinel that fetches /api/feed batches and appends them.
+ * Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md.
+ */
+interface Props { html: string; hasMore: boolean; nextPage: number; topic: string | null; empty: boolean }
+const { html, hasMore, nextPage, topic, empty } = Astro.props;
+---
+{empty
+  ? <p class="g-empty">No stories yet — check back soon.</p>
+  : <>
+      <div class="g-grid" id="g-grid" data-next-page={nextPage} data-has-more={String(hasMore)} data-topic={topic ?? ''} set:html={html} />
+      <div class="g-sentinel" id="g-sentinel" aria-hidden="true"></div>
+      <p class="g-feed-status" id="g-feed-status" aria-live="polite"></p>
+    </>}
+<script is:inline>
+  (function () {
+    var grid = document.getElementById('g-grid');
+    var sentinel = document.getElementById('g-sentinel');
+    var status = document.getElementById('g-feed-status');
+    if (!grid || !sentinel) return;
+    var page = Number(grid.dataset.nextPage);
+    var hasMore = grid.dataset.hasMore === 'true';
+    var loading = false;
+    var observer;
+    function runScripts(root) {
+      // Scripts inserted via innerHTML/template never execute — re-create them (ad widget code).
+      root.querySelectorAll('script').forEach(function (old) {
+        var s = document.createElement('script');
+        for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+        s.text = old.textContent || '';
+        old.replaceWith(s);
+      });
+    }
+    function nearBottom() { return sentinel.getBoundingClientRect().top < window.innerHeight + 800; }
+    async function load() {
+      if (loading || !hasMore) return;
+      loading = true;
+      try {
+        var params = new URLSearchParams({ page: String(page) });
+        if (grid.dataset.topic) params.set('topic', grid.dataset.topic);
+        var preview = new URLSearchParams(location.search).get('_atl_site');
+        if (preview) params.set('_atl_site', preview);
+        var res = await fetch('/api/feed?' + params.toString());
+        if (!res.ok) throw new Error(String(res.status));
+        hasMore = res.headers.get('x-grid-has-more') === 'true';
+        var tpl = document.createElement('template');
+        tpl.innerHTML = (await res.text()).trim();
+        var nodes = Array.prototype.slice.call(tpl.content.children);
+        grid.append(tpl.content);
+        nodes.forEach(runScripts);
+        page += 1;
+        if (!hasMore) { observer.disconnect(); sentinel.remove(); }
+      } catch (e) {
+        if (status) status.textContent = 'Could not load more stories.';
+        observer.disconnect();
+        hasMore = false;
+      } finally {
+        loading = false;
+      }
+      // IntersectionObserver won't re-fire if the sentinel stays in view after a short batch.
+      if (hasMore && nearBottom()) load();
+    }
+    observer = new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) load();
+    }, { rootMargin: '800px 0px' });
+    if (hasMore) observer.observe(sentinel);
+  })();
+</script>

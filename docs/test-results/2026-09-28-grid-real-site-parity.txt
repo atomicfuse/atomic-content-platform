@@ -1,0 +1,122 @@
+REAL-SITE PARITY: PASS
+
+Grid template branch — real live-site parity (pre-merge, read-only, local only)
+Date: 2026-09-28 (all runs on the same UTC day, ~16:15–16:27 UTC)
+
+SITES (Live, group `ready`, blank company)
+  coffeeactually   -> coffeeactually.com
+  dogslabs         -> dogslabs.com
+  gadgetskoala     -> gadgetskoala.com
+  hiddenstorydaily -> hiddenstorydaily.com
+  (custom domains taken from network origin/main dashboard-index.yaml)
+
+REFS
+  Baseline : atomic-content-platform origin/main = 6ea36f2e857039f140eb8236b453eb0e35b74a77
+             (detached worktree ../atomic-content-platform-parity-base; pnpm install --frozen-lockfile; shared-types built)
+  Branch   : working tree of /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform
+             (asaf-dev, HEAD 6ea36f2 + uncommitted Grid changes; shared-types dist verified current:
+             fresh tsc output == dist for all .js/.d.ts, only .map paths differ)
+  Network  : atomic-labs-network origin/main = 76c562e44624d5e6b9715a7de7db3edbe7745586
+             (detached worktree ../atomic-labs-network-parity, read-only)
+
+SAFETY
+  - seed-kv.ts reviewed before first run: all writes go through `wrangler kv bulk put/bulk delete/key list`
+    and `wrangler r2 object put`, each switched by KV_REMOTE / R2_REMOTE to --local. No fetch/Cloudflare API/
+    GitHub path in seed-kv or its imported libs (restConfigReader in grid-config-readers.ts is only used by
+    seed-grid.ts, not seed-kv). No R2 put actually ran (all site assets were images, which are skipped).
+  - Every seed/wrangler command ran under `env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID WRANGLER_SEND_METRICS=false`.
+  - All 16 seed runs printed "Resource location: local". Emitted wrangler.{staging,production}.json have no `remote` bindings.
+  - Ports: baseline 8788, branch 8790. 8789 never touched (it was free throughout).
+  - No commits / stash / branch changes. Both worktrees removed + pruned.
+
+COMMANDS (scripts saved in docs/test-results/grid-real-parity/scripts/)
+  seed (per side, site, ns):
+    env -u CLOUDFLARE_API_TOKEN -u CLOUDFLARE_ACCOUNT_ID WRANGLER_SEND_METRICS=false \
+      NETWORK_DATA_PATH=../atomic-labs-network-parity KV_REMOTE=false R2_REMOTE=false KV_NAMESPACE_ID=<ns> \
+      pnpm seed:kv <site> <site> <site>.com          (ns = f6c35e1f… staging, b258e470… production)
+  dump:  pnpm exec wrangler kv key get <key> --namespace-id=<ns> --local  | jq -S .
+  build: NETWORK_DATA_PATH=<same> IS_STAGING=true pnpm build      (staging)
+         NETWORK_DATA_PATH=<same> pnpm build   (IS_STAGING unset)  (production)
+  run:   pnpm exec wrangler dev --config dist/server/wrangler.<env>.json --port <8788|8790> --persist-to .wrangler/state
+  capture: curl "http://localhost:<port><path>?_atl_site=<site>" (or &_atl_site= when path has a query)
+
+----------------------------------------------------------------------------------------------------
+1. SEED-OUTPUT PARITY (jq -S normalised; raw bytes were also identical)
+   Newest published slug (by publishDate, from baseline index):
+     coffeeactually   packing-a-student-kitchen
+     dogslabs         is-your-dog-trail-ready-essential-tips-for-montana-adventures
+     gadgetskoala     navigating-ai-education-learning-shortcuts
+     hiddenstorydaily silence-of-ufos-avi-loeb-soundless-sightings
+
+   ns        site              site-config        article-index        article:<newest>   site:<domain>
+   staging   coffeeactually    IDENTICAL 7488B    IDENTICAL 96895B     IDENTICAL 5167B    IDENTICAL
+   staging   dogslabs          IDENTICAL 7135B    IDENTICAL 79775B     IDENTICAL 4158B    IDENTICAL
+   staging   gadgetskoala      IDENTICAL 8038B    IDENTICAL 34886B     IDENTICAL 5091B    IDENTICAL
+   staging   hiddenstorydaily  IDENTICAL 10432B   IDENTICAL 36074B     IDENTICAL 4510B    IDENTICAL
+   prod      coffeeactually    IDENTICAL 7488B    IDENTICAL 96895B     IDENTICAL 5167B    IDENTICAL
+   prod      dogslabs          IDENTICAL 7135B    IDENTICAL 79775B     IDENTICAL 4158B    IDENTICAL
+   prod      gadgetskoala      IDENTICAL 8038B    IDENTICAL 34886B     IDENTICAL 5091B    IDENTICAL
+   prod      hiddenstorydaily  IDENTICAL 10432B   IDENTICAL 36074B     IDENTICAL 4510B    IDENTICAL
+
+   Extra (beyond brief, both namespaces): cond-overrides:<site>, shared-page:<site>:{about,contact,privacy,terms,dmca,amazon}
+   and the full per-site key list — all IDENTICAL (72/72, see grid-real-parity/extra-kv-keys.txt).
+   Seed logs identical apart from temp paths / wrangler "update available" banner.
+   Articles: coffeeactually 125, others per logs; all seeds exit 0.
+
+----------------------------------------------------------------------------------------------------
+2/3. PAGE PARITY — every capture HTTP 200 on both sides, both builds
+   Pages: / , /<newest slug>, category (first nav link: coffee-news | pet-care-%26-health | gadgets | unexplained-events),
+          /about, /search, /api/articles?page=2, /ads.txt, /robots.txt
+
+   Result is the same for all 4 sites in BOTH the staging build and the production build:
+     home              IDENTICAL-after-masking (30 masked tokens)
+     article           IDENTICAL-after-masking (30)
+     category          IDENTICAL-after-masking (17)
+     about             IDENTICAL-after-masking (25)
+     search            IDENTICAL-after-masking (9)
+     api-articles-p2   IDENTICAL (raw)   coffeeactually 7603B, dogslabs 2792B, gadgetskoala 7912B, hiddenstorydaily 3076B
+     ads.txt           IDENTICAL (raw)   0 bytes on both sides (resolved ads_txt is [] for these sites)
+     robots.txt        IDENTICAL (raw)   68B
+   Status lines (_status.txt) identical per site/build.
+   Full per-row output: grid-real-parity/compare-staging.txt, compare-production.txt
+
+   Extra: server-island responses. The 4 island fetches in home + article (PixelLoader + 3x AdSlot), each side
+   fetching its own encrypted URLs, returned IDENTICAL bodies on base vs branch for all 4 sites x both builds.
+
+   Production build ran locally without issue (wrangler.production.json, local KV b258e470…, _atl_site override
+   honoured). Note: within the baseline, staging-build and production-build pages were identical after masking
+   (IS_STAGING only affects article-status visibility; none of the captured content is affected).
+
+----------------------------------------------------------------------------------------------------
+4. MASK-NECESSITY PROOF
+   Baseline, same URL twice (/?_atl_site=coffeeactually), both builds:
+     raw diff = 22 changed lines (data-island-id UUIDs, replaceServerIsland ids, e=/p= params on
+     /_server-islands/PixelLoader and /_server-islands/AdSlot preload + fetch URLs)
+     after masking = byte-identical.
+   Evidence: grid-real-parity/mask-proof/{staging,production}/{base-home-1.html,base-home-2.html,raw-diff.txt}
+   Mask (scripts/mask.pl) touches ONLY: data-island-id="…", replaceServerIsland('…', and e=/p=/s= values on
+   /_server-islands/<Name>? URLs.
+
+----------------------------------------------------------------------------------------------------
+CSS (no masking)
+   Linked stylesheets, identical names on both sides, all builds, all sites:
+     /_astro/Footer.Cd3cXDJS.css           12343B  BYTE-IDENTICAL
+     /_astro/index@_@astro.B-_7unit.css     4124B  BYTE-IDENTICAL
+     /_astro/index@_@astro.qZe55j13.css     6857B  BYTE-IDENTICAL
+
+----------------------------------------------------------------------------------------------------
+DEVIATIONS / NOTES
+  - First staging capture pass used the raw href for dogslabs' category (`/category/pet-care-&#38;-health`);
+    the `#` truncated the URL. Script fixed to decode to `%26` and the whole staging capture was re-run; all
+    results above are from the corrected run.
+  - `kill $(lsof -ti:<port>)` only stopped workerd; the parent wrangler processes were then killed by PID.
+    Final state: no wrangler/workerd processes, 8788/8790 free.
+  - The branch working tree's dist/ was rebuilt with IS_STAGING=true at the end so it is left as a staging build
+    (as rule 7 leaves it). Branch local KV: all 64 pre-existing fixture keys still present (444 keys total now).
+  - Network repo main checkout still on staging/travelswire, status shows only ` M sites/.DS_Store` (pre-existing).
+
+CAPTURES
+  docs/test-results/grid-real-parity/{base,branch}/{staging,production}/<site>/
+    seed-log.txt, kv-*.raw.json, kv-*.sorted.json, newest-slug.txt,
+    pages/*.body (raw), pages/*.masked, pages/_status.txt, pages/css/*, pages/islands-{home,article}/*
+  No .wrangler state included.

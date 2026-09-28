@@ -66,3 +66,24 @@ export type {
   AdsTxtMergeMode,
   MergeMode,
 } from "./monetization.js";
+
+export type {
+  GridStoryMode,
+  GridTopic,
+  ResolvedGridTopic,
+  GridPin,
+  GridConfig,
+  ResolvedGridConfig,
+  GridCardConfig,
+  ResolvedGridCardConfig,
+  NetworkDirectorySite,
+  NetworkDirectory,
+  GridSummaryRecord,
+  GridSummaryStatus,
+  GridExclusionReason,
+  GridSourceStatus,
+  GridPoolItem,
+  GridInactivePin,
+  GridPoolResponse,
+} from "./grid.js";
+export { GRID_DEFAULTS, GRID_CARD_DEFAULTS, GRID_CARD_OPTIONS } from "./grid.js";

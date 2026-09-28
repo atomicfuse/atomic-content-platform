@@ -1,0 +1,57 @@
+Task 3 — Middleware rewrite to /grid/* — architecture-gate spike
+Date: 2026-09-28
+Server: IS_STAGING=true pnpm build && pnpm exec wrangler dev --config dist/server/wrangler.staging.json --port 8788 --persist-to .wrangler/state
+Fixture seed: packages/site-worker/scripts/dev/seed-grid-fixture.sh (fixture-travel-a, fixture-travel-b, fixture-health-a, fixture-grid)
+
+NOTE: `pnpm build` initially failed before this spike could run:
+  src/lib/grid/normalize.ts (2:41): "GRID_DEFAULTS" is not exported by "../shared-types/dist/index.js"
+Root cause: normalize.ts (Task 2) imported GRID_DEFAULTS / GRID_CARD_DEFAULTS / GRID_CARD_OPTIONS as
+VALUES from '@atomic-platform/shared-types'. shared-types emits CJS re-exports via
+`Object.defineProperty(exports, "X", { get(){...} })`, which Rollup's production bundle (astro build)
+cannot statically resolve as a named ESM export — this is the exact landmine already documented on
+LAYOUT_DEFAULTS in packages/site-worker/src/lib/config.ts. Vitest/dev builds don't hit this (different
+module transform), which is why the existing unit tests passed despite the broken production build.
+Fix applied (in src/lib/grid/normalize.ts, outside Task 3's nominal file list but required to unblock
+this gate): inlined the three constants locally (verbatim values from shared-types/src/grid.ts) and
+kept only type-only imports from shared-types. Re-ran the full unit suite (351/351 still pass) and
+`pnpm build` now succeeds. See task-3-report.md self-review section for detail.
+
+$ curl -s "http://localhost:8788/?_atl_site=fixture-grid" | grep -c data-grid-placeholder
+1                                                    # expect 1 — PASS
+
+$ curl -s "http://localhost:8788/?_atl_site=fixture-travel-a" | grep -c data-grid-placeholder
+0                                                    # expect 0 — PASS
+
+$ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8788/ads.txt?_atl_site=fixture-grid"
+200                                                  # expect 200 — PASS
+
+$ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8788/mock-ad-fill.js?_atl_site=fixture-grid"
+200                                                  # expect 200 — PASS
+
+$ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost:8788/grid?_atl_site=fixture-travel-a"
+404                                                  # expect 404 — PASS
+
+--- Raw grid-site placeholder response ---
+$ curl -s "http://localhost:8788/?_atl_site=fixture-grid"
+<!DOCTYPE html><html><body><h1 data-grid-placeholder>Grid: fixture-grid</h1></body></html>
+
+$ curl -sI "http://localhost:8788/?_atl_site=fixture-grid"
+HTTP/1.1 200 OK
+Content-Type: text/html
+Cache-Control: private, no-store
+Set-Cookie: atl_preview_site=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax
+
+--- Modern homepage CSS parity vs docs/test-results/grid-parity/baseline/_home.html ---
+$ grep -oh '/_astro/[^"]*\.css' docs/test-results/grid-parity/baseline/_home.html | sort
+/_astro/Footer.Cd3cXDJS.css
+/_astro/index@_@astro.qZe55j13.css
+
+$ curl -s "http://localhost:8788/?_atl_site=fixture-travel-a" | grep -oh '/_astro/[^"]*\.css' | sort
+/_astro/Footer.Cd3cXDJS.css
+/_astro/index@_@astro.qZe55j13.css
+
+diff: IDENTICAL — no CSS bundle drift for non-Grid sites.
+
+CONCLUSION: next(new URL(...)) rewrites correctly in workerd (Cloudflare adapter). Grid sites are
+served from src/pages/grid/*; every other site is byte-identical to before (CSS bundle list unchanged,
+no double-render, no loop). Architecture gate: PASS.

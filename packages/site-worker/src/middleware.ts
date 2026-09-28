@@ -4,6 +4,7 @@ import type { ResolvedConfig } from '@atomic-platform/shared-types';
 import { siteLookupKey, siteConfigKey, conditionalOverridesKey, type SiteLookup, type ConditionalOverrideEntry } from './lib/kv-schema';
 import { resolvePreview, generatePreviewScript, generateParamPropagationScript } from './lib/preview-override';
 import { deepMerge } from './lib/deep-merge';
+import { toGridPath } from './lib/grid/route';
 
 /**
  * Multi-tenant site resolution.
@@ -181,7 +182,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
   context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
 
-  const response = await next();
+  // Grid template: serve from src/pages/grid/* (separate routes → separate CSS bundles).
+  // Every other site takes the unchanged `next()` path.
+  const gridPath = config.theme?.template === 'grid' ? toGridPath(context.url.pathname) : null;
+  const response = await (gridPath
+    ? next(new URL(`${gridPath}${context.url.search}`, context.url))
+    : next());
   applyCacheHeaders(context.url.pathname, response);
 
   // Inject the preview link-rewriting script into HTML responses so

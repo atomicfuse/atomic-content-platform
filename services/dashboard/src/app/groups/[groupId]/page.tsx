@@ -12,6 +12,7 @@ import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { SearchableToggleList } from "@/components/shared/SearchableToggleList";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import type { GridFields } from "@/types/grid";
 import {
   normalizeAdsTxt,
   normalizeTracking,
@@ -34,6 +35,7 @@ interface GroupConfig {
   legal?: Record<string, string>;
   legal_pages_override?: Record<string, string>;
   ad_placeholder_heights?: Record<string, number>;
+  grid?: GridFields;
   [key: string]: unknown;
 }
 
@@ -242,6 +244,7 @@ export default function GroupDetailPage(): React.ReactElement {
     ads_txt: normalizeAdsTxt(config.ads_txt),
     theme: (config.theme ?? {}) as Record<string, unknown>,
     legal: (config.legal ?? {}) as Record<string, string>,
+    grid: (config.grid ?? undefined) as GridFields | undefined,
   };
 
   const tabs = [

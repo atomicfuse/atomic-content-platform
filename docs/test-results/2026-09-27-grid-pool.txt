@@ -1,0 +1,226 @@
+# Task 8 — GET /api/pool verification (2026-09-28)
+
+$ curl -s "http://localhost:8788/api/pool?_atl_site=fixture-grid" | jq .
+{
+  "siteId": "fixture-grid",
+  "generatedAt": "2026-09-28T09:56:33.618Z",
+  "storyMode": "excerpt",
+  "perSiteLimit": 4,
+  "directoryGeneratedAt": "2026-09-27T00:00:00Z",
+  "sources": [
+    {
+      "siteId": "fixture-travel-a",
+      "included": true,
+      "pills": [
+        "travel"
+      ]
+    },
+    {
+      "siteId": "fixture-travel-b",
+      "included": true,
+      "pills": [
+        "travel"
+      ]
+    },
+    {
+      "siteId": "fixture-health-a",
+      "included": true,
+      "pills": [
+        "health"
+      ]
+    },
+    {
+      "siteId": "fixture-grid",
+      "included": false,
+      "reason": "self",
+      "pills": []
+    }
+  ],
+  "items": [
+    {
+      "site": "fixture-health-a",
+      "slug": "hydration-myths-debunked",
+      "title": "Hydration Myths, Debunked",
+      "publishDate": "2026-09-26T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Separating fact from fiction on daily water intake.",
+      "pills": [
+        "health"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-a",
+      "slug": "weekend-in-kyoto",
+      "title": "A Weekend in Kyoto",
+      "publishDate": "2026-09-26T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Two days of temples, gardens, and food in Kyoto.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-b",
+      "slug": "road-tripping-patagonia",
+      "title": "Road Tripping Through Patagonia",
+      "publishDate": "2026-09-26T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Planning a self-drive trip through Patagonia.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-health-a",
+      "slug": "sleep-hygiene-checklist",
+      "title": "A Practical Sleep Hygiene Checklist",
+      "publishDate": "2026-09-23T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Simple changes that can improve sleep quality.",
+      "pills": [
+        "health"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-a",
+      "slug": "road-trip-iceland-ring-road",
+      "title": "Road Trip: Iceland's Ring Road",
+      "publishDate": "2026-09-21T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "A practical guide to driving Iceland's Ring Road.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-health-a",
+      "slug": "mindfulness-for-busy-people",
+      "title": "Mindfulness for Busy People",
+      "publishDate": "2026-09-18T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Practical mindfulness habits that fit a packed schedule.",
+      "pills": [
+        "health"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-b",
+      "slug": "cruise-ship-packing-list",
+      "title": "The Complete Cruise Ship Packing List",
+      "publishDate": "2026-09-17T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Everything you need for your first cruise.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-a",
+      "slug": "budget-guide-lisbon",
+      "title": "Budget Guide to Lisbon",
+      "publishDate": "2026-09-16T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "How to see Lisbon without breaking the bank.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-health-a",
+      "slug": "beginner-strength-training-guide",
+      "title": "A Beginner's Guide to Strength Training",
+      "publishDate": "2026-09-13T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "How to start strength training safely and effectively.",
+      "pills": [
+        "health"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-b",
+      "slug": "best-time-to-visit-santorini",
+      "title": "Best Time to Visit Santorini",
+      "publishDate": "2026-09-12T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "When to go to Santorini to avoid the crowds.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-a",
+      "slug": "hiking-trails-swiss-alps",
+      "title": "Hiking Trails in the Swiss Alps",
+      "publishDate": "2026-09-11T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "Five unforgettable hiking trails through the Swiss Alps.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    },
+    {
+      "site": "fixture-travel-b",
+      "slug": "backpacking-southeast-asia-tips",
+      "title": "Backpacking Southeast Asia: Practical Tips",
+      "publishDate": "2026-09-07T09:00:00.000Z",
+      "featuredImage": "/placeholder.svg",
+      "description": "What to know before backpacking Southeast Asia.",
+      "pills": [
+        "travel"
+      ],
+      "pinned": false
+    }
+  ],
+  "inactivePins": []
+}
+
+$ curl -s -D - "http://localhost:8788/api/pool?_atl_site=fixture-grid" -o /dev/null (headers)
+HTTP/1.1 200 OK
+Content-Length: 3813
+Content-Type: application/json; charset=utf-8
+Cache-Control: private, no-store
+Set-Cookie: atl_preview_site=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax
+
+
+$ curl -s "http://localhost:8788/api/pool?_atl_site=fixture-grid" | jq "{n:(.items|length), src:[.sources[]|{siteId,included,reason}]}"
+{
+  "n": 12,
+  "src": [
+    {
+      "siteId": "fixture-travel-a",
+      "included": true,
+      "reason": null
+    },
+    {
+      "siteId": "fixture-travel-b",
+      "included": true,
+      "reason": null
+    },
+    {
+      "siteId": "fixture-health-a",
+      "included": true,
+      "reason": null
+    },
+    {
+      "siteId": "fixture-grid",
+      "included": false,
+      "reason": "self"
+    }
+  ]
+}
+
+$ curl -s "http://localhost:8788/api/pool?_atl_site=fixture-grid&summaries=1" | jq ".items[0].summary"
+{
+  "status": "none"
+}

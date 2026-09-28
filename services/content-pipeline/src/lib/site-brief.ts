@@ -16,6 +16,8 @@ export interface SiteBriefData {
   author?: string;
   group: string;
   brief: SiteBrief;
+  /** `theme.template` from site.yaml ("grid" → the scheduler must skip this site). */
+  themeTemplate?: string;
 }
 
 /**
@@ -55,12 +57,15 @@ export async function readSiteBrief(
     }
   }
 
+  const themeTemplate = (config as { theme?: { template?: unknown } }).theme?.template;
+
   return {
     domain: config.domain,
     siteName: config.site_name,
     author: config.author,
     group: config.group,
     brief,
+    ...(typeof themeTemplate === "string" ? { themeTemplate } : {}),
   };
 }
 

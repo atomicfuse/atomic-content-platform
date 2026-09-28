@@ -2,24 +2,23 @@
 
 import { useState } from "react";
 
-const STEPS = ["Create Site", "Content Brief", "Topic Filters", "Groups", "Theme", "Preview", "Review"] as const;
-type StepName = (typeof STEPS)[number];
-
-interface WizardShellProps {
+interface WizardShellProps<S extends string> {
+  /** Ordered step names shown as tabs (the new-site page picks them per template). */
+  steps: readonly S[];
   children: (props: {
     currentStep: number;
-    stepName: StepName;
+    stepName: S;
     goNext: () => void;
     goBack: () => void;
     goToStep: (step: number) => void;
   }) => React.ReactNode;
 }
 
-export function WizardShell({ children }: WizardShellProps): React.ReactElement {
+export function WizardShell<S extends string>({ steps, children }: WizardShellProps<S>): React.ReactElement {
   const [currentStep, setCurrentStep] = useState(0);
 
   function goNext(): void {
-    setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+    setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
   }
 
   function goBack(): void {
@@ -27,7 +26,7 @@ export function WizardShell({ children }: WizardShellProps): React.ReactElement 
   }
 
   function goToStep(step: number): void {
-    if (step >= 0 && step < STEPS.length) {
+    if (step >= 0 && step < steps.length) {
       setCurrentStep(step);
     }
   }
@@ -36,7 +35,7 @@ export function WizardShell({ children }: WizardShellProps): React.ReactElement 
     <div className="max-w-3xl mx-auto">
       {/* Step tabs */}
       <div className="flex gap-1 border-b border-[var(--border-secondary)] mb-6">
-        {STEPS.map((step, i) => (
+        {steps.map((step, i) => (
           <button
             key={step}
             onClick={(): void => {
@@ -62,7 +61,7 @@ export function WizardShell({ children }: WizardShellProps): React.ReactElement 
       {/* Step content */}
       {children({
         currentStep,
-        stepName: STEPS[currentStep]!,
+        stepName: steps[currentStep]!,
         goNext,
         goBack,
         goToStep,
