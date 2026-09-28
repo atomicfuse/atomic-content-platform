@@ -1,0 +1,21 @@
+sites:
+  - domain: fixture-travel-a
+    vertical: Travel
+    status: Live
+    custom_domain: travel-a.example.com
+    staging_branch: staging/fixture-travel-a
+  - domain: fixture-travel-b
+    vertical: Travel
+    status: Live
+    custom_domain: travel-b.example.com
+    staging_branch: staging/fixture-travel-b
+  - domain: fixture-health-a
+    vertical: Healthy Living
+    status: Live
+    custom_domain: health-a.example.com
+    staging_branch: staging/fixture-health-a
+  - domain: fixture-grid
+    vertical: ""
+    status: Staging
+    custom_domain: null
+    staging_branch: staging/fixture-grid

@@ -1,0 +1,73 @@
+---
+/**
+ * Grid template header: logo row + burger, search, topic pill nav, mobile drawer.
+ * Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md ("Header anatomy").
+ */
+import type { ResolvedConfig, ResolvedGridTopic } from '@atomic-platform/shared-types';
+import { buildPills } from '../../../lib/grid/nav';
+
+interface Props {
+  config: ResolvedConfig;
+  topics: ResolvedGridTopic[];
+  activeTopic: string | null;
+  query?: string;
+}
+const { config, topics, activeTopic, query = '' } = Astro.props;
+const pills = buildPills(topics, activeTopic);
+const logo = config.theme.logo;
+---
+
+<header class="g-header">
+  <div class="g-header__row">
+    <a class="g-header__logo" href="/" aria-label={`${config.site_name} home`}>
+      {logo ? <img src={logo} alt={config.site_name} /> : <span class="g-header__name">{config.site_name}</span>}
+    </a>
+    <button class="g-header__burger" type="button" aria-expanded="false" aria-controls="g-drawer" data-g-burger>
+      <span class="g-sr">Topics</span><span></span><span></span><span></span>
+    </button>
+  </div>
+  <form class="g-search" action="/search" method="get" role="search">
+    <input
+      class="g-search__input"
+      type="search"
+      name="q"
+      value={query}
+      placeholder={`Search ${config.site_name}…`}
+      aria-label="Search stories"
+    />
+  </form>
+  <nav class="g-pills" aria-label="Topics">
+    {pills.map((p) => (
+      <a class:list={['g-pill', { 'is-active': p.active }]} href={p.href} aria-current={p.active ? 'page' : undefined}>
+        {p.label}
+      </a>
+    ))}
+  </nav>
+  <div class="g-drawer" id="g-drawer" hidden>
+    <p class="g-drawer__title">Topics</p>
+    {pills.map((p) => (
+      <a class:list={['g-pill', 'g-pill--block', { 'is-active': p.active }]} href={p.href}>
+        {p.label}
+      </a>
+    ))}
+  </div>
+</header>
+<script is:inline>
+  (function () {
+    var btn = document.querySelector('[data-g-burger]');
+    var drawer = document.getElementById('g-drawer');
+    if (!btn || !drawer) return;
+    btn.addEventListener('click', function () {
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!open));
+      drawer.hidden = open;
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !drawer.hidden) {
+        drawer.hidden = true;
+        btn.setAttribute('aria-expanded', 'false');
+        btn.focus();
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,85 @@
+organization: "Atomic Labs"
+legal_entity: "Atomic Labs Ltd"
+company_address: "Tel Aviv, Israel"
+support_email_pattern: "info@{{domain}}"
+
+default_theme: modern
+
+default_colors:
+  primary: "#1a1a2e"
+  accent: "#f4c542"
+
+default_fonts:
+  heading: "Inter"
+  body: "Inter"
+
+# Sites without explicit groups inherit these default groups.
+default_groups:
+  - mock-ads
+
+tracking:
+  ga4: null
+  gtm: null
+  google_ads: null
+  facebook_pixel: null
+  custom: []
+
+scripts:
+  head: []
+  body_start: []
+  body_end: []
+  before_footer: []
+
+scripts_vars: {}
+
+ads_config:
+  interstitial: false
+  interstitial_config:
+    script_url: ""
+    trigger:
+      type: delay
+      delay_seconds: 5
+    frequency:
+      type: once_per_session
+    page_types:
+      - all
+  layout: standard
+  ad_placements:
+    - id: homepage-sidebar
+      position: sidebar
+      type: display
+      size: medium-rectangle
+    - id: article-sidebar
+      position: sidebar
+      type: display
+      size: medium-rectangle
+
+# Reserved height (px) for ad placeholders to prevent CLS while
+# ad-loader.js fetches and renders ads at runtime.
+ad_placeholder_heights:
+  above-content: 90
+  after-paragraph: 280
+  sidebar: 600
+  sticky-bottom: 50
+
+ads_txt: []
+
+layout:
+  hero:
+    enabled: true
+    count: 4
+  must_reads:
+    enabled: true
+    count: 5
+  sidebar_topics:
+    auto: true
+  load_more:
+    page_size: 10
+
+search:
+  enabled: true
+
+legal:
+  company_name: "Atomic Labs Ltd"
+  company_country: "Israel"
+  effective_date: "2026-01-01"

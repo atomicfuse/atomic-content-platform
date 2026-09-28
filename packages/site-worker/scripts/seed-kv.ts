@@ -29,6 +29,7 @@ import { parse as parseYaml } from 'yaml';
 import { marked } from 'marked';
 
 import type { ArticleScript, ArticleVideo, LayoutConfig, ResolvedConfig } from '@atomic-platform/shared-types';
+import { applyGridResolution } from './lib/resolve-grid';
 import {
   siteLookupKey,
   siteConfigKey,
@@ -672,6 +673,8 @@ async function resolveSiteConfig(
     if (typeof theme.favicon === 'string') theme.favicon = rewriteFrontmatterUrl(theme.favicon, siteId);
     if (typeof theme.footer_logo === 'string') theme.footer_logo = rewriteFrontmatterUrl(theme.footer_logo, siteId);
   }
+
+  applyGridResolution(config as unknown as Record<string, unknown>, layers as ReadonlyArray<Record<string, unknown>>);
 
   return { config, site, conditionalOverrides: condEntries };
 }

@@ -10,6 +10,7 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { AdsConfig } from "./ads.js";
 import type { ScriptsConfig, ThemeConfig, DeepPartial } from "./config.js";
+import type { GridConfig } from "./grid.js";
 
 // ---------------------------------------------------------------------------
 // Merge mode types
@@ -132,6 +133,12 @@ export interface OverrideConfig {
    * Use `_mode: "replace"` to wipe the group chain's theme entirely.
    */
   theme?: DeepPartial<ThemeConfig> & { _mode?: SimpleMergeMode };
+
+  /**
+   * Override Grid template fields.
+   * Default mode: `merge` — only specified keys replace parent values.
+   */
+  grid?: GridConfig;
 
   /**
    * Override legal page content.

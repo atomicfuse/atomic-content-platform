@@ -1,0 +1,230 @@
+/* Grid template stylesheet. Loaded only by GridLayout → only on /grid/* routes.
+   Every rule is scoped to .g-* classes or body.g-body so it can never touch modern pages.
+   Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md */
+@layer grid-defaults {
+  :root {
+    --g-page-bg: var(--color-background, #f1f4f8);
+    --g-surface: var(--color-surface, #ffffff);
+    --g-card-bg: var(--color-card_bg, var(--g-surface));
+    --g-border: var(--color-border, #e3e6ee);
+    --g-card-border: var(--color-card_border, var(--g-border));
+    --g-text: var(--color-text, #281848);
+    /* Muted is pulled 15% toward --g-text: a preset's muted that sits just under AA on its card
+       (Warm Magazine #78716c on #fef3c7 = 4.3:1) clears it, and mixing toward the text pole can
+       only raise contrast, in light and dark themes alike. */
+    --g-muted: color-mix(in srgb, var(--color-muted, #6b6680) 85%, var(--g-text));
+    --g-heading: var(--color-heading, var(--g-text));
+    --g-accent: var(--color-accent, #6c35bb);
+    --g-accent-fg: var(--color-accent-fg, #ffffff);
+    /* Accent used AS TEXT or as a focus indicator. Preset accents are chosen as fills (gold #f4c542
+       is 1.5:1 on white), so text/rings mix the accent toward the heading/text colour:
+       50% keeps small accent text at AA on every preset card, 60% keeps rings at 3:1 (non-text). */
+    --g-accent-text: var(--color-accent_text, color-mix(in srgb, var(--g-accent) 50%, var(--g-heading)));
+    --g-focus: var(--color-focus, color-mix(in srgb, var(--g-accent) 60%, var(--g-text)));
+    --g-link: var(--color-link, var(--g-accent));
+    --g-link-hover: var(--color-link_hover, var(--g-heading));
+    /* Not mapped to nav_link/nav_link_hover: presets tune those for a coloured nav bar (Classic News
+       nav_link is #ffffff), but Grid pills sit on the light/dark --g-surface header. */
+    --g-pill-text: var(--color-pill_text, var(--g-text));
+    --g-pill-hover: var(--color-pill_hover, var(--g-heading));
+    --g-pill-border: var(--color-pill_border, var(--g-border));
+    /* Active pill is an accent fill with the layout's auto-contrast --color-accent-fg on top, so it
+       stays legible whatever accent a preset picks. */
+    --g-pill-active-bg: var(--color-pill_active_bg, var(--g-accent));
+    --g-pill-active-text: var(--color-pill_active_text, var(--g-accent-fg));
+    --g-search-bg: var(--color-search_bg, var(--g-surface));
+    --g-prose-heading: var(--color-prose_heading, var(--g-heading));
+    --g-prose-body: var(--color-prose_body, var(--g-text));
+    --g-footer-bg: var(--color-footer_bg, transparent);
+    --g-footer-text: var(--color-footer_text, var(--g-muted));
+    --g-footer-link: var(--color-footer_link, var(--g-muted));
+    --g-footer-link-hover: var(--color-footer_link_hover, var(--g-accent-text));
+    --g-radius: 12px;
+    --g-radius-img: 9px;
+    --g-radius-pill: 999px;
+    --g-gap: 12px;
+    --g-page-max: 1630px;
+    --g-gutter: clamp(12px, 2vw, 24px);
+    --g-card-min: 280px;
+    --g-img-ratio: 4 / 3;
+    --g-ease: cubic-bezier(.22, 1, .36, 1);
+  }
+}
+
+body.g-body { margin: 0; min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; background: var(--g-page-bg); color: var(--g-text);
+  font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+/* Theme fonts (theme.fonts via the layout's --fontHeading/--fontBody on <body>). The layout's own
+   heading rule is Astro-scoped to the layout file, so slotted components need this one. */
+body.g-body { font-family: var(--fontBody), sans-serif; }
+body.g-body :is(h1, h2, h3, h4, h5, h6) { font-family: var(--fontHeading), sans-serif; }
+body.g-body *, body.g-body *::before, body.g-body *::after { box-sizing: border-box; }
+body.g-body img { max-width: 100%; display: block; }
+body.g-body a { color: inherit; text-decoration: none; touch-action: manipulation; }
+body.g-body :focus-visible { outline: 2px solid var(--g-focus); outline-offset: 2px; border-radius: 4px; }
+
+.g-main { flex: 1 0 auto; width: 100%; max-width: var(--g-page-max); margin: 0 auto; padding: 16px var(--g-gutter) 48px; }
+.g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--g-card-min), 100%), 1fr)); gap: var(--g-gap); }
+.g-empty { padding: 64px 16px; text-align: center; color: var(--g-muted); }
+
+/* Cards */
+.g-card { background: var(--g-card-bg); border: 1px solid var(--g-card-border); border-radius: var(--g-radius); overflow: hidden; min-width: 0; height: 100%;
+  opacity: 0; animation: g-rise .8s var(--g-ease) forwards; animation-delay: calc(var(--g-i, 0) * 60ms);
+  transition: box-shadow .3s ease-out, transform .15s ease-out; }
+@media (hover: hover) {
+  .g-card:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--g-text) 10%, transparent); }
+  /* Underline, not a colour swap: link_hover is often a fill accent that fails AA as text. */
+  .g-card:hover .g-card__title { text-decoration: underline; text-decoration-color: var(--g-accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+}
+.g-card:active { transform: translateY(1px); }
+.g-card__link { display: flex; flex-direction: column; height: 100%; border-radius: inherit; }
+body.g-body .g-card__link:focus-visible { outline-offset: -2px; border-radius: inherit; }
+.g-card__media { position: relative; margin: 8px 8px 0; }
+.g-card__media img { width: 100%; height: auto; aspect-ratio: var(--g-img-ratio); object-fit: cover; border-radius: var(--g-radius-img); background: var(--g-border); }
+.g-card__body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 14px; flex: 1 1 auto; min-width: 0; }
+.g-card__source { display: flex; align-items: center; gap: 6px; margin: 0; font-size: .85rem; font-weight: 500; line-height: 1.2; color: var(--g-muted); min-width: 0; }
+.g-card__favicon { width: 16px; height: 16px; border-radius: 3px; flex: 0 0 16px; object-fit: contain; }
+.g-card__favicon--letter { display: inline-grid; place-items: center; background: var(--g-accent); color: var(--g-accent-fg); font-size: 10px; font-weight: 700; line-height: 1; }
+.g-card__site { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.g-card__dot { flex: 0 0 auto; }
+.g-card__title { margin: 0; color: var(--g-heading); font-size: clamp(1rem, .95rem + .25vw, 1.15rem); font-weight: 700; line-height: 1.25;
+  text-wrap: pretty; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.g-card__intro { margin: 0; font-size: 1rem; line-height: 1.45; opacity: .7; /* .7 keeps AA (6.0:1) on white; .6 fails */
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.g-card[data-pinned="true"] { border-color: var(--g-accent); }
+.g-tile--ad { max-height: 300px; overflow: hidden; border-radius: var(--g-radius); min-width: 0; }
+
+.g-feed-status { text-align: center; color: var(--g-muted); padding: 16px; min-height: 1em; font-size: .9rem; }
+.g-sentinel { height: 1px; }
+
+/* Animates `translate` (not `transform`) so the filled end state never blocks the :active press transform. */
+@keyframes g-rise { from { opacity: 0; translate: 0 16px; } to { opacity: 1; translate: 0 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .g-card { animation: none; opacity: 1; transition: box-shadow .3s ease-out; }
+  .g-card:active { transform: none; }
+}
+
+/* Header, topic pills, mobile drawer, footer.
+   Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md ("Header anatomy"). */
+.g-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.g-header { background: var(--g-surface); border-bottom: 1px solid var(--g-border); }
+.g-header__row, .g-search, .g-pills { max-width: var(--g-page-max); margin: 0 auto; padding-inline: var(--g-gutter); }
+.g-header__row { display: flex; align-items: center; justify-content: space-between; min-height: var(--nav-height, 64px); }
+.g-header__logo { display: inline-flex; align-items: center; }
+.g-header__logo img { height: var(--logo-height, 52px); width: auto; }
+.g-header__name { font-size: 1.4rem; font-weight: 800; color: var(--g-heading); }
+.g-header__burger { display: none; width: 44px; height: 44px; border: 0; background: transparent; cursor: pointer; flex-direction: column; justify-content: center; gap: 5px; align-items: center; }
+.g-header__burger span:not(.g-sr) { display: block; width: 22px; height: 2px; background: var(--g-text); border-radius: 2px; transition: background-color .2s; }
+.g-header__burger[aria-expanded="true"] span:not(.g-sr) { background: var(--g-accent); }
+.g-search { padding-block: 8px; }
+.g-search__input { width: 100%; height: 44px; padding: 0 16px; border: 1.5px solid var(--g-border); border-radius: var(--g-radius-pill); background: var(--g-search-bg); color: var(--g-text); font: inherit; }
+.g-search__input::placeholder { color: var(--g-muted); }
+.g-search__input:focus { outline: none; border-color: var(--g-focus); }
+.g-pills {
+  display: flex; gap: 8px; overflow-x: auto; padding-block: 8px 12px;
+  scrollbar-width: none; scroll-snap-type: x proximity; scroll-padding-inline: var(--g-gutter);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 4px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 4px, black calc(100% - 24px), transparent);
+}
+.g-pills::-webkit-scrollbar { display: none; }
+.g-pill {
+  position: relative; flex: 0 0 auto; scroll-snap-align: start; display: inline-flex; align-items: center; min-height: 36px; padding: 0 16px;
+  border: 1.5px solid var(--g-pill-border); border-radius: var(--g-radius-pill);
+  color: var(--g-pill-text); background: transparent; font-size: var(--menu-item-font-size, 14px); font-weight: 600;
+  transition: color .2s, border-color .2s, background-color .2s;
+}
+/* 36px visual pill, 44px hit area (row padding leaves room for the 4px overhang). */
+.g-pill::after { content: ""; position: absolute; inset: -4px 0; }
+.g-pill:hover { color: var(--g-pill-hover); border-color: var(--g-accent); }
+.g-pill.is-active { color: var(--g-pill-active-text); border-color: var(--g-accent); background: var(--g-pill-active-bg); }
+.g-drawer { max-width: var(--g-page-max); margin: 0 auto; padding: 8px var(--g-gutter) 16px; display: grid; gap: 8px; }
+.g-drawer[hidden] { display: none; }
+.g-drawer__title { margin: 0; font-weight: 700; color: var(--g-heading); }
+.g-pill--block { justify-content: flex-start; min-height: 44px; }
+@media (max-width: 600px) {
+  .g-header__burger { display: flex; }
+  .g-pills { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-header__burger span:not(.g-sr) { transition: none; }
+  .g-pill { transition: none; }
+}
+.g-footer { background: var(--g-footer-bg); color: var(--g-footer-text); border-top: 1px solid var(--g-border); }
+.g-footer__inner { max-width: var(--g-page-max); margin: 0 auto; padding: 24px var(--g-gutter); display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; align-items: center; font-size: .9rem; }
+.g-footer__text { margin: 0; }
+.g-footer__links { display: flex; flex-wrap: wrap; gap: 16px; }
+.g-footer__link { color: var(--g-footer-link); }
+.g-footer__link:hover { color: var(--g-footer-link-hover); }
+
+/* Story page + related stories.
+   Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md ("Type scale"). */
+.g-story { max-width: 1200px; margin: 0 auto; padding: 16px var(--g-gutter) 32px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; width: 100%; }
+.g-story__article { background: var(--g-surface); border-radius: var(--g-radius); padding: clamp(16px, 3vw, 40px); }
+.g-story__topic { margin: 0 0 8px; color: var(--g-accent-text); font-weight: 700; font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; }
+.g-story__title { margin: 0 0 12px; color: var(--g-heading); font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.75rem); font-weight: 700; line-height: 1.15; text-wrap: balance; }
+.g-story__byline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--g-muted); font-size: .9rem; margin-bottom: 16px; }
+.g-story__byline .g-card__source { font-size: .9rem; }
+.g-story__hero { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--g-radius-img); background: var(--g-border); margin-bottom: 24px; }
+.g-story__prose { max-width: 68ch; color: var(--g-prose-body); font-size: 1.0625rem; line-height: 1.65; }
+.g-story__prose p { margin: 0 0 1em; }
+.g-story__prose ul, .g-story__prose ol { margin: 0 0 1em; padding-left: 1.4em; }
+.g-story__prose li { margin: 0 0 .4em; }
+.g-story__prose h2 { color: var(--g-prose-heading); font-size: clamp(1.3rem, 1.1rem + .9vw, 1.7rem); font-weight: 700; line-height: 1.25; margin: 1.4em 0 .5em; }
+.g-story__prose h3 { color: var(--g-prose-heading); font-size: clamp(1.1rem, 1rem + .45vw, 1.3rem); font-weight: 700; line-height: 1.3; margin: 1.4em 0 .5em; }
+.g-story__prose a { color: var(--g-link); text-decoration: underline; text-underline-offset: 2px; }
+.g-story__prose a:hover { color: var(--g-link-hover); }
+.g-story__cta { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 28px; margin-top: 24px; border-radius: var(--g-radius-pill); background: var(--g-accent); color: var(--g-accent-fg); font-weight: 700; transition: filter .2s ease-out; }
+.g-story__cta:hover { filter: brightness(1.08); }
+.g-story__cta:active { transform: translateY(1px); }
+.g-story__side { display: flex; flex-direction: column; gap: 24px; }
+.g-story__bottom { display: none; max-width: 1200px; margin: 0 auto; padding: 0 var(--g-gutter) 32px; width: 100%; }
+
+.g-related__heading { font-size: 1.1rem; font-weight: 700; margin: 0 0 12px; color: var(--g-heading); }
+.g-related__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.g-related__item { display: grid; grid-template-columns: 1fr 96px; grid-template-rows: auto 1fr; column-gap: 12px; background: var(--g-surface); border: 1px solid var(--g-card-border); border-radius: var(--g-radius); padding: 10px; transition: box-shadow .3s ease-out; }
+.g-related__item:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--g-text) 10%, transparent); }
+.g-related__item:active { transform: translateY(1px); }
+.g-related__source { grid-column: 1; margin: 0; color: var(--g-muted); font-size: .85rem; font-weight: 500; }
+.g-related__title { grid-column: 1; font-weight: 700; color: var(--g-heading); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.g-related__item img { grid-column: 2; grid-row: 1 / span 2; width: 96px; height: 72px; object-fit: cover; border-radius: min(var(--g-radius-img), 6px); background: var(--g-border); }
+@media (max-width: 960px) {
+  .g-story { grid-template-columns: 1fr; }
+  .g-story__side .g-related { display: none; }
+  .g-story__bottom { display: block; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .g-story__cta, .g-related__item { transition: none; }
+  .g-story__cta:active, .g-related__item:active { transform: none; }
+}
+
+/* Shared pages (about/contact/privacy/terms/dmca/amazon) — same card surface as a story,
+   narrower measure since these are legal/info copy, not a two-column story layout. */
+.g-page { max-width: 820px; margin: 0 auto; background: var(--g-surface); border-radius: var(--g-radius); padding: clamp(16px, 3vw, 40px); }
+.g-page h1 { margin: 0 0 16px; color: var(--g-heading); font-size: clamp(1.75rem, 1.2rem + 2.4vw, 2.75rem); font-weight: 700; line-height: 1.15; text-wrap: balance; }
+
+/* Card-look variants (theme.card → data-card-* on <body class="g-body">, set by GridLayout).
+   Defaults (bordered / rounded / 4:3 / top / comfortable / below) are the base rules above.
+   Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md ("Card anatomy"). */
+/* Card style */
+body.g-body[data-card-style="shadow"] .g-card { border-color: transparent; box-shadow: 0 1px 3px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .06); }
+body.g-body[data-card-style="shadow"] .g-card:hover { box-shadow: 0 2px 6px rgb(0 0 0 / .08), 0 16px 40px rgb(0 0 0 / .10); }
+body.g-body[data-card-style="flat"] .g-card { border-color: transparent; box-shadow: none; }
+body.g-body[data-card-style="flat"] .g-card:hover { box-shadow: none; }
+/* Corners */
+body.g-body[data-card-corners="square"] { --g-radius: 0px; --g-radius-img: 0px; }
+body.g-body[data-card-corners="small"] { --g-radius: 6px; --g-radius-img: 4px; }
+/* Image ratio */
+body.g-body[data-card-ratio="16-9"] { --g-img-ratio: 16 / 9; }
+body.g-body[data-card-ratio="1-1"] { --g-img-ratio: 1 / 1; }
+/* Density */
+body.g-body[data-card-density="compact"] { --g-card-min: 210px; --g-gap: 10px; }
+body.g-body[data-card-density="compact"] .g-card__title { font-size: 1rem; }
+body.g-body[data-card-density="compact"] .g-card__intro { font-size: .95rem; }
+body.g-body[data-card-density="compact"] .g-card__body { padding: 8px 10px 12px; gap: 6px; }
+/* Image position: left thumbnail list */
+body.g-body[data-card-image="left"] { --g-card-min: 340px; }
+body.g-body[data-card-image="left"] .g-card__link { flex-direction: row; align-items: stretch; }
+body.g-body[data-card-image="left"] .g-card__media { flex: 0 0 120px; margin: 8px 0 8px 8px; }
+body.g-body[data-card-image="left"] .g-card__media img { height: 100%; aspect-ratio: 1 / 1; }
+/* Source as a badge on the image */
+body.g-body[data-card-source="badge"] .g-card__media .g-card__source { position: absolute; left: 8px; bottom: 8px; max-width: calc(100% - 16px);
+  padding: 4px 8px; border-radius: var(--g-radius-pill); background: rgb(0 0 0 / .62); color: #fff; font-size: .78rem; }

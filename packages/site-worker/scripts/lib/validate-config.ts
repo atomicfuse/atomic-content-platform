@@ -81,5 +81,12 @@ export function validateResolvedConfig(
     );
   }
 
+  // 5. Grid site with no sources configured
+  const theme = config.theme as { template?: unknown } | undefined;
+  const grid = config.grid as { topics?: unknown[]; include_sites?: unknown[] } | undefined;
+  if (theme?.template === 'grid' && (grid?.topics?.length ?? 0) === 0 && (grid?.include_sites?.length ?? 0) === 0) {
+    warnings.push(`[${siteId}] Grid site has no grid.topics and no grid.include_sites — its feed will be empty.`);
+  }
+
   return warnings;
 }

@@ -1,0 +1,11 @@
+domain: health-a.example.com
+site_name: Health A
+groups: []
+theme:
+  base: classic
+brief:
+  audience: Health enthusiasts
+  tone: Friendly
+  topics: [Wellness]
+  schedule:
+    articles_per_day: 0

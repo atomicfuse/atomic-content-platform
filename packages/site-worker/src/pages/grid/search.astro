@@ -1,0 +1,37 @@
+---
+/**
+ * Grid template search results: server-rendered from the "All" pool
+ * (no infinite scroll — a single ranked page is enough for a search result set).
+ * Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md.
+ */
+import { env } from 'cloudflare:workers';
+import GridLayout from '../../themes/grid/GridLayout.astro';
+import GridHeader from '../../themes/grid/components/GridHeader.astro';
+import GridFooter from '../../themes/grid/components/GridFooter.astro';
+import { getGridContext, notFound } from '../../lib/grid/context';
+import { edgeCache, kvReader, loadGridPool, NO_CACHE } from '../../lib/grid/load';
+import { searchItems } from '../../lib/grid/search';
+import { buildTiles } from '../../lib/grid/tiles';
+import { renderTilesHtml } from '../../lib/grid/render';
+export const prerender = false;
+
+const g = getGridContext(Astro);
+if (!g) return notFound();
+const q = (Astro.url.searchParams.get('q') ?? '').slice(0, 100);
+const now = new Date();
+const data = await loadGridPool(kvReader(env.CONFIG_KV), g.staging ? NO_CACHE : edgeCache(), g.siteId, g.grid, now);
+const results = searchItems(data.pool.items, q, 60);
+const html = renderTilesHtml(buildTiles(results, 0, 0), {
+  now, card: g.card, showIntro: true, sites: new Map((data.directory?.sites ?? []).map((s) => [s.siteId, s])),
+  placements: [], pageType: 'homepage', staging: g.staging, reservedHeight: 0,
+});
+Astro.response.headers.set('cache-control', 'public, s-maxage=60, stale-while-revalidate=300');
+---
+<GridLayout title={`Search | ${g.config.site_name}`} description={`Search ${g.config.site_name}`} pageType="homepage" noindex>
+  <GridHeader config={g.config} topics={g.grid.topics} activeTopic={null} query={q} />
+  <main class="g-main">
+    {q && <p class="g-feed-status">{results.length} result{results.length === 1 ? '' : 's'} for &ldquo;{q}&rdquo;</p>}
+    {results.length > 0 ? <div class="g-grid" set:html={html} /> : q && <p class="g-empty">No stories match your search.</p>}
+  </main>
+  <GridFooter config={g.config} />
+</GridLayout>

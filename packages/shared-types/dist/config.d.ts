@@ -1,6 +1,7 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
 import type { AdPlaceholderHeights, InlineAdConfig } from "./monetization.js";
+import type { GridConfig, ResolvedGridConfig, GridCardConfig, ResolvedGridCardConfig } from "./grid.js";
 /**
  * Per-criterion weight configuration for the content quality agent.
  * Values should sum to 100. Defaults to 20 each when not configured.
@@ -58,7 +59,7 @@ export interface SiteBrief {
     /** Publishing cadence settings. */
     schedule: PublishSchedule;
     /** Content vertical for aggregator API queries. */
-    vertical?: "Tech" | "Travel" | "News" | "Sport" | "Lifestyle" | "Entertainment" | "Food & Drink" | "Animals" | "Science";
+    vertical?: string;
     /** Content Aggregator vertical ID — preferred over name for API queries. */
     vertical_id?: string;
     /** Content Aggregator category IDs — all categories the site targets. */
@@ -136,6 +137,10 @@ export interface TopicV2Schedule {
 export interface ThemeConfig {
     /** Base theme template to extend. */
     base?: "modern" | "editorial" | "bold" | "classic";
+    /** Site template. Absent or "modern" → the default template. NOT `base` (that holds preset ids). */
+    template?: "modern" | "grid";
+    /** Card look — read only by the Grid template. */
+    card?: GridCardConfig;
     /**
      * Named colour overrides (e.g. { primary: "#1a73e8", background: "#fff" }).
      * Recognised keys include: primary, accent, background, secondary, text,
@@ -174,6 +179,10 @@ export interface ThemeConfig {
 export interface ResolvedThemeConfig {
     /** Base theme template. */
     base: "modern" | "editorial" | "bold" | "classic";
+    /** Site template. Absent or "modern" → the default template. NOT `base` (that holds preset ids). */
+    template?: "modern" | "grid";
+    /** Card look — read only by the Grid template. */
+    card?: ResolvedGridCardConfig;
     /** Named colour map. */
     colors: Record<string, string>;
     /** URL or path to the site logo. */
@@ -433,6 +442,8 @@ export interface OrgConfig {
     search?: Partial<SearchConfig>;
     /** Layout knobs for the new magazine-style layout. */
     layout?: LayoutConfig;
+    /** Default Grid template configuration. */
+    grid?: GridConfig;
 }
 /**
  * Group-level configuration that overrides org defaults for a cluster of sites.
@@ -466,6 +477,8 @@ export interface GroupConfig {
     search?: Partial<SearchConfig>;
     /** Layout knobs for the new magazine-style layout. */
     layout?: LayoutConfig;
+    /** Group-level Grid template overrides. */
+    grid?: GridConfig;
 }
 /**
  * Per-site configuration — the leaf of the config hierarchy.
@@ -527,6 +540,8 @@ export interface SiteConfig {
     search?: Partial<SearchConfig>;
     /** Layout knobs for the new magazine-style layout. */
     layout?: LayoutConfig;
+    /** Site-level Grid template overrides. */
+    grid?: GridConfig;
 }
 /**
  * The fully-resolved site configuration produced by `resolve-config.ts`.
@@ -592,6 +607,8 @@ export interface ResolvedConfig {
      * without a CDN round-trip.
      */
     inlineAdConfig: InlineAdConfig;
+    /** Fully-resolved Grid template configuration. Present only on Grid sites. */
+    grid?: ResolvedGridConfig;
 }
 /**
  * Recursively makes all properties of T optional.

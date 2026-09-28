@@ -7,6 +7,8 @@ import {
   articleKey,
   syncStatusKey,
   sharedPageKey,
+  networkDirectoryKey,
+  gridSummaryKey,
 } from '../kv-schema';
 
 describe('kv-schema key builders', () => {
@@ -42,6 +44,14 @@ describe('kv-schema key builders', () => {
 
   it('syncStatusKey uses the canonical prefix', () => {
     expect(syncStatusKey('coolnews-atl')).toBe('sync-status:coolnews-atl');
+  });
+
+  it('networkDirectoryKey is a fixed key', () => {
+    expect(networkDirectoryKey()).toBe('network-directory');
+  });
+
+  it('gridSummaryKey nests siteId + slug', () => {
+    expect(gridSummaryKey('fixture-grid', 'a1')).toBe('grid-summary:fixture-grid:a1');
   });
 
   it('all key builders are pure (return same output for same input)', () => {

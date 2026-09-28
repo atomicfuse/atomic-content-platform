@@ -1,0 +1,51 @@
+domain: fixture-grid.example.com
+site_name: Grid Fixture
+groups: []
+theme:
+  template: grid
+  base: classic
+grid:
+  topics:
+    - label: Travel
+      verticals: [Travel]
+    - label: Health
+      verticals: [Healthy Living]
+  per_site_limit: 4
+  page_size: 6
+  feed_ad_every: 3
+ads_config:
+  ad_placements:
+    - id: gf
+      position: grid-feed
+      device: all
+      sizes:
+        desktop: [[300, 250]]
+        mobile: [[300, 250]]
+    - id: top
+      position: above-content
+      device: all
+      sizes:
+        desktop: [[300, 250]]
+        mobile: [[300, 250]]
+    - id: side
+      position: sidebar
+      device: all
+      sizes:
+        desktop: [[300, 600]]
+        mobile: []
+    - id: inpara
+      position: after-paragraph-2
+      device: all
+      sizes:
+        desktop: [[300, 250]]
+        mobile: [[300, 250]]
+scripts:
+  body_end:
+    - id: mock-ad-fill
+      src: /mock-ad-fill.js
+brief:
+  audience: Everyone
+  tone: Neutral
+  topics: [News]
+  schedule:
+    articles_per_day: 0

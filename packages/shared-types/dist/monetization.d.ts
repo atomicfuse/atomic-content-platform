@@ -9,6 +9,7 @@
 import type { TrackingConfig } from "./tracking.js";
 import type { AdsConfig } from "./ads.js";
 import type { ScriptsConfig, ThemeConfig, DeepPartial } from "./config.js";
+import type { GridConfig } from "./grid.js";
 /** Merge modes for tracking, scripts_vars, theme, legal fields. */
 export type SimpleMergeMode = "merge" | "replace";
 /** Merge modes for the scripts field. */
@@ -120,6 +121,11 @@ export interface OverrideConfig {
     theme?: DeepPartial<ThemeConfig> & {
         _mode?: SimpleMergeMode;
     };
+    /**
+     * Override Grid template fields.
+     * Default mode: `merge` — only specified keys replace parent values.
+     */
+    grid?: GridConfig;
     /**
      * Override legal page content.
      * Default mode: `merge` — keys are merged with existing legal vars.
