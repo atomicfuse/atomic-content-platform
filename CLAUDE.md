@@ -40,6 +40,7 @@ Both live at `~/Documents/ATL-content-network/`.
 | Site runtime | This repo, `packages/site-worker` |
 | Deploy config | This repo, `cloudgrid.yaml` |
 | In-app docs | This repo, `services/dashboard/public/guide/*.md` |
+| Grid summaries | Network repo, main, grid-summaries/<site>/<slug>.md (pipeline-written) |
 
 ## Layout
 
@@ -234,3 +235,5 @@ Full env var list in `docs/architecture.md`.
 30. **Dual-account routing is opt-in** — `cloudflare.ts` functions default to Assets account. Pass `domain` only when targeting a specific site.
 31. **Override `ad_placements: []` wipes inherited** — an override with `ad_placements: []` clears all group-level placements via `mergeAdPlacementLayers`. Only include `ads_config` in an override if you intend to change ad behavior. Tracking-only overrides must omit `ads_config` entirely.
 32. **Pipeline `.env` overrides cloudgrid-injected env** — content-pipeline loads dotenv with `override: true`, so vars in its local `.env` beat what `cloudgrid dev` injects. cloudgrid runs an embedded Redis on an ephemeral port and injects `REDIS_URL` into both services: keep `REDIS_URL` OUT of the pipeline's `.env`, or the dashboard enqueues to one Redis while the worker listens on another and jobs are never consumed. cloudgrid also injects `PORT=3000` (collides with the dashboard) — `CONTENT_PIPELINE_PORT=5000` in `.env` keeps the pipeline where the dashboard proxy expects it.
+33. **Grid template switch is `theme.template: grid`, NOT `theme.base`** — `theme.base` holds colour-preset ids (`classic`, `custom`) written by the wizard. Grid sites are rewritten in middleware to `src/pages/grid/*` (separate routes → separate CSS bundles); never add Grid logic to the modern pages. The `/grid` path segment is reserved on every site (modern sites 404 on `/grid/*`), so no article may use the slug `grid`.
+34. **Grid KV keys** — `network-directory` and `grid-summary:<site>:<slug>` are written ONLY by `scripts/seed-grid.ts` (network repo `sync-grid.yml`). Summary files `grid-summaries/<site>/<slug>.md` are written ONLY by the content-pipeline (`/grid-summaries/*`); the dashboard edits go through the pipeline so the source body hash stays correct.
