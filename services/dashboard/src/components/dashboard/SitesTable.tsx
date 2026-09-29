@@ -10,6 +10,12 @@ import { Button } from "@/components/ui/Button";
 import { deleteSiteEntry, updateSiteEntry } from "@/actions/sites";
 import { COMPANIES } from "@/lib/constants";
 import { Filters } from "./Filters";
+import {
+  filterSites,
+  type CompanyFilterValue,
+  type GroupFilterValue,
+} from "@/lib/site-filters";
+import { buildSitesCsv, sitesCsvFilename } from "@/lib/csv";
 
 interface SitesTableProps {
   sites: DashboardSiteEntry[];
@@ -63,9 +69,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-  const [companyFilter, setCompanyFilter] = useState<Company | "">("");
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilterValue | "">("");
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
+  const [groupFilter, setGroupFilter] = useState<GroupFilterValue>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
@@ -81,6 +88,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [latestLoaded, setLatestLoaded] = useState(false);
   const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
 
   useEffect(() => {
     fetch("/api/sites/article-counts")
@@ -103,7 +111,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
     fetch("/api/sites/groups")
       .then((r) => r.json())
       .then((data: Record<string, string[]>) => setSiteGroups(data))
-      .catch(() => { /* leave empty */ });
+      .catch(() => { /* leave empty */ })
+      .finally(() => setGroupsLoaded(true));
     fetch("/api/groups")
       .then(async (r) => (r.ok ? ((await r.json()) as Array<{ id: string; name?: string }>) : []))
       .then(setAvailableGroups)
@@ -147,15 +156,17 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
 
   const filteredSites = useMemo(() => {
     setCurrentPage(1);
-    const filtered = sites.filter((site) => {
-      if (search && !site.domain.toLowerCase().includes(search.toLowerCase())) {
-        return false;
-      }
-      if (companyFilter && site.company !== companyFilter) return false;
-      if (verticalFilter && site.vertical !== verticalFilter) return false;
-      if (statusFilter && site.status !== statusFilter) return false;
-      return true;
-    });
+    const filtered = filterSites(
+      sites,
+      {
+        search,
+        company: companyFilter,
+        vertical: verticalFilter,
+        status: statusFilter,
+        group: groupFilter,
+      },
+      siteGroups,
+    );
     if (websiteSort) {
       filtered.sort((a, b) => {
         const aName = (a.custom_domain ?? a.domain).toLowerCase();
@@ -191,7 +202,27 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       });
     }
     return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded, createdSort]);
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, groupFilter, siteGroups, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded, createdSort]);
+
+  const siteVerticals = useMemo(() => sites.map((s) => s.vertical), [sites]);
+
+  // While /api/sites/groups hasn't resolved yet, `siteGroups` is still `{}`,
+  // which makes every site look ungrouped — a specific group id would (wrongly)
+  // match nothing, and NO_GROUP would (wrongly) match everything. Any group
+  // filter is unreliable until groups have loaded, regardless of what
+  // `filteredSites` currently computes to.
+  const groupFilterPending = Boolean(groupFilter) && !groupsLoaded;
+
+  function handleExportCsv(): void {
+    const csv = buildSitesCsv(filteredSites, siteGroups);
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = sitesCsvFilename();
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const totalPages = Math.max(1, Math.ceil(filteredSites.length / pageSize));
   const paginatedSites = filteredSites.slice(
@@ -213,16 +244,36 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
 
   return (
     <div className="space-y-4">
-      <Filters
-        search={search}
-        company={companyFilter}
-        vertical={verticalFilter}
-        status={statusFilter}
-        onSearchChange={setSearch}
-        onCompanyChange={setCompanyFilter}
-        onVerticalChange={setVerticalFilter}
-        onStatusChange={setStatusFilter}
-      />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Filters
+          search={search}
+          company={companyFilter}
+          vertical={verticalFilter}
+          status={statusFilter}
+          group={groupFilter}
+          siteVerticals={siteVerticals}
+          groupOptions={availableGroups}
+          groupsLoading={!groupsLoaded}
+          onSearchChange={setSearch}
+          onCompanyChange={setCompanyFilter}
+          onVerticalChange={setVerticalFilter}
+          onStatusChange={setStatusFilter}
+          onGroupChange={setGroupFilter}
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          size="md"
+          onClick={handleExportCsv}
+          disabled={filteredSites.length === 0 || groupFilterPending}
+          title="Export the currently filtered sites as CSV"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          Export CSV
+        </Button>
+      </div>
 
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
         <div className="overflow-auto max-h-[80vh]">
@@ -317,7 +368,17 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {filteredSites.length === 0 && (
+              {groupFilterPending && (
+                <tr>
+                  <td
+                    colSpan={11}
+                    className="px-4 py-8 text-center text-[var(--text-muted)]"
+                  >
+                    Loading groups…
+                  </td>
+                </tr>
+              )}
+              {!groupFilterPending && filteredSites.length === 0 && (
                 <tr>
                   <td
                     colSpan={11}
@@ -329,7 +390,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                 </tr>
               )}
-              {paginatedSites.map((site) => (
+              {!groupFilterPending && paginatedSites.map((site) => (
                 <tr
                   key={site.domain}
                   onClick={(): void => handleRowClick(site)}
@@ -407,7 +468,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         </div>
 
         {/* Pagination */}
-        {filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
+        {!groupFilterPending && filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
