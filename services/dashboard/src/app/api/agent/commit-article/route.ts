@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import matter from "gray-matter";
 import { commitSiteFiles } from "@/lib/github";
 import { upsertArticleMeta } from "@/lib/db/articles";
+import { gridGenerationGuard } from "@/lib/grid-guard";
 
 /**
  * Commit an article to the network repo via GitHub API.
@@ -22,6 +23,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 }
     );
   }
+
+  // Extract domain from path like "sites/coolnews.dev/articles/my-article.md"
+  const domain = body.articlePath.split("/")[1] ?? "unknown";
+
+  const gridGuardResponse = await gridGenerationGuard(domain);
+  if (gridGuardResponse) return gridGuardResponse;
 
   try {
     // Read the local file
@@ -48,9 +55,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Extract domain from path like "sites/coolnews.dev/articles/my-article.md"
-    const parts = body.articlePath.split("/");
-    const domain = parts[1] ?? "unknown";
     const slug = path.basename(body.articlePath, ".md");
 
     await commitSiteFiles(

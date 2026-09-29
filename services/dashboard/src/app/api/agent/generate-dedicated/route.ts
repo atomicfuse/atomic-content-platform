@@ -1,6 +1,7 @@
 // services/dashboard/src/app/api/agent/generate-dedicated/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import { gridGenerationGuard } from "@/lib/grid-guard";
 
 const CONTENT_AGENT_URL =
   process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  const gridGuardResponse = await gridGenerationGuard(body.siteDomain);
+  if (gridGuardResponse) return gridGuardResponse;
 
   const branch = body.branch ?? `staging/${body.siteDomain}`;
 

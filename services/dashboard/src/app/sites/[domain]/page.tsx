@@ -5,6 +5,7 @@ import { readArticlesFromDb as readArticlesWithKVFallback } from "@/lib/db/artic
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
+import { isGridSiteConfig } from "@/lib/grid-config";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -112,6 +113,7 @@ export default async function SiteDetailPage({
           articles,
           stagingBranch: site.staging_branch,
           previewUrl: WORKER_STAGING_URL,
+          isGrid: isGridSiteConfig(siteConfig),
         }}
         identityTabProps={{
           brief: normalizedBrief as Record<string, unknown> | null,

@@ -22,6 +22,30 @@ interface ContentTabProps {
   /** Optional override for the preview origin. Defaults to the staging
    *  Worker. Article preview links use `${origin}/<slug>?_atl_site=<domain>`. */
   previewUrl?: string;
+  /** Grid sites aggregate stories from other network sites — they have no
+   *  articles of their own, so this tab shows a notice instead of the table. */
+  isGrid?: boolean;
+}
+
+function GridContentNotice(): React.ReactElement {
+  return (
+    <div className="rounded-xl bg-[var(--bg-elevated)] border border-cyan/20 p-6 flex items-start gap-3">
+      <div className="mt-0.5 w-8 h-8 rounded-full bg-cyan/10 flex items-center justify-center shrink-0">
+        <svg className="w-4 h-4 text-cyan" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+        </svg>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-[var(--text-primary)]">
+          This is a Grid site
+        </p>
+        <p className="text-sm text-[var(--text-muted)] mt-1">
+          It shows stories from other network sites, so it has no articles of its own.
+          Manage its feed in Site Settings &rarr; Grid.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function scoreColor(score: number | undefined): string {
@@ -115,6 +139,7 @@ export function ContentTab({
   domain,
   stagingBranch,
   previewUrl,
+  isGrid,
 }: ContentTabProps): React.ReactElement {
   const { toast } = useToast();
   const [deleteTarget, setDeleteTarget] = useState<{ slug: string; title: string } | null>(null);
@@ -223,6 +248,10 @@ export function ContentTab({
 
   // Suppress unused warning — previewUrl kept for future use
   void previewUrl;
+
+  if (isGrid) {
+    return <GridContentNotice />;
+  }
 
   return (
     <div className="space-y-4">
