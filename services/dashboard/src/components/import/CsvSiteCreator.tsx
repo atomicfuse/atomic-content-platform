@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { escapeCsvField } from "@/lib/csv";
 
 interface ParsedSiteRow {
   raw: Record<string, string>;
@@ -118,9 +119,6 @@ const PHASE_LABELS: Record<string, string> = {
 };
 
 function downloadTemplate(): void {
-  const escapeCsvField = (field: string): string =>
-    field.includes(",") || field.includes('"') ? `"${field.replace(/"/g, '""')}"` : field;
-
   const header = CSV_HEADERS.map(escapeCsvField).join(",");
   const example = CSV_EXAMPLE_ROW.map(escapeCsvField).join(",");
   const csv = `${header}\n${example}\n`;

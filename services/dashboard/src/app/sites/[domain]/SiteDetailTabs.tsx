@@ -30,6 +30,7 @@ interface SiteDetailTabsProps {
     articles: ArticleEntry[];
     stagingBranch: string | null;
     previewUrl: string;
+    isGrid: boolean;
   };
   identityTabProps: {
     brief: Record<string, unknown> | null;
@@ -95,6 +96,7 @@ export function SiteDetailTabs({
             domain={domain}
             stagingBranch={contentTabProps.stagingBranch}
             previewUrl={contentTabProps.previewUrl}
+            isGrid={contentTabProps.isGrid}
           />
         );
       default:

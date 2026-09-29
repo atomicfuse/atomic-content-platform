@@ -40,6 +40,7 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
+import { logoBackgroundFor } from "@/lib/logo-background";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
@@ -140,12 +141,13 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
       try {
+        const { header: headerBg } = logoBackgroundFor(data.template, data.themeColors);
         logoBuffer = await generateLogoWithGemini(
           geminiKey,
           data.siteName,
           data.vertical,
           data.audiences.join(", ") || undefined,
-          data.themeColors?.primary,
+          headerBg,
           data.themeColors,
         );
       } catch (err) {
@@ -1186,8 +1188,8 @@ export async function generateLogoPreview(
 
   const theme = config?.theme as Record<string, unknown> | undefined;
   const colors = theme?.colors as Record<string, string> | undefined;
-  const headerBg = colors?.primary ?? "#1a1a2e";
-  const footerBg = colors?.footer_bg;
+  const template = theme?.template === "grid" ? "grid" : "modern";
+  const { header: headerBg, footer: footerBg } = logoBackgroundFor(template, colors);
 
   const mainBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
   const logo = mainBuf?.toString("base64") ?? null;

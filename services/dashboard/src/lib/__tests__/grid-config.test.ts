@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { applyGridConfigUpdates } from "../grid-config";
+import { applyGridConfigUpdates, isGridSiteConfig } from "../grid-config";
+
+describe("isGridSiteConfig", () => {
+  it("true when theme.template is 'grid'", () => {
+    expect(isGridSiteConfig({ theme: { template: "grid" } })).toBe(true);
+  });
+  it("false for Modern sites (no theme.template)", () => {
+    expect(isGridSiteConfig({ theme: { base: "classic" } })).toBe(false);
+  });
+  it("false when theme.base is 'grid' — the switch is theme.template, never theme.base", () => {
+    expect(isGridSiteConfig({ theme: { base: "grid" } })).toBe(false);
+  });
+  it("false for null/undefined config or missing theme", () => {
+    expect(isGridSiteConfig(null)).toBe(false);
+    expect(isGridSiteConfig(undefined)).toBe(false);
+    expect(isGridSiteConfig({})).toBe(false);
+  });
+});
 
 describe("applyGridConfigUpdates", () => {
   it("sets theme.template grid and keeps other theme keys (incl. base preset id)", () => {

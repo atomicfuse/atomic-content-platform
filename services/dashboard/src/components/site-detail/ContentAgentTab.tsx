@@ -15,6 +15,7 @@ import { BundleSubscriptionsPanel } from "./BundleSubscriptionsPanel";
 import { MigrateToPerTopicToggle } from "./MigrateToPerTopicToggle";
 import { TopicsListPanel } from "./TopicsListPanel";
 import type { TopicV2 } from "@/types/dashboard";
+import { isGridSiteConfig } from "@/lib/grid-config";
 
 const SiteConfigTab = dynamic(
   () => import("@/components/site-detail/SiteConfigTab").then((m) => m.SiteConfigTab),
@@ -86,6 +87,12 @@ export function ContentAgentTab({
   const { toast } = useToast();
   const router = useRouter();
   const { audiences: audienceOptions } = useAudiences();
+
+  // Grid sites show stories aggregated from other network sites, so the
+  // Modern-only content-agent fields (author/audiences/tone/Content Brief/
+  // per-topic migration) don't apply. Derived the same way as the existing
+  // Grid-tab check below, per src/lib/grid-config.ts.
+  const isGrid = isGridSiteConfig(siteConfig);
 
   // --- Identity state ---
   const [savingIdentity, setSavingIdentity] = useState(false);
@@ -607,52 +614,58 @@ export function ContentAgentTab({
         <Input label="Site Slug" value={siteSlug} onChange={(e): void => setSiteSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))} placeholder="e.g. sillycapybara" />
         <Input label="Site Name" value={siteName} onChange={(e): void => setSiteName(e.target.value)} />
         <Input label="Tagline" value={siteTagline} onChange={(e): void => setSiteTagline(e.target.value)} />
-        <Input label="Default Author" value={author} onChange={(e): void => setAuthor(e.target.value)} placeholder="e.g. Sarah Mitchell" />
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Target Audiences
-          </label>
-          {audienceIds.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-1.5">
-              {audienceIds.map((id) => {
-                const name = audienceOptions.find((a) => a.id === id)?.name ?? id;
-                return (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
-                  >
-                    {name}
-                    <button
-                      type="button"
-                      onClick={(): void => {
-                        setAudienceIds(audienceIds.filter((x) => x !== id));
-                        setAudiences(audiences.filter((_, i) => audienceIds[i] !== id));
-                      }}
-                      className="hover:text-red-400 transition-colors"
+        {!isGrid && (
+          <Input label="Default Author" value={author} onChange={(e): void => setAuthor(e.target.value)} placeholder="e.g. Sarah Mitchell" />
+        )}
+        {!isGrid && (
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+              Target Audiences
+            </label>
+            {audienceIds.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {audienceIds.map((id) => {
+                  const name = audienceOptions.find((a) => a.id === id)?.name ?? id;
+                  return (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"
                     >
-                      &times;
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <Select
-            options={audienceOptions
-              .filter((a) => !audienceIds.includes(a.id))
-              .map((a) => ({ value: a.id, label: a.name }))}
-            placeholder="Add audience..."
-            value=""
-            onChange={(e): void => {
-              const id = e.target.value;
-              if (!id) return;
-              const name = audienceOptions.find((a) => a.id === id)?.name ?? "";
-              setAudienceIds([...audienceIds, id]);
-              setAudiences([...audiences, name]);
-            }}
-          />
-        </div>
-        <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
+                      {name}
+                      <button
+                        type="button"
+                        onClick={(): void => {
+                          setAudienceIds(audienceIds.filter((x) => x !== id));
+                          setAudiences(audiences.filter((_, i) => audienceIds[i] !== id));
+                        }}
+                        className="hover:text-red-400 transition-colors"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            <Select
+              options={audienceOptions
+                .filter((a) => !audienceIds.includes(a.id))
+                .map((a) => ({ value: a.id, label: a.name }))}
+              placeholder="Add audience..."
+              value=""
+              onChange={(e): void => {
+                const id = e.target.value;
+                if (!id) return;
+                const name = audienceOptions.find((a) => a.id === id)?.name ?? "";
+                setAudienceIds([...audienceIds, id]);
+                setAudiences([...audiences, name]);
+              }}
+            />
+          </div>
+        )}
+        {!isGrid && (
+          <Input label="Tone" value={tone} onChange={(e): void => setTone(e.target.value)} />
+        )}
         {/* Category — display label for the Sites grid and brief context.
             For per-topic sites this is purely organizational; aggregator
             filtering is driven by topics_v2. For legacy sites it also
@@ -901,13 +914,15 @@ export function ContentAgentTab({
         domain={domain}
         customDomain={customDomain ?? null}
       />
-      <MigrateToPerTopicToggle
-        domain={domain}
-        isPerTopic={
-          Array.isArray((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2) &&
-          ((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2 as unknown[]).length > 0
-        }
-      />
+      {!isGrid && (
+        <MigrateToPerTopicToggle
+          domain={domain}
+          isPerTopic={
+            Array.isArray((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2) &&
+            ((siteConfig?.brief as Record<string, unknown> | undefined)?.topics_v2 as unknown[]).length > 0
+          }
+        />
+      )}
       <div className="flex items-center justify-between pt-2 border-t border-[var(--border-secondary)]">
         {identityDirty ? (
           <p className="text-xs text-amber-500">You have unsaved changes — click Save Identity to apply.</p>
@@ -1555,10 +1570,13 @@ export function ContentAgentTab({
   const tabs = [
     { id: "identity", label: "Identity", content: identityContent },
     { id: "theme", label: "Theme", content: <SiteThemeTab domain={domain} /> },
-    ...(((siteConfig?.theme as Record<string, unknown> | undefined)?.template === "grid")
+    ...(isGrid
       ? [{ id: "grid", label: "Grid", content: <GridSiteTab domain={domain} /> }]
       : []),
-    { id: "brief", label: "Content Brief", content: contentBriefContent },
+    // Content Brief holds the schedule, topics, bundles, guidelines and
+    // quality settings for the content-generation agent — none of which
+    // apply to a Grid site (it aggregates stories, it doesn't generate them).
+    ...(isGrid ? [] : [{ id: "brief", label: "Content Brief", content: contentBriefContent }]),
     { id: "groups", label: "Groups", content: groupsContent },
     { id: "overrides", label: `Overrides${!overridesLoading && overrides.length > 0 ? ` (${overrides.length})` : ""}`, content: overridesContent },
     { id: "config", label: "Config", content: <SiteConfigTab domain={domain} /> },

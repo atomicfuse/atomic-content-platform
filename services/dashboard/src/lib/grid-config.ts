@@ -1,5 +1,17 @@
 import type { GridCardFields, GridFields } from "@/types/grid";
 
+/**
+ * True when a site's config is a Grid site (network card feed), never a Modern
+ * (magazine-layout) site. The switch is `theme.template === "grid"` — NEVER
+ * `theme.base` (that field holds colour-preset ids like `classic`/`custom`).
+ * Accepts a loosely-typed config object since callers read it from git/Mongo
+ * without a shared SiteConfig type.
+ */
+export function isGridSiteConfig(config: Record<string, unknown> | null | undefined): boolean {
+  const theme = config?.theme as Record<string, unknown> | undefined;
+  return theme?.template === "grid";
+}
+
 /** Grid fields accepted by /api/sites/save `configUpdates`. */
 export interface GridConfigUpdates {
   theme_template?: "modern" | "grid";

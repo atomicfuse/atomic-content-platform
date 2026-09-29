@@ -1,6 +1,7 @@
 // services/dashboard/src/app/api/agent/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import { gridGenerationGuard } from "@/lib/grid-guard";
 
 const REDIS_URL = process.env.REDIS_URL;
 
@@ -38,6 +39,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  const gridGuardResponse = await gridGenerationGuard(body.siteDomain);
+  if (gridGuardResponse) return gridGuardResponse;
 
   const topicName =
     typeof body.topicName === "string" && body.topicName.trim().length > 0
