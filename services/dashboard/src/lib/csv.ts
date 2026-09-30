@@ -1,4 +1,5 @@
 import type { DashboardSiteEntry } from "@/types/dashboard";
+import type { SiteColumnContext, SiteColumnDef } from "./site-columns";
 
 /**
  * RFC-4180 field escaping. Wraps a field in double quotes (doubling any
@@ -82,6 +83,35 @@ export function buildSitesCsv(
   for (const site of rows) {
     const record = siteToCsvRecord(site, siteGroups);
     lines.push(SITES_CSV_COLUMNS.map((column) => csvCell(record[column])).join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * Builds the CSV text for the sites-list "Export CSV" button, following
+ * whichever columns are currently visible in the table (via the column
+ * chooser — see `src/lib/site-columns.ts`), in that display order, with
+ * Website first (task-I-brief.md §4). `columns` should already be filtered
+ * to the visible chooser columns; `Actions` is never passed in since it
+ * isn't a `SiteColumnDef` and was never exportable.
+ *
+ * This supersedes `buildSitesCsv` for the table's own export button —
+ * `buildSitesCsv` is kept as-is (fixed column set) for any other caller
+ * that isn't driven by the chooser.
+ */
+export function buildSitesCsvForColumns(
+  rows: DashboardSiteEntry[],
+  columns: SiteColumnDef[],
+  ctx: SiteColumnContext,
+): string {
+  const header = ["Website", ...columns.map((column) => column.label)];
+  const lines = [header.map(csvCell).join(",")];
+  for (const site of rows) {
+    const cells = [
+      site.custom_domain ?? site.domain,
+      ...columns.map((column) => column.csv(site, ctx)),
+    ];
+    lines.push(cells.map(csvCell).join(","));
   }
   return `${lines.join("\n")}\n`;
 }

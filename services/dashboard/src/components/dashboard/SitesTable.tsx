@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useTransition, useCallback, useEffect } from "react";
+import { useState, useMemo, useTransition, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import type { DashboardSiteEntry, SiteStatus, Company, Vertical } from "@/types/dashboard";
 import { StatusBadge } from "@/components/ui/Badge";
 import { useToast } from "@/components/ui/Toast";
@@ -10,12 +11,31 @@ import { Button } from "@/components/ui/Button";
 import { deleteSiteEntry, updateSiteEntry } from "@/actions/sites";
 import { COMPANIES } from "@/lib/constants";
 import { Filters } from "./Filters";
+import { ColumnChooser } from "./ColumnChooser";
 import {
   filterSites,
   type CompanyFilterValue,
   type GroupFilterValue,
 } from "@/lib/site-filters";
-import { buildSitesCsv, sitesCsvFilename } from "@/lib/csv";
+import { buildSitesCsvForColumns, sitesCsvFilename } from "@/lib/csv";
+import {
+  SITE_COLUMNS,
+  DEFAULT_VISIBLE_COLUMN_IDS,
+  loadVisibleColumnIds,
+  saveVisibleColumnIds,
+  hasLiveColumn,
+  formatSchedule,
+  type SiteColumnDef,
+  type LiveConfigEntry,
+} from "@/lib/site-columns";
+import { isPublishEligible } from "@/lib/pending-changes";
+import { BULK_PUBLISH_BUSY_MESSAGE, useBulkPublishBusy } from "@/lib/bulk-publish-activity";
+
+// Loaded on first open only: it pulls in the publish server action.
+const BulkPublishModal = dynamic(
+  () => import("./BulkPublishModal").then((m) => m.BulkPublishModal),
+  { ssr: false },
+);
 
 interface SitesTableProps {
   sites: DashboardSiteEntry[];
@@ -69,6 +89,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [bulkPublishOpen, setBulkPublishOpen] = useState(false);
+  const publishEligibleCount = useMemo(() => sites.filter(isPublishEligible).length, [sites]);
+  const bulkPublishBusy = useBulkPublishBusy();
   const [companyFilter, setCompanyFilter] = useState<CompanyFilterValue | "">("");
   const [verticalFilter, setVerticalFilter] = useState<Vertical | "">("");
   const [statusFilter, setStatusFilter] = useState<SiteStatus | "">("");
@@ -89,6 +112,246 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [siteGroups, setSiteGroups] = useState<Record<string, string[]>>({});
   const [availableGroups, setAvailableGroups] = useState<Array<{ id: string; name?: string }>>([]);
   const [groupsLoaded, setGroupsLoaded] = useState(false);
+  // Column visibility — starts at the documented defaults (matches today's
+  // table exactly for SSR + first client render) and is replaced by the
+  // saved preference, if any, once mounted. See src/lib/site-columns.ts.
+  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>(DEFAULT_VISIBLE_COLUMN_IDS);
+  const [liveConfig, setLiveConfig] = useState<Record<string, LiveConfigEntry>>({});
+  const [liveConfigLoaded, setLiveConfigLoaded] = useState(false);
+  const liveConfigRequested = useRef(false);
+
+  useEffect(() => {
+    setVisibleColumnIds(loadVisibleColumnIds());
+  }, []);
+
+  // Fetch /api/sites/live-config only once at least one "live" column is
+  // visible, and only once per mount thereafter — never re-fetched just
+  // because a live column is toggled off and back on.
+  useEffect(() => {
+    if (!hasLiveColumn(visibleColumnIds) || liveConfigRequested.current) return;
+    liveConfigRequested.current = true;
+    fetch("/api/sites/live-config")
+      .then((r) => r.json())
+      .then((data: Record<string, LiveConfigEntry>) => setLiveConfig(data))
+      .catch(() => { /* leave liveConfig empty — cells fall back to "—" */ })
+      .finally(() => setLiveConfigLoaded(true));
+  }, [visibleColumnIds]);
+
+  const visibleColumns = useMemo(
+    () => SITE_COLUMNS.filter((c) => visibleColumnIds.includes(c.id)),
+    [visibleColumnIds],
+  );
+
+  // A hidden column can't stay "sorted" — snap back to the default (no) sort
+  // for any sort key whose column is no longer visible.
+  useEffect(() => {
+    if (!visibleColumnIds.includes("articles") && articlesSort !== null) setArticlesSort(null);
+    if (!visibleColumnIds.includes("lastArticles") && lastArticlesSort !== null) setLastArticlesSort(null);
+    if (!visibleColumnIds.includes("created") && createdSort !== null) setCreatedSort(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleColumnIds]);
+
+  function handleColumnToggle(id: string, checked: boolean): void {
+    setVisibleColumnIds((prev) => {
+      const next = checked ? [...prev, id] : prev.filter((existing) => existing !== id);
+      saveVisibleColumnIds(next);
+      return next;
+    });
+  }
+
+  function handleColumnReset(): void {
+    setVisibleColumnIds(DEFAULT_VISIBLE_COLUMN_IDS);
+    saveVisibleColumnIds(DEFAULT_VISIBLE_COLUMN_IDS);
+  }
+
+  function renderColumnHeader(column: SiteColumnDef): React.ReactNode {
+    switch (column.id) {
+      case "company":
+        return "Company";
+      case "group":
+        return "Group";
+      case "category":
+        return "Category";
+      case "status":
+        return "Status";
+      case "articles":
+        return (
+          <button
+            type="button"
+            onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setCreatedSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
+          >
+            Articles
+            <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {articlesSort === "desc" ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              )}
+            </svg>
+          </button>
+        );
+      case "lastArticles":
+        return (
+          <button
+            type="button"
+            onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setCreatedSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+          >
+            Last Articles
+            <svg className={`w-3.5 h-3.5 transition-opacity ${lastArticlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {lastArticlesSort === "desc" ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              )}
+            </svg>
+          </button>
+        );
+      case "siteId":
+        return <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />;
+      case "created":
+        return (
+          <button
+            type="button"
+            onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort(null); setCreatedSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
+            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
+          >
+            Created
+            <svg className={`w-3.5 h-3.5 transition-opacity ${createdSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              {createdSort === "desc" ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+              )}
+            </svg>
+          </button>
+        );
+      case "lastUpdated":
+        return <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />;
+      case "customDomain":
+        return "Custom domain";
+      default:
+        // Live-config columns (Template, GA4, Facebook Pixel, GTM, Google
+        // Ads, Schedule, Last sync) show their own column tooltip.
+        return column.tooltip
+          ? <ColumnHeader label={column.label} tooltip={column.tooltip} />
+          : column.label;
+    }
+  }
+
+  function headerClassName(id: string): string {
+    const base = "px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]";
+    return id === "articles" ? `text-right ${base}` : `text-left ${base}`;
+  }
+
+  function cellClassName(id: string): string {
+    switch (id) {
+      case "articles":
+        return "px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums";
+      case "articlesPerDay":
+        return "px-4 py-3 text-[var(--text-secondary)] text-xs whitespace-nowrap tabular-nums";
+      case "status":
+        return "px-4 py-3";
+      case "siteId":
+        return "px-4 py-3 text-[var(--text-muted)] font-mono text-xs";
+      case "lastArticles":
+      case "created":
+      case "lastSync":
+        return "px-4 py-3 text-[var(--text-muted)] text-xs";
+      case "lastUpdated":
+        return "px-4 py-3 text-[var(--text-muted)]";
+      case "ga4":
+      case "facebookPixel":
+      case "gtm":
+      case "googleAds":
+        return "px-4 py-3 text-[var(--text-muted)] font-mono text-xs";
+      case "template":
+      case "customDomain":
+        return "px-4 py-3 text-[var(--text-secondary)] text-xs";
+      default:
+        return "px-4 py-3 text-[var(--text-secondary)]";
+    }
+  }
+
+  function renderColumnCell(column: SiteColumnDef, site: DashboardSiteEntry): React.ReactNode {
+    switch (column.id) {
+      case "company":
+        return (
+          <InlineCompanySelect
+            domain={site.domain}
+            value={site.company}
+            onSaved={(newCompany): void => {
+              site.company = newCompany;
+              toast(`Company updated for ${site.domain}`, "success");
+              router.refresh();
+            }}
+            onError={(msg): void => { toast(msg, "error"); }}
+          />
+        );
+      case "group":
+        return (
+          <InlineGroupSelect
+            domain={site.domain}
+            value={siteGroups[site.domain] ?? []}
+            options={availableGroups}
+            onSaved={(newGroups): void => {
+              setSiteGroups((prev) => ({ ...prev, [site.domain]: newGroups }));
+              toast(`Group updated for ${site.domain}`, "success");
+            }}
+            onError={(msg): void => { toast(msg, "error"); }}
+          />
+        );
+      case "category":
+        return site.vertical;
+      case "status":
+        return <StatusBadge status={site.status} />;
+      case "articles":
+        return countsLoaded
+          ? (articleCounts[site.domain] ?? "—")
+          : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />;
+      case "lastArticles":
+        return latestLoaded
+          ? (latestArticles[site.domain] ? formatRelativeDate(latestArticles[site.domain]) : "—")
+          : <span className="inline-block w-12 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />;
+      case "siteId":
+        return site.site_id || "—";
+      case "created":
+        return formatRelativeDate(site.created_at ?? "");
+      case "lastUpdated":
+        return formatRelativeDate(site.last_updated);
+      case "customDomain":
+        return site.custom_domain ?? "—";
+      default: {
+        // Live-config columns — "…" while the one-time fetch is in flight,
+        // "—" once loaded but the value is missing/null.
+        if (!liveConfigLoaded) return "…";
+        const entry = liveConfig[site.domain];
+        switch (column.id) {
+          case "template": {
+            const template = entry?.template ?? null;
+            if (template === "grid") return "Grid";
+            if (template === "modern") return "Modern";
+            return "—";
+          }
+          case "ga4":
+            return entry?.ga4 ?? "—";
+          case "facebookPixel":
+            return entry?.facebook_pixel ?? "—";
+          case "gtm":
+            return entry?.gtm ?? "—";
+          case "googleAds":
+            return entry?.google_ads ?? "—";
+          case "articlesPerDay":
+            return formatSchedule(entry?.articles_per_day ?? null, entry?.publish_days ?? null) || "—";
+          case "lastSync":
+            return entry?.last_synced_at ? formatRelativeDate(entry.last_synced_at) : "—";
+          default:
+            return "—";
+        }
+      }
+    }
+  }
 
   useEffect(() => {
     fetch("/api/sites/article-counts")
@@ -213,8 +476,16 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   // `filteredSites` currently computes to.
   const groupFilterPending = Boolean(groupFilter) && !groupsLoaded;
 
+  const needsLiveConfigForExport = hasLiveColumn(visibleColumnIds);
+  const exportWaitingOnLiveConfig = needsLiveConfigForExport && !liveConfigLoaded;
+
   function handleExportCsv(): void {
-    const csv = buildSitesCsv(filteredSites, siteGroups);
+    const csv = buildSitesCsvForColumns(filteredSites, visibleColumns, {
+      siteGroups,
+      articleCounts,
+      latestArticles,
+      liveConfig,
+    });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -260,20 +531,58 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
           onStatusChange={setStatusFilter}
           onGroupChange={setGroupFilter}
         />
-        <Button
-          type="button"
-          variant="secondary"
-          size="md"
-          onClick={handleExportCsv}
-          disabled={filteredSites.length === 0 || groupFilterPending}
-          title="Export the currently filtered sites as CSV"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-          </svg>
-          Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          <ColumnChooser
+            columns={SITE_COLUMNS}
+            visibleIds={visibleColumnIds}
+            onToggle={handleColumnToggle}
+            onReset={handleColumnReset}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={handleExportCsv}
+            disabled={filteredSites.length === 0 || groupFilterPending || exportWaitingOnLiveConfig}
+            title={
+              exportWaitingOnLiveConfig
+                ? "Waiting for live site data to finish loading…"
+                : "Export the currently filtered sites as CSV"
+            }
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export CSV
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
+            onClick={(): void => setBulkPublishOpen(true)}
+            disabled={publishEligibleCount === 0 || bulkPublishBusy}
+            title={
+              bulkPublishBusy
+                ? BULK_PUBLISH_BUSY_MESSAGE
+                : "Find sites with unpublished staging changes and publish them"
+            }
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
+            </svg>
+            Publish changes
+          </Button>
+        </div>
       </div>
+
+      {bulkPublishOpen && (
+        <BulkPublishModal
+          open={bulkPublishOpen}
+          onClose={(): void => setBulkPublishOpen(false)}
+          eligibleCount={publishEligibleCount}
+          onPublished={(): void => router.refresh()}
+        />
+      )}
 
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
         <div className="overflow-auto max-h-[80vh]">
@@ -296,72 +605,11 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                     </svg>
                   </button>
                 </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Company
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Group
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Category
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Status
-                </th>
-                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <button
-                    type="button"
-                    onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setCreatedSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
-                  >
-                    Articles
-                    <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      {articlesSort === "desc" ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                      )}
-                    </svg>
-                  </button>
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <button
-                    type="button"
-                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setCreatedSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-                  >
-                    Last Articles
-                    <svg className={`w-3.5 h-3.5 transition-opacity ${lastArticlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      {lastArticlesSort === "desc" ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                      )}
-                    </svg>
-                  </button>
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <button
-                    type="button"
-                    onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort(null); setCreatedSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-                  >
-                    Created
-                    <svg className={`w-3.5 h-3.5 transition-opacity ${createdSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      {createdSort === "desc" ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                      )}
-                    </svg>
-                  </button>
-                </th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />
-                </th>
+                {visibleColumns.map((column) => (
+                  <th key={column.id} className={headerClassName(column.id)}>
+                    {renderColumnHeader(column)}
+                  </th>
+                ))}
                 <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Actions
                 </th>
@@ -371,7 +619,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {groupFilterPending && (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={2 + visibleColumns.length}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     Loading groups…
@@ -381,7 +629,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               {!groupFilterPending && filteredSites.length === 0 && (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={2 + visibleColumns.length}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
                     {sites.length === 0
@@ -399,57 +647,11 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   <td className="px-4 py-3 font-medium text-[var(--text-primary)]">
                     {site.custom_domain ?? site.domain}
                   </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    <InlineCompanySelect
-                      domain={site.domain}
-                      value={site.company}
-                      onSaved={(newCompany): void => {
-                        site.company = newCompany;
-                        toast(`Company updated for ${site.domain}`, "success");
-                        router.refresh();
-                      }}
-                      onError={(msg): void => { toast(msg, "error"); }}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    <InlineGroupSelect
-                      domain={site.domain}
-                      value={siteGroups[site.domain] ?? []}
-                      options={availableGroups}
-                      onSaved={(newGroups): void => {
-                        setSiteGroups((prev) => ({ ...prev, [site.domain]: newGroups }));
-                        toast(`Group updated for ${site.domain}`, "success");
-                      }}
-                      onError={(msg): void => { toast(msg, "error"); }}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">
-                    {site.vertical}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge status={site.status} />
-                  </td>
-                  <td className="px-4 py-3 text-right text-[var(--text-secondary)] font-mono text-xs tabular-nums">
-                    {countsLoaded
-                      ? (articleCounts[site.domain] ?? "—")
-                      : <span className="inline-block w-4 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
-                    }
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
-                    {latestLoaded
-                      ? (latestArticles[site.domain] ? formatRelativeDate(latestArticles[site.domain]) : "—")
-                      : <span className="inline-block w-12 h-3 rounded bg-[var(--bg-elevated)] animate-pulse" />
-                    }
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-muted)] font-mono text-xs">
-                    {site.site_id || "—"}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-muted)] text-xs">
-                    {formatRelativeDate(site.created_at ?? "")}
-                  </td>
-                  <td className="px-4 py-3 text-[var(--text-muted)]">
-                    {formatRelativeDate(site.last_updated)}
-                  </td>
+                  {visibleColumns.map((column) => (
+                    <td key={column.id} className={cellClassName(column.id)}>
+                      {renderColumnCell(column, site)}
+                    </td>
+                  ))}
                   <td className="px-4 py-3 text-center">
                     <button
                       onClick={(e): void => openDeleteModal(e, site.domain)}

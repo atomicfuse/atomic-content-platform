@@ -126,6 +126,19 @@ From the site detail page (`/sites/{domain}`), operators can:
 
 All edits trigger a rebuild on the staging branch for preview before publishing.
 
+## Publish Changes in Bulk
+
+The **Publish changes** button in the Sites page toolbar (next to Columns and Export CSV) publishes staged edits for many sites in one go. It does the same thing as the per-site **Publish** button, one site at a time.
+
+1. **Scan** -- checks every Ready or Live site that has a staging branch and lists only the sites with unpublished changes under `sites/<domain>/`. Sites that could not be checked are listed in a collapsible section.
+2. **Review** -- one row per site: status, "X added · Y changed · Z deleted", and the file list when you expand the row. Every site starts selected; untick the ones to leave for later. A red **N articles deleted** badge marks sites whose publish removes live articles. Article deletions are detected from the comparison between the staging branch and `main`. When that comparison hits GitHub's 300-file limit the list can't be trusted, so very large change sets can't be selected here and must be published from the site page.
+3. **Confirm** -- publishing sends **everything** on each selected site's staging branch live, including other people's unpublished edits and AI-generated articles still waiting on staging. If any selected site deletes articles, a second confirmation lists those sites and article counts. **Deleting live articles is permanent**: their KV entries, stored data and images are removed.
+4. **Run** -- sites publish one at a time with live progress (e.g. "7 / 12"). Before each site the dashboard:
+   - checks the content scheduler. If a scheduler run is active, publishing **pauses** ("Paused: the scheduler is running") until you click **Resume**. If the scheduler can't be reached, you get a warning and choose whether to continue anyway;
+   - re-checks the site's pending changes. A site with nothing left to publish, or that is no longer Ready/Live with a staging branch, is marked **Skipped**. A site whose re-check shows article deletions you didn't confirm, or has grown too large to verify, is marked **Failed** and not published.
+
+A failed site doesn't stop the run. When it ends, **Retry failed** re-runs only the failed sites through the same checks. **Cancel** (or closing the modal, after a confirmation) stops after the current site finishes. It never interrupts a publish half-way. Until that last site finishes, the **Publish changes** button stays disabled ("A bulk publish is still finishing…"). The Sites table refreshes when the run ends.
+
 ## Attaching a Custom Domain
 
 1. Site must be in **Ready** status (staging merged to main, production KV seeded)
