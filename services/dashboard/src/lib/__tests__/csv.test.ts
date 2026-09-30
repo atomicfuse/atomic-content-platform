@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { escapeCsvField, buildSitesCsv, sitesCsvFilename, SITES_CSV_COLUMNS } from "../csv";
+import { escapeCsvField, buildSitesCsv, buildSitesCsvForColumns, sitesCsvFilename, SITES_CSV_COLUMNS } from "../csv";
+import { getColumnById, type SiteColumnContext } from "../site-columns";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 
 function makeSite(overrides: Partial<DashboardSiteEntry> = {}): DashboardSiteEntry {
@@ -136,6 +137,56 @@ describe("buildSitesCsv", () => {
       const firstCol = csv.trim().split("\n")[1]!.split(",")[0];
       expect(firstCol).toBe("coolnews");
     });
+  });
+});
+
+describe("buildSitesCsvForColumns", () => {
+  function emptyContext(overrides: Partial<SiteColumnContext> = {}): SiteColumnContext {
+    return { siteGroups: {}, articleCounts: {}, latestArticles: {}, liveConfig: {}, ...overrides };
+  }
+
+  it("puts Website first, then exactly the given columns in the given order", () => {
+    const columns = [getColumnById("status")!, getColumnById("company")!];
+    const rows = [makeSite({ domain: "site-a", custom_domain: "a.com", status: "Live", company: "ATL" })];
+    const csv = buildSitesCsvForColumns(rows, columns, emptyContext());
+    const [header, row] = csv.trim().split("\n");
+    expect(header).toBe("Website,Status,Company");
+    expect(row).toBe("a.com,Live,ATL");
+  });
+
+  it("uses the bare domain as Website when there is no custom_domain", () => {
+    const rows = [makeSite({ domain: "site-a", custom_domain: null })];
+    const csv = buildSitesCsvForColumns(rows, [getColumnById("status")!], emptyContext());
+    const row = csv.trim().split("\n")[1]!;
+    expect(row.split(",")[0]).toBe("site-a");
+  });
+
+  it("omits a column entirely when it isn't passed in (mirrors 'only visible columns')", () => {
+    const rows = [makeSite({ domain: "site-a" })];
+    const csv = buildSitesCsvForColumns(rows, [getColumnById("company")!], emptyContext());
+    const [header] = csv.trim().split("\n");
+    expect(header).toBe("Website,Company");
+    expect(header).not.toContain("Status");
+  });
+
+  it("reorders columns to match whatever order they're given in", () => {
+    const rows = [makeSite({ domain: "site-a" })];
+    const columnsAB = [getColumnById("company")!, getColumnById("status")!];
+    const columnsBA = [getColumnById("status")!, getColumnById("company")!];
+    expect(buildSitesCsvForColumns(rows, columnsAB, emptyContext()).split("\n")[0]).toBe(
+      "Website,Company,Status",
+    );
+    expect(buildSitesCsvForColumns(rows, columnsBA, emptyContext()).split("\n")[0]).toBe(
+      "Website,Status,Company",
+    );
+  });
+
+  it("still applies formula-injection escaping to column cells", () => {
+    const rows = [makeSite({ domain: "site-a" })];
+    const ctx = emptyContext({ siteGroups: { "site-a": ["=SUM(A1)"] } });
+    const csv = buildSitesCsvForColumns(rows, [getColumnById("group")!], ctx);
+    const row = csv.trim().split("\n")[1]!;
+    expect(row).toContain("'=SUM(A1)");
   });
 });
 

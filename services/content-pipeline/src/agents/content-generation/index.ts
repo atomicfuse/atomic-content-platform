@@ -28,6 +28,7 @@ import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
+import { getActiveRunState } from "../../queue/active-run.js";
 import {
   handleMigrationRequest,
   handleCreateSites,
@@ -184,29 +185,7 @@ async function handleRequest(
       return;
     }
     try {
-      const schedulerRunQueue = queueInstances.schedulerRunQueue;
-      const active = await schedulerRunQueue.getActive();
-      const waiting = await schedulerRunQueue.getWaiting();
-
-      if (active.length === 0 && waiting.length === 0) {
-        sendJson(res, 200, { status: "none" });
-        return;
-      }
-
-      const current = active[0] ?? waiting[0];
-      const generateQueue = queueInstances.generateQueue;
-      const children = await generateQueue.getActive();
-      const completedChildren = await generateQueue.getCompleted(0, 100);
-      const failedChildren = await generateQueue.getFailed(0, 100);
-
-      sendJson(res, 200, {
-        status: "active",
-        runId: current?.data?.runId,
-        total: children.length + completedChildren.length + failedChildren.length,
-        active: children.length,
-        completed: completedChildren.length,
-        failed: failedChildren.length,
-      });
+      sendJson(res, 200, await getActiveRunState(queueInstances));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       sendJson(res, 500, { status: "error", message });
