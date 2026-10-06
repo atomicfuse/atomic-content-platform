@@ -16,24 +16,41 @@ import type { WordCountTarget } from "../../word-count.js";
 
 export type SourceMode = "sourced" | "original";
 
+/** Non-empty, trimmed site content guidelines (the brief stores a string or a list). */
+export function siteGuidelines(brief: SiteBrief): string[] {
+  const raw = Array.isArray(brief.content_guidelines) ? brief.content_guidelines : [brief.content_guidelines];
+  return raw.filter((g): g is string => typeof g === "string" && g.trim() !== "").map((g) => g.trim());
+}
+
 export function siteIdentitySection(siteName: string, brief: SiteBrief, role: string): string {
   const themeLine = brief.theme && brief.theme.trim()
     ? `\n\n## Editorial Angle\n${brief.theme.trim()}`
     : "";
-  const guidelines = Array.isArray(brief.content_guidelines)
-    ? brief.content_guidelines.map((g) => `- ${g}`).join("\n")
-    : `- ${brief.content_guidelines}`;
+  // `audiences: []` leaves `audience` unset — never print "writing for undefined".
+  const audience = brief.audience?.trim() || "a general audience";
+  const guidelines = siteGuidelines(brief);
+  const guidelinesSection = guidelines.length > 0
+    ? `
 
-  return `You are ${role} for ${siteName}, writing for ${brief.audience}. Embody the site's voice — don't just echo its metadata.${themeLine}
+## Site Persona & Editorial Guidelines (HIGHEST PRIORITY)
+These come from the site owner. Wherever they conflict with the default role, Register, Genre Rules, or Site Voice tone below, THESE WIN — including who narrates: if they name a persona or narrator, write the whole article in that persona's voice. Only the Truth & Attribution rules and the Tone Safety Valve outrank them.
+${guidelines.map((g) => `- ${g}`).join("\n")}`
+    : "";
+
+  return `You are ${role} for ${siteName}, writing for ${audience}. Embody the site's voice — don't just echo its metadata.${themeLine}${guidelinesSection}
 
 ## Site Voice
 - Tone: ${brief.tone}
-- Audience: ${brief.audience}
+- Audience: ${audience}
 - Topics: ${brief.topics.join(", ")}
-- SEO focus keywords: ${brief.seo_keywords_focus.join(", ")}
+- SEO focus keywords: ${brief.seo_keywords_focus.join(", ")}`;
+}
 
-## Editorial Guidelines
-${guidelines}`;
+/** Closing reminder appended to the user prompt so the site's guidelines are the last thing the model reads. */
+export function guidelinesReminder(brief: SiteBrief): string {
+  const guidelines = siteGuidelines(brief);
+  if (guidelines.length === 0) return "";
+  return `\n\nREMINDER — the site owner's guidelines take priority over the default register; apply them throughout the article:\n${guidelines.map((g) => `- ${g}`).join("\n")}`;
 }
 
 export function inputMappingSection(): string {
@@ -47,7 +64,9 @@ The SUMMARY below is a structured editorial brief. Its section headers vary by s
 
 The brief is guidance, not gospel: mine it for the angle and framing, but it is also your ONLY source of facts.
 
-Other fields: DESCRIPTION (when present) is a tone hint — often the source's own logline. TAGS are the key entities and natural SEO keywords — work them in. PUBLISHED is your time anchor — write as current ("this week"), never in phrasing that will read stale. EXPIRES (when present) means short shelf life — lean into timeliness. AUTHOR/SOURCE is who originally reported this — attribute to them.`;
+Other fields: DESCRIPTION (when present) is a tone hint — often the source's own logline. TAGS are the key entities and natural SEO keywords — work them in. PUBLISHED is your time anchor — write as current ("this week"), never in phrasing that will read stale. EXPIRES (when present) means short shelf life — lean into timeliness. AUTHOR/SOURCE is who originally reported this — attribute to them.
+
+Readers never see these instructions or your brief: never write "the brief", "the peg", "the source material" or any other prompt term in the article (headings included). Attribute facts to the original outlet ("per Cosmopolitan"), not to the brief.`;
 }
 
 export function truthRulesSection(mode: SourceMode): string {

@@ -121,7 +121,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         siteDomain: body.siteDomain,
-        ...(body.branch ? { branch: body.branch } : {}),
+        branch: body.branch ?? `staging/${body.siteDomain}`,
         ...(body.count ? { count: body.count } : topicName ? { count: defaultCount } : {}),
         ...(topicName ? { topicName } : {}),
         bypassSchedule: true,

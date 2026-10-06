@@ -26,6 +26,7 @@ import { parse as parseYaml } from "yaml";
 // v2 pipeline modules
 import { getContent, getSettings, resolveTopicTagIds } from "./api-client.js";
 import { classifyContent } from "./router.js";
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_OPENAI_FALLBACK_MODEL } from "../../lib/models.js";
 import { ClaudeGenerator } from "./generators/claude-generator.js";
 import { OpenAIGenerator } from "./generators/openai-generator.js";
 import { randomUUID } from "node:crypto";
@@ -640,17 +641,18 @@ async function processItem(
   }
 
   try {
-    // Step 1: Route — factual (Claude) or general (OpenAI)
+    // Step 1: Classify — factual vs general picks the genre pack. Claude writes
+    // both; OpenAI is the fallback (gpt-4o-mini ignored site personas).
     const decision = classifyContent(item, settings);
-    console.log(`[agent] Routed "${item.title}" → ${decision.generator} (${decision.reason})`);
+    console.log(`[agent] Classified "${item.title}" as ${decision.isFactual ? "factual" : "general"} (${decision.reason})`);
 
     // Step 2: Generate article with cross-model fallback
     const genConfig: GeneratorConfig = { siteName, brief, isFactual: decision.isFactual };
     let generated: V2GeneratedArticle;
-    let actualGenerator: "claude" | "openai" = decision.generator;
+    let actualGenerator: "claude" | "openai" = "claude";
 
-    const primary: Generator = decision.isFactual ? claudeGenerator : openaiGenerator;
-    const fallback: Generator = decision.isFactual ? openaiGenerator : claudeGenerator;
+    const primary: Generator = claudeGenerator;
+    const fallback: Generator = openaiGenerator;
 
     try {
       generated = await primary.generate(item, genConfig);
@@ -673,7 +675,7 @@ async function processItem(
     // fallback path can flip Claude↔OpenAI). Fire-and-forget; failure-isolated.
     if (generated.usage) {
       const generatorModelId =
-        actualGenerator === "claude" ? "claude-sonnet-4-6" : "gpt-4o-mini";
+        generated.model ?? (actualGenerator === "claude" ? DEFAULT_CLAUDE_MODEL : DEFAULT_OPENAI_FALLBACK_MODEL);
       void recordTextUsage({
         siteDomain,
         source: opts.source,
@@ -745,7 +747,7 @@ async function processItem(
         void recordTextUsage({
           siteDomain,
           source: opts.source,
-          model: "claude-sonnet-4-6",
+          model: qualityResult.model ?? DEFAULT_CLAUDE_MODEL,
           inputTokens: qualityResult.usage.inputTokens,
           outputTokens: qualityResult.usage.outputTokens,
           estimated: qualityResult.usage.estimated,
@@ -1239,6 +1241,8 @@ async function runPerTopicGeneration(args: {
   const {
     isTopicEligibleToday,
     computePerRunTarget,
+    manualPerTopicTarget,
+    candidateLimit,
     resolveArticleTopics,
     describeZeroResultFetch,
   } = await import("./per-topic-fetch.js");
@@ -1331,11 +1335,15 @@ async function runPerTopicGeneration(args: {
     if (remainingTotal <= 0) break;
     // When the caller passed an explicit topicName, the user picked the count
     // (default 1). Otherwise fall back to the topic's scheduled per-run target.
+    // Manual all-topics runs with a count split it evenly across topics —
+    // per-topic schedules would otherwise cap "Generate 50" at 1 per topic.
     const scheduledPerRun = args.topicName
       ? Math.max(1, args.count ?? 1)
       : isRoundRobin
         ? 1  // Round-robin: 1 article per topic per turn
-        : computePerRunTarget(topic.schedule ?? { articles_per_week: 0, preferred_days: [] });
+        : args.count != null
+          ? manualPerTopicTarget(args.count, eligibleTopics.length)
+          : computePerRunTarget(topic.schedule ?? { articles_per_week: 0, preferred_days: [] });
     // When schedule says 0 (e.g. articles_per_week=0) and we're in bypass mode,
     // still allow 1 article so the manual trigger isn't blocked by an unset
     // schedule.
@@ -1343,6 +1351,9 @@ async function runPerTopicGeneration(args: {
       scheduledPerRun === 0 && args.bypassSchedule ? 1 : scheduledPerRun;
     const perRunTarget = Math.min(baseTarget, remainingTotal);
     if (perRunTarget === 0) continue;
+    // Fetch backups beyond the target so skipped/rejected items get replaced;
+    // generation below stops once `perRunTarget` articles were created.
+    const fetchLimit = candidateLimit(perRunTarget);
 
     // Fetch per the topic's source.
     const perTopicItems: ContentItem[] = [];
@@ -1395,9 +1406,9 @@ async function runPerTopicGeneration(args: {
             seenUrls.add(normalizeUrl(item.url));
             seenTitles.add(normalizeTitleKey(item.title));
             perTopicItems.push(item);
-            if (perTopicItems.length >= perRunTarget) break;
+            if (perTopicItems.length >= fetchLimit) break;
           }
-          if (perTopicItems.length >= perRunTarget) break;
+          if (perTopicItems.length >= fetchLimit) break;
           if (page >= (response.total_pages ?? 1)) break;
         }
       };
@@ -1459,9 +1470,9 @@ async function runPerTopicGeneration(args: {
           seenUrls.add(normalizeUrl(item.url));
           seenTitles.add(normalizeTitleKey(item.title));
           perTopicItems.push(item);
-          if (perTopicItems.length >= perRunTarget) break;
+          if (perTopicItems.length >= fetchLimit) break;
         }
-        if (perTopicItems.length >= perRunTarget) break;
+        if (perTopicItems.length >= fetchLimit) break;
         if (page >= (response.total_pages ?? 1)) break;
       }
     }
@@ -1487,7 +1498,9 @@ async function runPerTopicGeneration(args: {
     // it — cross-topic auto-tagging surprises users who explicitly picked
     // one topic. The scheduled cron path (no topicName) keeps cross-topic
     // membership as designed for efficient fan-out.
+    let createdForTopic = 0;
     for (const item of perTopicItems) {
+      if (createdForTopic >= perRunTarget) break;
       const topicNames = args.topicName
         ? [topic.name]
         : resolveArticleTopics(item, topic, topics, fetchedFromBundleId);
@@ -1505,6 +1518,7 @@ async function runPerTopicGeneration(args: {
       );
       allResults.push(result);
       if (result.status === "created") {
+        createdForTopic++;
         remainingTotal--;
         if (remainingTotal <= 0) break;
       }

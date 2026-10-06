@@ -56,3 +56,15 @@ describe("POST /api/agent/generate — Grid site guard", () => {
     expect(res.status).toBe(201);
   });
 });
+
+describe("POST /api/agent/generate — direct proxy fallback", () => {
+  it("sends the staging branch so the pipeline commits there (parity with the queue path)", async () => {
+    vi.mocked(getSiteConfig).mockResolvedValue({ theme: { base: "classic" } } as never);
+    fetchMock.mockResolvedValue({ ok: true, status: 201, json: async () => ({ results: [] }) });
+
+    await POST(req({ siteDomain: "scoopella", count: 10 }));
+
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as { body: string }).body) as Record<string, unknown>;
+    expect(body).toMatchObject({ siteDomain: "scoopella", branch: "staging/scoopella", count: 10 });
+  });
+});

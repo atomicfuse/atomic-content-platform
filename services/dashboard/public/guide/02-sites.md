@@ -126,6 +126,10 @@ From the site detail page (`/sites/{domain}`), operators can:
 
 All edits trigger a rebuild on the staging branch for preview before publishing.
 
+## Sorting the Sites Table
+
+Click a column header to sort by it: **Website**, **Group**, **Category**, **Articles**, **Last Articles** and **Created** are sortable. The first click sorts A→Z (or lowest first), the second Z→A, the third turns sorting off. Only one column is sorted at a time. When sorting by Group or Category, sites with no group or no category always stay at the bottom.
+
 ## Publish Changes in Bulk
 
 The **Publish changes** button in the Sites page toolbar (next to Columns and Export CSV) publishes staged edits for many sites in one go. It does the same thing as the per-site **Publish** button, one site at a time.

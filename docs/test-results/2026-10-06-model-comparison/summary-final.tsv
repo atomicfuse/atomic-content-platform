@@ -1,0 +1,13 @@
+C-final-prompt	claude-sonnet-5-5	1	ERROR Failed to parse generated article as JSON. Response preview: {"title":"Matt Reeves Steps Away From The Batman: Part II, and Gotham Waits","slug":"matt-reeves-steps-away-batman-part-ii-family-matter","description":"Production on The Batman: Part II is paused as Matt Reeves handles a family matter. Ella breaks d…[3892 chars]…ed facts are modest: a director is stepping away for family, a studio says come back when you're ready, and a caped crusader sits in the wings.
+
+Gotham will keep. Some stories are worth waiting for, and some people are worth waiting on.
+
+XOXO, Ella"}
+C-final-prompt	claude-sonnet-5-5	2	pop-culture	640w	Ella/XOXO=3	in=3657	out=1438	14s	Gypsy-Rose Blanchard Says Goodbye to Ken Urker With Their Daughter
+C-final-prompt	claude-sonnet-5-5	3	pop-culture	641w	Ella/XOXO=3	in=3613	out=1642	16s	Ella's Scoop: Is Taylor's Next Song "That's What Friends Are For"?
+C-final-prompt	gpt-4o-mini	1	pop-culture	582w	Ella/XOXO=0	in=2297	out=878	9s	Production Halts on The Batman: Part II—What It Means for DC Studios
+C-final-prompt	gpt-4o-mini	2	pop-culture	549w	Ella/XOXO=0	in=2307	out=830	9s	Gypsy-Rose Blanchard Faces Heartbreak: Visits Ex-Fiance Ken Urker’s Casket
+C-final-prompt	gpt-4o-mini	3	pop-culture	478w	Ella/XOXO=3	in=2259	out=769	8s	Is Taylor Swift's New Song Really Called "That's What Friends Are For"?
+C-final-prompt	gpt-5.4-mini	1	pop-culture	1014w	Ella/XOXO=1	in=2296	out=1486	12s	Ella says The Batman: Part II pause is DC’s latest stress test
+C-final-prompt	gpt-5.4-mini	2	pop-culture	682w	Ella/XOXO=0	in=2306	out=1111	9s	Gypsy-Rose Blanchard’s quiet farewell to Ken Urker, with Aurora
+C-final-prompt	gpt-5.4-mini	3	pop-culture	1146w	Ella/XOXO=2	in=2258	out=1692	13s	Ella on Swifties’ “That’s What Friends Are For” numerology spiral

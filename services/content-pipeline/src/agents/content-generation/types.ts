@@ -85,6 +85,8 @@ export interface GeneratedArticle {
   body: string;
   /** Token usage for the generation call, when available. */
   usage?: TokenUsage;
+  /** Model that actually wrote the article (for cost recording), when known. */
+  model?: string;
 }
 
 /** Generated or analyzed image asset. */

@@ -32,6 +32,8 @@ function mockClaudeResponse(jsonStr: string): void {
   vi.mocked(generateContent).mockResolvedValue({
     text: jsonStr,
     usage: { inputTokens: 0, outputTokens: 0, estimated: true },
+    model: "claude-sonnet-5-5",
+    provider: "anthropic",
   });
 }
 

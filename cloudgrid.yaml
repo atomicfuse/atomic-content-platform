@@ -54,11 +54,13 @@ services:
     # MongoDB: `requires: mongodb: private` auto-injects the connection string.
     #   getMongoDb() reads MONGODB_URL, falling back to MONGODB_URI, so either
     #   injected name works without an explicit env: mapping.
-    # ANTHROPIC_API_KEY is not needed — handled by the CloudGrid AI Gateway.
-    # OPENAI_API_KEY: used by OpenAI text generator (fallback for general
-    #   articles) and OpenAI image generator (Tier B fallback). Without it,
-    #   the pipeline relies entirely on Claude + Gemini; if either fails,
-    #   the source thumbnail is used as a last-resort image fallback.
+    # ANTHROPIC_API_KEY: first step of the text provider chain in lib/ai.ts
+    #   (Anthropic SDK, model pinned to claude-sonnet-5-5). Without it the chain
+    #   starts at the CloudGrid AI Gateway.
+    # OPENAI_API_KEY: last step of the text provider chain (gpt-6-luna) and the
+    #   OpenAI image generator (Tier B fallback). Without it, a Claude outage
+    #   fails generation and the source thumbnail is the last-resort image.
+    # Optional overrides: CLAUDE_MODEL, OPENAI_FALLBACK_MODEL.
 
   # ---------------------------------------------------------------------------
   # scheduled-publisher — hourly cron that pings the pipeline. The pipeline

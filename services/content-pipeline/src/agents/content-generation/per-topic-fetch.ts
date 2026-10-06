@@ -41,6 +41,23 @@ function resolveTimezone(tz: string): string {
   return TIMEZONE_MAP[tz.toUpperCase()] ?? tz;
 }
 
+/**
+ * Per-topic article target for a manual "Generate N" run across all topics:
+ * the requested count split evenly (rounded up — the caller caps the total).
+ */
+export function manualPerTopicTarget(count: number, topicCount: number): number {
+  return Math.max(1, Math.ceil(count / Math.max(1, topicCount)));
+}
+
+/**
+ * How many candidates to fetch for a topic aiming at `target` articles. The
+ * extras are backups: an item skipped or rejected during generation is replaced
+ * instead of leaving the run one article short.
+ */
+export function candidateLimit(target: number): number {
+  return target + Math.max(2, Math.ceil(target / 2));
+}
+
 /** Return the topic's per-run article target.
  *  We don't track week-level budgets across runs; instead each preferred-day
  *  run aims for `ceil(articles_per_week / preferred_days.length)` items. Over

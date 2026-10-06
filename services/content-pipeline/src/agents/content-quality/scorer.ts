@@ -24,6 +24,8 @@ export interface QualityResult {
   note: string;
   /** Token usage for the scoring call(s) — summed across attempts that ran. */
   usage: TokenUsage;
+  /** Model that produced the score (for cost recording), when known. */
+  model?: string;
 }
 
 export interface ArticleToScore {
@@ -200,6 +202,7 @@ export async function scoreArticle(
   // Retry once on failure (rate limits, transient errors). Accumulate usage
   // across whichever attempt(s) actually ran (first only, or first + retry).
   let rawResponse: string;
+  let model: string;
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, estimated: false };
   const addUsage = (u: TokenUsage): void => {
     usage.inputTokens += u.inputTokens;
@@ -215,6 +218,7 @@ export async function scoreArticle(
     });
     addUsage(first.usage);
     rawResponse = first.text;
+    model = first.model;
   } catch (firstErr) {
     console.warn(
       `[scorer] First attempt failed, retrying in 3s:`,
@@ -228,6 +232,7 @@ export async function scoreArticle(
     });
     addUsage(retry.usage);
     rawResponse = retry.text;
+    model = retry.model;
   }
 
   const parsed = parseScoreResponse(rawResponse);
@@ -247,6 +252,7 @@ export async function scoreArticle(
     breakdown,
     note: parsed.note || "No quality note provided.",
     usage,
+    model,
   };
 }
 
