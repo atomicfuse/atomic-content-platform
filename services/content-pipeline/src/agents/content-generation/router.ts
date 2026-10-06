@@ -1,8 +1,8 @@
 /**
  * Content Router — classifies items as factual (news) or general (evergreen).
  *
- * Factual → Claude Sonnet (accuracy-first).
- * General → OpenAI GPT-4o-mini (cost-effective, engagement-first).
+ * The result picks the genre pack (news vs. pop-culture/evergreen). Claude
+ * writes both since 2026-10; `generator` is kept for logging/back-compat only.
  */
 
 import type { ContentItem, AggregatorSettings, RouterDecision } from "./types.js";
@@ -11,10 +11,7 @@ import type { ContentItem, AggregatorSettings, RouterDecision } from "./types.js
 const FACTUAL_VERTICALS = new Set(["News", "Politics", "Finance", "World News"]);
 
 /**
- * Classify a content item as factual or general.
- *
- * Factual items are routed to Claude for accuracy-critical generation.
- * General items are routed to OpenAI GPT-4o-mini for cost-effective generation.
+ * Classify a content item as factual or general (drives genre selection).
  */
 export function classifyContent(
   item: ContentItem,

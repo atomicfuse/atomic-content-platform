@@ -1,30 +1,15 @@
 /**
- * OpenAI Generator — general/evergreen article generation.
+ * OpenAI Generator — fallback article generator.
  *
- * Uses the openai SDK with GPT-4o-mini model.
- * 10-20x cheaper than Claude for non-news content.
+ * Runs only when the Claude generator fails outright. Uses the cheap OpenAI
+ * model configured for the ai.ts chain (default gpt-6-luna).
  */
 
-import OpenAI from "openai";
-import { parseGeneratedArticle } from "./base-generator.js";
+import { generateWithOpenAI } from "../../../lib/ai.js";
+import { generateArticleWithChecks } from "./base-generator.js";
 import type { Generator, GeneratorConfig } from "./base-generator.js";
 import type { ContentItem, GeneratedArticle } from "../types.js";
 import { buildArticlePrompts } from "../prompts/build-prompts.js";
-
-const MODEL = "gpt-4o-mini";
-
-let openaiClient: OpenAI | null = null;
-
-function getClient(): OpenAI {
-  if (!openaiClient) {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error("OPENAI_API_KEY is required for general article generation");
-    }
-    openaiClient = new OpenAI({ apiKey });
-  }
-  return openaiClient;
-}
 
 export class OpenAIGenerator implements Generator {
   readonly name = "openai";
@@ -40,29 +25,12 @@ export class OpenAIGenerator implements Generator {
 
     console.log(`[openai-gen] Generating ${genre} article: "${item.title}"`);
 
-    const client = getClient();
-    const response = await client.chat.completions.create({
-      model: MODEL,
-      max_tokens: 4096,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: user },
-      ],
-    });
-
-    const rawText = response.choices[0]?.message?.content;
-    if (!rawText) {
-      throw new Error("Empty response from OpenAI");
-    }
-
-    const article = parseGeneratedArticle(rawText);
-    if (response.usage) {
-      article.usage = {
-        inputTokens: response.usage.prompt_tokens,
-        outputTokens: response.usage.completion_tokens,
-        estimated: false,
-      };
-    }
-    return article;
+    return generateArticleWithChecks((retryNote) =>
+      generateWithOpenAI({
+        systemPrompt: system,
+        userPrompt: retryNote ? `${user}\n\n${retryNote}` : user,
+        maxTokens: 4096,
+      }),
+    );
   }
 }

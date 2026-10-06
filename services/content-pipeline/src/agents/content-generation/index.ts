@@ -22,13 +22,12 @@ import dotenv from "dotenv";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../.env"), override: true });
 import { loadConfig } from "../../lib/config.js";
-import { runContentGeneration } from "./agent.js";
-import { recordGeneration } from "../../stats/recorder.js";
 import { buildScheduleFromBrief } from "../../stats/schedule.js";
 import { runScheduledPublish } from "../scheduled-publisher/index.js";
 import { startWorkers } from "../../queue/index.js";
 import type { QueueInstances } from "../../queue/index.js";
 import { getActiveRunState } from "../../queue/active-run.js";
+import { enqueueAndWait, type GenerateQueueLike } from "../../queue/direct-generate.js";
 import {
   handleMigrationRequest,
   handleCreateSites,
@@ -1443,51 +1442,45 @@ async function handleRequest(
     `${topicNameStr ? `, topic: ${topicNameStr}` : ""}`,
   );
 
+  // Only the queue worker persists articles (commit, dedup index, Mongo,
+  // images) — running the agent inline here generated articles and dropped
+  // them. Enqueue and hold the request until the worker finishes.
+  if (!queueInstances) {
+    const message = "Generation queue not configured (REDIS_URL not set) — articles could not be saved";
+    console.error(`[server] POST /content-generate refused: ${message}`);
+    sendJson(res, 503, { status: "error", message, results: [{ status: "error", message }] });
+    return;
+  }
+
   try {
-    const startedAt = new Date();
-    const result = await runContentGeneration(
+    const outcome = await enqueueAndWait(
+      queueInstances.generateQueue as unknown as GenerateQueueLike,
+      queueInstances.generateQueueEvents,
       {
         siteDomain,
-        branch: branchStr,
+        branch: branchStr ?? `staging/${siteDomain}`,
         count: countNum,
-        topicName: topicNameStr,
+        triggeredBy: "manual",
         bypassSchedule: bypassScheduleBool,
-        source: "dashboard",
+        ...(topicNameStr ? { topicName: topicNameStr } : {}),
       },
-      config,
     );
-    const finishedAt = new Date();
 
-    // Read the brief's schedule so MongoDB stays populated even for
-    // dashboard-triggered generation (previously passed null).
-    // Uses buildScheduleFromBrief which handles both per-topic (topics_v2)
-    // and legacy (brief.schedule) models.
-    let schedule: ReturnType<typeof buildScheduleFromBrief> = null;
-    try {
-      const octokit = createOctokit(config.github);
-      const briefBranch = branchStr ?? `staging/${siteDomain}`;
-      const briefData = await readSiteBrief(octokit, config.github.repo, siteDomain, briefBranch);
-      schedule = buildScheduleFromBrief(briefData.brief);
-    } catch {
-      // Brief read failed — record with null schedule (non-fatal)
+    if (outcome.kind === "running") {
+      sendJson(res, 202, {
+        status: "accepted",
+        jobId: outcome.jobId,
+        message: `Job is still running. Poll /job/${outcome.jobId} for status.`,
+      });
+      return;
+    }
+    if (outcome.kind === "failed") {
+      console.error(`[server] Generate job ${outcome.jobId} failed: ${outcome.error}`);
+      sendJson(res, 500, { status: "error", message: outcome.error, results: [{ status: "error", message: outcome.error }] });
+      return;
     }
 
-    await recordGeneration(
-      result,
-      {
-        source: "dashboard",
-        forced: bypassScheduleBool,
-        topicName: topicNameStr ?? null,
-        startedAt,
-        finishedAt,
-      },
-      schedule,
-    );
-
-    // Re-evaluate run-sensitive alert conditions for this site (fire-and-forget;
-    // runAfterRun is failure-isolated and never alters generation behavior).
-    void runAfterRun(siteDomain, new Date());
-
+    const { result } = outcome;
     const resultBody = result as unknown as Record<string, unknown>;
     const hasCreated = result.results.some((r) => r.status === "created");
     const allErrors = result.results.every((r) => r.status === "error");

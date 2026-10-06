@@ -22,9 +22,10 @@ import { randomUUID } from "node:crypto";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateContent } from "../../lib/ai.js";
+import { DEFAULT_CLAUDE_MODEL } from "../../lib/models.js";
 import { writeArticleBatch } from "../../lib/writer.js";
 import { upsertArticleMeta } from "../../lib/db/articles.js";
-import { parseGeneratedArticle } from "./generators/base-generator.js";
+import { generateArticleWithChecks } from "./generators/base-generator.js";
 import { validateArticleBody, ensureTopicTag } from "./agent.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
 import { triggerN8nImage, trackPendingImage, createGitImageVerifier } from "./n8n-image.js";
@@ -32,6 +33,7 @@ import { buildArticlePrompts } from "./prompts/build-prompts.js";
 import { recordTextUsage } from "../../costs/recorder.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown } from "../../types.js";
+import type { GeneratedArticle } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -144,12 +146,12 @@ export async function runDedicatedGeneration(
     userRequest: userPrompt,
   });
 
-  let rawResponse: string;
-  let usage: { inputTokens: number; outputTokens: number; estimated: boolean };
+  // Steps 2–3: Generate + parse (retries once on unparseable output or leaked prompt jargon)
+  let generated: GeneratedArticle;
   try {
-    const result = await generateContent({ systemPrompt, userPrompt: userPromptText });
-    rawResponse = result.text;
-    usage = result.usage;
+    generated = await generateArticleWithChecks((retryNote) =>
+      generateContent({ systemPrompt, userPrompt: retryNote ? `${userPromptText}\n\n${retryNote}` : userPromptText }),
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[dedicated] Generation failed for ${siteDomain}: ${message}`);
@@ -157,23 +159,15 @@ export async function runDedicatedGeneration(
   }
 
   // Record generation cost (fire-and-forget)
-  void recordTextUsage({
-    siteDomain,
-    source: "dashboard",
-    model: "claude-sonnet-4-6",
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    estimated: usage.estimated,
-  });
-
-  // Step 3: Parse response
-  let generated: ReturnType<typeof parseGeneratedArticle>;
-  try {
-    generated = parseGeneratedArticle(rawResponse);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[dedicated] JSON parse failed for ${siteDomain}: ${message}`);
-    return { status: "error", message: `Failed to parse generated article: ${message}`, n8nImageTriggered: false };
+  if (generated.usage) {
+    void recordTextUsage({
+      siteDomain,
+      source: "dashboard",
+      model: generated.model ?? DEFAULT_CLAUDE_MODEL,
+      inputTokens: generated.usage.inputTokens,
+      outputTokens: generated.usage.outputTokens,
+      estimated: generated.usage.estimated,
+    });
   }
 
   // Step 4: Validate body
@@ -236,7 +230,7 @@ export async function runDedicatedGeneration(
       void recordTextUsage({
         siteDomain,
         source: "dashboard",
-        model: "claude-sonnet-4-6",
+        model: qualityResult.model ?? DEFAULT_CLAUDE_MODEL,
         inputTokens: qualityResult.usage.inputTokens,
         outputTokens: qualityResult.usage.outputTokens,
         estimated: qualityResult.usage.estimated,

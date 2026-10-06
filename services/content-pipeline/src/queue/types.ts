@@ -2,7 +2,8 @@ import type { JobsOptions } from "bullmq";
 
 export interface GenerateJobData {
   siteDomain: string;
-  count: number;
+  /** Articles to create. Omitted → the site's schedule decides (direct HTTP calls without a count). */
+  count?: number;
   branch: string;
   runId?: string;
   triggeredBy: "manual" | "scheduled" | "scheduled-forced";

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   computePerRunTarget,
+  manualPerTopicTarget,
+  candidateLimit,
   isTopicEligibleToday,
   articleMatchesTopicFilter,
   resolveArticleTopics,
@@ -254,5 +256,33 @@ describe("isPerTopicSite", () => {
       topics_v2: [],
     };
     expect(isPerTopicSite(brief)).toBe(false);
+  });
+});
+
+describe("manualPerTopicTarget", () => {
+  it.each([
+    [50, 5, 10],
+    [20, 5, 4],
+    [30, 5, 6],
+    [7, 5, 2],
+    [3, 5, 1],
+    [1, 1, 1],
+  ])("count %i over %i topics → %i each", (count, topics, expected) => {
+    expect(manualPerTopicTarget(count, topics)).toBe(expected);
+  });
+
+  it("never returns 0, even with no topics", () => {
+    expect(manualPerTopicTarget(5, 0)).toBe(5);
+  });
+});
+
+describe("candidateLimit", () => {
+  it.each([
+    [1, 3],
+    [2, 4],
+    [4, 6],
+    [10, 15],
+  ])("target %i fetches %i candidates (backups for skipped items)", (target, expected) => {
+    expect(candidateLimit(target)).toBe(expected);
   });
 });

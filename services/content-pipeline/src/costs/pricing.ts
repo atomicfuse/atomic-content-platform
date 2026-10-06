@@ -1,5 +1,6 @@
 // Static price table (USD per million tokens for text models; per-image for image models).
-// Sourced from public Anthropic / OpenAI / Google pricing, June 2026.
+// Sourced from public Anthropic / OpenAI / Google pricing, June 2026
+// (claude-sonnet-5-5 / gpt-6-luna added October 2026).
 
 type TextPrice = { kind: "text"; input: number; output: number };
 type ImagePrice = { kind: "image"; perImage: number };
@@ -10,8 +11,14 @@ const PRICES: Record<string, Price> = {
   // Anthropic Claude Opus 4.x — $5 / $25 per MTok
   "claude-opus-4-7": { kind: "text", input: 5.0, output: 25.0 },
 
+  // Anthropic Claude Sonnet 5.5 — $2 / $10 per MTok (default article model)
+  "claude-sonnet-5-5": { kind: "text", input: 2.0, output: 10.0 },
+
   // Anthropic Claude Sonnet 4.x — $3 / $15 per MTok
   "claude-sonnet-4-6": { kind: "text", input: 3.0, output: 15.0 },
+
+  // OpenAI GPT-6 Luna — $0.10 / $0.50 per MTok (fallback article model)
+  "gpt-6-luna": { kind: "text", input: 0.1, output: 0.5 },
 
   // OpenAI GPT-4o Mini — $0.15 / $0.60 per MTok
   "gpt-4o-mini": { kind: "text", input: 0.15, output: 0.6 },

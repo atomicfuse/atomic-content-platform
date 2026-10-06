@@ -1,0 +1,52 @@
+# Generation fixes — test run 2026-10-06 14:57
+## content-pipeline typecheck
+typecheck: OK
+## dashboard typecheck
+typecheck: OK
+## content-pipeline vitest
+ ✓ src/stats/__tests__/build-event.test.ts (4 tests) 4ms
+ ✓ src/stats/__tests__/source-from-triggered-by.test.ts (4 tests) 1ms
+ ✓ src/__tests__/migration/r2-upload.test.ts (3 tests) 1ms
+ ✓ src/stats/__tests__/record-image.test.ts (3 tests) 7080ms
+   ✓ recordImageGenEvent > never throws when Mongo unreachable (failure isolation)  5007ms
+ ✓ src/costs/__tests__/recorder.test.ts (3 tests) 7241ms
+   ✓ recordTextUsage > records text usage: event + rollup  457ms
+   ✓ recordTextUsage > never throws when Mongo unreachable  5004ms
+ ✓ src/stats/__tests__/record-generation.test.ts (4 tests) 7470ms
+   ✓ recordGeneration > inserts an event and upserts rollup with lastAdded set when created>0  521ms
+   ✓ recordGeneration > never throws when Mongo is unreachable (failure isolation)  5004ms
+ Test Files  84 passed (84)
+      Tests  744 passed (744)
+   Start at  14:57:54
+   Duration  7.95s (transform 1.65s, setup 0ms, collect 8.23s, tests 53.88s, environment 6ms, prepare 3.06s)
+## dashboard vitest
+ Test Files  74 passed (74)
+      Tests  597 passed (597)
+
+## Delta
+content-pipeline: 702 → 744 tests (+42): provider chain 8, output checks 12, count helpers 11,
+  manual-count integration 3 (verified failing on the pre-fix agent.ts), prompt persona 6
+  (5 verified failing on the pre-fix prompt), pricing 2.
+dashboard: 594 → 597 (+3): StepGroups id handling (2 verified failing before the fix).
+
+## Live smoke (real APIs, local only, nothing written)
+ClaudeGenerator → claude-sonnet-5-5 via Anthropic SDK; first draft leaked "The brief", retry clean; 646 words, persona present.
+OpenAIGenerator → gpt-6-luna; 891 words, clean.
+
+## Data check
+Sites saved with `groups: []` on their staging branch: financenewsbase, muvizzcom (legacy Dev1), scoopella, travelingfoodie2.
+
+## Follow-up: direct /content-generate dropped articles (found in local testing)
+Root cause: POST /content-generate ran the agent inline; only the queue worker persists articles
+(commit, dedup index, Mongo, images). Locally the dashboard's enqueue fails on cloudgrid Redis (NOPERM)
+and falls back to that path → "Created 10 / PUBLISHED" but nothing committed.
+Fix: direct path enqueues on the pipeline's queue and waits (queue/direct-generate.ts); dashboard
+fallback always sends branch staging/<domain>.
+content-pipeline: 744 → 748 (+4 direct-generate). dashboard: 597 → 598 (+1 fallback branch, verified failing first).
+Both typechecks OK; full suites green.
+
+## Follow-up: sites table — sort by Group and Category
+Sorting moved into lib/site-sort.ts (one SiteSort state; Website/Articles/Last Articles/Created unchanged).
+Group sorts by display name, Category case-insensitive; empty values last in both directions.
+dashboard: 598 → 608 (+10: 7 site-sort unit, 3 SitesTable UI — UI tests verified failing on the old table).
+Typecheck OK; full suite green. Guide: public/guide/02-sites.md "Sorting the Sites Table".

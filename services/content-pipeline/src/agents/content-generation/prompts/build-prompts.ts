@@ -11,6 +11,7 @@ import { GENRE_PACKS, type GenreId } from "./genres/index.js";
 import { selectGenre } from "./select-genre.js";
 import {
   craftRulesSection,
+  guidelinesReminder,
   inputMappingSection,
   originalUserPrompt,
   outputSchemaSection,
@@ -63,7 +64,7 @@ export function buildArticlePrompts(params: BuildPromptsParams): ArticlePrompts 
 
   const sections: string[] = [
     siteIdentitySection(siteName, brief, pack.role),
-    `## Register\n${pack.register}`,
+    `## Register (default — the site's guidelines above win on conflict)\n${pack.register}`,
     `## Genre Rules (non-negotiable)\n${pack.rules.map((r) => `- ${r}`).join("\n")}`,
     truthRulesSection(mode),
   ];
@@ -78,9 +79,9 @@ export function buildArticlePrompts(params: BuildPromptsParams): ArticlePrompts 
   );
 
   const system = sections.join("\n\n");
-  const user = mode === "sourced"
+  const user = (mode === "sourced"
     ? sourcedUserPrompt(buildPromptContext(item!))
-    : originalUserPrompt(userRequest!);
+    : originalUserPrompt(userRequest!)) + guidelinesReminder(brief);
 
   return { system, user, genre };
 }

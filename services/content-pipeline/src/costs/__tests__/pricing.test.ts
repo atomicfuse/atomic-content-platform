@@ -15,6 +15,12 @@ describe("costFor", () => {
     expect(costFor("claude-opus-4-7", { inputTokens: 1_000_000, outputTokens: 1_000_000, images: 0 }).costUsd).toBeCloseTo(30);
   });
 
+  it("claude-sonnet-5-5 ($2 / $10)", () => {
+    expect(costFor("claude-sonnet-5-5", { inputTokens: 1_000_000, outputTokens: 1_000_000, images: 0 }).costUsd).toBeCloseTo(12);
+  });
+  it("gpt-6-luna ($0.10 / $0.50)", () => {
+    expect(costFor("gpt-6-luna", { inputTokens: 1_000_000, outputTokens: 1_000_000, images: 0 }).costUsd).toBeCloseTo(0.6);
+  });
   it("gpt-4o-mini", () => {
     expect(costFor("gpt-4o-mini", { inputTokens: 1_000_000, outputTokens: 1_000_000, images: 0 }).costUsd).toBeCloseTo(0.75);
   });

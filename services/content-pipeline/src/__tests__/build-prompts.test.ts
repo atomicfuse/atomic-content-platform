@@ -151,3 +151,47 @@ describe("buildArticlePrompts — original mode (dedicated)", () => {
     expect(p.system).toContain("never exceed 500 words");
   });
 });
+
+describe("buildArticlePrompts — site persona & guidelines", () => {
+  const personaBrief: SiteBrief = {
+    ...brief,
+    content_guidelines: ["Write as Ella, a Gossip Girl-style narrator"],
+  };
+  const prompts = buildArticlePrompts({ siteName: "Scoopella", brief: personaBrief, mode: "sourced", item });
+
+  it("puts the guidelines in a highest-priority section before the genre register", () => {
+    const persona = prompts.system.indexOf("## Site Persona & Editorial Guidelines (HIGHEST PRIORITY)");
+    const register = prompts.system.indexOf("## Register");
+    expect(persona).toBeGreaterThan(-1);
+    expect(persona).toBeLessThan(register);
+    expect(prompts.system).toContain("- Write as Ella, a Gossip Girl-style narrator");
+  });
+
+  it("repeats the guidelines at the end of the user prompt", () => {
+    expect(prompts.user.trimEnd().endsWith("- Write as Ella, a Gossip Girl-style narrator")).toBe(true);
+  });
+
+  it("applies to dedicated (original) articles too", () => {
+    const original = buildArticlePrompts({ siteName: "Scoopella", brief: personaBrief, mode: "original", userRequest: "Fall fashion" });
+    expect(original.system).toContain("HIGHEST PRIORITY");
+    expect(original.user).toContain("Write as Ella");
+  });
+
+  it("omits the persona section and reminder when the site has no guidelines", () => {
+    const plain = buildArticlePrompts({ siteName: "S", brief: { ...brief, content_guidelines: [] }, mode: "sourced", item });
+    expect(plain.system).not.toContain("HIGHEST PRIORITY");
+    expect(plain.user).not.toContain("REMINDER");
+  });
+
+  it("never says 'writing for undefined' when the site has no audience", () => {
+    const noAudience = buildArticlePrompts({
+      siteName: "S", brief: { ...brief, audience: undefined as unknown as string }, mode: "sourced", item,
+    });
+    expect(noAudience.system).not.toContain("undefined");
+    expect(noAudience.system).toContain("writing for a general audience");
+  });
+
+  it("tells the model never to mention the brief to readers", () => {
+    expect(prompts.system).toContain('never write "the brief"');
+  });
+});

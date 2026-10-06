@@ -1,6 +1,7 @@
 import { GridSummaryError } from "./errors.js";
 export { GridSummaryError } from "./errors.js";
 import { generateContent } from "../../lib/ai.js";
+import { DEFAULT_CLAUDE_MODEL } from "../../lib/models.js";
 import type { AgentConfig } from "../../lib/config.js";
 import { clearTreeCache, commitBatch, createOctokit, readFile } from "../../lib/github.js";
 import { credentialsFor, getKVEntry } from "../../lib/kv.js";
@@ -16,7 +17,6 @@ const STAGING_WORKER_URL = process.env.GRID_STAGING_WORKER_URL ?? "https://atomi
 const DEFAULT_RUN_CAP = 150;
 // Note: undefined → the CloudGrid gateway / SDK default model. Set GRID_SUMMARY_MODEL to a cheaper id
 // that is valid on BOTH the gateway and the Anthropic SDK (see src/lib/ai.ts fallback).
-const COST_MODEL_FALLBACK = "claude-sonnet-4-6";
 
 /** Injectable I/O so tests never hit the network. */
 export interface GridSummariesDeps {
@@ -81,17 +81,19 @@ async function generateSummary(site: string, title: string, body: string): Promi
     ...(model ? { model } : {}),
     maxTokens: 900,
   });
+  // The chain may fall back to another provider — record what actually ran.
+  const usedModel = result.model ?? model ?? DEFAULT_CLAUDE_MODEL;
   void recordTextUsage({
     siteDomain: site,
     source: "grid-summaries",
-    model: model ?? COST_MODEL_FALLBACK,
+    model: usedModel,
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
     estimated: result.usage.estimated,
   });
   const markdown = sanitizeSummaryMarkdown(result.text);
   if (!isValidSummary(markdown)) throw new Error("summary failed structure/length validation");
-  return { markdown, model: model ?? COST_MODEL_FALLBACK };
+  return { markdown, model: usedModel };
 }
 
 /** One file this run decided to write, held until the pre-commit re-check (step 4) confirms it's still safe. */
