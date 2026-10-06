@@ -18,6 +18,7 @@ import {
   type GroupFilterValue,
 } from "@/lib/site-filters";
 import { buildSitesCsvForColumns, sitesCsvFilename } from "@/lib/csv";
+import { nextSort, sortSites, type SiteSort, type SiteSortKey } from "@/lib/site-sort";
 import {
   SITE_COLUMNS,
   DEFAULT_VISIBLE_COLUMN_IDS,
@@ -39,6 +40,36 @@ const BulkPublishModal = dynamic(
 
 interface SitesTableProps {
   sites: DashboardSiteEntry[];
+}
+
+/** Clickable header for a sortable column: label + arrow (dimmed when inactive). */
+function SortableHeader({
+  label,
+  direction,
+  onClick,
+  className = "",
+}: {
+  label: string;
+  direction: "asc" | "desc" | null;
+  onClick: () => void;
+  className?: string;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ${className}`.trim()}
+    >
+      {label}
+      <svg className={`w-3.5 h-3.5 transition-opacity ${direction ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        {direction === "desc" ? (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        ) : (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+        )}
+      </svg>
+    </button>
+  );
 }
 
 function ColumnHeader({ label, tooltip }: { label: string; tooltip: string }): React.ReactElement {
@@ -98,10 +129,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [groupFilter, setGroupFilter] = useState<GroupFilterValue>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [websiteSort, setWebsiteSort] = useState<"asc" | "desc" | null>(null);
-  const [articlesSort, setArticlesSort] = useState<"asc" | "desc" | null>(null);
-  const [lastArticlesSort, setLastArticlesSort] = useState<"asc" | "desc" | null>(null);
-  const [createdSort, setCreatedSort] = useState<"asc" | "desc" | null>(null);
+  const [sort, setSort] = useState<SiteSort | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [deleteSteps, setDeleteSteps] = useState<Array<{ label: string; success: boolean; error?: string }> | null>(null);
@@ -145,11 +173,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   // A hidden column can't stay "sorted" — snap back to the default (no) sort
   // for any sort key whose column is no longer visible.
   useEffect(() => {
-    if (!visibleColumnIds.includes("articles") && articlesSort !== null) setArticlesSort(null);
-    if (!visibleColumnIds.includes("lastArticles") && lastArticlesSort !== null) setLastArticlesSort(null);
-    if (!visibleColumnIds.includes("created") && createdSort !== null) setCreatedSort(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSort((prev) => (prev && prev.key !== "website" && !visibleColumnIds.includes(prev.key) ? null : prev));
   }, [visibleColumnIds]);
+
+  function sortHeader(label: string, key: SiteSortKey, className?: string): React.ReactElement {
+    return (
+      <SortableHeader
+        label={label}
+        direction={sort?.key === key ? sort.dir : null}
+        onClick={(): void => setSort((prev) => nextSort(prev, key))}
+        className={className}
+      />
+    );
+  }
 
   function handleColumnToggle(id: string, checked: boolean): void {
     setVisibleColumnIds((prev) => {
@@ -169,64 +205,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       case "company":
         return "Company";
       case "group":
-        return "Group";
+        return sortHeader("Group", "group");
       case "category":
-        return "Category";
+        return sortHeader("Category", "category");
       case "status":
         return "Status";
       case "articles":
-        return (
-          <button
-            type="button"
-            onClick={(): void => { setWebsiteSort(null); setLastArticlesSort(null); setCreatedSort(null); setArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer ml-auto"
-          >
-            Articles
-            <svg className={`w-3.5 h-3.5 transition-opacity ${articlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              {articlesSort === "desc" ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              )}
-            </svg>
-          </button>
-        );
+        return sortHeader("Articles", "articles", "ml-auto");
       case "lastArticles":
-        return (
-          <button
-            type="button"
-            onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setCreatedSort(null); setLastArticlesSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-          >
-            Last Articles
-            <svg className={`w-3.5 h-3.5 transition-opacity ${lastArticlesSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              {lastArticlesSort === "desc" ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              )}
-            </svg>
-          </button>
-        );
+        return sortHeader("Last Articles", "lastArticles");
       case "siteId":
         return <ColumnHeader label="Site ID" tooltip="Auto-generated unique ID assigned when a domain is added via Sync. Stored in dashboard-index.yaml." />;
       case "created":
-        return (
-          <button
-            type="button"
-            onClick={(): void => { setWebsiteSort(null); setArticlesSort(null); setLastArticlesSort(null); setCreatedSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-            className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-          >
-            Created
-            <svg className={`w-3.5 h-3.5 transition-opacity ${createdSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              {createdSort === "desc" ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-              )}
-            </svg>
-          </button>
-        );
+        return sortHeader("Created", "created");
       case "lastUpdated":
         return <ColumnHeader label="Last Updated" tooltip="Timestamp of the most recent change to this site entry in the dashboard index." />;
       case "customDomain":
@@ -417,6 +408,11 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
     setDeleteSteps(null);
   }
 
+  const groupNames = useMemo(
+    () => Object.fromEntries(availableGroups.map((g) => [g.id, g.name ?? g.id])),
+    [availableGroups],
+  );
+
   const filteredSites = useMemo(() => {
     setCurrentPage(1);
     const filtered = filterSites(
@@ -430,42 +426,15 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       },
       siteGroups,
     );
-    if (websiteSort) {
-      filtered.sort((a, b) => {
-        const aName = (a.custom_domain ?? a.domain).toLowerCase();
-        const bName = (b.custom_domain ?? b.domain).toLowerCase();
-        return websiteSort === "asc"
-          ? aName.localeCompare(bName)
-          : bName.localeCompare(aName);
-      });
-    }
-    if (articlesSort && countsLoaded) {
-      filtered.sort((a, b) => {
-        const aCount = articleCounts[a.domain] ?? 0;
-        const bCount = articleCounts[b.domain] ?? 0;
-        return articlesSort === "asc" ? aCount - bCount : bCount - aCount;
-      });
-    }
-    if (lastArticlesSort && latestLoaded) {
-      filtered.sort((a, b) => {
-        const aRaw = latestArticles[a.domain] ?? "";
-        const bRaw = latestArticles[b.domain] ?? "";
-        const aNorm = aRaw.length <= 13 ? `${aRaw}:00:00Z` : aRaw;
-        const bNorm = bRaw.length <= 13 ? `${bRaw}:00:00Z` : bRaw;
-        const aTime = aRaw ? new Date(aNorm).getTime() : 0;
-        const bTime = bRaw ? new Date(bNorm).getTime() : 0;
-        return lastArticlesSort === "asc" ? aTime - bTime : bTime - aTime;
-      });
-    }
-    if (createdSort) {
-      filtered.sort((a, b) => {
-        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return createdSort === "asc" ? aTime - bTime : bTime - aTime;
-      });
-    }
-    return filtered;
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, groupFilter, siteGroups, websiteSort, articlesSort, articleCounts, countsLoaded, lastArticlesSort, latestArticles, latestLoaded, createdSort]);
+    // Data-driven sorts wait for their lazily-fetched data; until then keep the filtered order.
+    const sortReady =
+      !sort ||
+      (sort.key === "articles" ? countsLoaded
+        : sort.key === "lastArticles" ? latestLoaded
+          : sort.key === "group" ? groupsLoaded
+            : true);
+    return sortSites(filtered, sortReady ? sort : null, { articleCounts, latestArticles, siteGroups, groupNames });
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, groupFilter, siteGroups, sort, articleCounts, countsLoaded, latestArticles, latestLoaded, groupsLoaded, groupNames]);
 
   const siteVerticals = useMemo(() => sites.map((s) => s.vertical), [sites]);
 
@@ -590,20 +559,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             <thead className="sticky top-0 z-10">
               <tr className="border-b border-[var(--border-secondary)] bg-[var(--bg-surface)]">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  <button
-                    type="button"
-                    onClick={(): void => { setArticlesSort(null); setLastArticlesSort(null); setCreatedSort(null); setWebsiteSort((prev) => prev === "asc" ? "desc" : prev === "desc" ? null : "asc"); }}
-                    className="inline-flex items-center gap-1 hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-                  >
-                    Website
-                    <svg className={`w-3.5 h-3.5 transition-opacity ${websiteSort ? "opacity-100" : "opacity-40"}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      {websiteSort === "desc" ? (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      ) : (
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                      )}
-                    </svg>
-                  </button>
+                  {sortHeader("Website", "website")}
                 </th>
                 {visibleColumns.map((column) => (
                   <th key={column.id} className={headerClassName(column.id)}>

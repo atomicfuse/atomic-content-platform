@@ -118,6 +118,7 @@ export const SITE_COLUMNS: SiteColumnDef[] = [
     label: "Group",
     defaultVisible: true,
     source: "groups",
+    sortable: true,
     csv: (site, ctx) => (ctx.siteGroups[site.domain] ?? []).join(";"),
   },
   {
@@ -125,6 +126,7 @@ export const SITE_COLUMNS: SiteColumnDef[] = [
     label: "Category",
     defaultVisible: true,
     source: "index",
+    sortable: true,
     csv: (site) => site.vertical ?? "",
   },
   {
