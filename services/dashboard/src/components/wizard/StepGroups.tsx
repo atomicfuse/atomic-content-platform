@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/Button";
 import type { WizardFormData } from "@/types/dashboard";
 
 interface GroupSummary {
-  group_id: string;
+  /** File name without `.yaml` — always present from `/api/groups`. */
+  id: string;
+  /** Legacy explicit id; current group YAMLs don't set it. */
+  group_id?: string;
   name: string;
   ads_config?: { layout?: string };
 }
@@ -15,6 +18,11 @@ interface StepGroupsProps {
   onChange: (updates: Partial<WizardFormData>) => void;
   onNext: () => void;
   onBack: () => void;
+}
+
+/** Identifier stored in `site.yaml` `groups`: legacy `group_id`, else the file-name `id`. */
+function groupIdOf(group: GroupSummary): string {
+  return group.group_id ?? group.id;
 }
 
 export function StepGroups({
@@ -83,12 +91,13 @@ export function StepGroups({
       ) : (
         <div className="space-y-2">
           {availableGroups.map((group) => {
-            const selected = data.groups.includes(group.group_id);
+            const groupId = groupIdOf(group);
+            const selected = data.groups.includes(groupId);
             return (
               <button
-                key={group.group_id}
+                key={groupId}
                 type="button"
-                onClick={(): void => toggleGroup(group.group_id)}
+                onClick={(): void => toggleGroup(groupId)}
                 className={`w-full rounded-lg border p-3 text-left transition-colors ${
                   selected
                     ? "border-blue-500 bg-blue-50 dark:border-blue-400 dark:bg-blue-950"
@@ -99,7 +108,7 @@ export function StepGroups({
                   <div>
                     <span className="font-medium">{group.name}</span>
                     <span className="ml-2 text-xs text-gray-400">
-                      {group.group_id}
+                      {groupId}
                     </span>
                   </div>
                   {selected && (
