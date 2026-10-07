@@ -34,3 +34,11 @@ describe("isSafeId", () => {
     expect(isSafeId("-leading")).toBe(false);
   });
 });
+
+describe("summarySlugOf", () => {
+  it("uses the 24-hex item id for aggregator stories and the slug otherwise", async () => {
+    const { summarySlugOf } = await import("../grid-summary-file");
+    expect(summarySlugOf({ site: "aggregator", slug: `batman-paused-${"a".repeat(24)}` })).toBe("a".repeat(24));
+    expect(summarySlugOf({ site: "scienceworld", slug: "best-telescopes" })).toBe("best-telescopes");
+  });
+});

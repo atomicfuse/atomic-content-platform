@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import type { GridFields, GridPinFields, GridPoolItem, GridPoolResponse } from "@/types/grid";
+import { summarySlugOf } from "@/lib/grid-summary-file";
 import { SourcesPreview } from "./SourcesPreview";
 import { StoriesTable } from "./StoriesTable";
 
@@ -118,6 +119,34 @@ export function GridSiteTab({ domain }: GridSiteTabProps): React.ReactElement {
 
   const dirty = JSON.stringify(grid) !== savedGrid;
 
+  /** "Use AI summary" (generate + pin) or "Back to default" (unpin) for one story. */
+  async function setStorySummary(item: GridPoolItem, use: boolean): Promise<void> {
+    if (use && item.summary?.status === "edited" && !window.confirm("Replace the hand-edited summary with a new AI summary?")) return;
+    setPinMessage(null);
+    try {
+      const res = use
+        ? await fetch("/api/grid/regenerate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site: item.site, slug: summarySlugOf(item), pin: true }),
+        })
+        : await fetch("/api/grid/pin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site: item.site, slug: summarySlugOf(item), pinned: false }),
+        });
+      const out = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setPinMessage(out.error ?? `Request failed (${res.status})`);
+        return;
+      }
+      setPinMessage(use ? "AI summary created — it appears on the story page after the next sync." : "Back to the default text — applies after the next sync.");
+      await loadPool();
+    } catch (err) {
+      setPinMessage(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   /** Pinned in the pool but not by this site's own `grid.pinned` → pinned by a group or override. */
   function isInheritedPin(item: GridPoolItem): boolean {
     const sitePins = [...loadedPins, ...((JSON.parse(savedGrid) as GridFields).pinned ?? [])];
@@ -176,6 +205,8 @@ export function GridSiteTab({ domain }: GridSiteTabProps): React.ReactElement {
               onTogglePin={(item): void => void togglePin(item)}
               onEdit={setEditing}
               isInheritedPin={isInheritedPin}
+              onUseAiSummary={(item): void => void setStorySummary(item, true)}
+              onBackToDefault={(item): void => void setStorySummary(item, false)}
             />
           )
         )}
@@ -184,7 +215,7 @@ export function GridSiteTab({ domain }: GridSiteTabProps): React.ReactElement {
       {editing && (
         <SummaryEditor
           site={editing.site}
-          slug={editing.slug}
+          slug={summarySlugOf(editing)}
           title={editing.title}
           status={editing.summary?.status ?? "none"}
           onClose={(): void => setEditing(null)}

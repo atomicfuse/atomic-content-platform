@@ -29,10 +29,12 @@ describe("StoriesTable", () => {
     expect(screen.getByRole("button", { name: "Unpin Story one" })).toBeInTheDocument();
   });
 
-  it("excerpt mode hides summary status and Edit", () => {
+  it("excerpt mode still shows summary status (per-story overrides work in any mode); Edit only where a summary exists", () => {
     render(<StoriesTable pool={pool("excerpt")} onTogglePin={vi.fn()} onEdit={vi.fn()} />);
-    expect(screen.queryByText(/Stale/)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Edit summary/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Summary" })).toBeInTheDocument();
+    expect(screen.getByText("Stale — source changed after edit")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit summary for Story one" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit summary for Story two" })).not.toBeInTheDocument();
   });
 
   it("AI mode shows status labels and Edit", async () => {
@@ -70,5 +72,35 @@ describe("StoriesTable", () => {
     expect(screen.queryByRole("button", { name: "Unpin Story one" })).not.toBeInTheDocument();
     await userEvent.click(btn);
     expect(onTogglePin).not.toHaveBeenCalled();
+  });
+});
+
+describe("StoriesTable — aggregator stories and per-story AI summary", () => {
+  const ID = "a".repeat(24);
+  const external = { site: "aggregator", slug: `batman-${ID}`, title: "Batman paused", publishDate: "2026-09-26T00:00:00Z", pills: [], pinned: false, kind: "external" as const, sourceName: "Daily Mail", summary: { status: "none" as const } };
+  const withItems = (items: GridPoolResponse["items"]): GridPoolResponse => ({ ...pool("excerpt"), inactivePins: [], items });
+
+  it("badges external stories with the publisher and labels their default text What It Covers", () => {
+    render(<StoriesTable pool={withItems([external])} onTogglePin={vi.fn()} onEdit={vi.fn()} onUseAiSummary={vi.fn()} onBackToDefault={vi.fn()} />);
+    expect(screen.getByText("External · Daily Mail")).toBeInTheDocument();
+    expect(screen.getByText("What It Covers")).toBeInTheDocument();
+  });
+
+  it("offers Use AI summary when not pinned and Back to default when pinned", async () => {
+    const onUse = vi.fn();
+    const onBack = vi.fn();
+    const { rerender } = render(<StoriesTable pool={withItems([external])} onTogglePin={vi.fn()} onEdit={vi.fn()} onUseAiSummary={onUse} onBackToDefault={onBack} />);
+    await userEvent.click(screen.getByRole("button", { name: "Use AI summary for Batman paused" }));
+    expect(onUse).toHaveBeenCalledWith(external);
+    const pinned = { ...external, summary: { status: "generated" as const, pinned: true } };
+    rerender(<StoriesTable pool={withItems([pinned])} onTogglePin={vi.fn()} onEdit={vi.fn()} onUseAiSummary={onUse} onBackToDefault={onBack} />);
+    expect(screen.getByText("AI summary (pinned)")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Back to default for Batman paused" }));
+    expect(onBack).toHaveBeenCalledWith(pinned);
+  });
+
+  it("hides the per-story actions when the callbacks are not provided", () => {
+    render(<StoriesTable pool={withItems([external])} onTogglePin={vi.fn()} onEdit={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Use AI summary/ })).not.toBeInTheDocument();
   });
 });

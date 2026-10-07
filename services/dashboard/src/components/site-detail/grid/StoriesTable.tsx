@@ -10,6 +10,10 @@ interface StoriesTableProps {
   onEdit: (item: GridPoolItem) => void;
   /** True when an item's pin comes from a group or override (not the site's own `grid.pinned`) — it can't be unpinned here. */
   isInheritedPin?: (item: GridPoolItem) => boolean;
+  /** "Use AI summary": generate + pin a summary for this story regardless of the site's story mode. */
+  onUseAiSummary?: (item: GridPoolItem) => void;
+  /** "Back to default": unpin the story's summary (the file is kept). */
+  onBackToDefault?: (item: GridPoolItem) => void;
 }
 
 const STATUS_LABEL: Record<GridSummaryStatus, string> = {
@@ -32,8 +36,15 @@ function age(iso: string): string {
   return days <= 0 ? "today" : `${days}d`;
 }
 
-/** The Grid site's current feed with pin / summary actions. */
-export function StoriesTable({ pool, onTogglePin, onEdit, isInheritedPin }: StoriesTableProps): React.ReactElement {
+/** Summary cell label: pinned summaries say so; an external story's default text is What It Covers. */
+function summaryLabel(item: GridPoolItem, status: GridSummaryStatus): string {
+  if (item.summary?.pinned) return "AI summary (pinned)";
+  if (status === "none" && item.kind === "external") return "What It Covers";
+  return STATUS_LABEL[status];
+}
+
+/** The Grid site's current feed with pin / summary actions. Summary status shows in every mode — per-story overrides apply regardless of the site's story mode. */
+export function StoriesTable({ pool, onTogglePin, onEdit, isInheritedPin, onUseAiSummary, onBackToDefault }: StoriesTableProps): React.ReactElement {
   const ai = pool.storyMode === "ai_summary";
   return (
     <div className="space-y-4">
@@ -50,18 +61,16 @@ export function StoriesTable({ pool, onTogglePin, onEdit, isInheritedPin }: Stor
               <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 Age
               </th>
-              {ai && (
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                  Summary
-                </th>
-              )}
+              <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Summary
+              </th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {pool.items.length === 0 ? (
               <tr>
-                <td colSpan={ai ? 5 : 4} className="px-4 py-6 text-center text-[var(--text-muted)]">
+                <td colSpan={5} className="px-4 py-6 text-center text-[var(--text-muted)]">
                   No stories in the current feed.
                 </td>
               </tr>
@@ -81,17 +90,17 @@ export function StoriesTable({ pool, onTogglePin, onEdit, isInheritedPin }: Stor
                         <span>{item.title}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[var(--text-secondary)]">{item.site}</td>
+                    <td className="px-4 py-3 text-[var(--text-secondary)]">
+                      {item.kind === "external" ? <Badge label={`External · ${item.sourceName ?? "aggregator"}`} variant="info" /> : item.site}
+                    </td>
                     <td className="px-4 py-3 text-[var(--text-muted)] text-xs">{age(item.publishDate)}</td>
-                    {ai && (
-                      <td className="px-4 py-3">
-                        {status ? (
-                          <Badge label={STATUS_LABEL[status]} variant={STATUS_VARIANT[status]} />
-                        ) : (
-                          <span className="text-xs text-[var(--text-muted)]" title="Summary status not looked up">—</span>
-                        )}
-                      </td>
-                    )}
+                    <td className="px-4 py-3">
+                      {status ? (
+                        <Badge label={summaryLabel(item, status)} variant={item.summary?.pinned ? "success" : STATUS_VARIANT[status]} />
+                      ) : (
+                        <span className="text-xs text-[var(--text-muted)]" title="Summary status not looked up">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
                         {inheritedPin ? (
@@ -108,7 +117,28 @@ export function StoriesTable({ pool, onTogglePin, onEdit, isInheritedPin }: Stor
                             {item.pinned ? "Unpin" : "Pin"}
                           </Button>
                         )}
-                        {ai && (
+                        {item.summary?.pinned
+                          ? onBackToDefault && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Back to default for ${item.title}`}
+                              onClick={(): void => onBackToDefault(item)}
+                            >
+                              Back to default
+                            </Button>
+                          )
+                          : onUseAiSummary && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              aria-label={`Use AI summary for ${item.title}`}
+                              onClick={(): void => onUseAiSummary(item)}
+                            >
+                              Use AI summary
+                            </Button>
+                          )}
+                        {(ai || (status !== undefined && status !== "none")) && (
                           <Button
                             variant="ghost"
                             size="sm"
