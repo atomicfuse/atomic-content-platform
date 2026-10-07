@@ -16,7 +16,7 @@ import { gridSummaryKey, networkDirectoryKey } from '../src/lib/kv-schema';
 import { buildNetworkDirectory, DEV1_SITE_IDS, type IndexSiteEntry, type SiteConfigSummary } from './lib/grid-directory';
 import { localConfigReader, localIndexReader, restConfigReader, restIndexReader, type ConfigReader } from './lib/grid-config-readers';
 import { bundleIdsFromEnvironments, readNetworkArticleFrontmatter, rewrittenIdsFromFrontmatter, syncBundles } from './lib/grid-bundles';
-import { aggregatorBase, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
+import { aggregatorBase, bundleSyncExitCode, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
 import { parseSummaryFile } from './lib/grid-summary-html';
 import { bulkPut } from './lib/kv-bulk';
 
@@ -84,6 +84,9 @@ async function main(): Promise<void> {
     });
     kvEntries.push(...bundleEntries);
     console.log(`[seed-grid] bundles: ${bundleIds.length} (${failed.length} failed), entries: ${bundleEntries.length}`);
+    // Directory + summaries are still written below; the exit code just makes a total outage visible in CI.
+    process.exitCode = bundleSyncExitCode(bundleIds.length, failed.length);
+    if (process.exitCode) console.error('[seed-grid] every bundle failed — check CONTENT_API_BASE_URL / the aggregator');
   }
 
   let summaryPaths: string[] = [];

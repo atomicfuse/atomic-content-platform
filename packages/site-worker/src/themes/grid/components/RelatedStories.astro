@@ -14,7 +14,7 @@ const { items, sites, now, heading = 'Related stories' } = Astro.props;
           <a class="g-related__item" href={`/story/${encodeURIComponent(i.site)}/${encodeURIComponent(i.slug)}`}>
             <small class="g-related__source">{sourceNameOf(i, sites)} · {formatAge(i.publishDate, now)}</small>
             <span class="g-related__title">{i.title}</span>
-            <img src={i.featuredImage || '/placeholder.svg'} data-fallback="/placeholder.svg" alt="" width="96" height="72" loading="lazy" decoding="async" />
+            <img src={i.featuredImage || '/placeholder.svg'} data-fallback={i.kind === 'external' ? '/placeholder.svg' : undefined} alt="" width="96" height="72" loading="lazy" decoding="async" />
           </a>
         </li>
       ))}

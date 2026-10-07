@@ -78,10 +78,11 @@ describe('renderTilesHtml — external stories', () => {
     expect(html).toContain('g-card__favicon--letter" aria-hidden="true">I<');
     expect(html).toContain('data-fallback="/placeholder.svg"');
   });
-  it('network cards are unchanged apart from the image fallback attribute', () => {
+  it('network cards are byte-identical to before (no image fallback attribute)', () => {
     const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
     expect(html).toContain('Science World');
     expect(html).toContain('src="/sw/assets/fav.png"');
+    expect(html).not.toContain('data-fallback');
   });
 });
 

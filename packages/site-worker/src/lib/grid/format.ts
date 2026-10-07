@@ -28,9 +28,18 @@ export function buildOutboundUrl(hostname: string, slug: string, gridHost: strin
   return url.toString();
 }
 
-/** "Read full story" on the publisher's site for an aggregator story (UTM tags when enabled). */
-export function buildExternalOutboundUrl(url: string, gridHost: string, utm: boolean): string {
-  const u = new URL(url);
+/**
+ * "Read full story" on the publisher's site for an aggregator story (UTM tags when enabled).
+ * Null for anything that isn't an absolute http(s) URL — the page then omits the button.
+ */
+export function buildExternalOutboundUrl(url: string, gridHost: string, utm: boolean): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   if (utm) {
     u.searchParams.set('utm_source', gridHost);
     u.searchParams.set('utm_medium', 'grid');

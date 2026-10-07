@@ -30,3 +30,15 @@ describe('fetchBundleNames', () => {
     expect((await fetchBundleNames('https://agg', bad as unknown as typeof fetch)).size).toBe(0);
   });
 });
+
+describe('defaults and failure signalling', () => {
+  it('defaults to the same aggregator host as the rest of the repo', () => {
+    expect(aggregatorBase({})).toBe('https://content-aggregator-v2-34cd--atomic.cloudgrid.io');
+  });
+  it('fails the run only when every bundle failed', async () => {
+    const { bundleSyncExitCode } = await import('../lib/aggregator-client');
+    expect(bundleSyncExitCode(3, 3)).toBe(1);
+    expect(bundleSyncExitCode(3, 1)).toBe(0);
+    expect(bundleSyncExitCode(0, 0)).toBe(0);
+  });
+});

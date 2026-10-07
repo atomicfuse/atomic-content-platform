@@ -1,7 +1,7 @@
 /** Content Aggregator reads for the Grid bundle sync (scripts/seed-grid.ts). */
 import type { AggregatorItem } from './grid-bundles';
 
-const DEFAULT_BASE = 'https://content-aggregator-v2-34cd.atomic.cloudgrid.io';
+const DEFAULT_BASE = 'https://content-aggregator-v2-34cd--atomic.cloudgrid.io';
 
 /** CONTENT_API_BASE_URL first — CloudGrid injects a stale CONTENT_AGGREGATOR_URL (CLAUDE.md #20). */
 export function aggregatorBase(env: NodeJS.ProcessEnv): string {
@@ -37,4 +37,9 @@ export async function fetchBundleNames(base: string, fetchFn: typeof fetch = fet
     console.warn('[seed-grid] bundle names unavailable:', err instanceof Error ? err.message : err);
     return new Map();
   }
+}
+
+/** Non-zero when every bundle failed — a misconfigured job must not look healthy. Partial failures still pass. */
+export function bundleSyncExitCode(total: number, failed: number): number {
+  return total > 0 && failed === total ? 1 : 0;
 }

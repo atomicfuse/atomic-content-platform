@@ -62,11 +62,22 @@ export function externalSlug(title: string): string {
   return slug || 'story';
 }
 
+/** True for an absolute http(s) URL (third-party data: never trust `javascript:`, relative or empty). */
+export function isHttpUrl(value: string | null | undefined): value is string {
+  if (!value) return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 /** Aggregator item → KV record, or null when it isn't eligible (spec D4, D6, D9). */
 export function toExternalRecord(item: AggregatorItem, rewritten: ReadonlySet<string>, now: Date): ExternalStoryRecord | null {
   if (item.content_type !== 'article') return null;
   const imageUrl = item.thumbnail?.url?.trim() ?? '';
-  if (!imageUrl) return null;
+  if (!isHttpUrl(imageUrl) || !isHttpUrl(item.url)) return null;
   if ((item.language ?? '').toUpperCase() !== 'EN') return null;
   if (rewritten.has(item.id)) return null;
   const { whatItCovers, whyItMatters } = parseBriefSections(item.summary);
@@ -100,7 +111,8 @@ export function toIndexEntry(r: ExternalStoryRecord): ExternalIndexEntry {
 
 /**
  * Existing index + this run's records → newest first, de-duplicated by id, capped.
- * Never drops entries the aggregator stopped returning (spec D7).
+ * Never drops entries the aggregator stopped returning (spec D7) — but does drop stories a network
+ * site has rewritten since they were indexed (spec D6: only the network version is shown).
  */
 export function mergeBundleIndex(
   existing: ExternalBundleIndex | null,
@@ -108,9 +120,12 @@ export function mergeBundleIndex(
   name: string,
   records: readonly ExternalStoryRecord[],
   now: Date,
+  rewritten: ReadonlySet<string> = new Set(),
   cap: number = INDEX_CAP,
 ): ExternalBundleIndex {
-  const byId = new Map<string, ExternalIndexEntry>((existing?.items ?? []).map((e) => [e.id, e]));
+  const byId = new Map<string, ExternalIndexEntry>(
+    (existing?.items ?? []).filter((e) => !rewritten.has(e.id)).map((e) => [e.id, e]),
+  );
   for (const r of records) byId.set(r.id, toIndexEntry(r));
   const items = [...byId.values()]
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt) || a.id.localeCompare(b.id))
@@ -174,11 +189,20 @@ export async function syncBundles(
   for (const bundleId of bundleIds) {
     try {
       const now = deps.now();
-      const records = (await deps.fetchItems(bundleId))
-        .map((item) => toExternalRecord(item, rewritten, now))
-        .filter((r): r is ExternalStoryRecord => r !== null);
-      if (records.length === 0) continue;
-      const index = mergeBundleIndex(await deps.readIndex(bundleId), bundleId, names.get(bundleId) ?? '', records, now);
+      const records: ExternalStoryRecord[] = [];
+      for (const item of await deps.fetchItems(bundleId)) {
+        // One malformed item (third-party data) is skipped, never the whole bundle.
+        try {
+          const record = toExternalRecord(item, rewritten, now);
+          if (record) records.push(record);
+        } catch (err) {
+          console.warn(`[seed-grid] bundle ${bundleId}: skipped malformed item ${String((item as { id?: unknown })?.id)}:`, err instanceof Error ? err.message : err);
+        }
+      }
+      const existing = await deps.readIndex(bundleId);
+      const index = mergeBundleIndex(existing, bundleId, names.get(bundleId) ?? '', records, now, rewritten);
+      // Nothing new and nothing dropped → leave this bundle's KV as it is.
+      if (records.length === 0 && index.items.length === (existing?.items.length ?? 0)) continue;
       for (const r of records) {
         if (written.has(r.id)) continue; // same story in two bundles → one record
         written.add(r.id);

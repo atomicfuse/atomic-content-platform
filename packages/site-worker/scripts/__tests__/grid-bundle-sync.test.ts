@@ -51,3 +51,24 @@ describe('readNetworkArticleFrontmatter', () => {
     expect(fms).toEqual([{ source_item_id: 'abc' }]);
   });
 });
+
+describe('syncBundles — later rewrites and bad items', () => {
+  const existingIndex = (ids: string[]) => ({ bundleId: 'b', name: 'n', updatedAt: 'u', items: ids.map((id) => ({ id, slug: 's', title: 't', description: '', imageUrl: 'https://i', sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' })) });
+
+  it('drops an indexed story once a network site has rewritten it (D6), even with no new items', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(['old']), {
+      fetchItems: async () => [art('old')], readIndex: async () => existingIndex(['old', 'keep']), now: () => NOW,
+    });
+    const index = JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value);
+    expect(index.items.map((i: { id: string }) => i.id)).toEqual(['keep']);
+  });
+
+  it('skips one malformed item instead of the whole bundle', async () => {
+    const bad = { ...art('bad'), title: null } as unknown as AggregatorItem;
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [bad, art('good')], readIndex: async () => null, now: () => NOW,
+    });
+    expect(out.failed).toEqual([]);
+    expect(out.entries.map((e) => e.key).sort()).toEqual(['grid-ext-index:b', 'grid-ext-item:good']);
+  });
+});

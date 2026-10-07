@@ -68,7 +68,7 @@ function renderCardHtml(item: GridPoolItem, index: number, ctx: TileRenderContex
   const intro = ctx.showIntro && item.description ? `<p class="g-card__intro">${escapeHtml(item.description)}</p>` : '';
   return `<article class="g-tile g-card" style="--g-i:${index % 20}"${item.pinned ? ' data-pinned="true"' : ''}>`
     + `<a class="g-card__link" href="${href}">`
-    + `<div class="g-card__media"><img src="${img}" data-fallback="/placeholder.svg" alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
+    + `<div class="g-card__media"><img src="${img}"${item.kind === 'external' ? ' data-fallback="/placeholder.svg"' : ''} alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
     + `<div class="g-card__body">${badge ? '' : source}<h3 class="g-card__title">${escapeHtml(item.title)}</h3>${intro}</div>`
     + `</a></article>`;
 }

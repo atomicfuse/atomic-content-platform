@@ -39,3 +39,17 @@ describe('buildExternalOutboundUrl', () => {
     expect(buildExternalOutboundUrl('https://www.instyle.com/x', 'grid.example', false)).toBe('https://www.instyle.com/x');
   });
 });
+
+describe('buildExternalOutboundUrl — unsafe input', () => {
+  it.each(['javascript:alert(1)', '/relative', '', 'not a url'])('returns null for %s', (u) => {
+    expect(buildExternalOutboundUrl(u, 'grid.example', true)).toBeNull();
+  });
+});
+
+describe('resolveExternalRequest — blocked sources', () => {
+  it('404s a story from a source the site blocks (case-insensitive)', () => {
+    const r = { id: ID, slug: 'batman-paused', sourceName: 'Conspiracy' } as ExternalStoryRecord;
+    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['conspiracy']).kind).toBe('not_found');
+    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['InStyle']).kind).toBe('ok');
+  });
+});

@@ -15,13 +15,19 @@ export function externalStoryPath(r: Pick<ExternalStoryRecord, 'slug' | 'id'>): 
   return `/story/${AGGREGATOR_SOURCE_ID}/${r.slug}-${r.id}`;
 }
 
-/** What the external story route should do for a URL segment and the record found for its id. */
+/**
+ * What the external story route should do for a URL segment and the record found for its id.
+ * Stories from a source the site blocks are 404 (spec D5: never shown on this site).
+ */
 export function resolveExternalRequest(
   param: string,
   record: ExternalStoryRecord | null,
+  blockedSources: readonly string[] = [],
 ): { kind: 'ok'; record: ExternalStoryRecord } | { kind: 'redirect'; location: string } | { kind: 'not_found' } {
   const parsed = parseExternalSlug(param);
   if (!parsed || !record || record.id !== parsed.itemId) return { kind: 'not_found' };
+  const source = (record.sourceName ?? '').trim().toLowerCase();
+  if (blockedSources.some((b) => b.trim().toLowerCase() === source)) return { kind: 'not_found' };
   if (parsed.slugPart !== record.slug) return { kind: 'redirect', location: externalStoryPath(record) };
   return { kind: 'ok', record };
 }

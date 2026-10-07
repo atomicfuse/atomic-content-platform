@@ -41,6 +41,14 @@ describe('toExternalRecord', () => {
   ])('skips %s', (_l, o) => {
     expect(toExternalRecord(item(o as Partial<AggregatorItem>), new Set(), NOW)).toBeNull();
   });
+  it.each([
+    ['javascript: link', { url: 'javascript:alert(1)' }],
+    ['relative link', { url: '/x' }],
+    ['empty link', { url: '' }],
+    ['non-http image', { thumbnail: { url: 'data:image/png;base64,xx' } }],
+  ])('skips unsafe or unusable URLs: %s', (_l, o) => {
+    expect(toExternalRecord(item(o as Partial<AggregatorItem>), new Set(), NOW)).toBeNull();
+  });
   it('skips items a network site already rewrote (D6)', () => {
     expect(toExternalRecord(item(), new Set(['a1']), NOW)).toBeNull();
   });
