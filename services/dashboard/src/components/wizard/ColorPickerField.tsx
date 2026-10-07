@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 interface Props {
   label: string;
@@ -27,6 +27,14 @@ export function ColorPickerField({ label, value, onChange, helperText }: Props):
   const [text, setText] = useState(value);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep the hex box in step with the value when it changes from outside
+  // (e.g. a theme preset). Otherwise it shows the old code, and blurring it
+  // would write that old color back over the preset.
+  useEffect(() => {
+    setText(value);
+    setError(null);
+  }, [value]);
+
   function commit(raw: string): void {
     const normalized = normalizeColor(raw);
     if (!normalized) {
@@ -35,7 +43,7 @@ export function ColorPickerField({ label, value, onChange, helperText }: Props):
     }
     setError(null);
     setText(normalized);
-    onChange(normalized);
+    if (normalized.toLowerCase() !== value.toLowerCase()) onChange(normalized);
   }
 
   return (
