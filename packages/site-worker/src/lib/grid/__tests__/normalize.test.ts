@@ -14,9 +14,9 @@ describe('normalizeGridConfig', () => {
       { label: 'Health', slug: 'Wellness Now', verticals: [' Healthy Living ', ''] },
     ] });
     expect(out.topics).toEqual([
-      { label: 'Food & Drink', slug: 'food-and-drink', verticals: ['Food & Drink'] },
-      { label: 'Food & Drink', slug: 'food-and-drink-2', verticals: [] },
-      { label: 'Health', slug: 'wellness-now', verticals: ['Healthy Living'] },
+      { label: 'Food & Drink', slug: 'food-and-drink', verticals: ['Food & Drink'], bundles: [] },
+      { label: 'Food & Drink', slug: 'food-and-drink-2', verticals: [], bundles: [] },
+      { label: 'Health', slug: 'wellness-now', verticals: ['Healthy Living'], bundles: [] },
     ]);
   });
   it('clamps numbers and maps feed_ad_every 1 to 2', () => {
@@ -56,5 +56,27 @@ describe('normalizeGridCard', () => {
 describe('slugifyTopic', () => {
   it('handles accents, symbols and edges', () => {
     expect(slugifyTopic('  Café & Crème!  ')).toBe('cafe-and-creme');
+  });
+});
+
+describe('aggregator fields', () => {
+  it('defaults the aggregator fields', () => {
+    const g = normalizeGridConfig({});
+    expect(g.external_story_mode).toBe('what_it_covers');
+    expect(g.blocked_sources).toEqual([]);
+    expect(g.per_bundle_limit).toBe(20);
+  });
+  it('normalises topic bundles and clamps per_bundle_limit', () => {
+    const g = normalizeGridConfig({
+      topics: [{ label: 'Celebs', verticals: [], bundles: [' b1 ', '', 'b1', 'b2'] }],
+      per_bundle_limit: 500, external_story_mode: 'ai_summary', blocked_sources: ['Conspiracy', ' '],
+    });
+    expect(g.topics[0]!.bundles).toEqual(['b1', 'b2']);
+    expect(g.per_bundle_limit).toBe(100);
+    expect(g.external_story_mode).toBe('ai_summary');
+    expect(g.blocked_sources).toEqual(['Conspiracy']);
+  });
+  it('keeps a vertical-less, bundle-only pill', () => {
+    expect(normalizeGridConfig({ topics: [{ label: 'X', verticals: [], bundles: ['b'] }] }).topics).toHaveLength(1);
   });
 });

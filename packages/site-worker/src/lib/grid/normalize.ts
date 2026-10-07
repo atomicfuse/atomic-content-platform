@@ -33,6 +33,9 @@ const GRID_DEFAULTS: ResolvedGridConfig = {
   show_intro: false,
   outbound_utm: true,
   pinned: [],
+  external_story_mode: 'what_it_covers',
+  blocked_sources: [],
+  per_bundle_limit: 20,
 };
 
 export const GRID_CARD_DEFAULTS: ResolvedGridCardConfig = {
@@ -72,7 +75,7 @@ function normalizeTopics(value: unknown): ResolvedGridTopic[] {
   const used = new Set<string>();
   const topics: ResolvedGridTopic[] = [];
   for (const raw of value) {
-    const t = (raw ?? {}) as { label?: unknown; slug?: unknown; verticals?: unknown };
+    const t = (raw ?? {}) as { label?: unknown; slug?: unknown; verticals?: unknown; bundles?: unknown };
     const label = typeof t.label === 'string' ? t.label.trim() : '';
     if (!label) continue;
     const source = typeof t.slug === 'string' && t.slug.trim() ? t.slug : label;
@@ -81,7 +84,7 @@ function normalizeTopics(value: unknown): ResolvedGridTopic[] {
     let n = 2;
     while (used.has(slug)) slug = `${base}-${n++}`;
     used.add(slug);
-    topics.push({ label, slug, verticals: stringList(t.verticals) });
+    topics.push({ label, slug, verticals: stringList(t.verticals), bundles: [...new Set(stringList(t.bundles))] });
   }
   return topics;
 }
@@ -121,6 +124,9 @@ export function normalizeGridConfig(input: GridConfig | undefined): ResolvedGrid
     show_intro: g.show_intro === true,
     outbound_utm: g.outbound_utm !== false,
     pinned: normalizePins(g.pinned),
+    external_story_mode: g.external_story_mode === 'ai_summary' ? 'ai_summary' : 'what_it_covers',
+    blocked_sources: stringList(g.blocked_sources),
+    per_bundle_limit: clampInt(g.per_bundle_limit, 1, 100, GRID_DEFAULTS.per_bundle_limit),
   };
 }
 

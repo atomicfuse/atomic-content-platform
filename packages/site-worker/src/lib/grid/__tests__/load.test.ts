@@ -3,7 +3,7 @@ import { GRID_DEFAULTS, type NetworkDirectory, type ResolvedGridConfig } from '@
 import { hashString, loadGridPool, NO_CACHE, toPoolResponse, type JsonCache, type KvReader } from '../load';
 
 const NOW = new Date('2026-09-27T12:00:00Z');
-const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [{ label: 'Travel', slug: 'travel', verticals: ['Travel'] }] };
+const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [{ label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] }] };
 const directory: NetworkDirectory = { generatedAt: 'g1', sites: [
   { siteId: 'a', hostname: 'a.com', name: 'A', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },
   { siteId: 'b', hostname: 'b.com', name: 'B', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },

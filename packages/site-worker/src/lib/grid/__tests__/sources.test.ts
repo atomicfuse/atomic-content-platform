@@ -9,8 +9,8 @@ const site = (over: Partial<NetworkDirectorySite>): NetworkDirectorySite => ({
 const grid = (over: Partial<ResolvedGridConfig> = {}): ResolvedGridConfig => ({
   ...GRID_DEFAULTS,
   topics: [
-    { label: 'Travel', slug: 'travel', verticals: ['Travel'] },
-    { label: 'Health', slug: 'health', verticals: ['Healthy Living', 'Medical Health'] },
+    { label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] },
+    { label: 'Health', slug: 'health', verticals: ['Healthy Living', 'Medical Health'], bundles: [] },
   ],
   ...over,
 });
@@ -25,8 +25,8 @@ describe('resolveSources', () => {
   });
   it('a vertical listed in two pills feeds both', () => {
     const g = grid({ topics: [
-      { label: 'Travel', slug: 'travel', verticals: ['Travel'] },
-      { label: 'Trips', slug: 'trips', verticals: ['Travel'] },
+      { label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] },
+      { label: 'Trips', slug: 'trips', verticals: ['Travel'], bundles: [] },
     ] });
     expect(resolveSources(dir([site({ siteId: 'a' })]), g, 'me').pillsBySite.get('a')).toEqual(['travel', 'trips']);
   });

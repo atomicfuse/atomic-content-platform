@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPills } from '../nav';
 
 describe('buildPills', () => {
-  const topics = [{ label: 'Travel', slug: 'travel', verticals: [] }, { label: 'Health', slug: 'health', verticals: [] }];
+  const topics = [{ label: 'Travel', slug: 'travel', verticals: [], bundles: [] }, { label: 'Health', slug: 'health', verticals: [], bundles: [] }];
   it('prepends All and marks the active pill', () => {
     expect(buildPills(topics, 'health')).toEqual([
       { label: 'All', href: '/', active: false },

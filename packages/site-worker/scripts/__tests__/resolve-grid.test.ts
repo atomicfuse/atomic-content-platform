@@ -37,3 +37,9 @@ describe('applyGridResolution', () => {
     expect((config.theme as Record<string, unknown>).card).toEqual({ ...GRID_CARD_DEFAULTS, style: 'shadow' });
   });
 });
+
+describe('blocked_sources merge', () => {
+  it('last non-empty layer wins', () => {
+    expect(mergeGridLayers([{ blocked_sources: ['A'] }, { blocked_sources: [] }]).blocked_sources).toEqual(['A']);
+  });
+});
