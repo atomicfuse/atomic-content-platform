@@ -57,7 +57,7 @@ describe("runGridSummaries", () => {
     expect(mockRecord).toHaveBeenCalledWith(expect.objectContaining({ siteDomain: "src", source: "grid-summaries" }));
   });
   it("never overwrites a hand-edited summary; flags it once when the source changed", async () => {
-    const edited = serializeSummaryFile({ source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "y", source_changed: false }, "## Mine\n\nHuman text");
+    const edited = serializeSummaryFile({ source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "y", source_changed: false, pinned: false }, "## Mine\n\nHuman text");
     mockReadFile.mockImplementation(async (_o: unknown, _r: unknown, path: string) => {
       if (path === "dashboard-index.yaml") return INDEX;
       if (path === "grid-summaries/src/a1.md") return edited;
@@ -107,7 +107,7 @@ describe("runGridSummaries — race between planning and commit", () => {
   it("drops a planned generate when the file is hand-edited before the commit, and does not include it", async () => {
     let a1Reads = 0;
     const edited = serializeSummaryFile(
-      { source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "raced", source_changed: false },
+      { source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "raced", source_changed: false, pinned: false },
       "## Raced\n\nHuman text",
     );
     mockReadFile.mockImplementation(async (_o: unknown, _r: unknown, path: string) => {
@@ -143,11 +143,11 @@ describe("runGridSummaries — plan staleness re-check", () => {
   it("drops a planned flag when the edited file is regenerated (edited false, new generated_at) before the commit", async () => {
     let a1Reads = 0;
     const edited = serializeSummaryFile(
-      { source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "y", source_changed: false },
+      { source_site: "src", slug: "a1", body_hash: "old", generated_at: "x", model: "m", edited: true, edited_by: "dashboard", edited_at: "y", source_changed: false, pinned: false },
       "## Mine\n\nHuman text",
     );
     const regenerated = serializeSummaryFile(
-      { source_site: "src", slug: "a1", body_hash: sha256("<p>article:src:a1</p>"), generated_at: "2026-09-27T10:05:00Z", model: "m", edited: false, edited_by: null, edited_at: null, source_changed: false },
+      { source_site: "src", slug: "a1", body_hash: sha256("<p>article:src:a1</p>"), generated_at: "2026-09-27T10:05:00Z", model: "m", edited: false, edited_by: null, edited_at: null, source_changed: false, pinned: false },
       "## Regenerated\n\nAI text",
     );
     mockReadFile.mockImplementation(async (_o: unknown, _r: unknown, path: string) => {
@@ -168,7 +168,7 @@ describe("runGridSummaries — plan staleness re-check", () => {
   it("drops a planned generate when the missing file appears with a fresh generated_at before the commit", async () => {
     let a1Reads = 0;
     const appeared = serializeSummaryFile(
-      { source_site: "src", slug: "a1", body_hash: sha256("<p>article:src:a1</p>"), generated_at: "2026-09-27T10:05:00Z", model: "m", edited: false, edited_by: null, edited_at: null, source_changed: false },
+      { source_site: "src", slug: "a1", body_hash: sha256("<p>article:src:a1</p>"), generated_at: "2026-09-27T10:05:00Z", model: "m", edited: false, edited_by: null, edited_at: null, source_changed: false, pinned: false },
       "## Appeared\n\nAI text",
     );
     mockReadFile.mockImplementation(async (_o: unknown, _r: unknown, path: string) => {
@@ -190,5 +190,66 @@ describe("runGridSummaries — plan staleness re-check", () => {
 describe("regenerateSummary", () => {
   it("unknown article → 404 GridSummaryError", async () => {
     await expect(regenerateSummary(config, "src", "zz", deps({ readKv: async () => null }))).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("aggregator (external) stories", () => {
+  const ID = "6ac4931364df7692b392bfcb";
+  const extRecord = { id: ID, slug: "batman", title: "Batman paused", whatItCovers: "Production halted.", whyItMatters: "Another delay." };
+  const extDeps = (gridCfg: Record<string, unknown>): GridSummariesDeps => deps({
+    fetchPool: async () => ({ siteId: "mygrid", storyMode: "excerpt", items: [{ site: "aggregator", slug: `batman-${ID}`, title: "Batman paused" }, { site: "src", slug: "a1", title: "A1" }] }),
+    readKv: async (_d, key) => {
+      if (key === "site-config:mygrid") return { theme: { template: "grid" }, grid: gridCfg };
+      if (key === `grid-ext-item:${ID}`) return extRecord;
+      if (key.startsWith("article:src:")) return { frontmatter: { title: key, status: "published" }, body: `<p>${key}</p>` };
+      return null;
+    },
+  });
+  const SHORT = `## Headline\n\n${W}\n\n### One\n\n${W}\n\n### Two\n\n${Array.from({ length: 10 }, () => "word").join(" ")}`;
+
+  it("summarises external stories from the ext record when the aggregator mode is ai_summary", async () => {
+    mockGenerate.mockResolvedValue({ text: SHORT, usage: { inputTokens: 1, outputTokens: 1, estimated: false }, model: "claude-sonnet-5-5" });
+    const r = await runGridSummaries(config, extDeps({ external_story_mode: "ai_summary" }));
+    expect(r).toMatchObject({ needed: 1, generated: 1, failed: 0 });
+    const files = mockCommitBatch.mock.calls[0]?.[2] as Array<{ path: string; content: string }>;
+    expect(files.map((f) => f.path)).toEqual([`grid-summaries/aggregator/${ID}.md`]);
+    expect(files[0]!.content).toContain("pinned: false");
+    const call = mockGenerate.mock.calls[0]![0] as { systemPrompt: string; userPrompt: string };
+    expect(call.systemPrompt).toMatch(/120 to 150 words/);
+    expect(call.userPrompt).toContain("Production halted.");
+  });
+
+  it("leaves external stories alone when only the network mode is ai_summary", async () => {
+    const r = await runGridSummaries(config, extDeps({ story_mode: "ai_summary" }));
+    expect(r).toMatchObject({ needed: 1, generated: 1 });
+    const paths = (mockCommitBatch.mock.calls[0]?.[2] as Array<{ path: string }>).map((f) => f.path);
+    expect(paths).toEqual(["grid-summaries/src/a1.md"]);
+  });
+
+  it("regenerate with pin=true writes a pinned external summary", async () => {
+    mockGenerate.mockResolvedValue({ text: SHORT, usage: { inputTokens: 1, outputTokens: 1, estimated: false }, model: "m" });
+    await regenerateSummary(config, "aggregator", ID, extDeps({}), { pin: true });
+    const files = mockCommitBatch.mock.calls[0]?.[2] as Array<{ path: string; content: string }>;
+    expect(files[0]!.path).toBe(`grid-summaries/aggregator/${ID}.md`);
+    expect(files[0]!.content).toContain("pinned: true");
+  });
+
+  it("setSummaryPinned flips only the pin and keeps the text", async () => {
+    const existing = serializeSummaryFile({ source_site: "aggregator", slug: ID, body_hash: "h", generated_at: "x", model: "m", edited: true, edited_by: "d", edited_at: "y", source_changed: false, pinned: true }, "## Mine\n\nHuman text");
+    mockReadFile.mockImplementation(async (_o: unknown, _r: unknown, path: string) => {
+      if (path === `grid-summaries/aggregator/${ID}.md`) return existing;
+      throw new Error(`Expected file at ${path}, got nothing`);
+    });
+    const { setSummaryPinned } = await import("../agents/grid-summaries/index.js");
+    await setSummaryPinned(config, "aggregator", ID, false);
+    const content = (mockCommitBatch.mock.calls[0]?.[2] as Array<{ content: string }>)[0]!.content;
+    expect(content).toContain("pinned: false");
+    expect(content).toContain("Human text");
+    expect(content).toContain("edited: true");
+  });
+
+  it("setSummaryPinned on a story with no summary is a 404", async () => {
+    const { setSummaryPinned } = await import("../agents/grid-summaries/index.js");
+    await expect(setSummaryPinned(config, "aggregator", ID, true)).rejects.toMatchObject({ status: 404 });
   });
 });

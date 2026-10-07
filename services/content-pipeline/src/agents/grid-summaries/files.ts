@@ -11,6 +11,8 @@ export interface SummaryFrontmatter {
   edited_by: string | null;
   edited_at: string | null;
   source_changed: boolean;
+  /** Shown on the story page regardless of the Grid site's story mode. */
+  pinned: boolean;
 }
 
 /** Repo path of a summary file. */
@@ -40,6 +42,7 @@ export function parseSummaryFile(raw: string): { fm: SummaryFrontmatter; markdow
       edited_by: typeof d.edited_by === "string" ? d.edited_by : null,
       edited_at: d.edited_at == null ? null : str(d.edited_at),
       source_changed: d.source_changed === true,
+      pinned: d.pinned === true,
     },
     markdown: parsed.content.trim(),
   };

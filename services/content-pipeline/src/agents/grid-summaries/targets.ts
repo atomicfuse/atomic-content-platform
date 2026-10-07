@@ -31,10 +31,30 @@ export function poolUrlFor(entry: IndexEntry, env: { gridWorkerBaseUrl?: string;
   return `${env.stagingWorkerUrl.replace(/\/$/, "")}/api/pool?_atl_site=${encodeURIComponent(entry.domain)}`;
 }
 
-/** True for a resolved KV site-config of a Grid site in ai_summary mode. */
+/** Source id of Content Aggregator stories in Grid pools (mirrors the site-worker's AGGREGATOR_SOURCE_ID). */
+export const AGGREGATOR_SITE = "aggregator";
+
+/** Which story kinds get AI summaries on a Grid site; null when the config isn't a Grid site. */
+export function gridSummaryModes(config: unknown): { network: boolean; external: boolean } | null {
+  const c = (config ?? {}) as { theme?: { template?: unknown }; grid?: { story_mode?: unknown; external_story_mode?: unknown } };
+  if (c.theme?.template !== "grid") return null;
+  return { network: c.grid?.story_mode === "ai_summary", external: c.grid?.external_story_mode === "ai_summary" };
+}
+
+/** True when a pool item should get an AI summary under the site's modes. */
+export function needsSummary(item: { site: string }, modes: { network: boolean; external: boolean }): boolean {
+  return item.site === AGGREGATOR_SITE ? modes.external : modes.network;
+}
+
+/** True for a resolved KV site-config of a Grid site with any AI-summary mode on. */
 export function isAiGridConfig(config: unknown): boolean {
-  const c = (config ?? {}) as { theme?: { template?: unknown }; grid?: { story_mode?: unknown } };
-  return c.theme?.template === "grid" && c.grid?.story_mode === "ai_summary";
+  const modes = gridSummaryModes(config);
+  return !!modes && (modes.network || modes.external);
+}
+
+/** Summary file slug of a pool item: the item id for aggregator stories ("<title-slug>-<id>"), else the slug. */
+export function summarySlugOf(item: { site: string; slug: string }): string {
+  return item.site === AGGREGATOR_SITE ? item.slug.slice(-24) : item.slug;
 }
 
 /** Site ids and slugs used in repo paths / KV keys: kebab-case, no traversal. */
