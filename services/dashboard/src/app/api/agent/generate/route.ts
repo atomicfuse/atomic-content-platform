@@ -2,8 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { gridGenerationGuard } from "@/lib/grid-guard";
-
-const REDIS_URL = process.env.REDIS_URL;
+import { redisUrl } from "@/lib/infra-env";
 
 const CONTENT_AGENT_URL =
   process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
@@ -52,7 +51,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const defaultCount = topicName ? 1 : 3;
 
   // ---------- Queue path ----------
-  if (REDIS_URL) {
+  if (redisUrl()) {
     try {
       const { getGenerateQueue, getGenerateQueueEvents, isRedisReachable } = await import(
         "@/lib/queue"

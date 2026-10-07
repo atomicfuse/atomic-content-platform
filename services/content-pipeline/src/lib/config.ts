@@ -3,6 +3,7 @@
  */
 
 import type { GitHubConfig } from "./github.js";
+import { redisUrl } from "./infra-env.js";
 
 /**
  * Public dashboard origin, used to build links in outbound notifications.
@@ -66,7 +67,7 @@ export function loadConfig(): AgentConfig {
     // pushes this service onto the 5111 fallback while the dashboard proxy
     // expects :5000. In production only PORT exists, so PORT still wins there.
     port: parsePort(process.env.CONTENT_PIPELINE_PORT) ?? parsePort(process.env.PORT) ?? 3001,
-    redisUrl: process.env.REDIS_URL,
+    redisUrl: redisUrl(),
     n8nImageWebhookUrl: process.env.N8N_IMAGE_WEBHOOK_URL,
     imageCallbackUrl: process.env.IMAGE_CALLBACK_URL,
     bulkImageApiKey: process.env.BULK_IMAGE_API_KEY,

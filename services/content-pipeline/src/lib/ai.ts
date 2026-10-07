@@ -4,7 +4,7 @@
  * Every call tries, in order, and returns the first success:
  *   1. Anthropic SDK (ANTHROPIC_API_KEY) — pins the exact Claude model and
  *      returns real token usage. Skipped when no key is configured.
- *   2. CloudGrid AI Gateway (@cloudgrid-io/runtime, `requires: ai`) — alias model.
+ *   2. CloudGrid AI Gateway (@cloudgrid-io/runtime; RUNTIME_GATEWAY_URL is platform-injected) — alias model.
  *   3. OpenAI (OPENAI_API_KEY) — cheap last resort so a Claude outage never
  *      stops generation.
  * There is no sticky state: a failure only affects the call it happened in.

@@ -1,16 +1,17 @@
 import { MongoClient, type Db } from "mongodb";
 import { COLLECTIONS } from "../stats/types.js";
 import { COST_COLLECTIONS } from "../costs/types.js";
+import { mongoUrl } from "./infra-env.js";
 
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
 
-/** Lazy, memoized Mongo client. Throws if neither MONGODB_URL nor MONGODB_URI is set. */
+/** Lazy, memoized Mongo client. Throws if no Mongo URL is set (see infra-env.ts). */
 export async function getMongoDb(): Promise<Db> {
   if (!dbPromise) {
     if (!clientPromise) {
-      const url = process.env.MONGODB_URL ?? process.env.MONGODB_URI;
-      if (!url) throw new Error("MONGODB_URL (or MONGODB_URI) is not set");
+      const url = mongoUrl();
+      if (!url) throw new Error("MONGODB_URL (or MONGODB_URI / DATABASE_MONGODB_URL) is not set");
       const client = new MongoClient(url, { serverSelectionTimeoutMS: 5_000 });
       clientPromise = client.connect().catch((err) => {
         clientPromise = null; // allow retry on next call

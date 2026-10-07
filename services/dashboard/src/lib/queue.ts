@@ -1,14 +1,15 @@
 // services/dashboard/src/lib/queue.ts
 import { Queue, QueueEvents, type ConnectionOptions } from "bullmq";
 import { Redis } from "ioredis";
+import { redisUrl } from "./infra-env";
 
 const GENERATE_QUEUE = "content-generation";
 const MAX_RETRY_DELAY_MS = 30_000;
 const KEEP_ALIVE_MS = 30_000;
 
 function getRedisUrl(): string {
-  const url = process.env.REDIS_URL;
-  if (!url) throw new Error("REDIS_URL is not set");
+  const url = redisUrl();
+  if (!url) throw new Error("REDIS_URL (or QUEUE_REDIS_URL) is not set");
   return url;
 }
 
