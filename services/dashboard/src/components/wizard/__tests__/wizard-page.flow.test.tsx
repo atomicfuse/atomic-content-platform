@@ -80,7 +80,8 @@ describe("WizardPage — G2 template-dependent steps", () => {
     expect(next).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Add topic" }));
     await userEvent.type(screen.getByPlaceholderText("e.g. Health"), "Health");
-    await userEvent.click(screen.getByRole("checkbox", { name: "Health" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add vertical to Health" }));
+    await userEvent.click(screen.getByRole("option", { name: /Health/ }));
     expect(next).toBeEnabled();
     await userEvent.click(next);
 

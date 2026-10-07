@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { GridSettingsForm } from "../GridSettingsForm";
 
 afterEach(cleanup);
@@ -48,19 +49,21 @@ describe("GridSettingsForm — aggregator settings", () => {
     { id: "s1", name: "Military Operations", iab_code: "x", parent_id: "t1" },
     { id: "t2", name: "Pop Culture", iab_code: "y", parent_id: null },
   ];
-  it("blocks and unblocks aggregator categories (tier-1 and sub)", () => {
+  it("blocks and unblocks aggregator categories (tier-1 and sub)", async () => {
     const onChange = vi.fn();
     const { rerender } = render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} categories={CATS} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "War and Conflicts" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add category" }));
+    await userEvent.click(screen.getByRole("option", { name: /War and Conflicts/ }));
     expect(onChange).toHaveBeenLastCalledWith({ blocked_categories: ["War and Conflicts"] });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Military Operations" }));
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search Blocked categories" }), "military");
+    await userEvent.click(screen.getByRole("option", { name: /Military Operations/ }));
     expect(onChange).toHaveBeenLastCalledWith({ blocked_categories: ["Military Operations"] });
     rerender(<GridSettingsForm value={{ blocked_categories: ["War and Conflicts"] }} onChange={onChange} sites={[]} verticals={[]} categories={CATS} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "War and Conflicts" }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove War and Conflicts" }));
     expect(onChange).toHaveBeenLastCalledWith({});
   });
   it("keeps a blocked category the aggregator no longer lists visible so it can be cleared", () => {
     render(<GridSettingsForm value={{ blocked_categories: ["Gone"] }} onChange={vi.fn()} sites={[]} verticals={[]} categories={CATS} />);
-    expect(screen.getByRole("checkbox", { name: "Gone" })).toBeChecked();
+    expect(screen.getByText("Gone (missing)")).toBeInTheDocument();
   });
 });

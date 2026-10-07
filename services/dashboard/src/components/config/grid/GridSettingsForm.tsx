@@ -3,7 +3,8 @@
 import type { BundleOption, GridFields, SiteOption } from "@/types/grid";
 import { TopicsEditor } from "./TopicsEditor";
 import { SiteMultiPicker } from "./SiteMultiPicker";
-import { BlockedCategoriesPicker } from "./BlockedCategoriesPicker";
+import { ChipMultiSelect } from "./ChipMultiSelect";
+import { categoryOptions } from "./categoryOptions";
 import type { CategoryItem } from "@/lib/reference-data";
 
 interface GridSettingsFormProps {
@@ -87,11 +88,18 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
         <TopicsEditor value={value.topics ?? []} onChange={(t): void => set("topics", t)} verticals={verticals} bundles={bundles} />
       </section>
 
-      <section>
-        <BlockedCategoriesPicker
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Blocked categories</h4>
+        <p className="text-xs text-[var(--text-muted)]">
+          Aggregator stories in any of these categories never appear on this site. A main category also blocks its subcategories.
+        </p>
+        <ChipMultiSelect
+          label="Blocked categories"
+          addLabel="Add category"
+          emptyText="Nothing blocked"
           value={value.blocked_categories ?? []}
+          options={categoryOptions(categories)}
           onChange={(v): void => set("blocked_categories", v.length ? v : undefined)}
-          categories={categories}
         />
       </section>
 

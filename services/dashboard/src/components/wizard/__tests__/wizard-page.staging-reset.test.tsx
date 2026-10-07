@@ -59,7 +59,8 @@ async function walkGridToPreview(addPill: boolean): Promise<void> {
   if (addPill) {
     await userEvent.click(screen.getByRole("button", { name: "Add topic" }));
     await userEvent.type(screen.getByPlaceholderText("e.g. Health"), "Health");
-    await userEvent.click(screen.getByRole("checkbox", { name: "Health" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add vertical to Health" }));
+    await userEvent.click(screen.getByRole("option", { name: /Health/ }));
   }
   await clickNext(); // → Groups
   await clickNext(); // → Theme

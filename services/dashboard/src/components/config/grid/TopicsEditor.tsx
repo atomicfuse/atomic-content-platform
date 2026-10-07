@@ -1,6 +1,7 @@
 "use client";
 
 import type { BundleOption, GridTopicFields } from "@/types/grid";
+import { ChipMultiSelect } from "./ChipMultiSelect";
 
 interface TopicsEditorProps {
   value: GridTopicFields[];
@@ -99,39 +100,28 @@ export function TopicsEditor({ value, onChange, verticals, bundles = [] }: Topic
                 </button>
               </div>
             </div>
-            <div className="space-y-1.5" role="group" aria-label={`Verticals for ${name}`}>
-              <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Verticals
-              </span>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {verticals.length === 0 && (
-                  <span className="text-xs text-[var(--text-muted)]">No verticals configured yet.</span>
-                )}
-                {verticals.map((v) => (
-                  <label key={v} className="inline-flex items-center gap-1.5 text-sm text-[var(--text-primary)]">
-                    <input
-                      type="checkbox"
-                      checked={topic.verticals.includes(v)}
-                      onChange={(e): void =>
-                        update(i, {
-                          verticals: e.target.checked
-                            ? [...topic.verticals, v]
-                            : topic.verticals.filter((x) => x !== v),
-                        })
-                      }
-                      className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
-                    />
-                    {v}
-                  </label>
-                ))}
-              </div>
+            <div className="grid gap-2 sm:grid-cols-[6.5rem_1fr] sm:items-start">
+              <span className="pt-0.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Verticals</span>
+              <ChipMultiSelect
+                label={`Verticals for ${name}`}
+                addLabel="Add vertical"
+                addAriaLabel={`Add vertical to ${name}`}
+                emptyText="No verticals"
+                value={topic.verticals}
+                options={verticals.map((v) => ({ value: v, label: v }))}
+                onChange={(next): void => update(i, { verticals: next })}
+              />
+              <span className="pt-0.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Bundles</span>
+              <ChipMultiSelect
+                label={`Bundles for ${name}`}
+                addLabel="Add bundle"
+                addAriaLabel={`Add bundle to ${name}`}
+                emptyText="No aggregator bundles"
+                value={topic.bundles ?? []}
+                options={bundles.map((b) => ({ value: b.id, label: b.name, hint: String(b.count) }))}
+                onChange={(next): void => update(i, { bundles: next.length ? next : undefined })}
+              />
             </div>
-            <BundleChecklist
-              name={name}
-              selected={topic.bundles ?? []}
-              options={bundles}
-              onChange={(next): void => update(i, { bundles: next.length ? next : undefined })}
-            />
           </fieldset>
         );
       })}
@@ -146,39 +136,3 @@ export function TopicsEditor({ value, onChange, verticals, bundles = [] }: Topic
   );
 }
 
-/** A pill's aggregator bundles. Ids no longer offered by the aggregator stay visible (checked) so they can be cleared. */
-function BundleChecklist({ name, selected, options, onChange }: {
-  name: string;
-  selected: string[];
-  options: BundleOption[];
-  onChange: (next: string[]) => void;
-}): React.ReactElement {
-  const missing = selected.filter((id) => !options.some((b) => b.id === id));
-  const rows = [
-    ...options.map((b) => ({ id: b.id, label: `${b.name} (${b.count})` })),
-    ...missing.map((id) => ({ id, label: `${id} (missing)` })),
-  ];
-  return (
-    <div className="space-y-1.5" role="group" aria-label={`Bundles for ${name}`}>
-      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-        Aggregator bundles
-      </span>
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-        {rows.length === 0 && <span className="text-xs text-[var(--text-muted)]">No bundles available.</span>}
-        {rows.map((b) => (
-          <label key={b.id} className="inline-flex items-center gap-1.5 text-sm text-[var(--text-primary)]">
-            <input
-              type="checkbox"
-              checked={selected.includes(b.id)}
-              onChange={(e): void =>
-                onChange(e.target.checked ? [...selected, b.id] : selected.filter((x) => x !== b.id))
-              }
-              className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
-            />
-            {b.label}
-          </label>
-        ))}
-      </div>
-    </div>
-  );
-}
