@@ -45,10 +45,16 @@ function faviconHtml(site: NetworkDirectorySite | undefined, fallbackName: strin
   return `<span class="g-card__favicon g-card__favicon--letter" aria-hidden="true">${letter}</span>`;
 }
 
-/** Display name of a story's source: the publisher for aggregator stories, else the network site. */
+/**
+ * Display name of a story's source: the publisher's domain for aggregator stories, the network
+ * site's domain (e.g. "popstorylab.com") for network stories — falling back to its name when the
+ * directory has no real domain for it.
+ */
 export function sourceNameOf(item: GridPoolItem, sites: ReadonlyMap<string, NetworkDirectorySite>): string {
   if (item.kind === 'external') return item.sourceName || 'Source';
-  return sites.get(item.site)?.name ?? item.site;
+  const site = sites.get(item.site);
+  if (site?.hostname.includes('.')) return site.hostname;
+  return site?.name ?? item.site;
 }
 
 /** "[favicon] Site Name · 5d" — shared by cards and the story header. */

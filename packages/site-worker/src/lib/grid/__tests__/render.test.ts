@@ -21,7 +21,7 @@ describe('renderTilesHtml', () => {
     const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
     expect(html).toContain('href="/story/sw/a"');
     expect(html).toContain('T &lt;a&gt;');
-    expect(html).toContain('Science World');
+    expect(html).toContain('scienceworld.com');
     expect(html).toContain('>1d<');
     expect(html).toContain('src="/sw/assets/fav.png"');
   });
@@ -80,7 +80,7 @@ describe('renderTilesHtml — external stories', () => {
   });
   it('network cards are byte-identical to before (no image fallback attribute)', () => {
     const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
-    expect(html).toContain('Science World');
+    expect(html).toContain('<span class="g-card__site">scienceworld.com</span>');
     expect(html).toContain('src="/sw/assets/fav.png"');
     expect(html).not.toContain('data-fallback');
   });
@@ -91,7 +91,7 @@ describe('sourceNameOf', () => {
     const { sourceNameOf } = await import('../render');
     expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external', sourceName: 'InStyle' }), sites)).toBe('InStyle');
     expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external' }), sites)).toBe('Source');
-    expect(sourceNameOf(item('a'), sites)).toBe('Science World');
+    expect(sourceNameOf(item('a'), sites)).toBe('scienceworld.com');
     expect(sourceNameOf(item('a', { site: 'unknown' }), sites)).toBe('unknown');
   });
 });
