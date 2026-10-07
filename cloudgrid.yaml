@@ -50,10 +50,10 @@ services:
     #   DEV1_CLOUDFLARE_API_TOKEN — optional; only needed if the main token is not
     #     valid on the Dev1 account (financenewsbase/muvizzcom sync+tracking checks).
     #     Without it, those two legacy sites' sync/tracking return `unknown`.
-    # REDIS_URL is auto-injected by `requires: redis: private`.
-    # MongoDB: `requires: mongodb: private` auto-injects the connection string.
-    #   getMongoDb() reads MONGODB_URL, falling back to MONGODB_URI, so either
-    #   injected name works without an explicit env: mapping.
+    # Redis: `requires: redis: private` (see bottom) injects REDIS_URL (app-private Redis).
+    # MongoDB: `requires: mongodb` injects the grid-shared Mongo connection string.
+    #   getMongoDb() reads it via src/lib/infra-env.ts (also MONGODB_URL /
+    #   MONGODB_URI), so no explicit env: mapping is needed.
     # ANTHROPIC_API_KEY: first step of the text provider chain in lib/ai.ts
     #   (Anthropic SDK, model pinned to claude-sonnet-5-5). Without it the chain
     #   starts at the CloudGrid AI Gateway.
@@ -94,8 +94,12 @@ services:
     timezone: EST
     run: http://content-pipeline-app/grid-summaries
 
+# Grid resources — v1 `requires:` (deprecated but supported). Deliberately NOT migrated to `needs:` yet:
+# in CLI 0.22 `needs:` cannot express a PRIVATE Redis — cache/queue: true become the grid-SHARED Redis,
+# which rejects BullMQ's INFO (NOPERM, CLAUDE.md #32) and would strand queued jobs. Mongo is the shared
+# pool either way. Only `mongodb` and `redis` are valid here: listing `ai` failed a deploy ("Unknown
+# shared service: 'ai'"); the platform injects RUNTIME_GATEWAY_URL for @cloudgrid-io/runtime anyway.
+# Code reads URLs via src/lib/infra-env.ts, which accepts both the v1 and v2 env var names.
 requires:
   - redis: private
   - mongodb
-  # CloudGrid AI Gateway for @cloudgrid-io/runtime (runtime.ai.chat) — step 2 of the text provider chain.
-  - ai

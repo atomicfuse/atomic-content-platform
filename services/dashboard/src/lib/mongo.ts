@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import type { Db } from "mongodb";
+import { mongoUrl } from "./infra-env";
 
 let clientPromise: Promise<MongoClient> | null = null;
 let dbPromise: Promise<Db> | null = null;
@@ -7,16 +8,16 @@ let dbPromise: Promise<Db> | null = null;
 /**
  * Lazy, memoized MongoDB connection for the dashboard.
  * Same pattern as content-pipeline's getMongoDb().
- * Reads MONGODB_URL (or MONGODB_URI) from env.
+ * Reads MONGODB_URL / MONGODB_URI, or DATABASE_MONGODB_URL (cloudgrid.yaml `needs: database`).
  */
 export async function getMongoDb(): Promise<Db> {
   if (dbPromise) return dbPromise;
 
   if (!clientPromise) {
-    const url = process.env.MONGODB_URL ?? process.env.MONGODB_URI;
+    const url = mongoUrl();
     if (!url) {
       throw new Error(
-        "MONGODB_URL (or MONGODB_URI) is required. " +
+        "MONGODB_URL (or MONGODB_URI / DATABASE_MONGODB_URL) is required. " +
           "Set it in .env.local for local dev or via cloudgrid secrets.",
       );
     }

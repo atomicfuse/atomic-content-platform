@@ -4,7 +4,7 @@ Orientation for Claude Code sessions. Read this before touching code. For full a
 
 ## Rules
 
-- **Never run `cloudgrid plug` without explicit user permission.** Always ask first.
+- **Never run `grid plug` (formerly `cloudgrid plug`) without explicit user permission.** Always ask first.
 - **Never commit directly to `main`.** Asaf uses `asaf-dev`, Michal uses `michal-dev`.
 - **Never `git add -A`** — may include secrets. Stage specific files.
 - **Never call `gh pr create`** — token lacks `pull_requests:write`. Print compare URL instead:
@@ -86,7 +86,7 @@ cd services/dashboard && pnpm typecheck
 cd services/content-pipeline && pnpm typecheck
 
 # Local dev
-cloudgrid dev                   # dashboard :3000, content-pipeline :5000 (via CONTENT_PIPELINE_PORT in .env)
+grid dev                        # dashboard :3000, content-pipeline :5000 (via CONTENT_PIPELINE_PORT in .env)
 
 # Site worker
 cd packages/site-worker
@@ -102,7 +102,7 @@ CLOUDFLARE_ACCOUNT_ID=4a8cfd85d617b38ce1813a552132bc86 pnpm seed:kv <siteId> [ho
 # For cross-branch: use git worktree + NETWORK_DATA_PATH=<worktree>
 
 # CloudGrid
-cloudgrid plug                  # build + deploy (ask user first!)
+grid plug                       # build + deploy (ask user first!)
 cloudgrid secrets set atomic-content-platform KEY=val
 cloudgrid env set atomic-content-platform KEY=val
 ```
@@ -111,7 +111,7 @@ cloudgrid env set atomic-content-platform KEY=val
 
 ### Service Communication — URL Fallback
 
-`http://content-pipeline-app` doesn't resolve on host under `cloudgrid dev`. **Every** dashboard -> pipeline call needs:
+`http://content-pipeline-app` doesn't resolve on host under `grid dev`. **Every** dashboard -> pipeline call needs:
 
 ```ts
 const CONTENT_AGENT_URL = process.env.CONTENT_AGENT_URL ?? "http://localhost:5000";
@@ -180,7 +180,7 @@ Resolved at seed-time by `seed-kv.ts`. Key rules:
 
 - Always run `git branch --show-current` before committing.
 - Never touch the other developer's branch.
-- After merge to main: `cloudgrid plug` (manual, no auto-deploy).
+- After merge to main: `grid plug` (manual, no auto-deploy).
 
 ## Key Environment Variables
 
@@ -234,7 +234,9 @@ Full env var list in `docs/architecture.md`.
 29. **Video embeds need both deploy + re-seed** — dashboard writes to Git; site needs worker deploy + KV seed.
 30. **Dual-account routing is opt-in** — `cloudflare.ts` functions default to Assets account. Pass `domain` only when targeting a specific site.
 31. **Override `ad_placements: []` wipes inherited** — an override with `ad_placements: []` clears all group-level placements via `mergeAdPlacementLayers`. Only include `ads_config` in an override if you intend to change ad behavior. Tracking-only overrides must omit `ads_config` entirely.
-32. **Pipeline `.env` overrides cloudgrid-injected env** — content-pipeline loads dotenv with `override: true`, so vars in its local `.env` beat what `cloudgrid dev` injects. cloudgrid's embedded Redis rejects BullMQ's `INFO` command (`NOPERM`), so the pipeline's `.env` MUST keep `REDIS_URL=redis://localhost:6379` (a local Redis). The dashboard's enqueue against the cloudgrid Redis then fails loudly and falls back to `POST /content-generate`, which enqueues on the pipeline's own queue and waits — only the queue worker commits articles. cloudgrid also injects `PORT=3000` (collides with the dashboard) — `CONTENT_PIPELINE_PORT=5000` in the pipeline `.env` + `CONTENT_AGENT_URL=http://localhost:5000` in the dashboard `.env.local` keep them aligned.
+32. **Pipeline `.env` overrides cloudgrid-injected env** — content-pipeline loads dotenv with `override: true`, so vars in its local `.env` beat what `cloudgrid dev` injects. grid's embedded Redis rejects BullMQ's `INFO` command (`NOPERM`), so the pipeline's `.env` MUST keep `REDIS_URL=redis://localhost:6379` (a local Redis; `infra-env.ts` prefers it over any injected `QUEUE_REDIS_URL`). The dashboard's enqueue against the cloudgrid Redis then fails loudly and falls back to `POST /content-generate`, which enqueues on the pipeline's own queue and waits — only the queue worker commits articles. cloudgrid also injects `PORT=3000` (collides with the dashboard) — `CONTENT_PIPELINE_PORT=5000` in the pipeline `.env` + `CONTENT_AGENT_URL=http://localhost:5000` in the dashboard `.env.local` keep them aligned.
 33. **Grid template switch is `theme.template: grid`, NOT `theme.base`** — `theme.base` holds colour-preset ids (`classic`, `custom`) written by the wizard. Grid sites are rewritten in middleware to `src/pages/grid/*` (separate routes → separate CSS bundles); never add Grid logic to the modern pages. The `/grid` path segment is reserved on every site (modern sites 404 on `/grid/*`), so no article may use the slug `grid`.
 34. **Grid KV keys** — `network-directory`, `grid-summary:<site>:<slug>`, `grid-ext-item:<itemId>` and `grid-ext-index:<bundleId>` (Content Aggregator bundles used by Grid pills; never pruned) are written ONLY by `scripts/seed-grid.ts` (network repo `sync-grid.yml`). The source id `aggregator` is reserved: external stories live at `/story/aggregator/<title-slug>-<itemId>` and their summaries at `grid-summaries/aggregator/<itemId>.md`. Summary files `grid-summaries/<site>/<slug>.md` are written ONLY by the content-pipeline (`/grid-summaries/*`); the dashboard edits go through the pipeline so the source body hash stays correct.
 35. **Text generation = provider chain** — `lib/ai.ts` `generateContent()` tries Anthropic SDK (`claude-sonnet-5-5`) → CloudGrid gateway (`claude-sonnet` alias) → OpenAI (`gpt-6-luna`) per call, with no sticky state. Record costs with the returned `model`, never a hard-coded id. Model ids live in `lib/models.ts` (tests that mock `ai.js` can still import them). Generators wrap calls in `generateArticleWithChecks()`, which retries once on unparseable JSON or leaked prompt jargon ("the brief").
+36. **Article redirects** — an article's `redirect_from:` (old slugs) becomes KV `redirect:<siteId>:<old>` → `{ to }` at seed time; the article route and Grid story route 301 old slugs. Renamed slugs need a re-seed before the redirect works; `backfill-mongo` now removes article records whose file is gone. New slugs are made brand-safe in the pipeline (`lib/brand-safety.ts`).
+37. **`cloudgrid.yaml` resources: stay on `requires:` for now** — the CLI is now `grid` (v0.22+). We keep the v1 list `requires: [redis: private, mongodb]` (deprecated, supported). Do NOT migrate to `needs:` until CloudGrid offers a private Redis there: the CLI converts `needs: cache/queue: true` to the grid-SHARED Redis (`privateRedis` is lost), which rejects BullMQ's `INFO` (NOPERM, see #32) and would strand queued jobs. Never list `ai` under `requires:` (deploy failed: "Unknown shared service: 'ai'") — `RUNTIME_GATEWAY_URL` is injected regardless. `needs:` facts for later: it's a map; database `true|false|pool|dedicated|external` (`true`=pool=shared Mongo), cache/kv/queue/pubsub `true|false|redis`; injects `DATABASE_MONGODB_URL`/`QUEUE_REDIS_URL`/`AI_GATEWAY_URL`. Code reads connection URLs only via `src/lib/infra-env.ts` (accepts v1 and v2 names).

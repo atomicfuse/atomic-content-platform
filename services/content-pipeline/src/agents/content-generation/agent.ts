@@ -32,6 +32,7 @@ import { OpenAIGenerator } from "./generators/openai-generator.js";
 import { randomUUID } from "node:crypto";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
+import { brandSafeSlug } from "../../lib/brand-safety.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
 import type { Generator, GeneratorConfig } from "./generators/base-generator.js";
 
@@ -694,7 +695,8 @@ async function processItem(
     }
 
     // Step 3: Generate slug (from SEO module, then deduplicate)
-    const baseSlug = generated.slug || generateSlug(generated.title);
+    // Brand-safe before uniqueness: advertisers block ads by keywords in the URL.
+    const baseSlug = await brandSafeSlug(generated.slug || generateSlug(generated.title), generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
     // Step 4: Default image — real image generated async by n8n after commit

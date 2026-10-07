@@ -160,6 +160,23 @@ describe("runContentGeneration", () => {
     expect(result.results[0]!.path).toContain("coolnews.dev/articles/generated-title.md");
   });
 
+  it("saves the article under a brand-safe slug when the AI's slug has unsafe words", async () => {
+    const { generateContent } = await import("../lib/ai.js");
+    const article = {
+      title: "Teens and Body Image", slug: "eating-disorders-teens", description: "A description.", type: "standard", tags: ["AI", "tech"],
+      body: "This is a generated article body with enough words to pass the minimum word count validation check that requires at least fifty words in the article body content before it can be accepted by the content generation pipeline quality gate for further processing and final publication on the target site.",
+    };
+    vi.mocked(generateContent)
+      .mockResolvedValueOnce({ text: JSON.stringify(article), usage: { inputTokens: 1, outputTokens: 1, estimated: false } } as never)
+      // AI reviewer on the original slug, the rewrite, then the reviewer on the rewrite.
+      .mockResolvedValueOnce({ text: '{"safe": false, "words": ["eating", "disorders"]}', usage: { inputTokens: 1, outputTokens: 1, estimated: false } } as never)
+      .mockResolvedValueOnce({ text: "teen-wellness-and-body-image", usage: { inputTokens: 1, outputTokens: 1, estimated: false } } as never)
+      .mockResolvedValueOnce({ text: '{"safe": true, "words": []}', usage: { inputTokens: 1, outputTokens: 1, estimated: false } } as never);
+    const result = await runContentGeneration({ siteDomain: "coolnews.dev" }, config);
+    expect(result.results[0]!.slug).toBe("teen-wellness-and-body-image");
+    expect(result.results[0]!.path).toContain("coolnews.dev/articles/teen-wellness-and-body-image.md");
+  });
+
   it("returns skipped when all source URLs already exist", async () => {
     const { readdir, readFile } = await import("node:fs/promises");
 

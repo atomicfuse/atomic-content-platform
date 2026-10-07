@@ -26,7 +26,7 @@ Full architecture reference for the Atomic Content Network Platform. For rules, 
 - Plain Node HTTP server, TypeScript.
 - **Local port:** `5000` (per `cloudgrid dev`).
 - Endpoints: `GET /health`, `POST /content-generate`, `GET /scheduled-publish` (accepts `?force=true`).
-- Provider chain per call (`lib/ai.ts`): Anthropic SDK (`ANTHROPIC_API_KEY`) → CloudGrid AI Gateway via `@cloudgrid-io/runtime` (`runtime.ai.chat`, needs `requires: - ai` in `cloudgrid.yaml`) → OpenAI.
+- Provider chain per call (`lib/ai.ts`): Anthropic SDK (`ANTHROPIC_API_KEY`) → CloudGrid AI Gateway via `@cloudgrid-io/runtime` (`runtime.ai.chat`; the platform injects `RUNTIME_GATEWAY_URL` — never list `ai` under `requires:`) → OpenAI.
 
 ### CloudGrid
 
