@@ -17,14 +17,17 @@ To convert an existing site instead: **Site Settings → Theme → Template → 
 - **Also include / Never include** override the vertical rule for single sites. Sites with no vertical (e.g. hiddenstorydaily) only appear through "Also include".
 - Each source contributes its newest **Articles per source site** (default 10). **Maximum age** can hide older stories.
 - **Pinned** stories (Grid tab → Stories → Pin) always show first until their end date.
+- **Hide** (Grid tab → Stories) removes one story from this site: from the feed and its story page (which returns "not found"). Hiding a pinned story also unpins it. Hidden stories are listed under the table (**Hidden from this site**) with **Unhide**. Works for network and aggregator stories, and only affects this Grid site.
 
 ## Aggregator bundles
-A pill can also pull stories straight from the **Content Aggregator**: tick one or more **Aggregator bundles** on the pill (Grid tab → Topic pills). A bundle not ticked on any pill is not shown.
+A pill can also pull stories straight from the **Content Aggregator**: add one or more **Bundles** to the pill (Grid tab → Topic pills → **+ Add bundle**). A bundle not added to any pill is not shown.
 - Only articles with an image are used (videos, trends and imageless items are skipped). If one of our network sites already rewrote the same story, only the network version is shown.
 - **Stories per bundle** (default 20) is the bundle equivalent of "Articles per source site". **Maximum age** and **Pinned** work the same way.
 - **Blocked categories**: aggregator categories (e.g. "War and Conflicts") whose stories never appear on this site — in the feed or on story pages. A story is hidden if *any* of its categories is blocked, so blocking a main category also blocks its subcategories.
+- **Blocked publishers**: type a website (or paste any link from it) to block every aggregator story from that publisher and its subdomains, whatever bundle it comes from. E.g. `thetruthseeker.co.uk`.
 - Bundles refresh **hourly**. Once picked up, a story stays on the site — the aggregator's own expiry does not remove it; newer stories push it down the feed.
 - In Grid → Stories, aggregator stories show an **External · <publisher>** badge.
+- Cards show the publisher's domain (e.g. cnn.com) with its real favicon. Each publisher's icon is fetched once and stored on our own storage, so visitors never load it from a third party; a publisher with no icon gets a letter badge. New publishers get their icon on the next hourly sync.
 
 ## Story pages
 Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab, with UTM tags unless turned off).

@@ -80,3 +80,23 @@ describe('aggregator fields', () => {
     expect(normalizeGridConfig({ topics: [{ label: 'X', verticals: [], bundles: ['b'] }] }).topics).toHaveLength(1);
   });
 });
+
+describe('hidden stories and blocked publisher domains', () => {
+  it('default to empty lists', () => {
+    const g = normalizeGridConfig({});
+    expect(g.hidden_stories).toEqual([]);
+    expect(g.blocked_domains).toEqual([]);
+  });
+  it('keeps valid hidden stories (with optional title) and drops junk', () => {
+    const g = normalizeGridConfig({ hidden_stories: [
+      { site: ' aggregator ', slug: 'x-6ac4931364df7692b392bfce', title: 'Teachers' }, { site: 'a', slug: '' }, null, { site: 'b', slug: 's' },
+    ] as never });
+    expect(g.hidden_stories).toEqual([
+      { site: 'aggregator', slug: 'x-6ac4931364df7692b392bfce', title: 'Teachers' }, { site: 'b', slug: 's' },
+    ]);
+  });
+  it('reduces typed URLs to bare lowercase domains, deduped', () => {
+    const g = normalizeGridConfig({ blocked_domains: ['https://www.TheTruthSeeker.co.uk/some/path?x=1', 'thetruthseeker.co.uk', ' cnn.com ', 'not a domain', ''] });
+    expect(g.blocked_domains).toEqual(['thetruthseeker.co.uk', 'cnn.com']);
+  });
+});

@@ -26,6 +26,13 @@ export interface GridPin {
     /** Inclusive expiry date, YYYY-MM-DD. */
     until?: string | null;
 }
+/** A story removed from this Grid site (feed + story page). Aggregator stories match by item id. */
+export interface GridHiddenStory {
+    site: string;
+    slug: string;
+    /** For the dashboard's Hidden list only. */
+    title?: string;
+}
 /** `grid` config section as written in org/group/override/site YAML. */
 export interface GridConfig {
     topics?: GridTopic[];
@@ -44,6 +51,10 @@ export interface GridConfig {
     /** Aggregator category names (tier-1 or sub) whose stories never show on this site (case-insensitive). */
     blocked_categories?: string[];
     per_bundle_limit?: number;
+    /** Stories removed from this site one by one. */
+    hidden_stories?: GridHiddenStory[];
+    /** Publisher domains (and their subdomains) whose aggregator stories never show on this site. */
+    blocked_domains?: string[];
 }
 /** Fully-resolved `grid` section (every field present). */
 export interface ResolvedGridConfig {
@@ -62,6 +73,8 @@ export interface ResolvedGridConfig {
     external_story_mode: GridExternalStoryMode;
     blocked_categories: string[];
     per_bundle_limit: number;
+    hidden_stories: GridHiddenStory[];
+    blocked_domains: string[];
 }
 /** Allowed values for each card-look option (single source for validation + dashboard). */
 export declare const GRID_CARD_OPTIONS: {
@@ -141,6 +154,8 @@ export interface GridPoolItem {
     kind?: "network" | "external";
     /** Publisher name for external stories. */
     sourceName?: string;
+    /** Publisher favicon path for external stories, when the sync stored one. */
+    favicon?: string;
     /** Present only when /api/pool is called with `summaries=1`. */
     summary?: {
         status: GridSummaryStatus;
@@ -192,6 +207,8 @@ export interface ExternalIndexEntry {
     publishedAt: string;
     /** Aggregator category names (tier-1 + sub) — for blocked_categories. Absent on entries synced before 2026-10-07. */
     categories?: string[];
+    /** Publisher favicon path (R2, via /aggregator/assets/favicons/…). Absent → letter badge. */
+    favicon?: string;
 }
 /** Value of `grid-ext-index:<bundleId>` — newest first, max 300 (written by scripts/seed-grid.ts). */
 export interface ExternalBundleIndex {

@@ -67,3 +67,25 @@ describe("GridSettingsForm — aggregator settings", () => {
     expect(screen.getByText("Gone (missing)")).toBeInTheDocument();
   });
 });
+
+describe("GridSettingsForm — blocked publishers", () => {
+  it("adds a pasted link as a bare domain", async () => {
+    const onChange = vi.fn();
+    render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} />);
+    await userEvent.type(screen.getByLabelText("Block a publisher"), "https://www.TheTruthSeeker.co.uk/article/123{Enter}");
+    expect(onChange).toHaveBeenLastCalledWith({ blocked_domains: ["thetruthseeker.co.uk"] });
+  });
+  it("rejects text that isn't a domain, with a message", async () => {
+    const onChange = vi.fn();
+    render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} />);
+    await userEvent.type(screen.getByLabelText("Block a publisher"), "not a site{Enter}");
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText(/doesn't look like a website/i)).toBeInTheDocument();
+  });
+  it("lists blocked domains and removes one (empty list → key removed)", async () => {
+    const onChange = vi.fn();
+    render(<GridSettingsForm value={{ blocked_domains: ["x.com"] }} onChange={onChange} sites={[]} verticals={[]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Unblock x.com" }));
+    expect(onChange).toHaveBeenLastCalledWith({});
+  });
+});

@@ -61,3 +61,16 @@ describe('resolveExternalRequest — redirect keeps the query string', () => {
     });
   });
 });
+
+describe('resolveExternalRequest — hidden stories and blocked domains', () => {
+  const rec = { id: ID, slug: 'batman-paused', sourceName: 'thetruthseeker.co.uk' } as ExternalStoryRecord;
+  it('404s a story from a blocked publisher domain', () => {
+    expect(resolveExternalRequest(`batman-paused-${ID}`, rec, [], '', { blockedDomains: ['thetruthseeker.co.uk'] }).kind).toBe('not_found');
+  });
+  it('404s a hidden story (matched by item id)', () => {
+    expect(resolveExternalRequest(`batman-paused-${ID}`, rec, [], '', { hidden: [{ site: 'aggregator', slug: `anything-${ID}` }] }).kind).toBe('not_found');
+  });
+  it('serves it otherwise', () => {
+    expect(resolveExternalRequest(`batman-paused-${ID}`, rec, [], '', { blockedDomains: ['cnn.com'], hidden: [] }).kind).toBe('ok');
+  });
+});

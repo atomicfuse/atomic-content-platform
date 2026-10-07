@@ -72,3 +72,38 @@ describe('syncBundles — later rewrites and bad items', () => {
     expect(out.entries.map((e) => e.key).sort()).toEqual(['grid-ext-index:b', 'grid-ext-item:good']);
   });
 });
+
+describe('syncBundles — publisher favicons', () => {
+  const indexOf = (out: { entries: Array<{ key: string; value: string }> }) =>
+    JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value) as { items: Array<{ id: string; favicon?: string }> };
+  const withSource = (id: string, url: string): AggregatorItem => ({ ...art(id), url });
+
+  it('adds the favicon path to index entries whose publisher has one', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [withSource('a', 'https://www.cnn.com/x'), withSource('c', 'https://nothing.com/y')],
+      readIndex: async () => null, now: () => NOW,
+      favicons: async (domains) => new Map(domains.filter((d) => d === 'cnn.com').map((d) => [d, `/fav/${d}.png`])),
+    });
+    const items = indexOf(out).items;
+    expect(items.find((i) => i.id === 'a')!.favicon).toBe('/fav/cnn.com.png');
+    expect(items.find((i) => i.id === 'c')).not.toHaveProperty('favicon');
+  });
+
+  it('rewrites an otherwise unchanged index when a favicon becomes available for old entries', async () => {
+    const existing = { bundleId: 'b', name: 'n', updatedAt: 'u', items: [{ id: 'old', slug: 's', title: 't', description: '', imageUrl: 'https://i', sourceName: 'cnn.com', publishedAt: '2026-10-01T00:00:00Z' }] };
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [], readIndex: async () => existing, now: () => NOW,
+      favicons: async () => new Map([['cnn.com', '/fav/cnn.com.png']]),
+    });
+    expect(indexOf(out).items[0]!.favicon).toBe('/fav/cnn.com.png');
+  });
+
+  it('still syncs the bundle when favicon lookup fails', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [art('a')], readIndex: async () => null, now: () => NOW,
+      favicons: async () => { throw new Error('r2 down'); },
+    });
+    expect(out.failed).toEqual([]);
+    expect(indexOf(out).items[0]).not.toHaveProperty('favicon');
+  });
+});

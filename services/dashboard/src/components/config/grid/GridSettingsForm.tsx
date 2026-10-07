@@ -5,6 +5,7 @@ import { TopicsEditor } from "./TopicsEditor";
 import { SiteMultiPicker } from "./SiteMultiPicker";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { categoryOptions } from "./categoryOptions";
+import { DomainBlocklist } from "./DomainBlocklist";
 import type { CategoryItem } from "@/lib/reference-data";
 
 interface GridSettingsFormProps {
@@ -116,6 +117,14 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
           onChange={(v): void => set("exclude_sites", v)}
           options={sites}
         />
+      </section>
+
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Blocked publishers</h4>
+        <p className="text-xs text-[var(--text-muted)]">
+          Aggregator stories from these websites (and their subdomains) never appear on this site, whatever bundle they come from.
+        </p>
+        <DomainBlocklist value={value.blocked_domains ?? []} onChange={(v): void => set("blocked_domains", v.length ? v : undefined)} />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">

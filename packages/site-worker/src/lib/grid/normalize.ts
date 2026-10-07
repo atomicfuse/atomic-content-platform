@@ -1,5 +1,5 @@
 import type {
-  GridCardConfig, GridConfig, GridPin, ResolvedGridCardConfig,
+  GridCardConfig, GridConfig, GridHiddenStory, GridPin, ResolvedGridCardConfig,
   ResolvedGridConfig, ResolvedGridTopic,
 } from '@atomic-platform/shared-types';
 
@@ -36,6 +36,8 @@ const GRID_DEFAULTS: ResolvedGridConfig = {
   external_story_mode: 'what_it_covers',
   blocked_categories: [],
   per_bundle_limit: 20,
+  hidden_stories: [],
+  blocked_domains: [],
 };
 
 export const GRID_CARD_DEFAULTS: ResolvedGridCardConfig = {
@@ -101,6 +103,36 @@ function normalizePins(value: unknown): GridPin[] {
   return pins;
 }
 
+function normalizeHiddenStories(value: unknown): GridHiddenStory[] {
+  if (!Array.isArray(value)) return [];
+  const out: GridHiddenStory[] = [];
+  for (const raw of value) {
+    const h = (raw ?? {}) as { site?: unknown; slug?: unknown; title?: unknown };
+    if (typeof h.site !== 'string' || !h.site.trim() || typeof h.slug !== 'string' || !h.slug.trim()) continue;
+    const title = typeof h.title === 'string' && h.title.trim() ? h.title.trim() : undefined;
+    out.push({ site: h.site.trim(), slug: h.slug.trim(), ...(title ? { title } : {}) });
+  }
+  return out;
+}
+
+const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/** "https://www.X.com/path" → "x.com". Null when the input isn't a domain. */
+export function toBareDomain(input: string): string | null {
+  const host = input.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#:]/)[0]!.replace(/^www\./, '');
+  return DOMAIN_RE.test(host) ? host : null;
+}
+
+function normalizeDomains(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out = new Set<string>();
+  for (const raw of value) {
+    const d = typeof raw === 'string' ? toBareDomain(raw) : null;
+    if (d) out.add(d);
+  }
+  return [...out];
+}
+
 /**
  * Resolves a `grid` section to a fully-populated config, clamping out-of-range values.
  * Idempotent: used at seed time and again at runtime (the `??=` KV-evolution safety net).
@@ -127,6 +159,8 @@ export function normalizeGridConfig(input: GridConfig | undefined): ResolvedGrid
     external_story_mode: g.external_story_mode === 'ai_summary' ? 'ai_summary' : 'what_it_covers',
     blocked_categories: stringList(g.blocked_categories),
     per_bundle_limit: clampInt(g.per_bundle_limit, 1, 100, GRID_DEFAULTS.per_bundle_limit),
+    hidden_stories: normalizeHiddenStories(g.hidden_stories),
+    blocked_domains: normalizeDomains(g.blocked_domains),
   };
 }
 

@@ -1,6 +1,6 @@
-import type { ExternalStoryRecord } from '@atomic-platform/shared-types';
+import type { ExternalStoryRecord, GridHiddenStory } from '@atomic-platform/shared-types';
 import { AGGREGATOR_SOURCE_ID } from '../kv-schema';
-import { isCategoryBlocked } from './feed';
+import { isCategoryBlocked, isDomainBlocked, isStoryHidden } from './feed';
 
 /** "<title-slug>-<24-hex item id>" — anything else is rejected before any KV read. */
 const SLUG_RE = /^([a-z0-9-]*?)-?([0-9a-f]{24})$/;
@@ -18,7 +18,8 @@ export function externalStoryPath(r: Pick<ExternalStoryRecord, 'slug' | 'id'>): 
 
 /**
  * What the external story route should do for a URL segment and the record found for its id.
- * Stories in a category the site blocks are 404 (spec D5, as revised: never shown on this site).
+ * Stories in a category or from a publisher domain the site blocks, and stories the site hid, are 404
+ * (never shown on this site).
  */
 export function resolveExternalRequest(
   param: string,
@@ -26,10 +27,13 @@ export function resolveExternalRequest(
   blockedCategories: readonly string[] = [],
   /** Request query string ("?…") — kept on the 301 so ?_atl_site (staging preview) and UTM tags survive. */
   search = '',
+  blocked: { blockedDomains?: readonly string[]; hidden?: readonly GridHiddenStory[] } = {},
 ): { kind: 'ok'; record: ExternalStoryRecord } | { kind: 'redirect'; location: string } | { kind: 'not_found' } {
   const parsed = parseExternalSlug(param);
   if (!parsed || !record || record.id !== parsed.itemId) return { kind: 'not_found' };
   if (isCategoryBlocked(record.categories, blockedCategories)) return { kind: 'not_found' };
+  if (isDomainBlocked(record.sourceName, blocked.blockedDomains ?? [])) return { kind: 'not_found' };
+  if (isStoryHidden(AGGREGATOR_SOURCE_ID, record.id, blocked.hidden ?? [])) return { kind: 'not_found' };
   if (parsed.slugPart !== record.slug) return { kind: 'redirect', location: `${externalStoryPath(record)}${search}` };
   return { kind: 'ok', record };
 }

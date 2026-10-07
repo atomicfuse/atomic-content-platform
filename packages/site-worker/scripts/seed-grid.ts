@@ -4,6 +4,8 @@
  *   grid-summary:<siteId>:<slug>   ← grid-summaries/<siteId>/<slug>.md (changed files, or all with --all-summaries)
  *   grid-ext-item:<itemId>         ← Content Aggregator bundles used by Grid pills (every run)
  *   grid-ext-index:<bundleId>      ← same; merged with the existing index, never pruned
+ * Also stores publisher favicons in R2 (aggregator/assets/favicons/<domain>.png, once per domain — see
+ * scripts/lib/grid-favicons.ts). Skipped with --local. R2_BUCKET overrides the bucket (default atl-assets-prod).
  * Env (CI): NETWORK_DATA_PATH, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, KV_NAMESPACE_ID_PROD, KV_NAMESPACE_ID_STAGING,
  *           CONTENT_API_BASE_URL (aggregator; falls back to CONTENT_AGGREGATOR_URL, then the default)
  * Env (--local): NETWORK_DATA_PATH, KV_NAMESPACE_ID (default: staging id — matches `pnpm dev:worker`)
@@ -18,6 +20,7 @@ import { localConfigReader, localIndexReader, restConfigReader, restIndexReader,
 import { bundleIdsFromEnvironments, readNetworkArticleFrontmatter, rewrittenIdsFromFrontmatter, syncBundles } from './lib/grid-bundles';
 import { aggregatorBase, bundleSyncExitCode, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
 import { parseSummaryFile } from './lib/grid-summary-html';
+import { createFaviconStore, r2FaviconDeps } from './lib/grid-favicons';
 import { bulkPut } from './lib/kv-bulk';
 
 const STAGING_DEFAULT = 'f6c35e1fa8c841b8b193509a3a237f7f';
@@ -77,11 +80,17 @@ async function main(): Promise<void> {
     const readIndex = local
       ? localIndexReader(process.env.KV_NAMESPACE_ID ?? STAGING_DEFAULT)
       : restIndexReader(requireEnv('CLOUDFLARE_ACCOUNT_ID'), requireEnv('CLOUDFLARE_API_TOKEN'), requireEnv('KV_NAMESPACE_ID_PROD'));
+    const favicons = local
+      ? null
+      : createFaviconStore(r2FaviconDeps(requireEnv('CLOUDFLARE_ACCOUNT_ID'), requireEnv('CLOUDFLARE_API_TOKEN'), process.env.R2_BUCKET ?? 'atl-assets-prod'));
     const { entries: bundleEntries, failed } = await syncBundles(bundleIds, await fetchBundleNames(base), rewritten, {
       fetchItems: (id) => fetchBundleItems(base, id),
       readIndex,
       now: () => new Date(),
+      ...(favicons ? { favicons: (domains: string[]) => favicons.resolve(domains) } : {}),
     });
+    // Icons are cosmetic: a failed manifest write only means some domains are re-checked next run.
+    await favicons?.save().catch((err: unknown) => console.warn('[seed-grid] favicon manifest not saved:', err instanceof Error ? err.message : err));
     kvEntries.push(...bundleEntries);
     console.log(`[seed-grid] bundles: ${bundleIds.length} (${failed.length} failed), entries: ${bundleEntries.length}`);
     // Directory + summaries are still written below; the exit code just makes a total outage visible in CI.

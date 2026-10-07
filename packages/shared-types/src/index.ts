@@ -76,6 +76,7 @@ export type {
   GridTopic,
   ResolvedGridTopic,
   GridPin,
+  GridHiddenStory,
   GridConfig,
   ResolvedGridConfig,
   GridCardConfig,

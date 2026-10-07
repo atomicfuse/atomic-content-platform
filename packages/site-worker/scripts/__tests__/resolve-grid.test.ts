@@ -43,3 +43,14 @@ describe('blocked_categories merge', () => {
     expect(mergeGridLayers([{ blocked_categories: ['A'] }, { blocked_categories: [] }]).blocked_categories).toEqual(['A']);
   });
 });
+
+describe('hidden_stories / blocked_domains merge', () => {
+  it('are list keys: an empty site list never wipes an inherited one', () => {
+    const merged = mergeGridLayers([
+      { hidden_stories: [{ site: 'a', slug: 'b' }], blocked_domains: ['x.com'] },
+      { hidden_stories: [], blocked_domains: [] },
+    ]);
+    expect(merged.hidden_stories).toEqual([{ site: 'a', slug: 'b' }]);
+    expect(merged.blocked_domains).toEqual(['x.com']);
+  });
+});

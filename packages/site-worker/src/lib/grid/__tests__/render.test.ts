@@ -78,6 +78,12 @@ describe('renderTilesHtml — external stories', () => {
     expect(html).toContain('g-card__favicon--letter" aria-hidden="true">I<');
     expect(html).toContain('data-fallback="/placeholder.svg"');
   });
+  it('shows the publisher favicon from R2 when the sync stored one', () => {
+    const ext = item('t-x1', { site: 'aggregator', kind: 'external', sourceName: 'instyle.com', favicon: '/aggregator/assets/favicons/instyle.com.png' });
+    const html = renderTilesHtml(buildTiles([ext], 0, 0), ctx());
+    expect(html).toContain('<img class="g-card__favicon" src="/aggregator/assets/favicons/instyle.com.png" width="16" height="16"');
+    expect(html).not.toContain('g-card__favicon--letter');
+  });
   it('network cards are byte-identical to before (no image fallback attribute)', () => {
     const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
     expect(html).toContain('<span class="g-card__site">scienceworld.com</span>');

@@ -6,6 +6,7 @@ export type GridStoryMode = "excerpt" | "ai_summary";
 export type GridExternalStoryMode = "what_it_covers" | "ai_summary";
 export interface GridTopicFields { label: string; slug?: string; verticals: string[]; bundles?: string[] }
 export interface GridPinFields { site: string; slug: string; until?: string | null }
+export interface GridHiddenStoryFields { site: string; slug: string; title?: string }
 export interface GridFields {
   topics?: GridTopicFields[];
   include_sites?: string[];
@@ -22,6 +23,8 @@ export interface GridFields {
   external_story_mode?: GridExternalStoryMode;
   blocked_categories?: string[];
   per_bundle_limit?: number;
+  hidden_stories?: GridHiddenStoryFields[];
+  blocked_domains?: string[];
 }
 /** A Content Aggregator bundle option for the pill editor (from /api/bundles). */
 export interface BundleOption { id: string; name: string; count: number }

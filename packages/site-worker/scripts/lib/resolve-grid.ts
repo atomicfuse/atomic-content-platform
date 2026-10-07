@@ -1,7 +1,7 @@
 import type { GridCardConfig, GridConfig } from '@atomic-platform/shared-types';
 import { normalizeGridCard, normalizeGridConfig } from '../../src/lib/grid/normalize';
 
-const ARRAY_KEYS = new Set(['topics', 'include_sites', 'exclude_sites', 'pinned', 'blocked_categories']);
+const ARRAY_KEYS = new Set(['topics', 'include_sites', 'exclude_sites', 'pinned', 'blocked_categories', 'hidden_stories', 'blocked_domains']);
 
 /**
  * Merges raw `grid` layers (org → groups → overrides → site).

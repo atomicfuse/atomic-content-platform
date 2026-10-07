@@ -19,8 +19,9 @@ describe("SourcesPreview", () => {
     );
     expect(screen.getByText("Travel (1)")).toBeInTheDocument();
     expect(screen.getByText("All only (1)")).toBeInTheDocument();
-    expect(screen.getByText(/hiddenstorydaily — no vertical matches a pill/)).toBeInTheDocument();
-    expect(screen.getByText(/muvizzcom — legacy account \(unavailable\)/)).toBeInTheDocument();
+    expect(screen.getByText("No vertical matches a pill · 1")).toBeInTheDocument();
+    expect(screen.getByText("hiddenstorydaily")).toBeInTheDocument();
+    expect(screen.getByText("Legacy account (unavailable) · 1")).toBeInTheDocument();
   });
 
   it("matches sites to pills using the worker's slugs (& / accents / duplicates)", () => {
@@ -43,5 +44,17 @@ describe("SourcesPreview", () => {
     expect(screen.getByText("Café (1)")).toBeInTheDocument();
     expect(screen.getByText("Travel (0)")).toBeInTheDocument();
     expect(screen.getByText("Travel (1)")).toBeInTheDocument();
+  });
+
+  it("shows each pill's aggregator bundles by name", () => {
+    render(
+      <SourcesPreview
+        topics={[{ label: "Celebs", verticals: [], bundles: ["b1", "gone"] }]}
+        bundles={[{ id: "b1", name: "Scoopella", count: 302 }]}
+        sources={[]}
+      />,
+    );
+    expect(screen.getByText("Scoopella")).toBeInTheDocument();
+    expect(screen.getByText("gone (missing)")).toBeInTheDocument();
   });
 });

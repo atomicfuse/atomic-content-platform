@@ -176,6 +176,33 @@ export interface BundleSyncDeps {
   fetchItems(bundleId: string): Promise<AggregatorItem[]>;
   readIndex(bundleId: string): Promise<ExternalBundleIndex | null>;
   now(): Date;
+  /** Publisher domain → favicon path for the domains that have one (scripts/lib/grid-favicons.ts). Optional. */
+  favicons?(domains: string[]): Promise<ReadonlyMap<string, string>>;
+}
+
+/**
+ * Sets each entry's favicon from `icons`, keeping the one it already had when the lookup misses
+ * (an icon is never taken away). Returns true when any entry changed.
+ */
+async function applyFavicons(
+  index: ExternalBundleIndex, existing: ExternalBundleIndex | null, lookup: BundleSyncDeps['favicons'],
+): Promise<boolean> {
+  if (!lookup) return false;
+  let icons: ReadonlyMap<string, string>;
+  try {
+    icons = await lookup([...new Set(index.items.map((e) => e.sourceName))]);
+  } catch (err) {
+    console.warn(`[seed-grid] bundle ${index.bundleId}: favicons unavailable:`, err instanceof Error ? err.message : err);
+    icons = new Map();
+  }
+  const before = new Map((existing?.items ?? []).map((e) => [e.id, e.favicon]));
+  let changed = false;
+  for (const e of index.items) {
+    const favicon = icons.get(e.sourceName) ?? e.favicon ?? before.get(e.id);
+    if (favicon) e.favicon = favicon;
+    if (favicon !== before.get(e.id)) changed = true;
+  }
+  return changed;
 }
 
 /** KV entries for every bundle. A failing bundle produces no entries, so its KV stays as it was. */
@@ -203,8 +230,9 @@ export async function syncBundles(
       }
       const existing = await deps.readIndex(bundleId);
       const index = mergeBundleIndex(existing, bundleId, names.get(bundleId) ?? '', records, now, rewritten);
-      // Nothing new and nothing dropped → leave this bundle's KV as it is.
-      if (records.length === 0 && index.items.length === (existing?.items.length ?? 0)) continue;
+      const faviconsChanged = await applyFavicons(index, existing, deps.favicons);
+      // Nothing new, nothing dropped and no new icons → leave this bundle's KV as it is.
+      if (records.length === 0 && index.items.length === (existing?.items.length ?? 0) && !faviconsChanged) continue;
       for (const r of records) {
         if (written.has(r.id)) continue; // same story in two bundles → one record
         written.add(r.id);
