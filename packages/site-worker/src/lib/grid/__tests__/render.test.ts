@@ -84,3 +84,13 @@ describe('renderTilesHtml — external stories', () => {
     expect(html).toContain('src="/sw/assets/fav.png"');
   });
 });
+
+describe('sourceNameOf', () => {
+  it('uses the publisher for external stories and the directory name for network ones', async () => {
+    const { sourceNameOf } = await import('../render');
+    expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external', sourceName: 'InStyle' }), sites)).toBe('InStyle');
+    expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external' }), sites)).toBe('Source');
+    expect(sourceNameOf(item('a'), sites)).toBe('Science World');
+    expect(sourceNameOf(item('a', { site: 'unknown' }), sites)).toBe('unknown');
+  });
+});

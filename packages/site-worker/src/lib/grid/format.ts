@@ -27,3 +27,13 @@ export function buildOutboundUrl(hostname: string, slug: string, gridHost: strin
   }
   return url.toString();
 }
+
+/** "Read full story" on the publisher's site for an aggregator story (UTM tags when enabled). */
+export function buildExternalOutboundUrl(url: string, gridHost: string, utm: boolean): string {
+  const u = new URL(url);
+  if (utm) {
+    u.searchParams.set('utm_source', gridHost);
+    u.searchParams.set('utm_medium', 'grid');
+  }
+  return u.toString();
+}

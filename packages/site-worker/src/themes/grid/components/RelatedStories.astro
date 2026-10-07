@@ -1,6 +1,7 @@
 ---
 import type { GridPoolItem, NetworkDirectorySite } from '@atomic-platform/shared-types';
 import { formatAge } from '../../../lib/grid/format';
+import { sourceNameOf } from '../../../lib/grid/render';
 interface Props { items: GridPoolItem[]; sites: ReadonlyMap<string, NetworkDirectorySite>; now: Date; heading?: string }
 const { items, sites, now, heading = 'Related stories' } = Astro.props;
 ---
@@ -11,9 +12,9 @@ const { items, sites, now, heading = 'Related stories' } = Astro.props;
       {items.map((i) => (
         <li>
           <a class="g-related__item" href={`/story/${encodeURIComponent(i.site)}/${encodeURIComponent(i.slug)}`}>
-            <small class="g-related__source">{sites.get(i.site)?.name ?? i.site} · {formatAge(i.publishDate, now)}</small>
+            <small class="g-related__source">{sourceNameOf(i, sites)} · {formatAge(i.publishDate, now)}</small>
             <span class="g-related__title">{i.title}</span>
-            <img src={i.featuredImage || '/placeholder.svg'} alt="" width="96" height="72" loading="lazy" decoding="async" />
+            <img src={i.featuredImage || '/placeholder.svg'} data-fallback="/placeholder.svg" alt="" width="96" height="72" loading="lazy" decoding="async" />
           </a>
         </li>
       ))}

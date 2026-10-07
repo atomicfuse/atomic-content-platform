@@ -45,12 +45,17 @@ function faviconHtml(site: NetworkDirectorySite | undefined, fallbackName: strin
   return `<span class="g-card__favicon g-card__favicon--letter" aria-hidden="true">${letter}</span>`;
 }
 
+/** Display name of a story's source: the publisher for aggregator stories, else the network site. */
+export function sourceNameOf(item: GridPoolItem, sites: ReadonlyMap<string, NetworkDirectorySite>): string {
+  if (item.kind === 'external') return item.sourceName || 'Source';
+  return sites.get(item.site)?.name ?? item.site;
+}
+
 /** "[favicon] Site Name · 5d" — shared by cards and the story header. */
 export function renderSourceLineHtml(item: GridPoolItem, ctx: TileRenderContext): string {
-  // External stories name the publisher (no favicon available → letter badge).
-  const external = item.kind === 'external';
-  const site = external ? undefined : ctx.sites.get(item.site);
-  const rawName = external ? (item.sourceName || 'Source') : (site?.name ?? item.site);
+  // External stories have no favicon → letter badge from the publisher name.
+  const site = item.kind === 'external' ? undefined : ctx.sites.get(item.site);
+  const rawName = sourceNameOf(item, ctx.sites);
   return `<p class="g-card__source">${faviconHtml(site, rawName)}<span class="g-card__site">${escapeHtml(rawName)}</span>`
     + `<span class="g-card__dot" aria-hidden="true">·</span><time datetime="${escapeHtml(item.publishDate)}">${escapeHtml(formatAge(item.publishDate, ctx.now))}</time></p>`;
 }
