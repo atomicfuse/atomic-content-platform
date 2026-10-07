@@ -1,0 +1,41 @@
+# Theme color fixes — 2026-10-07 12:15
+
+## Root causes
+1. ColorPickerField copied value into local text state once (useState(value)); preset changes updated the swatch only, and blurring the stale text wrote the old color back.
+2. Staging lag: separate sync-kv runs (main 58s vs staging/popstorylab 93s, both 06:04) — expected, no change.
+3. Footer Subscribe (2 rules), NewsletterBand submit and Must Reads hard-coded white text on theme colors.
+
+## Tests
+dashboard: 608 → 611 (+3 ColorPickerField; 2 verified failing before the fix). Typecheck OK.
+site-worker: 457 → 462 (+5 themeForegroundVars). Typecheck OK. 8 pre-existing |live| staging.test.ts failures, identical without these changes (hit the deployed staging worker).
+
+## Contrast audit (all dashboard presets, WCAG ratio, ✗ < 3:1)
+preset               footer btn: before→after | must-reads: before→after | footer text: before→after
+classic              17.1  → 11.6   |  17.1  → 17.1   |   6.7  →  6.7 
+ocean                17.9  →  7.4   |  17.9  → 17.9   |   7.0  →  7.0 
+slate                14.6  →  4.2   |  14.6  → 14.6   |   5.7  →  5.7 
+newsprint            19.8  →  5.9   |  19.8  → 19.8   |   8.3  →  8.3 
+editorial_black       1.0✗ →  6.0   |  17.7  → 17.7   |   6.9  →  6.9 
+warm                 17.5  →  5.3   |  17.5  → 17.5   |   6.9  →  6.9 
+botanical             1.1✗ →  6.2   |  11.9  → 11.9   |   5.5  →  5.5 
+mocha                 1.2✗ →  7.4   |  17.0  → 17.0   |   7.1  →  7.1 
+coastal              16.7  →  7.8   |  16.7  → 16.7   |   6.8  →  6.8 
+solarpunk            16.0  →  5.0   |  17.1  → 17.1   |   8.4  →  8.4 
+rose_garden           1.1✗ →  7.9   |  12.8  → 12.8   |   5.9  →  5.9 
+graphite_tech         1.0✗ →  6.7   |  19.2  → 19.2   |   7.6  →  7.6 
+mint_finance          9.7  →  5.5   |  15.2  → 15.2   |  10.8  → 10.8 
+scandi                1.1✗ → 11.4   |  17.0  → 17.0   |   6.5  →  6.5 
+bold                 17.1  →  6.5   |  17.1  → 17.1   |   6.7  →  6.7 
+midnight             17.7  →  4.8   |  17.7  → 17.7   |   6.5  →  6.5 
+carbon_editorial     19.7  →  5.9   |  18.1  → 18.1   |   7.8  →  7.8 
+forest_night         17.4  →  6.4   |  15.2  → 15.2   |   8.4  →  8.4 
+tokyo_night          14.3  →  5.7   |  16.9  → 16.9   |   7.7  →  7.7 
+stadium               1.5✗ →  4.8   |  16.2  → 16.2   |   7.5  →  7.5 
+aurora               15.2  →  5.7   |  16.7  → 16.7   |  11.1  → 11.1 
+sunset_strip          1.1✗ →  5.2   |  10.1  → 10.1   |   7.5  →  7.5 
+matrix               20.2  →  5.0   |  17.2  → 17.2   |  11.6  → 11.6 
+pink_glow            16.2  →  6.0   |  18.0  → 18.0   |  10.8  → 10.8 
+platinum_shine       18.9  → 12.7   |  16.9  → 16.9   |  13.3  → 13.3 
+art_deco_brass       19.8  →  4.9   |  18.2  → 18.2   |  11.7  → 11.7 
+
+unreadable (<3:1) combos — before: 8, after: 0  (of 78)

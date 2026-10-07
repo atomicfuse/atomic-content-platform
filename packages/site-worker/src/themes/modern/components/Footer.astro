@@ -96,7 +96,7 @@ const quickLinks = [
        preset (or org default) when missing. Stale KV configs degrade
        gracefully — they never had the gradient key set. */
     background: var(--color-footer_bg_gradient, var(--color-footer_bg, var(--color-secondary, #1a1a2e)));
-    color: var(--color-footer_text, #d1d5db);
+    color: var(--color-footer_text, var(--footer-auto-text, #d1d5db));
     margin-top: 4rem;
   }
 
@@ -133,14 +133,14 @@ const quickLinks = [
     font-family: var(--fontHeading, sans-serif);
     font-size: 1.25rem;
     font-weight: 800;
-    color: var(--color-footer_heading, #fff);
+    color: var(--color-footer_heading, var(--footer-auto-heading, #fff));
     white-space: nowrap;
   }
 
   .footer-tagline {
     font-size: 0.875rem;
     line-height: 1.6;
-    color: var(--color-footer_text, #9ca3af);
+    color: var(--color-footer_text, var(--footer-auto-muted, #9ca3af));
   }
 
   /* Headings */
@@ -148,7 +148,7 @@ const quickLinks = [
     font-family: var(--fontHeading, sans-serif);
     font-size: 0.9375rem;
     font-weight: 700;
-    color: var(--color-footer_heading, #fff);
+    color: var(--color-footer_heading, var(--footer-auto-heading, #fff));
     margin-bottom: 1rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -165,20 +165,20 @@ const quickLinks = [
   }
 
   .footer-links a {
-    color: var(--color-footer_link, #9ca3af);
+    color: var(--color-footer_link, var(--footer-auto-muted, #9ca3af));
     font-size: 0.875rem;
     text-decoration: none;
     transition: color var(--transition-fast, 150ms ease);
   }
 
   .footer-links a:hover {
-    color: var(--color-footer_link_hover, #fff);
+    color: var(--color-footer_link_hover, var(--footer-auto-link-hover, #fff));
   }
 
   /* Newsletter */
   .footer-newsletter-desc {
     font-size: 0.875rem;
-    color: var(--color-footer_text, #9ca3af);
+    color: var(--color-footer_text, var(--footer-auto-muted, #9ca3af));
     margin-bottom: 1rem;
   }
 
@@ -210,8 +210,9 @@ const quickLinks = [
 
   .footer-subscribe-btn {
     padding: 0.625rem 1.25rem;
-    background: var(--color-secondary, #1a1a2e);
-    color: #fff;
+    /* Accent = the theme's CTA / newsletter color (see dashboard label). */
+    background: var(--color-accent, #00ccff);
+    color: var(--color-accent-fg, #fff);
     border: none;
     border-radius: 0 6px 6px 0;
     font-size: 0.875rem;
@@ -222,7 +223,7 @@ const quickLinks = [
   }
 
   .footer-subscribe-btn:hover {
-    background: var(--color-accent, #00ccff);
+    filter: brightness(0.92);
   }
 
   .footer-col :global(.atl-newsletter-form) {
@@ -249,8 +250,9 @@ const quickLinks = [
   }
   .footer-col :global(.atl-newsletter-submit) {
     padding: 0.625rem 1.25rem;
-    background: var(--color-secondary, #1a1a2e);
-    color: #fff;
+    /* Accent = the theme's CTA / newsletter color (see dashboard label). */
+    background: var(--color-accent, #00ccff);
+    color: var(--color-accent-fg, #fff);
     border: none;
     border-radius: 0 6px 6px 0;
     font-size: 0.875rem;

@@ -51,3 +51,32 @@ export function readableTextColor(backgroundHex: string): typeof DARK_TEXT | typ
   if (!rgb) return LIGHT_TEXT;
   return relativeLuminance(rgb.r, rgb.g, rgb.b) > 0.179 ? DARK_TEXT : LIGHT_TEXT;
 }
+
+/** Footer text defaults per background tone. The dark set is exactly the
+ *  Footer.astro defaults that predate this helper (dark footers don't change). */
+const FOOTER_ON_DARK = { heading: '#fff', text: '#d1d5db', muted: '#9ca3af', linkHover: '#fff' };
+const FOOTER_ON_LIGHT = { heading: '#111111', text: '#374151', muted: '#4b5563', linkHover: '#111111' };
+
+/**
+ * CSS custom-property declarations for text that sits on theme-colored
+ * backgrounds. Emitted by the layouts next to the `--color-*` vars; components
+ * use them as fallbacks so explicitly configured text colors still win.
+ */
+export function themeForegroundVars(colors: Record<string, string | undefined>): string[] {
+  const secondaryBg = colors.secondary ?? '#1a1a2e';
+  const accentBg = colors.accent ?? secondaryBg;
+  const primaryBg = colors.primary ?? '#1a1a2e';
+  const mustReadsBg = colors.must_reads_bg ?? secondaryBg;
+  const footerBg = colors.footer_bg ?? secondaryBg;
+  const footer = readableTextColor(footerBg) === DARK_TEXT ? FOOTER_ON_LIGHT : FOOTER_ON_DARK;
+  return [
+    `--color-secondary-fg: ${readableTextColor(secondaryBg)};`,
+    `--color-accent-fg: ${readableTextColor(accentBg)};`,
+    `--color-primary-fg: ${readableTextColor(primaryBg)};`,
+    `--color-must_reads_bg-fg: ${readableTextColor(mustReadsBg)};`,
+    `--footer-auto-heading: ${footer.heading};`,
+    `--footer-auto-text: ${footer.text};`,
+    `--footer-auto-muted: ${footer.muted};`,
+    `--footer-auto-link-hover: ${footer.linkHover};`,
+  ];
+}
