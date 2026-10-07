@@ -84,3 +84,12 @@ describe('kv-schema key builders', () => {
     }
   });
 });
+
+describe('external (aggregator) keys', () => {
+  it('builds item, index and summary keys', async () => {
+    const { externalIndexKey, externalItemKey, AGGREGATOR_SOURCE_ID, gridSummaryKey } = await import('../kv-schema');
+    expect(externalItemKey('6ac4931364df7692b392bfcb')).toBe('grid-ext-item:6ac4931364df7692b392bfcb');
+    expect(externalIndexKey('6ac4c3d064df7692b392c02d')).toBe('grid-ext-index:6ac4c3d064df7692b392c02d');
+    expect(gridSummaryKey(AGGREGATOR_SOURCE_ID, 'abc')).toBe('grid-summary:aggregator:abc');
+  });
+});

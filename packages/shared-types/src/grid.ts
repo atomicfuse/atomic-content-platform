@@ -1,5 +1,8 @@
-/** Story text mode for a Grid site's story pages. */
+/** Story text mode for a Grid site's story pages (network stories). */
 export type GridStoryMode = "excerpt" | "ai_summary";
+
+/** Story text mode for Content Aggregator (external) stories. */
+export type GridExternalStoryMode = "what_it_covers" | "ai_summary";
 
 /** A topic pill as written in config. */
 export interface GridTopic {
@@ -8,6 +11,8 @@ export interface GridTopic {
   slug?: string;
   /** Vertical names (dashboard-index `vertical`) whose sites feed this pill. */
   verticals: string[];
+  /** Content Aggregator bundle ids whose stories feed this pill. */
+  bundles?: string[];
 }
 
 /** A topic pill after normalisation (slug always present, unique). */
@@ -15,6 +20,7 @@ export interface ResolvedGridTopic {
   label: string;
   slug: string;
   verticals: string[];
+  bundles: string[];
 }
 
 /** A story pinned to the top of a Grid feed. */
@@ -39,6 +45,10 @@ export interface GridConfig {
   show_intro?: boolean;
   outbound_utm?: boolean;
   pinned?: GridPin[];
+  external_story_mode?: GridExternalStoryMode;
+  /** Aggregator source names never shown on this site (case-insensitive). */
+  blocked_sources?: string[];
+  per_bundle_limit?: number;
 }
 
 /** Fully-resolved `grid` section (every field present). */
@@ -55,6 +65,9 @@ export interface ResolvedGridConfig {
   show_intro: boolean;
   outbound_utm: boolean;
   pinned: GridPin[];
+  external_story_mode: GridExternalStoryMode;
+  blocked_sources: string[];
+  per_bundle_limit: number;
 }
 
 /** Allowed values for each card-look option (single source for validation + dashboard). */
@@ -94,6 +107,9 @@ export const GRID_DEFAULTS: ResolvedGridConfig = {
   show_intro: false,
   outbound_utm: true,
   pinned: [],
+  external_story_mode: "what_it_covers",
+  blocked_sources: [],
+  per_bundle_limit: 20,
 };
 
 /** Seed-time and runtime defaults for `theme.card` (dazzr-like). */
@@ -133,6 +149,8 @@ export interface GridSummaryRecord {
   model: string;
   edited: boolean;
   sourceChanged: boolean;
+  /** Shown on the story page regardless of the site's story mode. */
+  pinned?: boolean;
 }
 
 /** Summary state shown in the dashboard Stories tab. */
@@ -167,8 +185,12 @@ export interface GridPoolItem {
   description?: string;
   pills: string[];
   pinned: boolean;
+  /** Absent on network stories; "external" for Content Aggregator stories. */
+  kind?: "network" | "external";
+  /** Publisher name for external stories. */
+  sourceName?: string;
   /** Present only when /api/pool is called with `summaries=1`. */
-  summary?: { status: GridSummaryStatus; generatedAt?: string };
+  summary?: { status: GridSummaryStatus; generatedAt?: string; pinned?: boolean };
 }
 
 /** A configured pin that is not currently shown. */
@@ -186,4 +208,42 @@ export interface GridPoolResponse {
   sources: GridSourceStatus[];
   items: GridPoolItem[];
   inactivePins: GridInactivePin[];
+}
+
+/** One Content Aggregator story (`grid-ext-item:<id>`, written by scripts/seed-grid.ts, permanent). */
+export interface ExternalStoryRecord {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  /** Publisher URL ("Read full story"). */
+  url: string;
+  sourceName: string;
+  author: string | null;
+  publishedAt: string;
+  categories: string[];
+  tags: string[];
+  whatItCovers: string;
+  whyItMatters: string;
+  syncedAt: string;
+}
+
+/** Feed fields of an external story (one entry of `grid-ext-index:<bundleId>`). */
+export interface ExternalIndexEntry {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  sourceName: string;
+  publishedAt: string;
+}
+
+/** Value of `grid-ext-index:<bundleId>` — newest first, max 300 (written by scripts/seed-grid.ts). */
+export interface ExternalBundleIndex {
+  bundleId: string;
+  name: string;
+  updatedAt: string;
+  items: ExternalIndexEntry[];
 }
