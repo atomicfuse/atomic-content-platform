@@ -124,10 +124,20 @@ function stripWords(slug: string, words: readonly string[]): string {
   return normalizeSlug(slug).split("-").filter((t) => t && !drop.has(t) && !drop.has(t.replace(/e?s$/, ""))).join("-");
 }
 
+const REWRITE_ATTEMPTS = 3;
+const FALLBACK_STOP_WORDS = new Set(["a", "an", "the", "in", "on", "at", "to", "for", "and", "is", "are", "with"]);
+
+/** Last resort: the article title as a slug, minus flagged words and filler. Null when too short. */
+function titleSlug(title: string, flagged: readonly string[]): string | null {
+  const words = stripWords(stripUnsafeTerms(normalizeSlug(title)), flagged).split("-").filter((w) => w && !FALLBACK_STOP_WORDS.has(w));
+  return words.length >= 3 ? normalizeSlug(words.join("-")) : null;
+}
+
 /**
  * A brand-safe version of `slug`, checked by two layers: the word list (GARM floor + tone) and, when
  * given, an AI reviewer that judges it the way IAS/DoubleVerify would. Unchanged when both pass;
- * otherwise one AI rewrite (kept only if both layers pass it), else the flagged words removed.
+ * otherwise up to 3 AI rewrites (each told everything flagged so far, kept only if both layers pass
+ * it), else the article title minus the flagged words, else the slug minus them.
  * Never empty, never blocks the article.
  */
 export async function makeSlugBrandSafe(
@@ -138,18 +148,28 @@ export async function makeSlugBrandSafe(
   const aiWords = verdict && !verdict.safe ? verdict.words : [];
   const hits: BrandSafetyHit[] = [...listHits, ...aiWords.map((term) => ({ category: "ai_review" as const, term }))];
   if (listHits.length === 0 && !(verdict && !verdict.safe)) return { slug, changed: false, hits: [] };
-  const terms = [...new Set(hits.map((h) => h.term))];
-  try {
-    const candidate = normalizeSlug(await rewrite(slug, terms, title));
-    if (candidate.split("-").filter(Boolean).length >= 2 && findUnsafeSlugTerms(candidate).length === 0) {
-      const second = await askJudge(judge, candidate, title);
-      if (!second || second.safe) return { slug: candidate, changed: true, hits };
+
+  const flagged = new Set(hits.map((h) => h.term));
+  for (let attempt = 0; attempt < REWRITE_ATTEMPTS; attempt++) {
+    let candidate: string;
+    try {
+      candidate = normalizeSlug(await rewrite(slug, [...flagged], title));
+    } catch (err) {
+      console.warn("[brand-safety] slug rewrite failed:", err instanceof Error ? err.message : err);
+      break;
     }
-  } catch (err) {
-    console.warn("[brand-safety] slug rewrite failed:", err instanceof Error ? err.message : err);
+    if (candidate.split("-").filter(Boolean).length < 2) continue;
+    const candidateHits = findUnsafeSlugTerms(candidate);
+    if (candidateHits.length > 0) { candidateHits.forEach((h) => flagged.add(h.term)); continue; }
+    const second = await askJudge(judge, candidate, title);
+    if (!second || second.safe) return { slug: candidate, changed: true, hits };
+    second.words.forEach((w) => flagged.add(w));
   }
-  const stripped = stripWords(stripUnsafeTerms(slug), aiWords);
-  const fallback = stripped.split("-").filter(Boolean).length >= 2 ? stripped : `${stripped ? `${stripped}-` : ""}latest-story`;
+
+  const fromTitle = titleSlug(title, [...flagged]);
+  if (fromTitle && findUnsafeSlugTerms(fromTitle).length === 0) return { slug: fromTitle, changed: true, hits };
+  const stripped = stripWords(stripUnsafeTerms(slug), [...flagged]);
+  const fallback = stripped.split("-").filter(Boolean).length >= 2 ? stripped : `${stripped ? `${stripped}-` : ""}story-update`;
   return { slug: fallback, changed: true, hits };
 }
 

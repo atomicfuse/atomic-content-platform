@@ -96,7 +96,7 @@ describe("AI reviewer (second layer)", () => {
   it("rejects a rewrite the reviewer still flags, falling back to stripping", async () => {
     const judge = vi.fn()
       .mockResolvedValueOnce({ safe: false, words: ["slammed"] })
-      .mockResolvedValueOnce({ safe: false, words: ["roasted"] });
+      .mockResolvedValue({ safe: false, words: ["roasted"] }); // every rewrite attempt is rejected
     const out = await makeSlugBrandSafe("star-slammed-by-critics-again", "t", async () => "star-roasted-by-critics", judge);
     expect(out.slug).toBe("star-by-critics-again");
   });
@@ -109,5 +109,24 @@ describe("parseJudgeVerdict", () => {
   });
   it("returns null for junk (no opinion)", () => {
     expect(parseJudgeVerdict("I think it's fine")).toBeNull();
+  });
+});
+
+describe("makeSlugBrandSafe — retries and a title-based fallback", () => {
+  it("retries the rewrite (up to 3), telling the AI what the last attempt got flagged for", async () => {
+    const judge = vi.fn()
+      .mockResolvedValueOnce({ safe: false, words: ["conspiracies"] }) // original
+      .mockResolvedValueOnce({ safe: false, words: ["radical"] })      // attempt 1 (only the reviewer catches it)
+      .mockResolvedValueOnce({ safe: true, words: [] });               // attempt 2
+    const rewrite = vi.fn()
+      .mockResolvedValueOnce("covid-radical-groups-and-the-military")
+      .mockResolvedValueOnce("covid-misinformation-and-the-military");
+    const out = await makeSlugBrandSafe("covid-19-conspiracies-extremism-military", "COVID-19 conspiracies and the military", rewrite, judge);
+    expect(out.slug).toBe("covid-misinformation-and-the-military");
+    expect(rewrite.mock.calls[1]![1]).toEqual(expect.arrayContaining(["conspiracies", "radical"]));
+  });
+  it("falls back to the article title minus flagged words — never a bare 'latest-story'", async () => {
+    const out = await makeSlugBrandSafe("murder-trial", "Inside the Murder Trial of the Decade in Ohio", async () => "murder-case", undefined);
+    expect(out.slug).toBe("inside-trial-of-decade-ohio");
   });
 });
