@@ -83,7 +83,7 @@ export function staleArticlesFilter(domain: string, branch: string, slugs: reado
   return slugs.length === 0 ? null : { domain, branch, slug: { $nin: [...slugs] } };
 }
 
-async function backfillArticles(
+export async function backfillArticles(
   db: Db,
   octokit: Octokit,
   repo: string,
@@ -95,6 +95,9 @@ async function backfillArticles(
 
   for (const site of sites) {
     try {
+      // The tree cache never expires: a push since it was filled (e.g. a slug rename) would otherwise
+      // be listed from the stale tree — and the stale-record cleanup below would act on that list.
+      clearTreeCache();
       const branches = new Set<string>();
       branches.add(site.branch); // staging branch
       branches.add("main");
