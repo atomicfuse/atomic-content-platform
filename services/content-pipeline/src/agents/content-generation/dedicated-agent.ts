@@ -22,6 +22,7 @@ import { randomUUID } from "node:crypto";
 import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateContent } from "../../lib/ai.js";
+import { brandSafeSlug } from "../../lib/brand-safety.js";
 import { DEFAULT_CLAUDE_MODEL } from "../../lib/models.js";
 import { writeArticleBatch } from "../../lib/writer.js";
 import { upsertArticleMeta } from "../../lib/db/articles.js";
@@ -178,7 +179,11 @@ export async function runDedicatedGeneration(
   }
 
   // Step 5: Resolve unique slug
-  const baseSlug = generated.slug || generated.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  // Brand-safe before uniqueness: advertisers block ads by keywords in the URL.
+  const baseSlug = await brandSafeSlug(
+    generated.slug || generated.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    generated.title,
+  );
   let slug: string;
   try {
     slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);

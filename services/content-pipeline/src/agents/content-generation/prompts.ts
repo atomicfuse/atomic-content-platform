@@ -3,6 +3,7 @@
  */
 
 import type { SiteBrief } from "../../types.js";
+import { SLUG_BRAND_SAFETY_RULE } from "../../lib/brand-safety.js";
 import type { ParsedContent } from "./rss.js";
 
 export interface GeneratedArticle {
@@ -60,7 +61,7 @@ The site has these main topics: ${brief.topics.join(", ")}
 Respond ONLY with a valid JSON object (no markdown fences). Schema:
 {
   "title": "string — compelling headline for the site",
-  "slug": "string — URL-safe kebab-case slug (lowercase, hyphens only)",
+  "slug": "string — URL-safe kebab-case slug (lowercase, hyphens only), ${SLUG_BRAND_SAFETY_RULE}",
   "description": "string — 1-2 sentence SEO meta description",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST tag must be a site topic (${brief.topics.join(", ")}), then 2-4 additional tags"],

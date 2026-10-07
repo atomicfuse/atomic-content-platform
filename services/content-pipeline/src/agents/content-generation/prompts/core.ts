@@ -13,6 +13,7 @@
 import type { SiteBrief } from "../../../types.js";
 import type { PromptContext } from "../generators/base-generator.js";
 import type { WordCountTarget } from "../../word-count.js";
+import { SLUG_BRAND_SAFETY_RULE } from "../../../lib/brand-safety.js";
 
 export type SourceMode = "sourced" | "original";
 
@@ -120,7 +121,7 @@ export function outputSchemaSection(headlineGuidance: string, wc: WordCountTarge
 Respond ONLY with a valid JSON object (no markdown fences). Schema:
 {
   "title": "string — headline (50-70 chars). ${headlineGuidance}",
-  "slug": "string — URL-safe kebab-case slug",
+  "slug": "string — URL-safe kebab-case slug, ${SLUG_BRAND_SAFETY_RULE}",
   "description": "string — meta description (150-160 chars) that earns the click honestly",
   "type": "string — one of: listicle, how-to, review, standard",
   "tags": ["string — FIRST must be a site topic, then 2-4 descriptive tags"],
