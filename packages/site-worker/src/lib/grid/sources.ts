@@ -44,3 +44,18 @@ export function resolveSources(dir: NetworkDirectory, grid: ResolvedGridConfig, 
   }
   return result;
 }
+
+/** One aggregator bundle used by the site's pills. */
+export interface BundleSource {
+  bundleId: string;
+  pills: string[];
+}
+
+/** Bundles referenced by the site's pills, with the pills each one feeds (spec D1). */
+export function resolveBundleSources(grid: ResolvedGridConfig): BundleSource[] {
+  const pills = new Map<string, string[]>();
+  for (const topic of grid.topics) {
+    for (const bundleId of topic.bundles) pills.set(bundleId, [...(pills.get(bundleId) ?? []), topic.slug]);
+  }
+  return [...pills].map(([bundleId, p]) => ({ bundleId, pills: p }));
+}

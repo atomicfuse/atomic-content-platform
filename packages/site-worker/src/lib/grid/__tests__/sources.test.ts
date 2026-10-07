@@ -57,3 +57,14 @@ describe('resolveSources', () => {
     expect(r.statuses[0]?.reason).toBe('excluded');
   });
 });
+
+describe('resolveBundleSources', () => {
+  it('maps bundles to the pills that use them', async () => {
+    const { resolveBundleSources } = await import('../sources');
+    const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [
+      { label: 'Celebs', slug: 'celebs', verticals: [], bundles: ['b1'] },
+      { label: 'Style', slug: 'style', verticals: [], bundles: ['b1', 'b2'] },
+    ] };
+    expect(resolveBundleSources(grid)).toEqual([{ bundleId: 'b1', pills: ['celebs', 'style'] }, { bundleId: 'b2', pills: ['style'] }]);
+  });
+});

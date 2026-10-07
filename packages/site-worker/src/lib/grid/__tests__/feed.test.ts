@@ -55,3 +55,41 @@ describe('filterByTopic / pageSlice', () => {
     expect(pageSlice(list, 9, 2)).toEqual({ slice: [], startIndex: 16, hasMore: false });
   });
 });
+
+describe('buildPool — aggregator bundles', () => {
+  const ext = (id: string, at: string, sourceName = 'InStyle') => ({ id, slug: `t-${id}`, title: `T ${id}`, description: '', imageUrl: 'https://i', sourceName, publishedAt: at });
+
+  it('merges external entries newest-first with network items', () => {
+    const pool = buildPool([srcB], g({ per_site_limit: 1 }), NOW, [{ bundleId: 'x', pills: ['celebs'], entries: [ext('x1', '2026-09-26T00:00:00Z')] }]);
+    expect(pool.items.map((i) => [i.site, i.kind])).toEqual([['aggregator', 'external'], ['b', undefined]]);
+    expect(pool.items[0]).toMatchObject({ slug: 't-x1-x1', sourceName: 'InStyle', featuredImage: 'https://i', pills: ['celebs'], pinned: false });
+  });
+
+  it('applies per_bundle_limit, blocked_sources (case-insensitive) and max_age_days', () => {
+    const pool = buildPool([], g({ per_bundle_limit: 1, blocked_sources: ['conspiracy'], max_age_days: 3 }), NOW, [{ bundleId: 'x', pills: [], entries: [
+      ext('a', '2026-09-27T00:00:00Z', 'Conspiracy'), ext('b', '2026-09-26T00:00:00Z'), ext('c', '2026-09-25T00:00:00Z'), ext('old', '2026-09-01T00:00:00Z'),
+    ] }]);
+    expect(pool.items.map((i) => i.slug)).toEqual(['t-b-b']);
+  });
+
+  it('dedupes a story present in two bundles and unions its pills', () => {
+    const e = ext('dup', '2026-09-26T00:00:00Z');
+    const pool = buildPool([], g(), NOW, [{ bundleId: 'b1', pills: ['a'], entries: [e] }, { bundleId: 'b2', pills: ['b'], entries: [e] }]);
+    expect(pool.items).toHaveLength(1);
+    expect([...pool.items[0]!.pills].sort()).toEqual(['a', 'b']);
+  });
+
+  it('pins an external story by its aggregator slug; an unknown one is inactive', () => {
+    const pool = buildPool([srcA], g({ pinned: [{ site: 'aggregator', slug: 't-x1-x1' }, { site: 'aggregator', slug: 'gone' }] }), NOW,
+      [{ bundleId: 'x', pills: [], entries: [ext('x1', '2026-09-01T00:00:00Z')] }]);
+    expect(pool.items[0]).toMatchObject({ site: 'aggregator', slug: 't-x1-x1', pinned: true });
+    expect(pool.items.filter((i) => i.slug === 't-x1-x1')).toHaveLength(1);
+    expect(pool.inactivePins).toEqual([{ site: 'aggregator', slug: 'gone', reason: 'not_source' }]);
+  });
+
+  it('REGRESSION: no bundles → identical pool, and network items carry no new fields', () => {
+    const before = buildPool([srcA, srcB], g(), NOW);
+    expect(buildPool([srcA, srcB], g(), NOW, [])).toEqual(before);
+    expect(before.items.every((i) => !('kind' in i) && !('sourceName' in i))).toBe(true);
+  });
+});

@@ -1,11 +1,18 @@
-import type { GridInactivePin, GridPoolItem, ResolvedGridConfig } from '@atomic-platform/shared-types';
-import type { ArticleIndexEntry } from '../kv-schema';
+import type { ExternalIndexEntry, GridInactivePin, GridPoolItem, ResolvedGridConfig } from '@atomic-platform/shared-types';
+import { AGGREGATOR_SOURCE_ID, type ArticleIndexEntry } from '../kv-schema';
 
 /** One source site's article index, tagged with the pills it feeds. */
 export interface SourceArticles {
   siteId: string;
   pills: string[];
   articles: readonly ArticleIndexEntry[];
+}
+
+/** One aggregator bundle's index entries, tagged with the pills it feeds. */
+export interface ExternalSourceEntries {
+  bundleId: string;
+  pills: string[];
+  entries: readonly ExternalIndexEntry[];
 }
 
 /** Merged, limited, pinned pool for a Grid site. */
@@ -26,8 +33,40 @@ function toItem(src: SourceArticles, a: ArticleIndexEntry, pinned: boolean): Gri
   };
 }
 
+/** Story URL slug for an external entry: "<title-slug>-<itemId>". */
+export function externalPoolSlug(e: Pick<ExternalIndexEntry, 'slug' | 'id'>): string {
+  return `${e.slug}-${e.id}`;
+}
+
+/** Bundle entries → pool items: blocked sources, max age and per_bundle_limit applied; one item per story id. */
+function externalItems(external: readonly ExternalSourceEntries[], grid: ResolvedGridConfig, minTime: number): GridPoolItem[] {
+  const blocked = new Set(grid.blocked_sources.map((s) => s.trim().toLowerCase()));
+  const byId = new Map<string, GridPoolItem>();
+  for (const src of external) {
+    src.entries
+      .filter((e) => !blocked.has(e.sourceName.trim().toLowerCase()) && time(e.publishedAt) >= minTime)
+      .sort((a, b) => time(b.publishedAt) - time(a.publishedAt))
+      .slice(0, grid.per_bundle_limit)
+      .forEach((e) => {
+        const existing = byId.get(e.id);
+        if (existing) {
+          existing.pills = [...new Set([...existing.pills, ...src.pills])];
+          return;
+        }
+        byId.set(e.id, {
+          site: AGGREGATOR_SOURCE_ID, slug: externalPoolSlug(e), title: e.title, publishDate: e.publishedAt,
+          featuredImage: e.imageUrl, ...(e.description ? { description: e.description } : {}),
+          pills: [...src.pills], pinned: false, kind: 'external', sourceName: e.sourceName,
+        });
+      });
+  }
+  return [...byId.values()];
+}
+
 /** Rolling window per source + pins (spec "Feed building"). Pure — no KV. */
-export function buildPool(sources: readonly SourceArticles[], grid: ResolvedGridConfig, now: Date): BuiltPool {
+export function buildPool(
+  sources: readonly SourceArticles[], grid: ResolvedGridConfig, now: Date, external: readonly ExternalSourceEntries[] = [],
+): BuiltPool {
   const minTime = grid.max_age_days === null ? -Infinity : now.getTime() - grid.max_age_days * DAY_MS;
   const natural: GridPoolItem[] = [];
   for (const src of sources) {
@@ -37,6 +76,7 @@ export function buildPool(sources: readonly SourceArticles[], grid: ResolvedGrid
       .slice(0, grid.per_site_limit)
       .forEach((a) => natural.push(toItem(src, a, false)));
   }
+  natural.push(...externalItems(external, grid, minTime));
   natural.sort((x, y) => time(y.publishDate) - time(x.publishDate) || x.site.localeCompare(y.site) || x.slug.localeCompare(y.slug));
 
   const bySite = new Map(sources.map((s) => [s.siteId, s]));
@@ -48,6 +88,15 @@ export function buildPool(sources: readonly SourceArticles[], grid: ResolvedGrid
     const key = `${pin.site}:${pin.slug}`;
     if (pinnedKeys.has(key)) continue;
     if (pin.until && pin.until < today) { inactivePins.push({ ...pin, reason: 'expired' }); continue; }
+    if (pin.site === AGGREGATOR_SOURCE_ID) {
+      // Like network pins, an external pin may reach beyond per_bundle_limit / max age.
+      const pinned = externalItems(external, { ...grid, per_bundle_limit: Number.MAX_SAFE_INTEGER }, -Infinity)
+        .find((i) => i.slug === pin.slug);
+      if (!pinned) { inactivePins.push({ ...pin, reason: 'not_source' }); continue; }
+      pinnedKeys.add(key);
+      pinnedItems.push({ ...pinned, pinned: true });
+      continue;
+    }
     const src = bySite.get(pin.site);
     if (!src) { inactivePins.push({ ...pin, reason: 'not_source' }); continue; }
     const article = src.articles.find((a) => a.slug === pin.slug && a.status === 'published');
