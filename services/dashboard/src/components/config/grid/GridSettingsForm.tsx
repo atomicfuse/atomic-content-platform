@@ -1,17 +1,25 @@
 "use client";
 
-import type { GridFields, SiteOption } from "@/types/grid";
+import type { BundleOption, GridFields, SiteOption } from "@/types/grid";
 import { TopicsEditor } from "./TopicsEditor";
 import { SiteMultiPicker } from "./SiteMultiPicker";
+import { ChipMultiSelect } from "./ChipMultiSelect";
+import { categoryOptions } from "./categoryOptions";
+import { DomainBlocklist } from "./DomainBlocklist";
+import type { CategoryItem } from "@/lib/reference-data";
 
 interface GridSettingsFormProps {
   value: GridFields;
   onChange: (next: GridFields) => void;
   sites: SiteOption[];
   verticals: string[];
+  /** Content Aggregator bundles for the pill editor. */
+  bundles?: BundleOption[];
+  /** Content Aggregator taxonomy for "Blocked categories". */
+  categories?: CategoryItem[];
 }
 
-type NumberKey = "per_site_limit" | "max_age_days" | "excerpt_paragraphs" | "feed_ad_every" | "page_size";
+type NumberKey = "per_site_limit" | "per_bundle_limit" | "max_age_days" | "excerpt_paragraphs" | "feed_ad_every" | "page_size";
 
 const NUMBER_FIELDS: ReadonlyArray<{ key: NumberKey; label: string; min: number; max: number; hint: string }> = [
   {
@@ -20,6 +28,13 @@ const NUMBER_FIELDS: ReadonlyArray<{ key: NumberKey; label: string; min: number;
     min: 1,
     max: 100,
     hint: "Newest N published articles pulled from each source (default 10).",
+  },
+  {
+    key: "per_bundle_limit",
+    label: "Stories per bundle",
+    min: 1,
+    max: 100,
+    hint: "Newest N stories pulled from each aggregator bundle (default 20).",
   },
   { key: "max_age_days", label: "Maximum age (days)", min: 1, max: 3650, hint: "Empty means no age limit." },
   {
@@ -55,7 +70,7 @@ const inputClass =
  * `pinned` is managed from the site's Stories tab and is preserved untouched
  * here.
  */
-export function GridSettingsForm({ value, onChange, sites, verticals }: GridSettingsFormProps): React.ReactElement {
+export function GridSettingsForm({ value, onChange, sites, verticals, bundles = [], categories = [] }: GridSettingsFormProps): React.ReactElement {
   const set = <K extends keyof GridFields>(key: K, v: GridFields[K] | undefined): void => {
     const next = { ...value };
     if (v === undefined) delete next[key];
@@ -68,9 +83,25 @@ export function GridSettingsForm({ value, onChange, sites, verticals }: GridSett
       <section className="space-y-2">
         <h4 className="text-sm font-semibold text-[var(--text-primary)]">Topic pills</h4>
         <p className="text-xs text-[var(--text-muted)]">
-          Each pill shows stories from Live network sites in the selected verticals.
+          Each pill shows stories from Live network sites in the selected verticals and from the selected
+          aggregator bundles.
         </p>
-        <TopicsEditor value={value.topics ?? []} onChange={(t): void => set("topics", t)} verticals={verticals} />
+        <TopicsEditor value={value.topics ?? []} onChange={(t): void => set("topics", t)} verticals={verticals} bundles={bundles} />
+      </section>
+
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Blocked categories</h4>
+        <p className="text-xs text-[var(--text-muted)]">
+          Aggregator stories in any of these categories never appear on this site. A main category also blocks its subcategories.
+        </p>
+        <ChipMultiSelect
+          label="Blocked categories"
+          addLabel="Add category"
+          emptyText="Nothing blocked"
+          value={value.blocked_categories ?? []}
+          options={categoryOptions(categories)}
+          onChange={(v): void => set("blocked_categories", v.length ? v : undefined)}
+        />
       </section>
 
       <section className="grid gap-4 md:grid-cols-2">
@@ -88,13 +119,21 @@ export function GridSettingsForm({ value, onChange, sites, verticals }: GridSett
         />
       </section>
 
+      <section className="space-y-2">
+        <h4 className="text-sm font-semibold text-[var(--text-primary)]">Blocked publishers</h4>
+        <p className="text-xs text-[var(--text-muted)]">
+          Aggregator stories from these websites (and their subdomains) never appear on this site, whatever bundle they come from.
+        </p>
+        <DomainBlocklist value={value.blocked_domains ?? []} onChange={(v): void => set("blocked_domains", v.length ? v : undefined)} />
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm text-[var(--text-primary)]">
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-            Story page text
+            Network stories
           </span>
           <select
-            aria-label="Story page text"
+            aria-label="Network stories"
             className={inputClass}
             value={value.story_mode ?? ""}
             onChange={(e): void =>
@@ -103,6 +142,27 @@ export function GridSettingsForm({ value, onChange, sites, verticals }: GridSett
           >
             <option value="">Inherit (default: excerpt)</option>
             <option value="excerpt">Excerpt of the source article</option>
+            <option value="ai_summary">AI summary (editable)</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1 text-sm text-[var(--text-primary)]">
+          <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Aggregator stories
+          </span>
+          <select
+            aria-label="Aggregator stories"
+            className={inputClass}
+            value={value.external_story_mode ?? ""}
+            onChange={(e): void =>
+              set(
+                "external_story_mode",
+                e.target.value ? (e.target.value as GridFields["external_story_mode"]) : undefined,
+              )
+            }
+          >
+            <option value="">Inherit (default: What It Covers)</option>
+            <option value="what_it_covers">What It Covers (from the aggregator)</option>
             <option value="ai_summary">AI summary (editable)</option>
           </select>
         </label>

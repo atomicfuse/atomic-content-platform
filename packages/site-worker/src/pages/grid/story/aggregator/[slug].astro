@@ -1,0 +1,79 @@
+---
+/**
+ * Grid story page for a Content Aggregator story (spec 2026-10-07 grid aggregator sources).
+ * URL: /story/aggregator/<title-slug>-<itemId> (static `aggregator` segment wins over [sourceSiteId]).
+ */
+import { env } from 'cloudflare:workers';
+import type { ExternalStoryRecord, GridSummaryRecord } from '@atomic-platform/shared-types';
+import GridLayout from '../../../../themes/grid/GridLayout.astro';
+import GridHeader from '../../../../themes/grid/components/GridHeader.astro';
+import GridFooter from '../../../../themes/grid/components/GridFooter.astro';
+import RelatedStories from '../../../../themes/grid/components/RelatedStories.astro';
+import AdSlot from '../../../../components/AdSlot.astro';
+import { getGridContext, notFound } from '../../../../lib/grid/context';
+import { edgeCache, kvReader, loadGridPool, NO_CACHE } from '../../../../lib/grid/load';
+import { externalStoryText, relatedItems } from '../../../../lib/grid/story';
+import { buildExternalOutboundUrl } from '../../../../lib/grid/format';
+import { renderSourceLineHtml } from '../../../../lib/grid/render';
+import { parseExternalSlug, resolveExternalRequest } from '../../../../lib/grid/external';
+import { injectInlineAds } from '../../../../lib/inline-ads';
+import { AGGREGATOR_SOURCE_ID, externalItemKey, gridSummaryKey } from '../../../../lib/kv-schema';
+import { GRID_CARD_DEFAULTS } from '../../../../lib/grid/normalize';
+export const prerender = false;
+
+const g = getGridContext(Astro);
+if (!g) return notFound();
+const param = Astro.params.slug ?? '';
+const parsed = parseExternalSlug(param);
+if (!parsed) return notFound();
+const found = await env.CONFIG_KV.get<ExternalStoryRecord>(externalItemKey(parsed.itemId), 'json');
+const resolved = resolveExternalRequest(param, found, g.grid.blocked_categories, Astro.url.search, {
+  blockedDomains: g.grid.blocked_domains, hidden: g.grid.hidden_stories,
+});
+if (resolved.kind === 'not_found') return notFound();
+if (resolved.kind === 'redirect') return Astro.redirect(resolved.location, 301);
+const record = resolved.record;
+
+const now = new Date();
+const data = await loadGridPool(kvReader(env.CONFIG_KV), g.staging ? NO_CACHE : edgeCache(), g.siteId, g.grid, now);
+const summary = await env.CONFIG_KV.get<GridSummaryRecord>(gridSummaryKey(AGGREGATOR_SOURCE_ID, record.id), 'json');
+const text = externalStoryText({ record, summary, mode: g.grid.external_story_mode });
+const placements = (g.config.ads_config?.ad_placements ?? []) as Parameters<typeof injectInlineAds>[1];
+const bodyHtml = injectInlineAds(text.html, placements, { staging: g.staging });
+const poolItem = data.pool.items.find((i) => i.site === AGGREGATOR_SOURCE_ID && i.slug === param);
+const pills = poolItem?.pills ?? [];
+const pillLabel = g.grid.topics.find((t) => t.slug === pills[0])?.label;
+const related = relatedItems(data.pool.items, { site: AGGREGATOR_SOURCE_ID, slug: param }, pills, 3);
+const sites = new Map((data.directory?.sites ?? []).map((s) => [s.siteId, s]));
+const outbound = buildExternalOutboundUrl(record.url, g.canonicalHost, g.grid.outbound_utm);
+const sourceLine = renderSourceLineHtml(
+  { site: AGGREGATOR_SOURCE_ID, slug: param, title: record.title, publishDate: record.publishedAt, pills, pinned: false, kind: 'external', sourceName: record.sourceName, ...(poolItem?.favicon ? { favicon: poolItem.favicon } : {}) },
+  { now, card: GRID_CARD_DEFAULTS, showIntro: false, sites, placements: [], pageType: 'article', staging: g.staging, reservedHeight: 0 },
+);
+const published = new Date(record.publishedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+---
+<GridLayout title={`${record.title} | ${g.config.site_name}`} description={record.description || record.title} pageType="article" image={record.imageUrl}>
+  <GridHeader config={g.config} topics={g.grid.topics} activeTopic={pills[0] ?? null} />
+  <div class="g-story">
+    <main class="g-story__main">
+      <AdSlot position="above-content" pageType="article" server:defer />
+      <article class="g-story__article">
+        {pillLabel && <p class="g-story__topic">{pillLabel}</p>}
+        <h1 class="g-story__title">{record.title}</h1>
+        <div class="g-story__byline"><span class="g-story__by">Original story by</span> <Fragment set:html={sourceLine} /> <span class="g-story__date">{published}</span></div>
+        <img class="g-story__hero" src={record.imageUrl} data-fallback="/placeholder.svg" alt={record.title} />
+        <div class="g-story__prose" set:html={bodyHtml} />
+        {outbound && <a class="g-story__cta" href={outbound} target="_blank" rel="noopener">Read full story</a>}
+      </article>
+      <AdSlot position="below-content" pageType="article" server:defer />
+    </main>
+    <aside class="g-story__side">
+      <AdSlot position="sidebar" pageType="article" server:defer />
+      <RelatedStories items={related} sites={sites} now={now} />
+    </aside>
+  </div>
+  <div class="g-story__bottom"><RelatedStories items={related} sites={sites} now={now} /></div>
+  <GridFooter config={g.config} />
+  <AdSlot position="sticky-bottom" pageType="article" server:defer />
+</GridLayout>

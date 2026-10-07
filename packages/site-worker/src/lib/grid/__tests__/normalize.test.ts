@@ -14,9 +14,9 @@ describe('normalizeGridConfig', () => {
       { label: 'Health', slug: 'Wellness Now', verticals: [' Healthy Living ', ''] },
     ] });
     expect(out.topics).toEqual([
-      { label: 'Food & Drink', slug: 'food-and-drink', verticals: ['Food & Drink'] },
-      { label: 'Food & Drink', slug: 'food-and-drink-2', verticals: [] },
-      { label: 'Health', slug: 'wellness-now', verticals: ['Healthy Living'] },
+      { label: 'Food & Drink', slug: 'food-and-drink', verticals: ['Food & Drink'], bundles: [] },
+      { label: 'Food & Drink', slug: 'food-and-drink-2', verticals: [], bundles: [] },
+      { label: 'Health', slug: 'wellness-now', verticals: ['Healthy Living'], bundles: [] },
     ]);
   });
   it('clamps numbers and maps feed_ad_every 1 to 2', () => {
@@ -56,5 +56,47 @@ describe('normalizeGridCard', () => {
 describe('slugifyTopic', () => {
   it('handles accents, symbols and edges', () => {
     expect(slugifyTopic('  Café & Crème!  ')).toBe('cafe-and-creme');
+  });
+});
+
+describe('aggregator fields', () => {
+  it('defaults the aggregator fields', () => {
+    const g = normalizeGridConfig({});
+    expect(g.external_story_mode).toBe('what_it_covers');
+    expect(g.blocked_categories).toEqual([]);
+    expect(g.per_bundle_limit).toBe(20);
+  });
+  it('normalises topic bundles and clamps per_bundle_limit', () => {
+    const g = normalizeGridConfig({
+      topics: [{ label: 'Celebs', verticals: [], bundles: [' b1 ', '', 'b1', 'b2'] }],
+      per_bundle_limit: 500, external_story_mode: 'ai_summary', blocked_categories: ['War and Conflicts', ' '],
+    });
+    expect(g.topics[0]!.bundles).toEqual(['b1', 'b2']);
+    expect(g.per_bundle_limit).toBe(100);
+    expect(g.external_story_mode).toBe('ai_summary');
+    expect(g.blocked_categories).toEqual(['War and Conflicts']);
+  });
+  it('keeps a vertical-less, bundle-only pill', () => {
+    expect(normalizeGridConfig({ topics: [{ label: 'X', verticals: [], bundles: ['b'] }] }).topics).toHaveLength(1);
+  });
+});
+
+describe('hidden stories and blocked publisher domains', () => {
+  it('default to empty lists', () => {
+    const g = normalizeGridConfig({});
+    expect(g.hidden_stories).toEqual([]);
+    expect(g.blocked_domains).toEqual([]);
+  });
+  it('keeps valid hidden stories (with optional title) and drops junk', () => {
+    const g = normalizeGridConfig({ hidden_stories: [
+      { site: ' aggregator ', slug: 'x-6ac4931364df7692b392bfce', title: 'Teachers' }, { site: 'a', slug: '' }, null, { site: 'b', slug: 's' },
+    ] as never });
+    expect(g.hidden_stories).toEqual([
+      { site: 'aggregator', slug: 'x-6ac4931364df7692b392bfce', title: 'Teachers' }, { site: 'b', slug: 's' },
+    ]);
+  });
+  it('reduces typed URLs to bare lowercase domains, deduped', () => {
+    const g = normalizeGridConfig({ blocked_domains: ['https://www.TheTruthSeeker.co.uk/some/path?x=1', 'thetruthseeker.co.uk', ' cnn.com ', 'not a domain', ''] });
+    expect(g.blocked_domains).toEqual(['thetruthseeker.co.uk', 'cnn.com']);
   });
 });

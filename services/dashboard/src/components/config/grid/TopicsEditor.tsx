@@ -1,11 +1,14 @@
 "use client";
 
-import type { GridTopicFields } from "@/types/grid";
+import type { BundleOption, GridTopicFields } from "@/types/grid";
+import { ChipMultiSelect } from "./ChipMultiSelect";
 
 interface TopicsEditorProps {
   value: GridTopicFields[];
   onChange: (next: GridTopicFields[]) => void;
   verticals: string[];
+  /** Content Aggregator bundles available to attach to pills. */
+  bundles?: BundleOption[];
 }
 
 const inputClass =
@@ -16,10 +19,10 @@ const iconButtonClass =
 
 /**
  * Ordered pill editor for the Grid template's topic navigation. Each pill has
- * a label (+ optional slug) and pulls in articles from Live network sites
- * whose vertical matches one of the selected verticals.
+ * a label (+ optional slug) and pulls in stories from Live network sites in the
+ * selected verticals and from the selected Content Aggregator bundles.
  */
-export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps): React.ReactElement {
+export function TopicsEditor({ value, onChange, verticals, bundles = [] }: TopicsEditorProps): React.ReactElement {
   const update = (i: number, patch: Partial<GridTopicFields>): void =>
     onChange(value.map((t, j) => (j === i ? { ...t, ...patch } : t)));
 
@@ -97,32 +100,27 @@ export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps):
                 </button>
               </div>
             </div>
-            <div className="space-y-1.5" role="group" aria-label={`Verticals for ${name}`}>
-              <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Verticals
-              </span>
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {verticals.length === 0 && (
-                  <span className="text-xs text-[var(--text-muted)]">No verticals configured yet.</span>
-                )}
-                {verticals.map((v) => (
-                  <label key={v} className="inline-flex items-center gap-1.5 text-sm text-[var(--text-primary)]">
-                    <input
-                      type="checkbox"
-                      checked={topic.verticals.includes(v)}
-                      onChange={(e): void =>
-                        update(i, {
-                          verticals: e.target.checked
-                            ? [...topic.verticals, v]
-                            : topic.verticals.filter((x) => x !== v),
-                        })
-                      }
-                      className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
-                    />
-                    {v}
-                  </label>
-                ))}
-              </div>
+            <div className="grid gap-2 sm:grid-cols-[6.5rem_1fr] sm:items-start">
+              <span className="pt-0.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Verticals</span>
+              <ChipMultiSelect
+                label={`Verticals for ${name}`}
+                addLabel="Add vertical"
+                addAriaLabel={`Add vertical to ${name}`}
+                emptyText="No verticals"
+                value={topic.verticals}
+                options={verticals.map((v) => ({ value: v, label: v }))}
+                onChange={(next): void => update(i, { verticals: next })}
+              />
+              <span className="pt-0.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">Bundles</span>
+              <ChipMultiSelect
+                label={`Bundles for ${name}`}
+                addLabel="Add bundle"
+                addAriaLabel={`Add bundle to ${name}`}
+                emptyText="No aggregator bundles"
+                value={topic.bundles ?? []}
+                options={bundles.map((b) => ({ value: b.id, label: b.name, hint: String(b.count) }))}
+                onChange={(next): void => update(i, { bundles: next.length ? next : undefined })}
+              />
             </div>
           </fieldset>
         );
@@ -137,3 +135,4 @@ export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps):
     </div>
   );
 }
+

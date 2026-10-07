@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
@@ -38,24 +38,37 @@ export function StepContentBrief({
   const [isSuggesting, startSuggest] = useTransition();
   const [didAutoSuggest, setDidAutoSuggest] = useState(false);
 
+  // Every topic the AI suggested this session — "AI Suggest" must not offer them again,
+  // even after the user deleted them all.
+  const suggestedRef = useRef<string[]>([]);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
+
+  function suggestionContext(): Parameters<typeof suggestTopics>[0] {
+    return {
+      siteName: data.siteName,
+      siteTagline: data.siteTagline || undefined,
+      vertical: data.vertical,
+      theme: data.theme || undefined,
+      company: data.company || undefined,
+      audience: data.audiences.join(", ") || undefined,
+      tone: data.tone || undefined,
+      contentGuidelines: data.contentGuidelines || undefined,
+    };
+  }
+
+  function remember(topics: string[]): void {
+    suggestedRef.current = [...new Set([...suggestedRef.current, ...topics])];
+  }
+
   // Auto-suggest topics when the user arrives with no topics
   useEffect(() => {
     if (data.topics.length === 0 && !didAutoSuggest && data.siteName) {
       setDidAutoSuggest(true);
       startSuggest(async () => {
         try {
-          const topics = await suggestTopics({
-            siteName: data.siteName,
-            siteTagline: data.siteTagline || undefined,
-            vertical: data.vertical,
-            theme: data.theme || undefined,
-            company: data.company || undefined,
-            audience: data.audiences.join(", ") || undefined,
-            tone: data.tone || undefined,
-            contentGuidelines: data.contentGuidelines || undefined,
-          });
-          // Only set if user still hasn't manually added topics
+          const topics = await suggestTopics(suggestionContext());
           if (topics.length > 0) {
+            remember(topics);
             onChange({ topics });
           }
         } catch {
@@ -101,27 +114,20 @@ export function StepContentBrief({
   }
 
   function handleRegenerateTopics(): void {
+    setSuggestError(null);
+    const avoid = [...new Set([...suggestedRef.current, ...data.topics])];
     startSuggest(async () => {
       try {
-        const topics = await suggestTopics({
-          siteName: data.siteName,
-          siteTagline: data.siteTagline || undefined,
-          vertical: data.vertical,
-          // Pass theme so AI Suggest stays anchored to the editorial angle on
-          // regenerate (the auto-suggest on mount passes it; this was missing
-          // here so clicking AI Suggest gave generic results).
-          theme: data.theme || undefined,
-          company: data.company || undefined,
-          audience: data.audiences.join(", ") || undefined,
-          tone: data.tone || undefined,
-          contentGuidelines: data.contentGuidelines || undefined,
-        });
+        const topics = await suggestTopics(suggestionContext(), avoid);
         if (topics.length > 0) {
+          remember(topics);
           onChange({ topics });
+          return;
         }
       } catch {
-        // Silently fail
+        // handled below
       }
+      setSuggestError("Couldn't come up with new topics right now. Try again, or add your own.");
     });
   }
 
@@ -230,6 +236,7 @@ export function StepContentBrief({
                   {tag}
                   <button
                     type="button"
+                    aria-label={`Remove ${tag}`}
                     onClick={(): void => removeTopic(tag)}
                     className="hover:text-red-400 transition-colors"
                   >
@@ -249,8 +256,9 @@ export function StepContentBrief({
             </>
           )}
         </div>
+        {suggestError && <p role="alert" className="text-xs text-amber-500">{suggestError}</p>}
         <p className="text-xs text-[var(--text-muted)]">
-          Press Enter or comma to add. Backspace to remove last. Topics are auto-suggested by AI.
+          Press Enter or comma to add. Backspace to remove last. <span className="font-medium">AI Suggest</span> gives a fresh set each time.
           {/* EC-19: Show topic count and cap. */}
           {data.topics.length >= MAX_TOPICS && (
             <span className="ml-1 text-amber-400">Maximum {MAX_TOPICS} topics reached.</span>

@@ -1,5 +1,5 @@
 import type {
-  GridCardConfig, GridConfig, GridPin, ResolvedGridCardConfig,
+  GridCardConfig, GridConfig, GridHiddenStory, GridPin, ResolvedGridCardConfig,
   ResolvedGridConfig, ResolvedGridTopic,
 } from '@atomic-platform/shared-types';
 
@@ -33,6 +33,11 @@ const GRID_DEFAULTS: ResolvedGridConfig = {
   show_intro: false,
   outbound_utm: true,
   pinned: [],
+  external_story_mode: 'what_it_covers',
+  blocked_categories: [],
+  per_bundle_limit: 20,
+  hidden_stories: [],
+  blocked_domains: [],
 };
 
 export const GRID_CARD_DEFAULTS: ResolvedGridCardConfig = {
@@ -72,7 +77,7 @@ function normalizeTopics(value: unknown): ResolvedGridTopic[] {
   const used = new Set<string>();
   const topics: ResolvedGridTopic[] = [];
   for (const raw of value) {
-    const t = (raw ?? {}) as { label?: unknown; slug?: unknown; verticals?: unknown };
+    const t = (raw ?? {}) as { label?: unknown; slug?: unknown; verticals?: unknown; bundles?: unknown };
     const label = typeof t.label === 'string' ? t.label.trim() : '';
     if (!label) continue;
     const source = typeof t.slug === 'string' && t.slug.trim() ? t.slug : label;
@@ -81,7 +86,7 @@ function normalizeTopics(value: unknown): ResolvedGridTopic[] {
     let n = 2;
     while (used.has(slug)) slug = `${base}-${n++}`;
     used.add(slug);
-    topics.push({ label, slug, verticals: stringList(t.verticals) });
+    topics.push({ label, slug, verticals: stringList(t.verticals), bundles: [...new Set(stringList(t.bundles))] });
   }
   return topics;
 }
@@ -96,6 +101,36 @@ function normalizePins(value: unknown): GridPin[] {
     pins.push({ site: p.site.trim(), slug: p.slug.trim(), until });
   }
   return pins;
+}
+
+function normalizeHiddenStories(value: unknown): GridHiddenStory[] {
+  if (!Array.isArray(value)) return [];
+  const out: GridHiddenStory[] = [];
+  for (const raw of value) {
+    const h = (raw ?? {}) as { site?: unknown; slug?: unknown; title?: unknown };
+    if (typeof h.site !== 'string' || !h.site.trim() || typeof h.slug !== 'string' || !h.slug.trim()) continue;
+    const title = typeof h.title === 'string' && h.title.trim() ? h.title.trim() : undefined;
+    out.push({ site: h.site.trim(), slug: h.slug.trim(), ...(title ? { title } : {}) });
+  }
+  return out;
+}
+
+const DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+
+/** "https://www.X.com/path" → "x.com". Null when the input isn't a domain. */
+export function toBareDomain(input: string): string | null {
+  const host = input.trim().toLowerCase().replace(/^[a-z]+:\/\//, '').split(/[/?#:]/)[0]!.replace(/^www\./, '');
+  return DOMAIN_RE.test(host) ? host : null;
+}
+
+function normalizeDomains(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const out = new Set<string>();
+  for (const raw of value) {
+    const d = typeof raw === 'string' ? toBareDomain(raw) : null;
+    if (d) out.add(d);
+  }
+  return [...out];
 }
 
 /**
@@ -121,6 +156,11 @@ export function normalizeGridConfig(input: GridConfig | undefined): ResolvedGrid
     show_intro: g.show_intro === true,
     outbound_utm: g.outbound_utm !== false,
     pinned: normalizePins(g.pinned),
+    external_story_mode: g.external_story_mode === 'ai_summary' ? 'ai_summary' : 'what_it_covers',
+    blocked_categories: stringList(g.blocked_categories),
+    per_bundle_limit: clampInt(g.per_bundle_limit, 1, 100, GRID_DEFAULTS.per_bundle_limit),
+    hidden_stories: normalizeHiddenStories(g.hidden_stories),
+    blocked_domains: normalizeDomains(g.blocked_domains),
   };
 }
 

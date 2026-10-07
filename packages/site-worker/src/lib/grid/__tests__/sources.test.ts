@@ -9,8 +9,8 @@ const site = (over: Partial<NetworkDirectorySite>): NetworkDirectorySite => ({
 const grid = (over: Partial<ResolvedGridConfig> = {}): ResolvedGridConfig => ({
   ...GRID_DEFAULTS,
   topics: [
-    { label: 'Travel', slug: 'travel', verticals: ['Travel'] },
-    { label: 'Health', slug: 'health', verticals: ['Healthy Living', 'Medical Health'] },
+    { label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] },
+    { label: 'Health', slug: 'health', verticals: ['Healthy Living', 'Medical Health'], bundles: [] },
   ],
   ...over,
 });
@@ -25,8 +25,8 @@ describe('resolveSources', () => {
   });
   it('a vertical listed in two pills feeds both', () => {
     const g = grid({ topics: [
-      { label: 'Travel', slug: 'travel', verticals: ['Travel'] },
-      { label: 'Trips', slug: 'trips', verticals: ['Travel'] },
+      { label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] },
+      { label: 'Trips', slug: 'trips', verticals: ['Travel'], bundles: [] },
     ] });
     expect(resolveSources(dir([site({ siteId: 'a' })]), g, 'me').pillsBySite.get('a')).toEqual(['travel', 'trips']);
   });
@@ -55,5 +55,16 @@ describe('resolveSources', () => {
   it('exclude wins over include', () => {
     const r = resolveSources(dir([site({ siteId: 'a' })]), grid({ include_sites: ['a'], exclude_sites: ['a'] }), 'me');
     expect(r.statuses[0]?.reason).toBe('excluded');
+  });
+});
+
+describe('resolveBundleSources', () => {
+  it('maps bundles to the pills that use them', async () => {
+    const { resolveBundleSources } = await import('../sources');
+    const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [
+      { label: 'Celebs', slug: 'celebs', verticals: [], bundles: ['b1'] },
+      { label: 'Style', slug: 'style', verticals: [], bundles: ['b1', 'b2'] },
+    ] };
+    expect(resolveBundleSources(grid)).toEqual([{ bundleId: 'b1', pills: ['celebs', 'style'] }, { bundleId: 'b2', pills: ['style'] }]);
   });
 });

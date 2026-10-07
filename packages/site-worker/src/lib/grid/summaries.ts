@@ -1,5 +1,6 @@
 import type { GridPoolItem, GridSummaryRecord, GridSummaryStatus } from '@atomic-platform/shared-types';
-import { gridSummaryKey } from '../kv-schema';
+import { AGGREGATOR_SOURCE_ID, gridSummaryKey } from '../kv-schema';
+import { parseExternalSlug } from './external';
 
 /**
  * Max items per /api/pool?summaries=1 request that get a summary lookup. A Workers invocation may
@@ -25,8 +26,15 @@ export async function lookupSummaryStatuses(items: GridPoolItem[], get: SummaryG
   return Promise.all(items.map(async (item, i): Promise<GridPoolItem> => {
     if (i >= limit) return item;
     try {
-      const rec = await get(gridSummaryKey(item.site, item.slug));
-      return { ...item, summary: rec ? { status: summaryStatusOf(rec), generatedAt: rec.generatedAt } : { status: 'none' } };
+      // External summaries are keyed by item id (pool slug is "<title-slug>-<id>").
+      const slug = item.site === AGGREGATOR_SOURCE_ID ? (parseExternalSlug(item.slug)?.itemId ?? item.slug) : item.slug;
+      const rec = await get(gridSummaryKey(item.site, slug));
+      return {
+        ...item,
+        summary: rec
+          ? { status: summaryStatusOf(rec), generatedAt: rec.generatedAt, ...(rec.pinned ? { pinned: true } : {}) }
+          : { status: 'none' },
+      };
     } catch (err) {
       console.error(`[grid] summary lookup failed for ${item.site}/${item.slug}:`, err instanceof Error ? err.message : err);
       return item;

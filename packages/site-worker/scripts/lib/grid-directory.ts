@@ -17,6 +17,8 @@ export interface SiteConfigSummary {
   site_name?: string;
   domain?: string;
   theme?: { favicon?: string | null; template?: string };
+  /** Topic pills — the bundle sync reads `bundles` from here. */
+  grid?: { topics?: Array<{ bundles?: string[] }> };
 }
 
 /** dashboard-index + resolved configs → network-directory value. Pure. */

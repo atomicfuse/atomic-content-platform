@@ -122,6 +122,14 @@ describe("GridSiteTab — pinning does not commit unsaved Feed settings", () => 
     // The Feed-settings field itself keeps showing the user's unsaved edit.
     expect(pageSizeInput).toHaveValue(40);
   });
+
+  it("shows the story as pinned right after a successful Pin, before the site re-syncs", async () => {
+    mockFetch();
+    render(<GridSiteTab domain="example.com" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Pin Hello World" }));
+    expect(await screen.findByRole("button", { name: "Unpin Hello World" })).toBeInTheDocument();
+    expect(screen.getByText("Pinned")).toBeInTheDocument();
+  });
 });
 
 describe("GridSiteTab — inherited pins", () => {
@@ -154,5 +162,41 @@ describe("GridSiteTab — inherited pins", () => {
     expect(screen.getByRole("button", { name: "Unpin Own pin" })).toBeEnabled();
     await userEvent.click(groupBtn);
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/sites/save"))).toBe(false);
+  });
+});
+
+describe("GridSiteTab — Use AI summary", () => {
+  it("requests a pinned summary for the story and marks the row as syncing", async () => {
+    const base = mockFetch();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/grid/regenerate")) return { ok: true, json: async () => ({ ok: true }) } as Response;
+      if (url.includes("/api/bundles")) return { ok: true, json: async () => ({ items: [] }) } as Response;
+      return base(input, init);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<GridSiteTab domain="example.com" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Use AI summary for Hello World" }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/api/grid/regenerate"));
+      expect(call).toBeDefined();
+      expect(JSON.parse((call![1] as RequestInit).body as string)).toEqual({ site: "example.com", slug: "hello-world", pin: true });
+    });
+    expect(await screen.findByText("AI summary · syncing")).toBeInTheDocument();
+  });
+});
+
+describe("GridSiteTab — Hide", () => {
+  it("saves the story to hidden_stories (with its title), removes its pin, and moves it to the Hidden list", async () => {
+    const fetchMock = mockFetch();
+    render(<GridSiteTab domain="example.com" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Pin Hello World" }));
+    await screen.findByRole("button", { name: "Unpin Hello World" });
+    await userEvent.click(screen.getByRole("button", { name: "Hide Hello World" }));
+    expect(await screen.findByRole("button", { name: "Unhide Hello World" })).toBeInTheDocument();
+    const saves = fetchMock.mock.calls.filter(([u]) => String(u).includes("/api/sites/save"));
+    const grid = (JSON.parse((saves.at(-1)![1] as RequestInit).body as string) as { configUpdates: { grid: GridFields } }).configUpdates.grid;
+    expect(grid.hidden_stories).toEqual([{ site: "example.com", slug: "hello-world", title: "Hello World" }]);
+    expect(grid.pinned).toEqual([]);
   });
 });

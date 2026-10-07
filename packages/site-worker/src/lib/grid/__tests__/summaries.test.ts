@@ -53,3 +53,23 @@ describe('lookupSummaryStatuses', () => {
     }
   });
 });
+
+describe('lookupSummaryStatuses — pinned', () => {
+  it('reports pinned only when the record is pinned', async () => {
+    const [pinned] = await lookupSummaryStatuses([item(1)], async () => rec({ pinned: true }));
+    expect(pinned!.summary).toEqual({ status: 'generated', generatedAt: 'g', pinned: true });
+    const [plain] = await lookupSummaryStatuses([item(1)], async () => rec());
+    expect(plain!.summary).toEqual({ status: 'generated', generatedAt: 'g' });
+  });
+});
+
+describe('lookupSummaryStatuses — external stories', () => {
+  it('looks external summaries up by item id, not the pool slug', async () => {
+    const id = '6ac4931364df7692b392bfcb';
+    const ext: GridPoolItem = { site: 'aggregator', slug: `batman-${id}`, title: 'B', publishDate: '2026-09-26T00:00:00Z', pills: [], pinned: false, kind: 'external', sourceName: 'X' };
+    const keys: string[] = [];
+    const [out] = await lookupSummaryStatuses([ext], async (k) => { keys.push(k); return rec({ pinned: true }); });
+    expect(keys).toEqual([`grid-summary:aggregator:${id}`]);
+    expect(out!.summary).toMatchObject({ status: 'generated', pinned: true });
+  });
+});

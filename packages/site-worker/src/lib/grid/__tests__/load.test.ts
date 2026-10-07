@@ -3,7 +3,7 @@ import { GRID_DEFAULTS, type NetworkDirectory, type ResolvedGridConfig } from '@
 import { hashString, loadGridPool, NO_CACHE, toPoolResponse, type JsonCache, type KvReader } from '../load';
 
 const NOW = new Date('2026-09-27T12:00:00Z');
-const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [{ label: 'Travel', slug: 'travel', verticals: ['Travel'] }] };
+const grid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [{ label: 'Travel', slug: 'travel', verticals: ['Travel'], bundles: [] }] };
 const directory: NetworkDirectory = { generatedAt: 'g1', sites: [
   { siteId: 'a', hostname: 'a.com', name: 'A', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },
   { siteId: 'b', hostname: 'b.com', name: 'B', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },
@@ -56,5 +56,27 @@ describe('toPoolResponse', () => {
     const res = toPoolResponse(data, 'me', grid, NOW);
     expect(res.sources.find((s) => s.siteId === 'b')).toMatchObject({ included: false, reason: 'missing_index' });
     expect(res).toMatchObject({ siteId: 'me', storyMode: 'excerpt', perSiteLimit: 10, directoryGeneratedAt: 'g1' });
+  });
+});
+
+describe('loadGridPool — aggregator bundles', () => {
+  const bundleGrid: ResolvedGridConfig = { ...GRID_DEFAULTS, topics: [{ label: 'Celebs', slug: 'celebs', verticals: [], bundles: ['bun'] }] };
+  const index = { bundleId: 'bun', name: 'Scoopella', updatedAt: 'u1', items: [
+    { id: 'x1', slug: 't', title: 'T', description: '', imageUrl: 'https://i', sourceName: 'InStyle', publishedAt: '2026-09-26T00:00:00Z' },
+  ] };
+  it('reads each bundle index and puts its stories in the pool', async () => {
+    const r = await loadGridPool(fakeKv({ 'network-directory': directory, 'grid-ext-index:bun': index }), NO_CACHE, 'me', bundleGrid, NOW);
+    expect(r.pool.items).toEqual([expect.objectContaining({ site: 'aggregator', slug: 't-x1', kind: 'external', pills: ['celebs'] })]);
+  });
+  it('a missing bundle index is skipped, not an error', async () => {
+    const r = await loadGridPool(fakeKv({ 'network-directory': directory }), NO_CACHE, 'me', bundleGrid, NOW);
+    expect(r.pool.items).toEqual([]);
+  });
+  it('the cache key changes when a bundle index is updated', async () => {
+    const keys: string[] = [];
+    const cache: JsonCache = { get: async (k) => { keys.push(k); return null; }, put: async () => undefined };
+    await loadGridPool(fakeKv({ 'network-directory': directory, 'grid-ext-index:bun': index }), cache, 'me', bundleGrid, NOW);
+    await loadGridPool(fakeKv({ 'network-directory': directory, 'grid-ext-index:bun': { ...index, updatedAt: 'u2' } }), cache, 'me', bundleGrid, NOW);
+    expect(keys[0]).not.toBe(keys[1]);
   });
 });

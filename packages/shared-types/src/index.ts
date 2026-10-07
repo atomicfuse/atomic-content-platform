@@ -69,9 +69,14 @@ export type {
 
 export type {
   GridStoryMode,
+  GridExternalStoryMode,
+  ExternalStoryRecord,
+  ExternalIndexEntry,
+  ExternalBundleIndex,
   GridTopic,
   ResolvedGridTopic,
   GridPin,
+  GridHiddenStory,
   GridConfig,
   ResolvedGridConfig,
   GridCardConfig,

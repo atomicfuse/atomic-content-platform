@@ -16,3 +16,11 @@ export interface ArticleRecordLike {
   frontmatter: { title?: string; status?: string };
   body: string;
 }
+
+/** Structural subset of the KV ExternalStoryRecord (`grid-ext-item:<id>`, written by the site-worker sync). */
+export interface ExternalRecordLike {
+  title: string;
+  description?: string;
+  whatItCovers?: string;
+  whyItMatters?: string;
+}

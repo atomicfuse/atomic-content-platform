@@ -62,9 +62,9 @@ import { getR2Usage, incrementR2Tally } from "../../stats/r2-tally.js";
 import { runBackfillR2 } from "../../stats/backfill-r2.js";
 import { getWeeklySummary, getSchedulerTimezone, backfillWeeklySummary } from "../../stats/weekly-summary.js";
 import { upsertArticlesBatch } from "../../lib/db/articles.js";
-import { regenerateSummary, saveEditedSummary, startGridSummariesRun } from "../grid-summaries/index.js";
+import { regenerateSummary, saveEditedSummary, setSummaryPinned, startGridSummariesRun } from "../grid-summaries/index.js";
 import { GridSummaryError } from "../grid-summaries/errors.js";
-import { parseRegenerateBody, parseSaveBody } from "../grid-summaries/http.js";
+import { parsePinBody, parseRegenerateBody, parseSaveBody } from "../grid-summaries/http.js";
 
 function sendJson(
   res: http.ServerResponse,
@@ -808,12 +808,14 @@ async function handleRequest(
       sendJson(res, 200, { status: startGridSummariesRun(config) ? "started" : "already_running" });
       return;
     }
-    if (req.method === "POST" && (pathname === "/grid-summaries/regenerate" || pathname === "/grid-summaries/save")) {
+    if (req.method === "POST" && (pathname === "/grid-summaries/regenerate" || pathname === "/grid-summaries/save" || pathname === "/grid-summaries/pin")) {
       try {
         const raw = await readBody(req);
         const out = pathname.endsWith("/regenerate")
-          ? await (async () => { const b = parseRegenerateBody(raw); return regenerateSummary(config, b.site, b.slug); })()
-          : await saveEditedSummary(config, parseSaveBody(raw));
+          ? await (async () => { const b = parseRegenerateBody(raw); return regenerateSummary(config, b.site, b.slug, undefined, { pin: b.pin }); })()
+          : pathname.endsWith("/pin")
+            ? await (async () => { const b = parsePinBody(raw); return setSummaryPinned(config, b.site, b.slug, b.pinned); })()
+            : await saveEditedSummary(config, parseSaveBody(raw));
         sendJson(res, 200, { status: "ok", path: out.path });
       } catch (err) {
         const status = err instanceof GridSummaryError ? err.status : 500;

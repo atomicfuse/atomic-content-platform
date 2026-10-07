@@ -22,3 +22,8 @@ export function parseSummaryFileText(raw: string): {
     generatedAt: fm.generated_at == null ? null : String(fm.generated_at),
   };
 }
+
+/** Summary file slug for a Grid pool item: the 24-hex item id for aggregator stories ("<title-slug>-<id>"), else the slug. */
+export function summarySlugOf(item: { site: string; slug: string }): string {
+  return item.site === "aggregator" ? item.slug.slice(-24) : item.slug;
+}

@@ -32,6 +32,7 @@ export function parseSummaryFile(path: string, raw: string): { site: string; slu
       model: String(f.model ?? ''),
       edited: f.edited === true,
       sourceChanged: f.source_changed === true,
+      pinned: f.pinned === true,
     },
   };
 }

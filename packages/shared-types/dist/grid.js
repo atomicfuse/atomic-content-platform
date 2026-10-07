@@ -24,6 +24,11 @@ exports.GRID_DEFAULTS = {
     show_intro: false,
     outbound_utm: true,
     pinned: [],
+    external_story_mode: "what_it_covers",
+    blocked_categories: [],
+    per_bundle_limit: 20,
+    hidden_stories: [],
+    blocked_domains: [],
 };
 /** Seed-time and runtime defaults for `theme.card` (dazzr-like). */
 exports.GRID_CARD_DEFAULTS = {

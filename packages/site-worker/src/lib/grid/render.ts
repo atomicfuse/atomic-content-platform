@@ -37,19 +37,34 @@ export interface TileRenderContext {
   reservedHeight: number;
 }
 
-function faviconHtml(site: NetworkDirectorySite | undefined, fallbackName: string): string {
-  if (site?.favicon) {
-    return `<img class="g-card__favicon" src="${escapeHtml(site.favicon)}" width="16" height="16" alt="" loading="lazy" decoding="async" />`;
+function faviconHtml(site: NetworkDirectorySite | undefined, fallbackName: string, src?: string | null): string {
+  const icon = src ?? site?.favicon;
+  if (icon) {
+    return `<img class="g-card__favicon" src="${escapeHtml(icon)}" width="16" height="16" alt="" loading="lazy" decoding="async" />`;
   }
   const letter = escapeHtml((site?.name ?? fallbackName).trim().charAt(0).toUpperCase() || '•');
   return `<span class="g-card__favicon g-card__favicon--letter" aria-hidden="true">${letter}</span>`;
 }
 
+/**
+ * Display name of a story's source: the publisher's domain for aggregator stories, the network
+ * site's domain (e.g. "popstorylab.com") for network stories — falling back to its name when the
+ * directory has no real domain for it.
+ */
+export function sourceNameOf(item: GridPoolItem, sites: ReadonlyMap<string, NetworkDirectorySite>): string {
+  if (item.kind === 'external') return item.sourceName || 'Source';
+  const site = sites.get(item.site);
+  if (site?.hostname.includes('.')) return site.hostname;
+  return site?.name ?? item.site;
+}
+
 /** "[favicon] Site Name · 5d" — shared by cards and the story header. */
 export function renderSourceLineHtml(item: GridPoolItem, ctx: TileRenderContext): string {
-  const site = ctx.sites.get(item.site);
-  const name = escapeHtml(site?.name ?? item.site);
-  return `<p class="g-card__source">${faviconHtml(site, item.site)}<span class="g-card__site">${name}</span>`
+  // External stories use the publisher favicon stored by the sync, else a letter badge from the publisher name.
+  const site = item.kind === 'external' ? undefined : ctx.sites.get(item.site);
+  const rawName = sourceNameOf(item, ctx.sites);
+  const icon = item.kind === 'external' ? item.favicon : undefined;
+  return `<p class="g-card__source">${faviconHtml(site, rawName, icon)}<span class="g-card__site">${escapeHtml(rawName)}</span>`
     + `<span class="g-card__dot" aria-hidden="true">·</span><time datetime="${escapeHtml(item.publishDate)}">${escapeHtml(formatAge(item.publishDate, ctx.now))}</time></p>`;
 }
 
@@ -61,7 +76,7 @@ function renderCardHtml(item: GridPoolItem, index: number, ctx: TileRenderContex
   const intro = ctx.showIntro && item.description ? `<p class="g-card__intro">${escapeHtml(item.description)}</p>` : '';
   return `<article class="g-tile g-card" style="--g-i:${index % 20}"${item.pinned ? ' data-pinned="true"' : ''}>`
     + `<a class="g-card__link" href="${href}">`
-    + `<div class="g-card__media"><img src="${img}" alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
+    + `<div class="g-card__media"><img src="${img}"${item.kind === 'external' ? ' data-fallback="/placeholder.svg"' : ''} alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
     + `<div class="g-card__body">${badge ? '' : source}<h3 class="g-card__title">${escapeHtml(item.title)}</h3>${intro}</div>`
     + `</a></article>`;
 }

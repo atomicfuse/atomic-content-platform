@@ -85,6 +85,12 @@ export const conditionalOverridesKey = (siteId: string): string => `cond-overrid
 export const networkDirectoryKey = (): string => 'network-directory';
 /** Grid template: rendered AI summary for one source article (written by scripts/seed-grid.ts). */
 export const gridSummaryKey = (siteId: string, slug: string): string => `grid-summary:${siteId}:${slug}`;
+/** Grid: source id used for Content Aggregator stories (reserved — no network site may use it). */
+export const AGGREGATOR_SOURCE_ID = 'aggregator';
+/** Grid: one aggregator story, permanent (written by scripts/seed-grid.ts). */
+export const externalItemKey = (itemId: string): string => `grid-ext-item:${itemId}`;
+/** Grid: a bundle's newest stories, max 300 (written by scripts/seed-grid.ts). */
+export const externalIndexKey = (bundleId: string): string => `grid-ext-index:${bundleId}`;
 
 /** Shared legal/info page rendered into KV at sync time. The Worker
  *  fetches by name (`about` | `contact` | `privacy` | `terms` | `dmca` | `amazon`)

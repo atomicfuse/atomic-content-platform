@@ -21,7 +21,7 @@ describe('renderTilesHtml', () => {
     const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
     expect(html).toContain('href="/story/sw/a"');
     expect(html).toContain('T &lt;a&gt;');
-    expect(html).toContain('Science World');
+    expect(html).toContain('scienceworld.com');
     expect(html).toContain('>1d<');
     expect(html).toContain('src="/sw/assets/fav.png"');
   });
@@ -66,5 +66,38 @@ describe('selectPlacements', () => {
     ];
     expect(selectPlacements(p, 'grid-feed', 'homepage').map((x) => x.id)).toEqual(['1']);
     expect(selectPlacements(p, 'grid-feed', 'category').map((x) => x.id)).toEqual(['1', '2', '3']);
+  });
+});
+
+describe('renderTilesHtml — external stories', () => {
+  it('links to /story/aggregator/<slug>, names the publisher with a letter badge, and has an image fallback', () => {
+    const ext = item('t-x1', { site: 'aggregator', kind: 'external', sourceName: 'InStyle', featuredImage: 'https://img/x.jpg' });
+    const html = renderTilesHtml(buildTiles([ext], 0, 0), ctx());
+    expect(html).toContain('href="/story/aggregator/t-x1"');
+    expect(html).toContain('<span class="g-card__site">InStyle</span>');
+    expect(html).toContain('g-card__favicon--letter" aria-hidden="true">I<');
+    expect(html).toContain('data-fallback="/placeholder.svg"');
+  });
+  it('shows the publisher favicon from R2 when the sync stored one', () => {
+    const ext = item('t-x1', { site: 'aggregator', kind: 'external', sourceName: 'instyle.com', favicon: '/aggregator/assets/favicons/instyle.com.png' });
+    const html = renderTilesHtml(buildTiles([ext], 0, 0), ctx());
+    expect(html).toContain('<img class="g-card__favicon" src="/aggregator/assets/favicons/instyle.com.png" width="16" height="16"');
+    expect(html).not.toContain('g-card__favicon--letter');
+  });
+  it('network cards are byte-identical to before (no image fallback attribute)', () => {
+    const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
+    expect(html).toContain('<span class="g-card__site">scienceworld.com</span>');
+    expect(html).toContain('src="/sw/assets/fav.png"');
+    expect(html).not.toContain('data-fallback');
+  });
+});
+
+describe('sourceNameOf', () => {
+  it('uses the publisher for external stories and the directory name for network ones', async () => {
+    const { sourceNameOf } = await import('../render');
+    expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external', sourceName: 'InStyle' }), sites)).toBe('InStyle');
+    expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external' }), sites)).toBe('Source');
+    expect(sourceNameOf(item('a'), sites)).toBe('scienceworld.com');
+    expect(sourceNameOf(item('a', { site: 'unknown' }), sites)).toBe('unknown');
   });
 });

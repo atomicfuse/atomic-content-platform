@@ -6,7 +6,7 @@ import { isAiGridConfig, isSafeId, parseDashboardIndex, poolUrlFor } from "../ag
 
 const fm = (over: Partial<SummaryFrontmatter> = {}): SummaryFrontmatter => ({
   source_site: "a", slug: "s", body_hash: "h1", generated_at: "2026-09-27T00:00:00.000Z", model: "m",
-  edited: false, edited_by: null, edited_at: null, source_changed: false, ...over,
+  edited: false, edited_by: null, edited_at: null, source_changed: false, pinned: false, ...over,
 });
 
 describe("decideAction", () => {
@@ -75,5 +75,41 @@ describe("targets", () => {
     expect(isAiGridConfig({ theme: { base: "grid" } })).toBe(false);
     expect(isSafeId("best-telescopes-2026")).toBe(true);
     expect(isSafeId("../etc")).toBe(false);
+  });
+});
+
+describe("aggregator (external) summaries", () => {
+  it.each([
+    [{ theme: { template: "grid" }, grid: { story_mode: "ai_summary" } }, { network: true, external: false }],
+    [{ theme: { template: "grid" }, grid: { external_story_mode: "ai_summary" } }, { network: false, external: true }],
+    [{ theme: { template: "grid" }, grid: {} }, { network: false, external: false }],
+    [{ theme: { template: "modern" } }, null],
+  ])("gridSummaryModes(%o)", async (cfg, expected) => {
+    const { gridSummaryModes } = await import("../agents/grid-summaries/targets.js");
+    expect(gridSummaryModes(cfg)).toEqual(expected);
+  });
+  it("needsSummary picks by story kind", async () => {
+    const { needsSummary } = await import("../agents/grid-summaries/targets.js");
+    expect(needsSummary({ site: "aggregator" }, { network: false, external: true })).toBe(true);
+    expect(needsSummary({ site: "coolnews" }, { network: false, external: true })).toBe(false);
+    expect(needsSummary({ site: "coolnews" }, { network: true, external: false })).toBe(true);
+  });
+  it("the external prompt only carries What It Covers / Why It Matters", async () => {
+    const { buildExternalUserPrompt } = await import("../agents/grid-summaries/prompt.js");
+    const p = buildExternalUserPrompt({ title: "T", whatItCovers: "W", whyItMatters: "Y" });
+    expect(p).toContain("W");
+    expect(p).toContain("Y");
+    expect(p).not.toMatch(/Content Opportunity|Key Angles/);
+  });
+  it("isValidExternalSummary accepts the short shape and rejects the rest", async () => {
+    const { isValidExternalSummary } = await import("../agents/grid-summaries/prompt.js");
+    const words = (n: number): string => Array.from({ length: n }, () => "word").join(" ");
+    expect(isValidExternalSummary(`## Headline\n\n${words(50)}\n\n### One\n\n${words(40)}\n\n### Two\n\n${words(30)}`)).toBe(true);
+    expect(isValidExternalSummary("## H\n\ntoo short")).toBe(false);
+    expect(isValidExternalSummary(`## H\n\n${words(400)}\n\n### One\n\n${words(10)}`)).toBe(false);
+  });
+  it("frontmatter round-trips pinned and defaults it to false", () => {
+    expect(parseSummaryFile("---\nsource_site: aggregator\nslug: abc\n---\nx")!.fm.pinned).toBe(false);
+    expect(parseSummaryFile(serializeSummaryFile(fm({ pinned: true }), "x"))!.fm.pinned).toBe(true);
   });
 });

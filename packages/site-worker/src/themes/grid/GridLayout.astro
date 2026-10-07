@@ -82,6 +82,9 @@ const cssVars = [
   .join(' ');
 
 const gridCtx = getGridContext(Astro);
+// Publisher-image fallback script only where aggregator stories can appear — bundle-less Grid sites
+// render exactly as before.
+const hasBundles = (gridCtx?.grid.topics ?? []).some((t) => t.bundles.length > 0);
 const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
 ---
 
@@ -156,6 +159,15 @@ const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
     </style>
 
     <style set:html={`:root { ${cssVars} }`}></style>
+    {/* Publisher images (aggregator stories) can fail to load — swap in the placeholder.
+        Capture phase: image error events don't bubble. Registered in <head> so it catches
+        errors from images in the initial HTML and from infinite-scroll batches alike. */}
+    {hasBundles && <script is:inline>
+      document.addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'IMG' && t.dataset && t.dataset.fallback && t.getAttribute('src') !== t.dataset.fallback) t.src = t.dataset.fallback;
+      }, true);
+    </script>}
   </head>
 
   <body class="g-body" {...bodyAttrs}>

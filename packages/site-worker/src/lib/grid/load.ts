@@ -1,7 +1,7 @@
-import type { GridPoolResponse, NetworkDirectory, ResolvedGridConfig } from '@atomic-platform/shared-types';
-import { articleIndexKey, networkDirectoryKey, type ArticleIndexEntry } from '../kv-schema';
-import { buildPool, type BuiltPool, type SourceArticles } from './feed';
-import { resolveSources, type ResolvedSources } from './sources';
+import type { ExternalBundleIndex, GridPoolResponse, NetworkDirectory, ResolvedGridConfig } from '@atomic-platform/shared-types';
+import { articleIndexKey, externalIndexKey, networkDirectoryKey, type ArticleIndexEntry } from '../kv-schema';
+import { buildPool, type BuiltPool, type ExternalSourceEntries, type SourceArticles } from './feed';
+import { resolveBundleSources, resolveSources, type ResolvedSources } from './sources';
 
 /** Minimal KV surface (lets unit tests use a Map-backed fake). */
 export interface KvReader {
@@ -76,7 +76,17 @@ export async function loadGridPool(kv: KvReader, cache: JsonCache, siteId: strin
     return { directory: null, ...EMPTY };
   }
   const resolved = resolveSources(directory, grid, siteId);
-  const cacheKey = `pool:${siteId}:${directory.generatedAt}:${hashString(JSON.stringify(grid))}`;
+  // Bundle indexes are read before the cache lookup: their updatedAt is part of the cache key, so a
+  // fresh sync shows up without waiting for the cache to expire. One KV read per bundle.
+  const bundleIndexes = await Promise.all(resolveBundleSources(grid).map(async (b) => ({
+    ...b, index: await safeGet<ExternalBundleIndex>(kv, externalIndexKey(b.bundleId)),
+  })));
+  const external: ExternalSourceEntries[] = bundleIndexes
+    .filter((b): b is typeof b & { index: ExternalBundleIndex } => Array.isArray(b.index?.items))
+    .map((b) => ({ bundleId: b.bundleId, pills: b.pills, entries: b.index.items }));
+  // Bundle-less sites keep exactly the pre-bundle cache key.
+  const bundleVersion = bundleIndexes.length ? `${bundleIndexes.map((b) => b.index?.updatedAt ?? '-').join(',')}:` : '';
+  const cacheKey = `pool:${siteId}:${directory.generatedAt}:${bundleVersion}${hashString(JSON.stringify(grid))}`;
   const cached = (await cache.get(cacheKey)) as { pool: BuiltPool; missingIndexes: string[] } | null;
   if (cached) return { directory, resolved, ...cached };
 
@@ -90,7 +100,7 @@ export async function loadGridPool(kv: KvReader, cache: JsonCache, siteId: strin
   const sourceArticles: SourceArticles[] = indexes
     .filter((r): r is { siteId: string; index: ArticleIndexEntry[] } => Array.isArray(r.index))
     .map((r) => ({ siteId: r.siteId, pills: resolved.pillsBySite.get(r.siteId) ?? [], articles: r.index }));
-  const pool = buildPool(sourceArticles, grid, now);
+  const pool = buildPool(sourceArticles, grid, now, external);
   await cache.put(cacheKey, { pool, missingIndexes }, 300);
   return { directory, resolved, pool, missingIndexes };
 }

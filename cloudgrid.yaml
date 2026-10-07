@@ -97,3 +97,5 @@ services:
 requires:
   - redis: private
   - mongodb
+  # CloudGrid AI Gateway for @cloudgrid-io/runtime (runtime.ai.chat) — step 2 of the text provider chain.
+  - ai

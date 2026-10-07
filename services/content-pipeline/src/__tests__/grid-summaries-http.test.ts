@@ -3,7 +3,7 @@ import { parseRegenerateBody, parseSaveBody } from "../agents/grid-summaries/htt
 
 describe("grid-summaries http body parsing", () => {
   it("accepts valid regenerate bodies", () => {
-    expect(parseRegenerateBody(JSON.stringify({ site: "scienceworld", slug: "best-telescopes-2026" }))).toEqual({ site: "scienceworld", slug: "best-telescopes-2026" });
+    expect(parseRegenerateBody(JSON.stringify({ site: "scienceworld", slug: "best-telescopes-2026" }))).toEqual({ site: "scienceworld", slug: "best-telescopes-2026", pin: false });
   });
   it.each(['{"site":"../x","slug":"a"}', '{"site":"a"}', "not json"])("rejects %s with 400", (raw) => {
     expect(() => parseRegenerateBody(raw)).toThrow(expect.objectContaining({ status: 400 }));
@@ -11,5 +11,15 @@ describe("grid-summaries http body parsing", () => {
   it("save requires markdown ≤ 20k chars and defaults editedBy", () => {
     expect(parseSaveBody(JSON.stringify({ site: "a", slug: "b", markdown: "## x" }))).toEqual({ site: "a", slug: "b", markdown: "## x", editedBy: "dashboard" });
     expect(() => parseSaveBody(JSON.stringify({ site: "a", slug: "b", markdown: "x".repeat(20_001) }))).toThrow(expect.objectContaining({ status: 400 }));
+  });
+});
+
+describe("pin bodies", () => {
+  it("parses the regenerate pin flag and the pin body", async () => {
+    const { parseRegenerateBody, parsePinBody } = await import("../agents/grid-summaries/http.js");
+    expect(parseRegenerateBody('{"site":"aggregator","slug":"abc","pin":true}')).toEqual({ site: "aggregator", slug: "abc", pin: true });
+    expect(parseRegenerateBody('{"site":"src","slug":"a1"}')).toEqual({ site: "src", slug: "a1", pin: false });
+    expect(parsePinBody('{"site":"aggregator","slug":"abc","pinned":false}')).toEqual({ site: "aggregator", slug: "abc", pinned: false });
+    expect(() => parsePinBody('{"site":"aggregator","slug":"abc"}')).toThrow(/pinned/);
   });
 });

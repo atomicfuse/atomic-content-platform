@@ -3,8 +3,10 @@
  * The dashboard does not depend on @atomic-platform/shared-types; keep both in sync.
  */
 export type GridStoryMode = "excerpt" | "ai_summary";
-export interface GridTopicFields { label: string; slug?: string; verticals: string[] }
+export type GridExternalStoryMode = "what_it_covers" | "ai_summary";
+export interface GridTopicFields { label: string; slug?: string; verticals: string[]; bundles?: string[] }
 export interface GridPinFields { site: string; slug: string; until?: string | null }
+export interface GridHiddenStoryFields { site: string; slug: string; title?: string }
 export interface GridFields {
   topics?: GridTopicFields[];
   include_sites?: string[];
@@ -18,7 +20,14 @@ export interface GridFields {
   show_intro?: boolean;
   outbound_utm?: boolean;
   pinned?: GridPinFields[];
+  external_story_mode?: GridExternalStoryMode;
+  blocked_categories?: string[];
+  per_bundle_limit?: number;
+  hidden_stories?: GridHiddenStoryFields[];
+  blocked_domains?: string[];
 }
+/** A Content Aggregator bundle option for the pill editor (from /api/bundles). */
+export interface BundleOption { id: string; name: string; count: number }
 export const GRID_CARD_OPTIONS = {
   style: ["bordered", "shadow", "flat"],
   corners: ["square", "small", "rounded"],
@@ -50,7 +59,7 @@ export const GRID_COLOR_GROUPS: ReadonlyArray<{ title: string; fields: ReadonlyA
   { title: "Footer", fields: [["footer_bg", "Footer background", null], ["footer_text", "Footer text", null], ["footer_link", "Footer links", null], ["footer_link_hover", "Footer link hover", null]] },
 ];
 export type GridSummaryStatus = "none" | "generated" | "edited" | "stale";
-export interface GridPoolItem { site: string; slug: string; title: string; publishDate: string; featuredImage?: string; description?: string; pills: string[]; pinned: boolean; summary?: { status: GridSummaryStatus; generatedAt?: string } }
+export interface GridPoolItem { site: string; slug: string; title: string; publishDate: string; featuredImage?: string; description?: string; pills: string[]; pinned: boolean; kind?: "network" | "external"; sourceName?: string; summary?: { status: GridSummaryStatus; generatedAt?: string; pinned?: boolean } }
 export interface GridSourceStatus { siteId: string; included: boolean; reason?: "self" | "grid_site" | "not_live" | "dev1_account" | "excluded" | "no_matching_vertical" | "missing_index"; pills: string[] }
 export interface GridInactivePin extends GridPinFields { reason: "expired" | "not_source" | "not_published" }
 export interface GridPoolResponse { siteId: string; generatedAt: string; storyMode: GridStoryMode; perSiteLimit: number; directoryGeneratedAt: string | null; sources: GridSourceStatus[]; items: GridPoolItem[]; inactivePins: GridInactivePin[] }
