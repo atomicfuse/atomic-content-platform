@@ -1,0 +1,31 @@
+# Grid aggregator sources — full verification 2026-10-07 13:55
+## site-worker
+- 0 errors
+- 0 warnings
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — health + caching > GET / → 200 + homepage cache headers + has <title>
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — health + caching > GET /<article-slug> → 200 + article cache headers
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — health + caching > GET /about → 200 + same shell cache + page title
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — Server Islands > island URLs in the homepage HTML
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — Server Islands > GET /_server-islands/PixelLoader?... → 200 + private no-store + emits GA4 from KV
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — assets bundle > per-site asset reachable under /<siteId>/assets/... (served from R2)
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — assets bundle > R2-served assets emit ETag (enables cheap 304 revalidation)
+ FAIL  |live| tests/integration/staging.test.ts > staging Worker — content correctness > homepage contains rewritten asset URLs (per-site prefix)
+ Test Files  1 failed | 42 passed (43)
+      Tests  8 failed | 526 passed (534)
+## content-pipeline
+typecheck OK
+ Test Files  85 passed (85)
+      Tests  762 passed (762)
+## dashboard
+typecheck OK
+ Test Files  79 passed (79)
+      Tests  628 passed (628)
+
+## Delta (before → after this project)
+site-worker: 462 → 526 passing (+64); the 8 |live| staging.test.ts failures are pre-existing (they hit the deployed staging worker) and identical before/after.
+  + after the staging-bundle fix: scripts 175 → 177.
+content-pipeline: 748 → 762 (+14). dashboard: 611 → 628 (+17). All typechecks clean.
+
+## Live read-only smoke (Task 4)
+Scoopella bundle 6ac4c3d064df7692b392c02d: 300 fetched → 227 eligible, 215 with What It Covers (12 empty summaries use the description), 0 failed.
