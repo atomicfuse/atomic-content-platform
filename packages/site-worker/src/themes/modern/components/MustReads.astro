@@ -27,7 +27,7 @@ const thumbs = rest.slice(0, 4);
   .must-reads {
     /* Optional gradient override; falls back to the solid color. See Footer.astro. */
     background: var(--color-must_reads_bg_gradient, var(--color-must_reads_bg, var(--color-secondary, #1a1a2e)));
-    color: #fff;
+    color: var(--color-must_reads_bg-fg, #fff);
     padding: 3rem 0;
   }
   .must-reads-inner {
@@ -36,7 +36,7 @@ const thumbs = rest.slice(0, 4);
     padding: 0 1rem;
   }
   .must-reads-heading {
-    color: #fff;
+    color: var(--color-must_reads_bg-fg, #fff);
     font-size: var(--text-2xl, 1.5rem);
     margin-bottom: 1.5rem;
   }
