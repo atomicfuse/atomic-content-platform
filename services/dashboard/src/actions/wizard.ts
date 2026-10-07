@@ -32,6 +32,7 @@ import {
 } from "@/lib/cloudflare";
 import { workerPreviewUrl, getKvNamespaces, R2_BUCKET_PROD } from "@/lib/constants";
 import type { WizardFormData, DashboardSiteEntry, TopicV2 } from "@/types/dashboard";
+import { requestTopicsFromGemini, type TopicSuggestionContext } from "@/lib/topic-suggestions";
 import { revalidatePath } from "next/cache";
 import { removeBackground } from "@/lib/remove-background";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
@@ -1348,157 +1349,31 @@ export async function uploadStagingLogo(
 }
 
 // ---------------------------------------------------------------------------
-// Auto-suggest topics via Gemini
+// Auto-suggest topics via Gemini (+ shared Gemini constants)
 // ---------------------------------------------------------------------------
 
-const GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /**
- * Context passed to topic suggestion — everything available at step 2 of the wizard.
- * At this point audience/tone/guidelines are typically EMPTY (they're on the same step),
- * but siteName, siteTagline, vertical, and company are filled from step 0.
+ * Suggest 4 topics for a site from everything entered so far (Gemini Flash, lib/topic-suggestions.ts).
+ * `avoid` = topics already suggested this session (+ the current ones): "Regenerate" must give new ones.
+ * First suggestion with no AI answer → per-vertical defaults; a regenerate with no AI answer → [] so
+ * the wizard can say so instead of showing the same defaults again.
  */
-interface TopicSuggestionContext {
-  siteName: string;
-  siteTagline?: string;
-  vertical: string;
-  /** Free-text site theme — the per-topic model uses this as the primary signal
-   *  (replaces vertical as the editorial-angle input). */
-  theme?: string;
-  company?: string;
-  audience?: string;
-  tone?: string;
-  contentGuidelines?: string;
-}
-
-/**
- * Auto-suggest 4 topics for a site based on whatever info is available.
- * Uses Gemini Flash (text) for fast, cheap inference.
- * Falls back to smart per-vertical defaults if Gemini is unavailable.
- */
-export async function suggestTopics(
-  context: TopicSuggestionContext
-): Promise<string[]> {
+export async function suggestTopics(context: TopicSuggestionContext, avoid: string[] = []): Promise<string[]> {
   const geminiKey = process.env.GEMINI_API_KEY;
-  console.log(
-    `[wizard:suggestTopics] siteName="${context.siteName}" vertical="${context.vertical}"` +
-    ` theme="${(context.theme ?? "").slice(0, 80)}" gemini=${geminiKey ? "yes" : "no"}`,
-  );
+  const fallback = (): string[] => (avoid.length > 0 ? [] : getFallbackTopics(context.siteName, context.vertical, context.theme));
   if (!geminiKey) {
-    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
-    console.log(`[wizard:suggestTopics] no GEMINI_API_KEY — fallback returned: ${JSON.stringify(fallback)}`);
-    return fallback;
+    console.warn("[wizard:suggestTopics] no GEMINI_API_KEY — using fallback");
+    return fallback();
   }
-
-  // Build rich context from ALL available fields. The site theme (free-text
-  // editorial angle) is the strongest signal when present — it captures intent
-  // more precisely than category dropdowns ever did.
-  const contextParts = [
-    `Website name: "${context.siteName}"`,
-  ];
-  if (context.siteTagline) contextParts.push(`Tagline: "${context.siteTagline}"`);
-  if (context.theme && context.theme.trim()) {
-    contextParts.push(`Site theme / editorial angle: ${context.theme.trim()}`);
-  }
-  if (context.vertical && context.vertical !== "Other") {
-    contextParts.push(`Category: ${context.vertical}`);
-  }
-  if (context.audience) contextParts.push(`Target audience: ${context.audience}`);
-  if (context.tone) contextParts.push(`Tone: ${context.tone}`);
-  if (context.contentGuidelines) contextParts.push(`Content guidelines: ${context.contentGuidelines}`);
-
-  // Use theme as the primary anchor when present; fall back to category framing.
-  const anchorPhrase = context.theme && context.theme.trim()
-    ? `Based on the site theme above`
-    : (context.vertical && context.vertical !== "Other"
-        ? `Based on the website name and its "${context.vertical}" category`
-        : `Based on the website name`);
-
-  const prompt = `You are a content strategist helping launch a new content website.
-
-Website info:
-${contextParts.join("\n")}
-
-${anchorPhrase}, suggest exactly 4 specific content topics for this site. The site theme is the PRIMARY signal — topics must clearly reflect the subject matter described in the theme. Ignore the website name if it conflicts with the theme.
-
-Topics must be:
-- Tightly tied to the theme's subject matter (a "funny memes" site MUST get meme/humor topics, NOT generic content categories)
-- Short (2–4 words each)
-- Diverse across different angles of the niche
-- Specific, not generic. NEVER output any of these: "Expert Guides", "Latest News", "Tips & Advice", "In-Depth Reviews", "How-To Guides", "Trending Topics", "Industry Insights"
-
-Reply with ONLY a JSON array of exactly 4 strings. No markdown, no explanation.
-
-Examples:
-- Theme "Travel and eating while traveling" → ["Destinations", "Food Around the World", "Wine & Beer Tours", "Travel Guides"]
-- Theme "Funny meme website, showing memes and funny videos" → ["Trending Memes", "Viral Videos", "Reaction Clips", "Meme Culture"]
-- Theme "Personal finance for millennials" → ["Budgeting Hacks", "Crypto & Investing", "Side Hustles", "Debt-Free Living"]`;
-
   try {
-    const url = `${GEMINI_API_BASE}/${GEMINI_TEXT_MODEL}:generateContent?key=${geminiKey}`;
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 200 },
-      }),
-    });
-
-    if (!response.ok) {
-      console.warn(`[wizard] Topic suggestion failed: ${response.status}`);
-      return getFallbackTopics(context.siteName, context.vertical, context.theme);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content: { parts: Array<{ text?: string }> };
-      }>;
-    };
-
-    const text = data.candidates?.[0]?.content.parts[0]?.text?.trim() ?? "";
-    // Extract JSON array from response (handle markdown code blocks)
-    const jsonMatch = text.match(/\[[\s\S]*?\]/);
-    if (jsonMatch) {
-      const topics = JSON.parse(jsonMatch[0]) as string[];
-      if (Array.isArray(topics) && topics.length >= 1) {
-        // Filter out junk: must be a real string, not "undefined", not empty
-        const clean = topics
-          .map((t) => String(t).trim())
-          .filter((t) => t.length > 0 && t !== "undefined" && t !== "null");
-        // Reject the exact known-bad generic list — Gemini sometimes ignores the
-        // prompt's negative instructions and returns these verbatim. Treat as
-        // a parse failure and use the smarter theme-aware fallback instead.
-        const BAD_GENERIC = new Set([
-          "expert guides",
-          "latest news",
-          "tips & advice",
-          "in-depth reviews",
-          "how-to guides",
-          "trending topics",
-        ]);
-        const allGeneric =
-          clean.length === 4 && clean.every((t) => BAD_GENERIC.has(t.toLowerCase()));
-        if (clean.length >= 2 && !allGeneric) {
-          console.log(`[wizard:suggestTopics] gemini returned: ${JSON.stringify(clean.slice(0, 4))}`);
-          return clean.slice(0, 4);
-        }
-        if (allGeneric) {
-          console.warn("[wizard:suggestTopics] gemini returned generic list — falling back");
-        }
-      }
-    }
-
-    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
-    console.log(`[wizard:suggestTopics] gemini parse failed — fallback returned: ${JSON.stringify(fallback)}`);
-    return fallback;
+    const topics = await requestTopicsFromGemini(context, avoid, geminiKey);
+    if (topics) return topics;
   } catch (err) {
     console.warn("[wizard:suggestTopics] error:", err);
-    const fallback = getFallbackTopics(context.siteName, context.vertical, context.theme);
-    console.log(`[wizard:suggestTopics] error fallback returned: ${JSON.stringify(fallback)}`);
-    return fallback;
   }
+  return fallback();
 }
 
 /**
