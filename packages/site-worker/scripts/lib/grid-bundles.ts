@@ -192,3 +192,26 @@ export async function syncBundles(
   }
   return { entries, failed };
 }
+
+type BundleConfig = { grid?: { topics?: Array<{ bundles?: unknown }> } } | null;
+
+/**
+ * Bundle ids from every site's resolved config in BOTH environments — a Grid site that exists only on
+ * staging (e.g. a test site) must still get its bundles synced. A failing read is logged and skipped.
+ */
+export async function bundleIdsFromEnvironments(
+  siteIds: readonly string[],
+  readers: { prod: (id: string) => Promise<BundleConfig>; staging: (id: string) => Promise<BundleConfig> },
+): Promise<string[]> {
+  const configs: BundleConfig[] = [];
+  for (const id of siteIds) {
+    for (const [env, read] of [['prod', readers.prod], ['staging', readers.staging]] as const) {
+      try {
+        configs.push(await read(id));
+      } catch (err) {
+        console.warn(`[seed-grid] ${env} config read for bundles failed (${id}):`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
+  return collectBundleIds(configs);
+}

@@ -15,7 +15,7 @@ import { parse as parseYaml } from 'yaml';
 import { gridSummaryKey, networkDirectoryKey } from '../src/lib/kv-schema';
 import { buildNetworkDirectory, DEV1_SITE_IDS, type IndexSiteEntry, type SiteConfigSummary } from './lib/grid-directory';
 import { localConfigReader, localIndexReader, restConfigReader, restIndexReader, type ConfigReader } from './lib/grid-config-readers';
-import { collectBundleIds, readNetworkArticleFrontmatter, rewrittenIdsFromFrontmatter, syncBundles } from './lib/grid-bundles';
+import { bundleIdsFromEnvironments, readNetworkArticleFrontmatter, rewrittenIdsFromFrontmatter, syncBundles } from './lib/grid-bundles';
 import { aggregatorBase, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
 import { parseSummaryFile } from './lib/grid-summary-html';
 import { bulkPut } from './lib/kv-bulk';
@@ -62,7 +62,15 @@ async function main(): Promise<void> {
 
   // Content Aggregator bundles referenced by any Grid site's pills (spec D8). A failing bundle
   // writes nothing, so its existing KV stays as it was.
-  const bundleIds = collectBundleIds(configs.values());
+  // Prod configs are already loaded for the directory; staging is read too so staging-only Grid
+  // sites (test sites) get their bundles synced. Local runs have a single namespace.
+  const siteIds = entries.filter((e) => !DEV1_SITE_IDS.has(e.domain)).map((e) => e.domain);
+  const bundleIds = await bundleIdsFromEnvironments(siteIds, {
+    prod: async (id) => configs.get(id) ?? null,
+    staging: local
+      ? async () => null
+      : restConfigReader(requireEnv('CLOUDFLARE_ACCOUNT_ID'), requireEnv('CLOUDFLARE_API_TOKEN'), requireEnv('KV_NAMESPACE_ID_STAGING')),
+  });
   if (bundleIds.length > 0) {
     const base = aggregatorBase(process.env);
     const rewritten = rewrittenIdsFromFrontmatter(await readNetworkArticleFrontmatter(root, entries.map((e) => e.domain)));

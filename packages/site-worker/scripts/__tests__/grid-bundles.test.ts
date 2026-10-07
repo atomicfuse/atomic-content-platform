@@ -79,3 +79,22 @@ describe('collectBundleIds / rewrittenIdsFromFrontmatter', () => {
     expect([...rewrittenIdsFromFrontmatter([{ source_item_id: 'a1' }, { title: 'x' }, { source_item_id: 7 }])]).toEqual(['a1', '7']);
   });
 });
+
+describe('bundleIdsFromEnvironments', () => {
+  it('collects bundles from prod and staging configs (staging-only Grid sites count)', async () => {
+    const { bundleIdsFromEnvironments } = await import('../lib/grid-bundles');
+    const readers = {
+      prod: async (id: string) => (id === 'live-grid' ? { grid: { topics: [{ bundles: ['b1'] }] } } : null),
+      staging: async (id: string) => (id === 'danatest' ? { grid: { topics: [{ bundles: ['b2', 'b1'] }] } } : null),
+    };
+    expect(await bundleIdsFromEnvironments(['live-grid', 'danatest', 'other'], readers)).toEqual(['b1', 'b2']);
+  });
+  it('a failing staging read does not drop prod bundles', async () => {
+    const { bundleIdsFromEnvironments } = await import('../lib/grid-bundles');
+    const readers = {
+      prod: async () => ({ grid: { topics: [{ bundles: ['b1'] }] } }),
+      staging: async () => { throw new Error('kv 500'); },
+    };
+    expect(await bundleIdsFromEnvironments(['x'], readers)).toEqual(['b1']);
+  });
+});
