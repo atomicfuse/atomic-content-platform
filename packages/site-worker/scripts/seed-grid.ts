@@ -2,7 +2,10 @@
  * Writes Grid data to KV. Never reads or writes any existing key family.
  *   network-directory              ← dashboard-index.yaml + prod site-config:* (REST) — or local KV with --local
  *   grid-summary:<siteId>:<slug>   ← grid-summaries/<siteId>/<slug>.md (changed files, or all with --all-summaries)
- * Env (CI): NETWORK_DATA_PATH, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, KV_NAMESPACE_ID_PROD, KV_NAMESPACE_ID_STAGING
+ *   grid-ext-item:<itemId>         ← Content Aggregator bundles used by Grid pills (every run)
+ *   grid-ext-index:<bundleId>      ← same; merged with the existing index, never pruned
+ * Env (CI): NETWORK_DATA_PATH, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, KV_NAMESPACE_ID_PROD, KV_NAMESPACE_ID_STAGING,
+ *           CONTENT_API_BASE_URL (aggregator; falls back to CONTENT_AGGREGATOR_URL, then the default)
  * Env (--local): NETWORK_DATA_PATH, KV_NAMESPACE_ID (default: staging id — matches `pnpm dev:worker`)
  */
 import { readdir, readFile } from 'node:fs/promises';
@@ -11,7 +14,9 @@ import { join, relative } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { gridSummaryKey, networkDirectoryKey } from '../src/lib/kv-schema';
 import { buildNetworkDirectory, DEV1_SITE_IDS, type IndexSiteEntry, type SiteConfigSummary } from './lib/grid-directory';
-import { localConfigReader, restConfigReader, type ConfigReader } from './lib/grid-config-readers';
+import { localConfigReader, localIndexReader, restConfigReader, restIndexReader, type ConfigReader } from './lib/grid-config-readers';
+import { collectBundleIds, readNetworkArticleFrontmatter, rewrittenIdsFromFrontmatter, syncBundles } from './lib/grid-bundles';
+import { aggregatorBase, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
 import { parseSummaryFile } from './lib/grid-summary-html';
 import { bulkPut } from './lib/kv-bulk';
 
@@ -55,6 +60,24 @@ async function main(): Promise<void> {
   const directory = buildNetworkDirectory(entries, configs, new Date());
   const kvEntries = [{ key: networkDirectoryKey(), value: JSON.stringify(directory) }];
 
+  // Content Aggregator bundles referenced by any Grid site's pills (spec D8). A failing bundle
+  // writes nothing, so its existing KV stays as it was.
+  const bundleIds = collectBundleIds(configs.values());
+  if (bundleIds.length > 0) {
+    const base = aggregatorBase(process.env);
+    const rewritten = rewrittenIdsFromFrontmatter(await readNetworkArticleFrontmatter(root, entries.map((e) => e.domain)));
+    const readIndex = local
+      ? localIndexReader(process.env.KV_NAMESPACE_ID ?? STAGING_DEFAULT)
+      : restIndexReader(requireEnv('CLOUDFLARE_ACCOUNT_ID'), requireEnv('CLOUDFLARE_API_TOKEN'), requireEnv('KV_NAMESPACE_ID_PROD'));
+    const { entries: bundleEntries, failed } = await syncBundles(bundleIds, await fetchBundleNames(base), rewritten, {
+      fetchItems: (id) => fetchBundleItems(base, id),
+      readIndex,
+      now: () => new Date(),
+    });
+    kvEntries.push(...bundleEntries);
+    console.log(`[seed-grid] bundles: ${bundleIds.length} (${failed.length} failed), entries: ${bundleEntries.length}`);
+  }
+
   let summaryPaths: string[] = [];
   if (all) summaryPaths = await listSummaryFiles(root);
   else if (changedIdx >= 0 && args[changedIdx + 1]) {
@@ -73,7 +96,7 @@ async function main(): Promise<void> {
     ? [process.env.KV_NAMESPACE_ID ?? STAGING_DEFAULT]
     : [requireEnv('KV_NAMESPACE_ID_PROD'), requireEnv('KV_NAMESPACE_ID_STAGING')];
   for (const ns of targets) bulkPut(kvEntries, ns, !local);
-  console.log(`[seed-grid] directory: ${directory.sites.length} sites; summaries: ${kvEntries.length - 1} written, ${skipped} skipped; targets: ${targets.length}`);
+  console.log(`[seed-grid] directory: ${directory.sites.length} sites; kv entries: ${kvEntries.length - 1} written, ${skipped} skipped; targets: ${targets.length}`);
 }
 
 main().catch((err: unknown) => {

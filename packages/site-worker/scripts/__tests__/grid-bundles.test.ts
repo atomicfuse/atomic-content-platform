@@ -15,6 +15,11 @@ describe('parseBriefSections', () => {
   it('keeps only What It Covers and Why It Matters Now', () => {
     expect(parseBriefSections(item().summary)).toEqual({ whatItCovers: 'Dakota carried a burgundy case.', whyItMatters: 'Fall trend.' });
   });
+  it('accepts text on the same line as the heading (the more common live format)', () => {
+    expect(parseBriefSections('**What It Covers:** Jim Bakker has died.\nMore detail.\n\n**Why It Matters Now:** Legacy.\n\n**Key Angles:** x')).toEqual({
+      whatItCovers: 'Jim Bakker has died.\nMore detail.', whyItMatters: 'Legacy.',
+    });
+  });
   it('accepts "What It Appears To Cover", CRLF and missing sections', () => {
     expect(parseBriefSections('**What It Appears To Cover:**\r\nA thing.\r\n').whatItCovers).toBe('A thing.');
     expect(parseBriefSections(null)).toEqual({ whatItCovers: '', whyItMatters: '' });

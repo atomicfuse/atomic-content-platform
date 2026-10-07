@@ -1,4 +1,6 @@
 import { execFileSync } from 'node:child_process';
+import type { ExternalBundleIndex } from '@atomic-platform/shared-types';
+import { externalIndexKey } from '../../src/lib/kv-schema';
 import type { SiteConfigSummary } from './grid-directory';
 
 /** Reads a site's resolved config (only the fields the directory needs). */
@@ -35,6 +37,35 @@ export function localConfigReader(namespaceId: string): ConfigReader {
       return parseConfigOutput(out);
     } catch (err) {
       console.warn(`[seed-grid] local read site-config:${siteId} failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  };
+}
+
+/** Reads one bundle's `grid-ext-index:<bundleId>` (null when the bundle was never synced). */
+export type IndexReader = (bundleId: string) => Promise<ExternalBundleIndex | null>;
+
+/** CI: prod KV via the Cloudflare REST API. 404 → null; other failures throw (the sync must not merge into a blank index). */
+export function restIndexReader(accountId: string, token: string, namespaceId: string): IndexReader {
+  return async (bundleId) => {
+    const key = externalIndexKey(bundleId);
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/storage/kv/namespaces/${namespaceId}/values/${encodeURIComponent(key)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`[seed-grid] KV read ${key} failed: ${res.status}`);
+    return (await res.json()) as ExternalBundleIndex;
+  };
+}
+
+/** Local fixture runs: wrangler --local. Missing key → null; other failures warn and return null. */
+export function localIndexReader(namespaceId: string): IndexReader {
+  return async (bundleId) => {
+    const key = externalIndexKey(bundleId);
+    try {
+      const out = execFileSync('wrangler', ['kv', 'key', 'get', key, `--namespace-id=${namespaceId}`, '--local'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      return !out || out === 'Value not found' ? null : (JSON.parse(out) as ExternalBundleIndex);
+    } catch (err) {
+      console.warn(`[seed-grid] local read ${key} failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   };

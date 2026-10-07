@@ -16,12 +16,20 @@ describe('parseSummaryFile', () => {
   it('parses path + frontmatter into a KV record', () => {
     expect(parseSummaryFile('grid-summaries/a/s.md', raw)).toEqual({
       site: 'a', slug: 's',
-      record: { html: expect.stringContaining('<h2>H</h2>'), bodyHash: 'h1', generatedAt: '2026-09-27T00:00:00Z', model: 'm', edited: true, sourceChanged: true },
+      record: { html: expect.stringContaining('<h2>H</h2>'), bodyHash: 'h1', generatedAt: '2026-09-27T00:00:00Z', model: 'm', edited: true, sourceChanged: true, pinned: false },
     });
   });
   it('rejects paths outside grid-summaries/<site>/<slug>.md and empty bodies', () => {
     expect(parseSummaryFile('sites/a/s.md', raw)).toBeNull();
     expect(parseSummaryFile('grid-summaries/a/b/c.md', raw)).toBeNull();
     expect(parseSummaryFile('grid-summaries/a/s.md', '---\nslug: s\n---\n  \n')).toBeNull();
+  });
+});
+
+describe('pinned summaries', () => {
+  it('carries pinned from frontmatter for aggregator summaries', () => {
+    const parsed = parseSummaryFile('grid-summaries/aggregator/abc123.md', '---\npinned: true\n---\n## H\n\ntext');
+    expect(parsed?.site).toBe('aggregator');
+    expect(parsed?.record.pinned).toBe(true);
   });
 });

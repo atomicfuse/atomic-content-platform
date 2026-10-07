@@ -3,8 +3,13 @@
  * (spec docs/superpowers/specs/2026-10-07-grid-aggregator-sources-design.md).
  * seed-grid.ts does the I/O; everything here is testable without network or KV.
  */
+import { existsSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { ExternalBundleIndex, ExternalIndexEntry, ExternalStoryRecord } from '@atomic-platform/shared-types';
 import { slugifyTopic } from '../../src/lib/grid/normalize';
+import { externalIndexKey, externalItemKey } from '../../src/lib/kv-schema';
+import { splitFrontmatter } from './resolve';
 
 /** Content Aggregator item fields the sync uses (GET /api/content). */
 export interface AggregatorItem {
@@ -24,8 +29,11 @@ export interface AggregatorItem {
 }
 
 const INDEX_CAP = 300;
-/** "**What It Covers:**" heading lines in the aggregator's editorial brief. */
-const HEADING = /^\s*\*\*([^*]+?):?\*\*:?\s*$/;
+/**
+ * "**What It Covers:**" heading in the aggregator's editorial brief. The text may start on the
+ * same line (the more common live format) — group 2 keeps it.
+ */
+const HEADING = /^\s*\*\*([^*]+?):?\*\*:?\s*(.*)$/;
 
 /** "What It Covers" + "Why It Matters Now" from the editorial brief. Every other section is dropped. */
 export function parseBriefSections(summary: string | null): { whatItCovers: string; whyItMatters: string } {
@@ -39,6 +47,8 @@ export function parseBriefSections(summary: string | null): { whatItCovers: stri
       current = /^what it (covers|appears to cover)$/.test(name)
         ? 'whatItCovers'
         : name === 'why it matters now' ? 'whyItMatters' : null;
+      const inline = heading[2]!.trim();
+      if (current && inline) buf[current].push(inline);
       continue;
     }
     if (current) buf[current].push(line);
@@ -128,4 +138,57 @@ export function rewrittenIdsFromFrontmatter(frontmatters: Iterable<Record<string
     if (typeof value === 'string' || typeof value === 'number') ids.add(String(value));
   }
   return ids;
+}
+
+/** Frontmatter of every network article for the given domains (repo checkout); missing folders are skipped. */
+export async function readNetworkArticleFrontmatter(root: string, domains: readonly string[]): Promise<Array<Record<string, unknown>>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const domain of domains) {
+    const dir = join(root, 'sites', domain, 'articles');
+    if (!existsSync(dir)) continue;
+    for (const file of await readdir(dir)) {
+      if (!file.endsWith('.md')) continue;
+      out.push(splitFrontmatter(await readFile(join(dir, file), 'utf8')).front ?? {});
+    }
+  }
+  return out;
+}
+
+/** I/O the bundle sync needs (injected so tests never hit the network or KV). */
+export interface BundleSyncDeps {
+  fetchItems(bundleId: string): Promise<AggregatorItem[]>;
+  readIndex(bundleId: string): Promise<ExternalBundleIndex | null>;
+  now(): Date;
+}
+
+/** KV entries for every bundle. A failing bundle produces no entries, so its KV stays as it was. */
+export async function syncBundles(
+  bundleIds: readonly string[],
+  names: ReadonlyMap<string, string>,
+  rewritten: ReadonlySet<string>,
+  deps: BundleSyncDeps,
+): Promise<{ entries: Array<{ key: string; value: string }>; failed: string[] }> {
+  const entries: Array<{ key: string; value: string }> = [];
+  const failed: string[] = [];
+  const written = new Set<string>();
+  for (const bundleId of bundleIds) {
+    try {
+      const now = deps.now();
+      const records = (await deps.fetchItems(bundleId))
+        .map((item) => toExternalRecord(item, rewritten, now))
+        .filter((r): r is ExternalStoryRecord => r !== null);
+      if (records.length === 0) continue;
+      const index = mergeBundleIndex(await deps.readIndex(bundleId), bundleId, names.get(bundleId) ?? '', records, now);
+      for (const r of records) {
+        if (written.has(r.id)) continue; // same story in two bundles → one record
+        written.add(r.id);
+        entries.push({ key: externalItemKey(r.id), value: JSON.stringify(r) });
+      }
+      entries.push({ key: externalIndexKey(bundleId), value: JSON.stringify(index) });
+    } catch (err) {
+      failed.push(bundleId);
+      console.error(`[seed-grid] bundle ${bundleId} skipped:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return { entries, failed };
 }
