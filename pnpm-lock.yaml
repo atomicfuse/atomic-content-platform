@@ -83,9 +83,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1045.0
         version: 3.1045.0
-      '@cloudgrid-io/ai':
-        specifier: ^0.1.1
-        version: 0.1.1
+      '@cloudgrid-io/runtime':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@octokit/plugin-retry':
         specifier: ^7.2.1
         version: 7.2.1(@octokit/core@6.1.6)
@@ -153,9 +153,6 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1045.0
         version: 3.1045.0
-      '@cloudgrid-io/ai':
-        specifier: ^0.1.1
-        version: 0.1.1
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -669,8 +666,8 @@ packages:
   '@cloudflare/workers-types@4.20260423.1':
     resolution: {integrity: sha512-SHIc0NeJMtn0sW043eWtMxYFbJ9VPSLkcx+FEqCk0uZLD3HrWT+5xWhm6EYiOYDg0vnrlXNHcu2ly/01zDh3bw==}
 
-  '@cloudgrid-io/ai@0.1.1':
-    resolution: {integrity: sha512-/ZsWPmLOVy8zf35C+R7itBBemenD4kSqrH3kSMDN/PJRIR+8Xo8B9vmZwl9JLYStJo9v/QWpZ/p/g1NoPzqIWg==}
+  '@cloudgrid-io/runtime@1.0.3':
+    resolution: {integrity: sha512-2W/b7kPEhQGbAwI9llKiL8sTj2EZIvFZFB8/cgYAsPDUA5pIJMb7CrjQNoMY+2nJOw2cD53NlW8uFhzGOSkCfQ==}
     engines: {node: '>=18'}
 
   '@cspotcode/source-map-support@0.8.1':
@@ -5039,7 +5036,7 @@ snapshots:
 
   '@cloudflare/workers-types@4.20260423.1': {}
 
-  '@cloudgrid-io/ai@0.1.1': {}
+  '@cloudgrid-io/runtime@1.0.3': {}
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:

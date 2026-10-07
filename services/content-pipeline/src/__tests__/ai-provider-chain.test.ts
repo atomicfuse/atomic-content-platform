@@ -9,7 +9,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
     messages = { create: anthropicCreate };
   },
 }));
-vi.mock("@cloudgrid-io/ai", () => ({ ai: { chat: gatewayChat } }));
+vi.mock("@cloudgrid-io/runtime", () => ({ runtime: { ai: { chat: gatewayChat } } }));
 vi.mock("openai", () => ({
   default: class {
     chat = { completions: { create: openaiCreate } };
@@ -59,10 +59,23 @@ describe("generateContent provider chain", () => {
 
   it("falls back to the CloudGrid gateway when Anthropic errors", async () => {
     anthropicCreate.mockRejectedValue(new Error("overloaded"));
-    gatewayChat.mockResolvedValue({ text: "from-gateway", model: "claude-sonnet" });
+    gatewayChat.mockResolvedValue({ text: "from-gateway", model: "claude-sonnet", usage: { input_tokens: 7, output_tokens: 9 } });
     const res = await generateContent(PARAMS);
-    expect(res).toMatchObject({ text: "from-gateway", provider: "cloudgrid" });
-    expect(res.usage.estimated).toBe(true);
+    expect(res).toMatchObject({ text: "from-gateway", provider: "cloudgrid", model: "claude-sonnet" });
+    // Runtime SDK: one request object (system / messages / max_tokens) and real usage back.
+    expect(gatewayChat).toHaveBeenCalledWith(expect.objectContaining({
+      system: PARAMS.systemPrompt,
+      messages: [{ role: "user", content: PARAMS.userPrompt }],
+      model: "claude-sonnet",
+      max_tokens: expect.any(Number),
+    }));
+    expect(res.usage).toEqual({ inputTokens: 7, outputTokens: 9, estimated: false });
+  });
+
+  it("estimates gateway usage when the response has none", async () => {
+    anthropicCreate.mockRejectedValue(new Error("overloaded"));
+    gatewayChat.mockResolvedValue({ text: "from-gateway", model: "claude-sonnet" });
+    expect((await generateContent(PARAMS)).usage.estimated).toBe(true);
   });
 
   it("falls back to OpenAI gpt-6-luna when both Claude routes fail", async () => {

@@ -17,7 +17,7 @@ services/content-pipeline/
         types.ts                          -- ContentItem, ArticlePackage, SEOMetadata, etc.
         generators/
           base-generator.ts               -- Generator interface + shared prompt context builder
-          claude-generator.ts             -- News/factual via CloudGrid AI (@cloudgrid-io/ai)
+          claude-generator.ts             -- News/factual via the AI provider chain (lib/ai.ts)
           openai-generator.ts             -- General/evergreen via OpenAI SDK (GPT-4o-mini)
         prompts/
           news-article.ts                 -- Factual prompt: journalist tone, no invented facts

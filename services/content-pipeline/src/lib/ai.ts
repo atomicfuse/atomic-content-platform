@@ -4,7 +4,7 @@
  * Every call tries, in order, and returns the first success:
  *   1. Anthropic SDK (ANTHROPIC_API_KEY) — pins the exact Claude model and
  *      returns real token usage. Skipped when no key is configured.
- *   2. CloudGrid AI Gateway (@cloudgrid-io/ai) — alias model, estimated usage.
+ *   2. CloudGrid AI Gateway (@cloudgrid-io/runtime, `requires: ai`) — alias model.
  *   3. OpenAI (OPENAI_API_KEY) — cheap last resort so a Claude outage never
  *      stops generation.
  * There is no sticky state: a failure only affects the call it happened in.
@@ -89,22 +89,22 @@ async function callAnthropic(params: GenerateArticleParams): Promise<GenerateCon
 }
 
 async function callGateway(params: GenerateArticleParams): Promise<GenerateContentResult> {
-  const cloudgrid = await import("@cloudgrid-io/ai");
-  const result = await cloudgrid.ai.chat([{ role: "user", content: params.userPrompt }], {
-    model: params.model ?? GATEWAY_MODEL_ALIAS,
-    maxTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+  const { runtime } = await import("@cloudgrid-io/runtime");
+  const result = await runtime.ai.chat({
     system: params.systemPrompt,
+    messages: [{ role: "user", content: params.userPrompt }],
+    model: params.model ?? GATEWAY_MODEL_ALIAS,
+    max_tokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
   });
-  const { text, model } = result as { text: string; model?: string };
+  const { text, model, usage } = result as { text?: string; model?: string; usage?: { input_tokens?: number; output_tokens?: number } };
   if (!text?.trim()) throw new Error("no text in response");
+  const real = typeof usage?.input_tokens === "number" && typeof usage.output_tokens === "number";
   return {
     text,
-    // Gateway doesn't return usage — estimate from prompt + output text.
-    usage: {
-      inputTokens: estimateTokens(params.systemPrompt + params.userPrompt),
-      outputTokens: estimateTokens(text),
-      estimated: true,
-    },
+    // The runtime gateway reports usage; estimate only if a response lacks it.
+    usage: real
+      ? { inputTokens: usage.input_tokens as number, outputTokens: usage.output_tokens as number, estimated: false }
+      : { inputTokens: estimateTokens(params.systemPrompt + params.userPrompt), outputTokens: estimateTokens(text), estimated: true },
     model: model ?? GATEWAY_MODEL_ALIAS,
     provider: "cloudgrid",
   };

@@ -180,7 +180,7 @@ Same flow — writes `enabled: true`. The next hourly tick that matches `run_at_
 | **Hosting** | Runs dashboard (Next.js) and content-pipeline (Node) as managed services |
 | **Cron execution** | `scheduled-publisher` entry in `cloudgrid.yaml` fires hourly |
 | **Internal DNS** | `http://content-pipeline-app` resolves inside CloudGrid, allowing dashboard → pipeline communication without public URLs |
-| **AI Gateway** | `@cloudgrid-io/ai` provides Claude access in production without API keys |
+| **AI Gateway** | `@cloudgrid-io/runtime` (`runtime.ai.chat`) provides Claude access in production without API keys; backup step after the Anthropic key |
 | **Secrets** | `GITHUB_TOKEN`, `GEMINI_API_KEY`, etc. managed via `cloudgrid secrets set` |
 
 ## Write Path Invariant

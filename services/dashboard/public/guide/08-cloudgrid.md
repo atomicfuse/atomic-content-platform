@@ -147,7 +147,7 @@ cloudgrid secrets set atomic-content-platform KEY=value
 | `CLOUDFLARE_API_TOKEN`       | dashboard                   | Cloudflare API for Pages/DNS management |
 | `CLOUDFLARE_ACCOUNT_ID`      | dashboard                   | Cloudflare account identifier           |
 
-Note: `ANTHROPIC_API_KEY` is not needed for the content pipeline when running on CloudGrid -- the CloudGrid AI Gateway handles Claude API access automatically via `@cloudgrid-io/ai`.
+Note: text generation tries `ANTHROPIC_API_KEY` first, then the CloudGrid AI Gateway via `@cloudgrid-io/runtime` (`runtime.ai.chat` — requires `- ai` under `requires:` in `cloudgrid.yaml`), then OpenAI.
 
 ## Service Communication
 
