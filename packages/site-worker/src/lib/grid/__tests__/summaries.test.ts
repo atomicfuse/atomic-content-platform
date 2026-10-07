@@ -53,3 +53,12 @@ describe('lookupSummaryStatuses', () => {
     }
   });
 });
+
+describe('lookupSummaryStatuses — pinned', () => {
+  it('reports pinned only when the record is pinned', async () => {
+    const [pinned] = await lookupSummaryStatuses([item(1)], async () => rec({ pinned: true }));
+    expect(pinned!.summary).toEqual({ status: 'generated', generatedAt: 'g', pinned: true });
+    const [plain] = await lookupSummaryStatuses([item(1)], async () => rec());
+    expect(plain!.summary).toEqual({ status: 'generated', generatedAt: 'g' });
+  });
+});

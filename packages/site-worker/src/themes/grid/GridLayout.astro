@@ -156,6 +156,15 @@ const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
     </style>
 
     <style set:html={`:root { ${cssVars} }`}></style>
+    {/* Publisher images (aggregator stories) can fail to load — swap in the placeholder.
+        Capture phase: image error events don't bubble. Registered in <head> so it catches
+        errors from images in the initial HTML and from infinite-scroll batches alike. */}
+    <script is:inline>
+      document.addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && t.tagName === 'IMG' && t.dataset && t.dataset.fallback && t.getAttribute('src') !== t.dataset.fallback) t.src = t.dataset.fallback;
+      }, true);
+    </script>
   </head>
 
   <body class="g-body" {...bodyAttrs}>

@@ -47,9 +47,11 @@ function faviconHtml(site: NetworkDirectorySite | undefined, fallbackName: strin
 
 /** "[favicon] Site Name · 5d" — shared by cards and the story header. */
 export function renderSourceLineHtml(item: GridPoolItem, ctx: TileRenderContext): string {
-  const site = ctx.sites.get(item.site);
-  const name = escapeHtml(site?.name ?? item.site);
-  return `<p class="g-card__source">${faviconHtml(site, item.site)}<span class="g-card__site">${name}</span>`
+  // External stories name the publisher (no favicon available → letter badge).
+  const external = item.kind === 'external';
+  const site = external ? undefined : ctx.sites.get(item.site);
+  const rawName = external ? (item.sourceName || 'Source') : (site?.name ?? item.site);
+  return `<p class="g-card__source">${faviconHtml(site, rawName)}<span class="g-card__site">${escapeHtml(rawName)}</span>`
     + `<span class="g-card__dot" aria-hidden="true">·</span><time datetime="${escapeHtml(item.publishDate)}">${escapeHtml(formatAge(item.publishDate, ctx.now))}</time></p>`;
 }
 
@@ -61,7 +63,7 @@ function renderCardHtml(item: GridPoolItem, index: number, ctx: TileRenderContex
   const intro = ctx.showIntro && item.description ? `<p class="g-card__intro">${escapeHtml(item.description)}</p>` : '';
   return `<article class="g-tile g-card" style="--g-i:${index % 20}"${item.pinned ? ' data-pinned="true"' : ''}>`
     + `<a class="g-card__link" href="${href}">`
-    + `<div class="g-card__media"><img src="${img}" alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
+    + `<div class="g-card__media"><img src="${img}" data-fallback="/placeholder.svg" alt="" loading="lazy" decoding="async" />${badge ? source : ''}</div>`
     + `<div class="g-card__body">${badge ? '' : source}<h3 class="g-card__title">${escapeHtml(item.title)}</h3>${intro}</div>`
     + `</a></article>`;
 }

@@ -68,3 +68,19 @@ describe('selectPlacements', () => {
     expect(selectPlacements(p, 'grid-feed', 'category').map((x) => x.id)).toEqual(['1', '2', '3']);
   });
 });
+
+describe('renderTilesHtml — external stories', () => {
+  it('links to /story/aggregator/<slug>, names the publisher with a letter badge, and has an image fallback', () => {
+    const ext = item('t-x1', { site: 'aggregator', kind: 'external', sourceName: 'InStyle', featuredImage: 'https://img/x.jpg' });
+    const html = renderTilesHtml(buildTiles([ext], 0, 0), ctx());
+    expect(html).toContain('href="/story/aggregator/t-x1"');
+    expect(html).toContain('<span class="g-card__site">InStyle</span>');
+    expect(html).toContain('g-card__favicon--letter" aria-hidden="true">I<');
+    expect(html).toContain('data-fallback="/placeholder.svg"');
+  });
+  it('network cards are unchanged apart from the image fallback attribute', () => {
+    const html = renderTilesHtml(buildTiles([item('a')], 0, 0), ctx());
+    expect(html).toContain('Science World');
+    expect(html).toContain('src="/sw/assets/fav.png"');
+  });
+});

@@ -26,7 +26,12 @@ export async function lookupSummaryStatuses(items: GridPoolItem[], get: SummaryG
     if (i >= limit) return item;
     try {
       const rec = await get(gridSummaryKey(item.site, item.slug));
-      return { ...item, summary: rec ? { status: summaryStatusOf(rec), generatedAt: rec.generatedAt } : { status: 'none' } };
+      return {
+        ...item,
+        summary: rec
+          ? { status: summaryStatusOf(rec), generatedAt: rec.generatedAt, ...(rec.pinned ? { pinned: true } : {}) }
+          : { status: 'none' },
+      };
     } catch (err) {
       console.error(`[grid] summary lookup failed for ${item.site}/${item.slug}:`, err instanceof Error ? err.message : err);
       return item;
