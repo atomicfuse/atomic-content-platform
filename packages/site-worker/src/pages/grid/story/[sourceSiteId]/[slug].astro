@@ -12,6 +12,7 @@ import { edgeCache, kvReader, loadGridPool, NO_CACHE } from '../../../../lib/gri
 import { relatedItems } from '../../../../lib/grid/story';
 import { buildNetworkStoryView, renderStoryArticleHtml } from '../../../../lib/grid/story-view';
 import { isStoryHidden } from '../../../../lib/grid/feed';
+import { articleRedirectTarget } from '../../../../lib/redirects';
 import { injectInlineAds } from '../../../../lib/inline-ads';
 import { articleKey, gridSummaryKey, type ArticleRecord } from '../../../../lib/kv-schema';
 export const prerender = false;
@@ -26,6 +27,11 @@ const data = await loadGridPool(kvReader(env.CONFIG_KV), g.staging ? NO_CACHE : 
 const source = data.resolved.sources.find((s) => s.siteId === sourceSiteId);
 if (!source) return notFound();
 const record = await env.CONFIG_KV.get<ArticleRecord>(articleKey(sourceSiteId, slug), 'json');
+if (!record) {
+  // Renamed at the source site → permanent redirect to the story's new slug.
+  const to = await articleRedirectTarget(env.CONFIG_KV, sourceSiteId, slug);
+  if (to) return Astro.redirect(`/story/${sourceSiteId}/${to}${Astro.url.search}`, 301);
+}
 if (!record || record.frontmatter.status !== 'published') return notFound();
 // Always read the summary: a story-level ("Use AI summary") summary shows in any story mode.
 const summary = await env.CONFIG_KV.get<GridSummaryRecord>(gridSummaryKey(sourceSiteId, slug), 'json');

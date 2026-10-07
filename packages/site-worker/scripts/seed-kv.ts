@@ -64,6 +64,7 @@ import { resolveLayout } from './lib/resolve-layout';
 import { parseFeatured } from './lib/parse-featured';
 import { contentTypeForFile } from './lib/content-types';
 import { validateResolvedConfig } from './lib/validate-config';
+import { parseRedirectFrom, redirectEntries } from './lib/article-redirects';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -345,7 +346,7 @@ function assignFallbackTopics(
 
 // ---------- Article loading ----------
 
-async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
+async function loadArticles(siteId: string, redirects: Array<{ slug: string; from: string[] }> = []): Promise<ArticleRecord[]> {
   const dir = join(NETWORK_DATA_PATH, 'sites', siteId, 'articles');
   let files: string[] = [];
   try {
@@ -377,6 +378,8 @@ async function loadArticles(siteId: string): Promise<ArticleRecord[]> {
     };
     const html = rewriteAssetUrls(marked.parse(body, { async: false }) as string, siteId);
     records.push({ frontmatter, body: html });
+    const from = parseRedirectFrom(front);
+    if (from.length > 0) redirects.push({ slug, from });
   }
   records.sort(
     (a, b) => new Date(b.frontmatter.publishDate).getTime() - new Date(a.frontmatter.publishDate).getTime(),
@@ -744,7 +747,8 @@ async function main(): Promise<void> {
   }
 
   // 2. Articles
-  const articles = await loadArticles(siteId);
+  const articleRedirects: Array<{ slug: string; from: string[] }> = [];
+  const articles = await loadArticles(siteId, articleRedirects);
 
   // Infer topic membership for legacy articles (WordPress imports etc.)
   // that have tags but no explicit `topics` field.
@@ -819,6 +823,10 @@ async function main(): Promise<void> {
   for (const page of sharedPages) {
     entries.push({ key: `shared-page:${siteId}:${page.slug}`, value: JSON.stringify(page) });
   }
+  // Renamed articles: old slug → new slug (301 in the article routes).
+  const redirectKv = redirectEntries(siteId, articleRedirects, new Set(articles.map((a) => a.frontmatter.slug)));
+  entries.push(...redirectKv);
+  if (redirectKv.length > 0) console.log(`[seed-kv] article redirects: ${redirectKv.length}`);
   const status: SyncStatus = {
     gitSha: process.env.GITHUB_SHA ?? 'manual-seed',
     committedAt: now,

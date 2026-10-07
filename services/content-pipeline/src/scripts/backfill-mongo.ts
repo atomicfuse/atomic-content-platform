@@ -74,6 +74,15 @@ async function ensureIndexes(db: Db): Promise<void> {
 
 const ARTICLE_BATCH_SIZE = 100;
 
+/**
+ * Mongo filter for this site+branch's article records whose file no longer exists in Git (deleted or
+ * renamed, e.g. brand-safety slug renames). Null for an empty listing — a failed listing must never
+ * wipe a site's records.
+ */
+export function staleArticlesFilter(domain: string, branch: string, slugs: readonly string[]): { domain: string; branch: string; slug: { $nin: string[] } } | null {
+  return slugs.length === 0 ? null : { domain, branch, slug: { $nin: [...slugs] } };
+}
+
 async function backfillArticles(
   db: Db,
   octokit: Octokit,
@@ -126,6 +135,13 @@ async function backfillArticles(
             const msg = err instanceof Error ? err.message : String(err);
             console.warn(`[backfill]   skip ${filePath}@${branch}: ${msg}`);
           }
+        }
+
+        // Drop records whose file is gone (otherwise a renamed article shows twice in the dashboard).
+        const stale = staleArticlesFilter(site.domain, branch, articleFiles.filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")));
+        if (stale) {
+          const { deletedCount } = await coll.deleteMany(stale);
+          if (deletedCount > 0) console.log(`[backfill] articles: removed ${deletedCount} stale record(s) for ${site.domain}@${branch}`);
         }
 
         // Bulk write in batches

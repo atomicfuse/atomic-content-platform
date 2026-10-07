@@ -15,6 +15,7 @@ import AdSlot from '../../components/AdSlot.astro';
 import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
+import { articleRedirectTarget } from '../../lib/redirects';
 import { injectInlineAds } from '../../lib/inline-ads';
 import { injectVideos } from '../../lib/inject-videos';
 import { injectArticleScripts } from '../../lib/inject-scripts';
@@ -44,6 +45,11 @@ const article: ArticleRecord | null = shared
 
 // Preview mode (via ?_atl_site=) bypasses status filtering so review
 // articles are visible for content review from the dashboard.
+if (!shared && !article) {
+  // A renamed article (e.g. brand-safety slug rename) → permanent redirect from its old slug.
+  const to = await articleRedirectTarget(env.CONFIG_KV, siteId, slug);
+  if (to) return Astro.redirect(`/${to}${Astro.url.search}`, 301);
+}
 if (!shared && (!article || (!preview && !isVisibleArticle(article.frontmatter.status)))) {
   return new Response('Not found', { status: 404 });
 }

@@ -290,6 +290,12 @@ Each article gets SEO metadata generated algorithmically (no extra AI call neede
 | **Open Graph tags** | `og:title`, `og:description`, `og:type`, `og:image` |
 | **Reading time** | Estimated at 250 words/minute |
 
+## Brand-Safe Slugs
+
+Advertisers and verification vendors block ads by keywords in the page URL, so every new article's slug is checked before it is saved (`lib/brand-safety.ts`, categories from the GARM Brand Safety Floor: sexual content, weapons, crime/prison, death/war/tragedy, drugs/tobacco, terrorism, hate, profanity, suicide/self-harm/eating disorders/abortion). The writer is told the rule up front; a slug that still fails is rewritten once by the AI, else the unsafe words are removed. Alcohol, gambling and "conspiracy" are deliberately allowed (whole verticals depend on them).
+
+**Existing articles:** `npx tsx src/scripts/brand-safe-slugs.ts plan --sites <site>` (or `--all`) lists renames for review; `apply --plan <file>` renames them on `main` and `staging/<site>`, keeping the old slug in `redirect_from:` so the old URL 301s to the new one. Push the printed commits, then run backfill-mongo for the sites.
+
 ## Article Types
 
 Each article is generated as one of four types:

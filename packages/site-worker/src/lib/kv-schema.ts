@@ -66,6 +66,9 @@ export const siteConfigKey = (siteId: string): string => `site-config:${siteId}`
 export const siteConfigPrevKey = (siteId: string): string => `site-config-prev:${siteId}`;
 export const articleIndexKey = (siteId: string): string => `article-index:${siteId}`;
 export const articleKey = (siteId: string, slug: string): string => `article:${siteId}:${slug}`;
+/** Old slug of a renamed article → { to: newSlug } (written by seed-kv from `redirect_from`). */
+export const redirectKey = (siteId: string, slug: string): string => `redirect:${siteId}:${slug}`;
+export interface ArticleRedirect { to: string }
 export const syncStatusKey = (siteId: string): string => `sync-status:${siteId}`;
 export const sharedPageKey = (siteId: string, name: string): string => `shared-page:${siteId}:${name}`;
 
