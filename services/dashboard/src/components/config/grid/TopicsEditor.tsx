@@ -1,11 +1,13 @@
 "use client";
 
-import type { GridTopicFields } from "@/types/grid";
+import type { BundleOption, GridTopicFields } from "@/types/grid";
 
 interface TopicsEditorProps {
   value: GridTopicFields[];
   onChange: (next: GridTopicFields[]) => void;
   verticals: string[];
+  /** Content Aggregator bundles available to attach to pills. */
+  bundles?: BundleOption[];
 }
 
 const inputClass =
@@ -16,10 +18,10 @@ const iconButtonClass =
 
 /**
  * Ordered pill editor for the Grid template's topic navigation. Each pill has
- * a label (+ optional slug) and pulls in articles from Live network sites
- * whose vertical matches one of the selected verticals.
+ * a label (+ optional slug) and pulls in stories from Live network sites in the
+ * selected verticals and from the selected Content Aggregator bundles.
  */
-export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps): React.ReactElement {
+export function TopicsEditor({ value, onChange, verticals, bundles = [] }: TopicsEditorProps): React.ReactElement {
   const update = (i: number, patch: Partial<GridTopicFields>): void =>
     onChange(value.map((t, j) => (j === i ? { ...t, ...patch } : t)));
 
@@ -124,6 +126,12 @@ export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps):
                 ))}
               </div>
             </div>
+            <BundleChecklist
+              name={name}
+              selected={topic.bundles ?? []}
+              options={bundles}
+              onChange={(next): void => update(i, { bundles: next.length ? next : undefined })}
+            />
           </fieldset>
         );
       })}
@@ -134,6 +142,43 @@ export function TopicsEditor({ value, onChange, verticals }: TopicsEditorProps):
       >
         Add topic
       </button>
+    </div>
+  );
+}
+
+/** A pill's aggregator bundles. Ids no longer offered by the aggregator stay visible (checked) so they can be cleared. */
+function BundleChecklist({ name, selected, options, onChange }: {
+  name: string;
+  selected: string[];
+  options: BundleOption[];
+  onChange: (next: string[]) => void;
+}): React.ReactElement {
+  const missing = selected.filter((id) => !options.some((b) => b.id === id));
+  const rows = [
+    ...options.map((b) => ({ id: b.id, label: `${b.name} (${b.count})` })),
+    ...missing.map((id) => ({ id, label: `${id} (missing)` })),
+  ];
+  return (
+    <div className="space-y-1.5" role="group" aria-label={`Bundles for ${name}`}>
+      <span className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+        Aggregator bundles
+      </span>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {rows.length === 0 && <span className="text-xs text-[var(--text-muted)]">No bundles available.</span>}
+        {rows.map((b) => (
+          <label key={b.id} className="inline-flex items-center gap-1.5 text-sm text-[var(--text-primary)]">
+            <input
+              type="checkbox"
+              checked={selected.includes(b.id)}
+              onChange={(e): void =>
+                onChange(e.target.checked ? [...selected, b.id] : selected.filter((x) => x !== b.id))
+              }
+              className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
+            />
+            {b.label}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }

@@ -49,3 +49,22 @@ describe("TopicsEditor", () => {
     expect(onChange).toHaveBeenLastCalledWith([{ label: "B", verticals: [] }]);
   });
 });
+
+describe("TopicsEditor — aggregator bundles", () => {
+  it("adds a bundle to a pill", async () => {
+    const onChange = vi.fn();
+    render(<TopicsEditor value={[{ label: "Celebs", verticals: [] }]} onChange={onChange} verticals={[]} bundles={[{ id: "b1", name: "Scoopella", count: 347 }]} />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Scoopella (347)" }));
+    expect(onChange).toHaveBeenCalledWith([{ label: "Celebs", verticals: [], bundles: ["b1"] }]);
+  });
+  it("removing the last bundle drops the key", async () => {
+    const onChange = vi.fn();
+    render(<TopicsEditor value={[{ label: "Celebs", verticals: [], bundles: ["b1"] }]} onChange={onChange} verticals={[]} bundles={[{ id: "b1", name: "Scoopella", count: 347 }]} />);
+    await userEvent.click(screen.getByRole("checkbox", { name: "Scoopella (347)" }));
+    expect(onChange).toHaveBeenCalledWith([{ label: "Celebs", verticals: [] }]);
+  });
+  it("shows a bundle the aggregator no longer has, so it can be cleared", () => {
+    render(<TopicsEditor value={[{ label: "X", verticals: [], bundles: ["gone"] }]} onChange={vi.fn()} verticals={[]} bundles={[]} />);
+    expect(screen.getByRole("checkbox", { name: "gone (missing)" })).toBeChecked();
+  });
+});

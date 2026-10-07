@@ -18,7 +18,7 @@ interface StepGridFeedProps {
  */
 export function isGridFeedReady(grid: GridFields | undefined): boolean {
   const hasTopic = (grid?.topics ?? []).some(
-    (t) => t.label.trim().length > 0 && t.verticals.length > 0,
+    (t) => t.label.trim().length > 0 && (t.verticals.length > 0 || (t.bundles?.length ?? 0) > 0),
   );
   const hasIncludedSite = (grid?.include_sites ?? []).length > 0;
   return hasTopic || hasIncludedSite;
@@ -55,7 +55,7 @@ export function StepGridFeed({
         <div className="flex items-center gap-3">
           {!canProceed && (
             <p id="grid-feed-next-reason" role="status" className="text-xs text-[var(--text-muted)] text-right">
-              Add a topic pill with a label and a vertical, or include at least one site.
+              Add a topic pill with a label and a vertical or bundle, or include at least one site.
             </p>
           )}
           <Button

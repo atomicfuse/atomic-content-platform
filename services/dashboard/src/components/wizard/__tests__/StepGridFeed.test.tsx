@@ -26,7 +26,7 @@ function makeFormData(grid?: GridFields): WizardFormData {
   return makeWizardFormData({ template: "grid", grid });
 }
 
-const REASON = /Add a topic pill with a label and a vertical, or include at least one site/;
+const REASON = /Add a topic pill with a label and a vertical or bundle, or include at least one site/;
 
 describe("isGridFeedReady", () => {
   it.each<[string, GridFields | undefined, boolean]>([
@@ -36,6 +36,8 @@ describe("isGridFeedReady", () => {
     ["topic with blank label", { topics: [{ label: "  ", verticals: ["Health"] }] }, false],
     ["vertical on one topic, label on another", { topics: [{ label: "A", verticals: [] }, { label: "", verticals: ["V"] }] }, false],
     ["topic with label + vertical", { topics: [{ label: "Health", verticals: ["Health"] }] }, true],
+    ["bundle-only pill", { topics: [{ label: "Celebs", verticals: [], bundles: ["b1"] }] }, true],
+    ["pill with empty bundles", { topics: [{ label: "Celebs", verticals: [], bundles: [] }] }, false],
     ["included site only", { include_sites: ["foo"] }, true],
     ["excluded site only", { exclude_sites: ["foo"] }, false],
   ])("%s → %s", (_name, grid, expected) => {

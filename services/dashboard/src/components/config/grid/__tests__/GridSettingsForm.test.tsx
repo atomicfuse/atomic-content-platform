@@ -17,7 +17,7 @@ describe("GridSettingsForm", () => {
   it("story mode select writes story_mode", () => {
     const onChange = vi.fn();
     render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} />);
-    fireEvent.change(screen.getByLabelText("Story page text"), { target: { value: "ai_summary" } });
+    fireEvent.change(screen.getByLabelText("Network stories"), { target: { value: "ai_summary" } });
     expect(onChange).toHaveBeenLastCalledWith({ story_mode: "ai_summary" });
   });
 
@@ -27,5 +27,29 @@ describe("GridSettingsForm", () => {
     render(<GridSettingsForm value={{ pinned }} onChange={onChange} sites={[]} verticals={[]} />);
     fireEvent.change(screen.getByLabelText("Cards per page"), { target: { value: "24" } });
     expect(onChange).toHaveBeenLastCalledWith({ pinned, page_size: 24 });
+  });
+});
+
+describe("GridSettingsForm — aggregator settings", () => {
+  it("labels the existing story mode Network stories", () => {
+    render(<GridSettingsForm value={{}} onChange={vi.fn()} sites={[]} verticals={[]} />);
+    expect(screen.getByLabelText("Network stories")).toBeInTheDocument();
+  });
+  it("sets the aggregator story mode and the per-bundle limit", () => {
+    const onChange = vi.fn();
+    render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} />);
+    fireEvent.change(screen.getByLabelText("Aggregator stories"), { target: { value: "ai_summary" } });
+    expect(onChange).toHaveBeenLastCalledWith({ external_story_mode: "ai_summary" });
+    fireEvent.change(screen.getByLabelText("Stories per bundle"), { target: { value: "15" } });
+    expect(onChange).toHaveBeenLastCalledWith({ per_bundle_limit: 15 });
+  });
+  it("blocks and unblocks aggregator sources", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} sources={["Conspiracy", "InStyle"]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Conspiracy" }));
+    expect(onChange).toHaveBeenLastCalledWith({ blocked_sources: ["Conspiracy"] });
+    rerender(<GridSettingsForm value={{ blocked_sources: ["Conspiracy"] }} onChange={onChange} sites={[]} verticals={[]} sources={["Conspiracy", "InStyle"]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Conspiracy" }));
+    expect(onChange).toHaveBeenLastCalledWith({});
   });
 });
