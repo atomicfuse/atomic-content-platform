@@ -106,3 +106,10 @@ describe('bundleIdsFromEnvironments', () => {
     expect(await bundleIdsFromEnvironments(['x'], readers)).toEqual(['b1']);
   });
 });
+
+describe('index entries carry categories', () => {
+  it('keeps the story categories on the index entry (for category blocking)', () => {
+    const idx = mergeBundleIndex(null, 'b', 'n', [toExternalRecord(item(), new Set(), NOW)!], NOW);
+    expect(idx.items[0]!.categories).toEqual(['Pop Culture']);
+  });
+});

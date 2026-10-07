@@ -38,8 +38,8 @@ describe('applyGridResolution', () => {
   });
 });
 
-describe('blocked_sources merge', () => {
+describe('blocked_categories merge', () => {
   it('last non-empty layer wins', () => {
-    expect(mergeGridLayers([{ blocked_sources: ['A'] }, { blocked_sources: [] }]).blocked_sources).toEqual(['A']);
+    expect(mergeGridLayers([{ blocked_categories: ['A'] }, { blocked_categories: [] }]).blocked_categories).toEqual(['A']);
   });
 });

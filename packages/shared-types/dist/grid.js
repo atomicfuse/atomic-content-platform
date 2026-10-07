@@ -25,7 +25,7 @@ exports.GRID_DEFAULTS = {
     outbound_utm: true,
     pinned: [],
     external_story_mode: "what_it_covers",
-    blocked_sources: [],
+    blocked_categories: [],
     per_bundle_limit: 20,
 };
 /** Seed-time and runtime defaults for `theme.card` (dazzr-like). */

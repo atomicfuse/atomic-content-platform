@@ -20,7 +20,7 @@ export interface GridFields {
   outbound_utm?: boolean;
   pinned?: GridPinFields[];
   external_story_mode?: GridExternalStoryMode;
-  blocked_sources?: string[];
+  blocked_categories?: string[];
   per_bundle_limit?: number;
 }
 /** A Content Aggregator bundle option for the pill editor (from /api/bundles). */

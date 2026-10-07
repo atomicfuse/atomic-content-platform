@@ -57,7 +57,7 @@ describe('filterByTopic / pageSlice', () => {
 });
 
 describe('buildPool — aggregator bundles', () => {
-  const ext = (id: string, at: string, sourceName = 'InStyle') => ({ id, slug: `t-${id}`, title: `T ${id}`, description: '', imageUrl: 'https://i', sourceName, publishedAt: at });
+  const ext = (id: string, at: string, categories: string[] = ['Pop Culture']) => ({ id, slug: `t-${id}`, title: `T ${id}`, description: '', imageUrl: 'https://i', sourceName: 'InStyle', publishedAt: at, categories });
 
   it('merges external entries newest-first with network items', () => {
     const pool = buildPool([srcB], g({ per_site_limit: 1 }), NOW, [{ bundleId: 'x', pills: ['celebs'], entries: [ext('x1', '2026-09-26T00:00:00Z')] }]);
@@ -65,9 +65,9 @@ describe('buildPool — aggregator bundles', () => {
     expect(pool.items[0]).toMatchObject({ slug: 't-x1-x1', sourceName: 'InStyle', featuredImage: 'https://i', pills: ['celebs'], pinned: false });
   });
 
-  it('applies per_bundle_limit, blocked_sources (case-insensitive) and max_age_days', () => {
-    const pool = buildPool([], g({ per_bundle_limit: 1, blocked_sources: ['conspiracy'], max_age_days: 3 }), NOW, [{ bundleId: 'x', pills: [], entries: [
-      ext('a', '2026-09-27T00:00:00Z', 'Conspiracy'), ext('b', '2026-09-26T00:00:00Z'), ext('c', '2026-09-25T00:00:00Z'), ext('old', '2026-09-01T00:00:00Z'),
+  it('applies per_bundle_limit, blocked_categories (any category, case-insensitive) and max_age_days', () => {
+    const pool = buildPool([], g({ per_bundle_limit: 1, blocked_categories: ['war and conflicts'], max_age_days: 3 }), NOW, [{ bundleId: 'x', pills: [], entries: [
+      ext('a', '2026-09-27T00:00:00Z', ['Pop Culture', 'War and Conflicts']), ext('b', '2026-09-26T00:00:00Z'), ext('c', '2026-09-25T00:00:00Z'), ext('old', '2026-09-01T00:00:00Z'),
     ] }]);
     expect(pool.items.map((i) => i.slug)).toEqual(['t-b-b']);
   });
@@ -91,5 +91,13 @@ describe('buildPool — aggregator bundles', () => {
     const before = buildPool([srcA, srcB], g(), NOW);
     expect(buildPool([srcA, srcB], g(), NOW, [])).toEqual(before);
     expect(before.items.every((i) => !('kind' in i) && !('sourceName' in i))).toBe(true);
+  });
+});
+
+describe('buildPool — blocked categories edge cases', () => {
+  it('index entries synced before categories existed are never blocked', () => {
+    const legacy = { id: 'l', slug: 't-l', title: 'L', description: '', imageUrl: 'https://i', sourceName: 'S', publishedAt: '2026-09-26T00:00:00Z' };
+    const pool = buildPool([], g({ blocked_categories: ['Pop Culture'] }), NOW, [{ bundleId: 'x', pills: [], entries: [legacy as never] }]);
+    expect(pool.items).toHaveLength(1);
   });
 });

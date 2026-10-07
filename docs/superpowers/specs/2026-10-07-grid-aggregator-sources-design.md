@@ -13,7 +13,7 @@ Let a Grid site mix stories from Content Aggregator **bundles** with stories fro
 | D2 | Two story-text settings: **Network stories** (existing `story_mode`: excerpt / ai_summary) and **Aggregator stories** (new `external_story_mode`: what_it_covers / ai_summary, default what_it_covers). |
 | D3 | **Per-story override**: "Use AI summary" pins a summary so that story always shows it, regardless of the site's mode. "Back to default" unpins. |
 | D4 | Images: use the publisher's image URL; **skip items with no image**; placeholder only when an image fails to load in the browser. |
-| D5 | **Blocked sources** list per Grid site (aggregator source names). |
+| D5 | **Blocked categories** list per Grid site (aggregator category names, tier-1 or sub; a story is hidden when ANY of its categories is blocked). *Revised 2026-10-07 after testing: replaces the original "blocked sources" — Asaf found category blocking more useful.* |
 | D6 | When a bundle item was already rewritten by one of our network sites, show **only the network version**. |
 | D7 | Aggregator `expires_at` is a relevance hint, **not** a takedown: stories we picked up are kept; visibility is governed by recency, `per_bundle_limit` and `max_age_days`; story pages never expire. |
 | D8 | Data path: **hourly sync into KV** via the existing `seed-grid.ts` / `sync-grid.yml` (sole writer of Grid KV keys, CLAUDE.md #34). No live aggregator calls from the Worker. |
@@ -36,7 +36,7 @@ Dashboard (Grid settings, Stories tab) ──► site config (git + Mongo) ; pip
 ### Grid config (`packages/shared-types/src/grid.ts`)
 - `GridTopic.bundles?: string[]` → resolved `bundles: string[]` (default `[]`).
 - `external_story_mode?: "what_it_covers" | "ai_summary"` (default `"what_it_covers"`).
-- `blocked_sources?: string[]` (default `[]`) — aggregator `source.name`, case-insensitive match.
+- `blocked_categories?: string[]` (default `[]`) — aggregator category names, case-insensitive; see D5.
 - `per_bundle_limit?: number` (default `20`).
 - Every new field follows the KV schema-evolution rule: runtime default (`??=` in the worker's normalizer), seed-time default (`resolve.ts` / `GRID_DEFAULTS`), re-seed of Grid sites before relying on it.
 
@@ -64,7 +64,7 @@ Dashboard (Grid settings, Stories tab) ──► site config (git + Mongo) ; pip
 - `normalize.ts`: defaults for the four new fields.
 - `sources.ts`: pills resolve verticals (unchanged) **and** bundles → `bundleSources: { bundleId, pills[] }`.
 - `load.ts`: read `grid-ext-index:<id>` for each bundle source (KV reads stay well under the per-invocation limit); cache key includes each index's `updatedAt`.
-- `feed.ts` (`buildPool`): bundle items become pool items with `kind: "external"`, `sourceName`, `itemId`; apply `blocked_sources`, `per_bundle_limit`, `max_age_days`; dedupe by item id across bundles (pills unioned); merge with network items newest-first; pins accept `{ site: "aggregator", slug }`.
+- `feed.ts` (`buildPool`): bundle items become pool items with `kind: "external"`, `sourceName`, `itemId`; apply `blocked_categories`, `per_bundle_limit`, `max_age_days`; dedupe by item id across bundles (pills unioned); merge with network items newest-first; pins accept `{ site: "aggregator", slug }`.
 - `GridPoolItem` gains `kind?: "network" | "external"` and `sourceName?: string` (network items unchanged).
 - `render.ts`: external cards show the publisher name + letter badge; `<img>` gets a placeholder fallback on error.
 - Story page `/grid/story/aggregator/<title-slug>-<itemId>`: reads `grid-ext-item`; missing → 404; slug mismatch → 301 to canonical slug. Text per D2/D3 (`storyText` extended): pinned summary, else mode, else What It Covers, else description. "Read full story" → publisher URL (+UTM when `outbound_utm`). Same layout, ad slots and related stories as network story pages. Indexable like network story pages.

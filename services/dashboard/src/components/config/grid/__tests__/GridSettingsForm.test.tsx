@@ -43,13 +43,24 @@ describe("GridSettingsForm — aggregator settings", () => {
     fireEvent.change(screen.getByLabelText("Stories per bundle"), { target: { value: "15" } });
     expect(onChange).toHaveBeenLastCalledWith({ per_bundle_limit: 15 });
   });
-  it("blocks and unblocks aggregator sources", () => {
+  const CATS = [
+    { id: "t1", name: "War and Conflicts", iab_code: "389", parent_id: null },
+    { id: "s1", name: "Military Operations", iab_code: "x", parent_id: "t1" },
+    { id: "t2", name: "Pop Culture", iab_code: "y", parent_id: null },
+  ];
+  it("blocks and unblocks aggregator categories (tier-1 and sub)", () => {
     const onChange = vi.fn();
-    const { rerender } = render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} sources={["Conspiracy", "InStyle"]} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Conspiracy" }));
-    expect(onChange).toHaveBeenLastCalledWith({ blocked_sources: ["Conspiracy"] });
-    rerender(<GridSettingsForm value={{ blocked_sources: ["Conspiracy"] }} onChange={onChange} sites={[]} verticals={[]} sources={["Conspiracy", "InStyle"]} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Conspiracy" }));
+    const { rerender } = render(<GridSettingsForm value={{}} onChange={onChange} sites={[]} verticals={[]} categories={CATS} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "War and Conflicts" }));
+    expect(onChange).toHaveBeenLastCalledWith({ blocked_categories: ["War and Conflicts"] });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Military Operations" }));
+    expect(onChange).toHaveBeenLastCalledWith({ blocked_categories: ["Military Operations"] });
+    rerender(<GridSettingsForm value={{ blocked_categories: ["War and Conflicts"] }} onChange={onChange} sites={[]} verticals={[]} categories={CATS} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "War and Conflicts" }));
     expect(onChange).toHaveBeenLastCalledWith({});
+  });
+  it("keeps a blocked category the aggregator no longer lists visible so it can be cleared", () => {
+    render(<GridSettingsForm value={{ blocked_categories: ["Gone"] }} onChange={vi.fn()} sites={[]} verticals={[]} categories={CATS} />);
+    expect(screen.getByRole("checkbox", { name: "Gone" })).toBeChecked();
   });
 });

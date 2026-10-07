@@ -105,7 +105,7 @@ export function toExternalRecord(item: AggregatorItem, rewritten: ReadonlySet<st
 export function toIndexEntry(r: ExternalStoryRecord): ExternalIndexEntry {
   return {
     id: r.id, slug: r.slug, title: r.title, description: r.description,
-    imageUrl: r.imageUrl, sourceName: r.sourceName, publishedAt: r.publishedAt,
+    imageUrl: r.imageUrl, sourceName: r.sourceName, publishedAt: r.publishedAt, categories: r.categories,
   };
 }
 

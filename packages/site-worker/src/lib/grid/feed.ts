@@ -38,13 +38,19 @@ export function externalPoolSlug(e: Pick<ExternalIndexEntry, 'slug' | 'id'>): st
   return `${e.slug}-${e.id}`;
 }
 
-/** Bundle entries → pool items: blocked sources, max age and per_bundle_limit applied; one item per story id. */
+/** True when any of the story's categories is blocked (case-insensitive). Entries without categories are never blocked. */
+export function isCategoryBlocked(categories: readonly string[] | undefined, blocked: readonly string[]): boolean {
+  if (!categories?.length || blocked.length === 0) return false;
+  const set = new Set(blocked.map((b) => b.trim().toLowerCase()));
+  return categories.some((c) => set.has(c.trim().toLowerCase()));
+}
+
+/** Bundle entries → pool items: blocked categories, max age and per_bundle_limit applied; one item per story id. */
 function externalItems(external: readonly ExternalSourceEntries[], grid: ResolvedGridConfig, minTime: number): GridPoolItem[] {
-  const blocked = new Set(grid.blocked_sources.map((s) => s.trim().toLowerCase()));
   const byId = new Map<string, GridPoolItem>();
   for (const src of external) {
     src.entries
-      .filter((e) => !blocked.has(e.sourceName.trim().toLowerCase()) && time(e.publishedAt) >= minTime)
+      .filter((e) => !isCategoryBlocked(e.categories, grid.blocked_categories) && time(e.publishedAt) >= minTime)
       .sort((a, b) => time(b.publishedAt) - time(a.publishedAt))
       .slice(0, grid.per_bundle_limit)
       .forEach((e) => {

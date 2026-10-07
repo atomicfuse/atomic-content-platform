@@ -34,7 +34,7 @@ const GRID_DEFAULTS: ResolvedGridConfig = {
   outbound_utm: true,
   pinned: [],
   external_story_mode: 'what_it_covers',
-  blocked_sources: [],
+  blocked_categories: [],
   per_bundle_limit: 20,
 };
 
@@ -125,7 +125,7 @@ export function normalizeGridConfig(input: GridConfig | undefined): ResolvedGrid
     outbound_utm: g.outbound_utm !== false,
     pinned: normalizePins(g.pinned),
     external_story_mode: g.external_story_mode === 'ai_summary' ? 'ai_summary' : 'what_it_covers',
-    blocked_sources: stringList(g.blocked_sources),
+    blocked_categories: stringList(g.blocked_categories),
     per_bundle_limit: clampInt(g.per_bundle_limit, 1, 100, GRID_DEFAULTS.per_bundle_limit),
   };
 }

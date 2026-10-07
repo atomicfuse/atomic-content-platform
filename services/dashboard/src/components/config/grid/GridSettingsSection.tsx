@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useVerticals } from "@/hooks/useReferenceData";
+import { useAllCategories, useVerticals } from "@/hooks/useReferenceData";
 import type { BundleOption, GridFields, SiteOption } from "@/types/grid";
 import { GridSettingsForm } from "./GridSettingsForm";
 
@@ -10,12 +10,12 @@ interface GridSettingsSectionProps {
   onChange: (next: GridFields) => void;
 }
 
-/** GridSettingsForm wired up with its reference data (source sites, verticals, aggregator bundles and sources). */
+/** GridSettingsForm wired up with its reference data (source sites, verticals, aggregator bundles and categories). */
 export function GridSettingsSection({ value, onChange }: GridSettingsSectionProps): React.ReactElement {
   const { verticals } = useVerticals();
+  const { categories } = useAllCategories();
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [bundles, setBundles] = useState<BundleOption[]>([]);
-  const [sources, setSources] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,12 +32,6 @@ export function GridSettingsSection({ value, onChange }: GridSettingsSectionProp
         if (!cancelled) setBundles((data.items ?? []).map((b) => ({ id: b.id, name: b.name, count: b.content_count ?? 0 })));
       })
       .catch((err: unknown) => console.error("[grid] failed to load bundles", err));
-    fetch("/api/aggregator/sources")
-      .then((r) => (r.ok ? r.json() : { sources: [] }))
-      .then((data: { sources?: string[] }) => {
-        if (!cancelled) setSources(data.sources ?? []);
-      })
-      .catch((err: unknown) => console.error("[grid] failed to load aggregator sources", err));
     return (): void => {
       cancelled = true;
     };
@@ -50,7 +44,7 @@ export function GridSettingsSection({ value, onChange }: GridSettingsSectionProp
       sites={sites}
       verticals={verticals.map((v) => v.name)}
       bundles={bundles}
-      sources={sources}
+      categories={categories}
     />
   );
 }

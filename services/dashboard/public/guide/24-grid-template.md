@@ -22,7 +22,7 @@ To convert an existing site instead: **Site Settings → Theme → Template → 
 A pill can also pull stories straight from the **Content Aggregator**: tick one or more **Aggregator bundles** on the pill (Grid tab → Topic pills). A bundle not ticked on any pill is not shown.
 - Only articles with an image are used (videos, trends and imageless items are skipped). If one of our network sites already rewrote the same story, only the network version is shown.
 - **Stories per bundle** (default 20) is the bundle equivalent of "Articles per source site". **Maximum age** and **Pinned** work the same way.
-- **Blocked sources**: aggregator sources (e.g. "Conspiracy") whose stories never appear on this site.
+- **Blocked categories**: aggregator categories (e.g. "War and Conflicts") whose stories never appear on this site — in the feed or on story pages. A story is hidden if *any* of its categories is blocked, so blocking a main category also blocks its subcategories.
 - Bundles refresh **hourly**. Once picked up, a story stays on the site — the aggregator's own expiry does not remove it; newer stories push it down the feed.
 - In Grid → Stories, aggregator stories show an **External · <publisher>** badge.
 

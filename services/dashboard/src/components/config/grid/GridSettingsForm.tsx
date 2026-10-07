@@ -3,7 +3,8 @@
 import type { BundleOption, GridFields, SiteOption } from "@/types/grid";
 import { TopicsEditor } from "./TopicsEditor";
 import { SiteMultiPicker } from "./SiteMultiPicker";
-import { BlockedSourcesPicker } from "./BlockedSourcesPicker";
+import { BlockedCategoriesPicker } from "./BlockedCategoriesPicker";
+import type { CategoryItem } from "@/lib/reference-data";
 
 interface GridSettingsFormProps {
   value: GridFields;
@@ -12,8 +13,8 @@ interface GridSettingsFormProps {
   verticals: string[];
   /** Content Aggregator bundles for the pill editor. */
   bundles?: BundleOption[];
-  /** Content Aggregator source names for "Blocked sources". */
-  sources?: string[];
+  /** Content Aggregator taxonomy for "Blocked categories". */
+  categories?: CategoryItem[];
 }
 
 type NumberKey = "per_site_limit" | "per_bundle_limit" | "max_age_days" | "excerpt_paragraphs" | "feed_ad_every" | "page_size";
@@ -67,7 +68,7 @@ const inputClass =
  * `pinned` is managed from the site's Stories tab and is preserved untouched
  * here.
  */
-export function GridSettingsForm({ value, onChange, sites, verticals, bundles = [], sources = [] }: GridSettingsFormProps): React.ReactElement {
+export function GridSettingsForm({ value, onChange, sites, verticals, bundles = [], categories = [] }: GridSettingsFormProps): React.ReactElement {
   const set = <K extends keyof GridFields>(key: K, v: GridFields[K] | undefined): void => {
     const next = { ...value };
     if (v === undefined) delete next[key];
@@ -87,10 +88,10 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
       </section>
 
       <section>
-        <BlockedSourcesPicker
-          value={value.blocked_sources ?? []}
-          onChange={(v): void => set("blocked_sources", v.length ? v : undefined)}
-          options={sources}
+        <BlockedCategoriesPicker
+          value={value.blocked_categories ?? []}
+          onChange={(v): void => set("blocked_categories", v.length ? v : undefined)}
+          categories={categories}
         />
       </section>
 

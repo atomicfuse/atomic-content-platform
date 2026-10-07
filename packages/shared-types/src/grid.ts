@@ -46,8 +46,8 @@ export interface GridConfig {
   outbound_utm?: boolean;
   pinned?: GridPin[];
   external_story_mode?: GridExternalStoryMode;
-  /** Aggregator source names never shown on this site (case-insensitive). */
-  blocked_sources?: string[];
+  /** Aggregator category names (tier-1 or sub) whose stories never show on this site (case-insensitive). */
+  blocked_categories?: string[];
   per_bundle_limit?: number;
 }
 
@@ -66,7 +66,7 @@ export interface ResolvedGridConfig {
   outbound_utm: boolean;
   pinned: GridPin[];
   external_story_mode: GridExternalStoryMode;
-  blocked_sources: string[];
+  blocked_categories: string[];
   per_bundle_limit: number;
 }
 
@@ -108,7 +108,7 @@ export const GRID_DEFAULTS: ResolvedGridConfig = {
   outbound_utm: true,
   pinned: [],
   external_story_mode: "what_it_covers",
-  blocked_sources: [],
+  blocked_categories: [],
   per_bundle_limit: 20,
 };
 
@@ -238,6 +238,8 @@ export interface ExternalIndexEntry {
   imageUrl: string;
   sourceName: string;
   publishedAt: string;
+  /** Aggregator category names (tier-1 + sub) — for blocked_categories. Absent on entries synced before 2026-10-07. */
+  categories?: string[];
 }
 
 /** Value of `grid-ext-index:<bundleId>` — newest first, max 300 (written by scripts/seed-grid.ts). */

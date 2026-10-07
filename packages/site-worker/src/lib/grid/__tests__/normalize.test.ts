@@ -63,18 +63,18 @@ describe('aggregator fields', () => {
   it('defaults the aggregator fields', () => {
     const g = normalizeGridConfig({});
     expect(g.external_story_mode).toBe('what_it_covers');
-    expect(g.blocked_sources).toEqual([]);
+    expect(g.blocked_categories).toEqual([]);
     expect(g.per_bundle_limit).toBe(20);
   });
   it('normalises topic bundles and clamps per_bundle_limit', () => {
     const g = normalizeGridConfig({
       topics: [{ label: 'Celebs', verticals: [], bundles: [' b1 ', '', 'b1', 'b2'] }],
-      per_bundle_limit: 500, external_story_mode: 'ai_summary', blocked_sources: ['Conspiracy', ' '],
+      per_bundle_limit: 500, external_story_mode: 'ai_summary', blocked_categories: ['War and Conflicts', ' '],
     });
     expect(g.topics[0]!.bundles).toEqual(['b1', 'b2']);
     expect(g.per_bundle_limit).toBe(100);
     expect(g.external_story_mode).toBe('ai_summary');
-    expect(g.blocked_sources).toEqual(['Conspiracy']);
+    expect(g.blocked_categories).toEqual(['War and Conflicts']);
   });
   it('keeps a vertical-less, bundle-only pill', () => {
     expect(normalizeGridConfig({ topics: [{ label: 'X', verticals: [], bundles: ['b'] }] }).topics).toHaveLength(1);

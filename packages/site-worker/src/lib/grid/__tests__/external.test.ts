@@ -46,10 +46,10 @@ describe('buildExternalOutboundUrl — unsafe input', () => {
   });
 });
 
-describe('resolveExternalRequest — blocked sources', () => {
-  it('404s a story from a source the site blocks (case-insensitive)', () => {
-    const r = { id: ID, slug: 'batman-paused', sourceName: 'Conspiracy' } as ExternalStoryRecord;
-    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['conspiracy']).kind).toBe('not_found');
-    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['InStyle']).kind).toBe('ok');
+describe('resolveExternalRequest — blocked categories', () => {
+  it('404s a story in any category the site blocks (case-insensitive)', () => {
+    const r = { id: ID, slug: 'batman-paused', categories: ['Entertainment', 'War and Conflicts'] } as ExternalStoryRecord;
+    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['war and conflicts']).kind).toBe('not_found');
+    expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['Politics']).kind).toBe('ok');
   });
 });
