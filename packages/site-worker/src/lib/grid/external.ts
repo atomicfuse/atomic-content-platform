@@ -24,10 +24,12 @@ export function resolveExternalRequest(
   param: string,
   record: ExternalStoryRecord | null,
   blockedCategories: readonly string[] = [],
+  /** Request query string ("?…") — kept on the 301 so ?_atl_site (staging preview) and UTM tags survive. */
+  search = '',
 ): { kind: 'ok'; record: ExternalStoryRecord } | { kind: 'redirect'; location: string } | { kind: 'not_found' } {
   const parsed = parseExternalSlug(param);
   if (!parsed || !record || record.id !== parsed.itemId) return { kind: 'not_found' };
   if (isCategoryBlocked(record.categories, blockedCategories)) return { kind: 'not_found' };
-  if (parsed.slugPart !== record.slug) return { kind: 'redirect', location: externalStoryPath(record) };
+  if (parsed.slugPart !== record.slug) return { kind: 'redirect', location: `${externalStoryPath(record)}${search}` };
   return { kind: 'ok', record };
 }

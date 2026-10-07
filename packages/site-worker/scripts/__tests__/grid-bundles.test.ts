@@ -30,7 +30,7 @@ describe('parseBriefSections', () => {
 describe('toExternalRecord', () => {
   it('maps an eligible article', () => {
     const r = toExternalRecord(item(), new Set(), NOW)!;
-    expect(r).toMatchObject({ id: 'a1', slug: 'dakota-johnson-s-15-phone-case', sourceName: 'WS Insider - Lifestyle', imageUrl: 'https://img/x.jpg', whatItCovers: 'Dakota carried a burgundy case.', syncedAt: NOW.toISOString() });
+    expect(r).toMatchObject({ id: 'a1', slug: 'dakota-johnson-s-15-phone-case', sourceName: 'instyle.com', imageUrl: 'https://img/x.jpg', whatItCovers: 'Dakota carried a burgundy case.', syncedAt: NOW.toISOString() });
   });
   it.each([
     ['non-article', { content_type: 'trend' }],
@@ -111,5 +111,12 @@ describe('index entries carry categories', () => {
   it('keeps the story categories on the index entry (for category blocking)', () => {
     const idx = mergeBundleIndex(null, 'b', 'n', [toExternalRecord(item(), new Set(), NOW)!], NOW);
     expect(idx.items[0]!.categories).toEqual(['Pop Culture']);
+  });
+});
+
+describe('publisher name', () => {
+  it('is the publisher domain without www (the aggregator feed name is internal)', () => {
+    expect(toExternalRecord(item({ url: 'https://news.yahoo.com/a' }), new Set(), NOW)!.sourceName).toBe('news.yahoo.com');
+    expect(toExternalRecord(item({ url: 'https://WWW.Glamour.com/x' }), new Set(), NOW)!.sourceName).toBe('glamour.com');
   });
 });

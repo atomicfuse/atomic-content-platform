@@ -53,3 +53,11 @@ describe('resolveExternalRequest — blocked categories', () => {
     expect(resolveExternalRequest(`batman-paused-${ID}`, r, ['Politics']).kind).toBe('ok');
   });
 });
+
+describe('resolveExternalRequest — redirect keeps the query string', () => {
+  it('carries ?_atl_site (staging preview) and UTM tags through the 301', () => {
+    expect(resolveExternalRequest(`old-title-${ID}`, record, [], '?_atl_site=danatest&utm_source=x')).toEqual({
+      kind: 'redirect', location: `/story/aggregator/batman-paused-${ID}?_atl_site=danatest&utm_source=x`,
+    });
+  });
+});

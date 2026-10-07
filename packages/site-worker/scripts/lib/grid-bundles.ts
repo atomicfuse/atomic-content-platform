@@ -90,7 +90,9 @@ export function toExternalRecord(item: AggregatorItem, rewritten: ReadonlySet<st
     description,
     imageUrl,
     url: item.url,
-    sourceName: item.source?.name ?? '',
+    // Readers see the publisher's domain ("usmagazine.com"); the aggregator's source.name is an
+    // internal feed label ("WS Insider - Entertainment"). isHttpUrl above guarantees a parseable URL.
+    sourceName: new URL(item.url).hostname.toLowerCase().replace(/^www\./, ''),
     author: item.author ?? null,
     publishedAt: item.published_at,
     categories: (item.categories ?? []).map((c) => c.name),

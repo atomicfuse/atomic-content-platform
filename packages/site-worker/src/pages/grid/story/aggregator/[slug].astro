@@ -27,7 +27,7 @@ const param = Astro.params.slug ?? '';
 const parsed = parseExternalSlug(param);
 if (!parsed) return notFound();
 const found = await env.CONFIG_KV.get<ExternalStoryRecord>(externalItemKey(parsed.itemId), 'json');
-const resolved = resolveExternalRequest(param, found, g.grid.blocked_categories);
+const resolved = resolveExternalRequest(param, found, g.grid.blocked_categories, Astro.url.search);
 if (resolved.kind === 'not_found') return notFound();
 if (resolved.kind === 'redirect') return Astro.redirect(resolved.location, 301);
 const record = resolved.record;
