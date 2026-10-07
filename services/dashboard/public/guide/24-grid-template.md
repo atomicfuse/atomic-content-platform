@@ -31,6 +31,8 @@ A pill can also pull stories straight from the **Content Aggregator**: add one o
 
 ## Story pages
 Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab, with UTM tags unless turned off).
+
+**Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story has its own ad slots (above the content, in the text and below it; the sidebar and sticky ads stay single). The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
 - **Excerpt** (default): the opening paragraphs of the source article, never more than half of it.
 - **AI summary**: a ~200-word rewrite. Until a summary exists, the page shows the excerpt. Summaries are written hourly for sites that Grid sites actually use.
 - **Edit** a summary in Grid → Stories → Edit. Hand edits are never overwritten automatically. If the source article later changes, the story shows **Stale** so you can decide.

@@ -1,0 +1,108 @@
+---
+/**
+ * Endless story page (dazzr-style): near the end of a story, the next one (same pill, then All) is
+ * fetched from /api/next-story and appended. The address bar, title and a GA4 page_view follow the
+ * story in view. Stops after MAX stories with a link back to the feed. The first story is untouched.
+ */
+interface Props { storyKey: string; storyPath: string; storyTitle: string; pill: string | null; siteName: string }
+const { storyKey, storyPath, storyTitle, pill, siteName } = Astro.props;
+const feedHref = pill ? `/topic/${pill}` : '/';
+---
+<div class="g-next-stories" id="g-next-stories"
+  data-key={storyKey} data-path={storyPath} data-title={storyTitle} data-pill={pill ?? ''} data-site-name={siteName}></div>
+<div class="g-sentinel" id="g-next-sentinel" aria-hidden="true"></div>
+<p class="g-feed-status" id="g-next-status" aria-live="polite"></p>
+<a class="g-next-more" id="g-next-more" href={feedHref} hidden>More stories</a>
+<script is:inline>
+  (function () {
+    var MAX = 10;
+    var root = document.getElementById('g-next-stories');
+    var sentinel = document.getElementById('g-next-sentinel');
+    var status = document.getElementById('g-next-status');
+    var more = document.getElementById('g-next-more');
+    if (!root || !sentinel || !('IntersectionObserver' in window)) return;
+    var pill = root.dataset.pill;
+    var siteName = root.dataset.siteName;
+    var seen = [root.dataset.key];
+    var last = root.dataset.key;
+    var count = 1;
+    var loading = false;
+    var done = false;
+    var counted = {};
+    counted[root.dataset.path] = true; // the first story's pageview is sent by the normal page load
+    var preview = new URLSearchParams(location.search).get('_atl_site');
+
+    function runScripts(node) {
+      node.querySelectorAll('script').forEach(function (old) {
+        var s = document.createElement('script');
+        for (var i = 0; i < old.attributes.length; i++) s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+        s.text = old.textContent || '';
+        old.replaceWith(s);
+      });
+    }
+    function show(path, title) {
+      if (location.pathname !== path) history.replaceState(history.state, '', path + location.search);
+      document.title = title + ' | ' + siteName;
+      if (counted[path]) return;
+      counted[path] = true;
+      if (typeof window.gtag === 'function') {
+        window.gtag('event', 'page_view', { page_title: document.title, page_location: location.href, page_path: path });
+      }
+      window.dispatchEvent(new CustomEvent('atl:pageview', { detail: { path: path } }));
+    }
+    // The story crossing the upper middle of the screen owns the URL and title.
+    var current = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) show(e.target.dataset.storyPath, e.target.dataset.storyTitle);
+      });
+    }, { rootMargin: '-35% 0px -60% 0px' });
+    // The page's own story (appended ones live inside .g-story__main too, so watch the article itself).
+    var first = document.querySelector('.g-story__main > .g-story__article');
+    if (first) {
+      first.dataset.storyPath = root.dataset.path;
+      first.dataset.storyTitle = root.dataset.title;
+      current.observe(first);
+    }
+
+    function finish() {
+      done = true;
+      loader.disconnect();
+      sentinel.remove();
+      if (more) more.hidden = false;
+    }
+    function nearBottom() { return sentinel.getBoundingClientRect().top < window.innerHeight + 1200; }
+    async function load() {
+      if (loading || done) return;
+      if (count >= MAX) { finish(); return; }
+      loading = true;
+      try {
+        var params = new URLSearchParams({ after: last, seen: seen.join(','), n: String(count + 1) });
+        if (pill) params.set('pill', pill);
+        if (preview) params.set('_atl_site', preview);
+        var res = await fetch('/api/next-story?' + params.toString());
+        if (res.status === 204) { finish(); return; }
+        if (!res.ok) throw new Error(String(res.status));
+        var tpl = document.createElement('template');
+        tpl.innerHTML = (await res.text()).trim();
+        var section = tpl.content.firstElementChild;
+        if (!section) { finish(); return; }
+        root.append(section);
+        runScripts(section); // broken publisher images: GridLayout's capture-phase fallback covers new <img>s too
+        current.observe(section);
+        last = section.dataset.storyKey;
+        seen.push(last);
+        count += 1;
+      } catch (e) {
+        if (status) status.textContent = 'Could not load the next story.';
+        finish();
+      } finally {
+        loading = false;
+      }
+      if (!done && nearBottom()) load();
+    }
+    var loader = new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) load();
+    }, { rootMargin: '1200px 0px' });
+    loader.observe(sentinel);
+  })();
+</script>

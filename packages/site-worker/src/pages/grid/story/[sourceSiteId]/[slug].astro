@@ -5,16 +5,15 @@ import GridLayout from '../../../../themes/grid/GridLayout.astro';
 import GridHeader from '../../../../themes/grid/components/GridHeader.astro';
 import GridFooter from '../../../../themes/grid/components/GridFooter.astro';
 import RelatedStories from '../../../../themes/grid/components/RelatedStories.astro';
+import NextStories from '../../../../themes/grid/components/NextStories.astro';
 import AdSlot from '../../../../components/AdSlot.astro';
 import { getGridContext, notFound } from '../../../../lib/grid/context';
 import { edgeCache, kvReader, loadGridPool, NO_CACHE } from '../../../../lib/grid/load';
-import { relatedItems, storyText } from '../../../../lib/grid/story';
+import { relatedItems } from '../../../../lib/grid/story';
+import { buildNetworkStoryView, renderStoryArticleHtml } from '../../../../lib/grid/story-view';
 import { isStoryHidden } from '../../../../lib/grid/feed';
-import { buildOutboundUrl } from '../../../../lib/grid/format';
-import { renderSourceLineHtml } from '../../../../lib/grid/render';
 import { injectInlineAds } from '../../../../lib/inline-ads';
 import { articleKey, gridSummaryKey, type ArticleRecord } from '../../../../lib/kv-schema';
-import { GRID_CARD_DEFAULTS } from '../../../../lib/grid/normalize';
 export const prerender = false;
 
 const g = getGridContext(Astro);
@@ -28,23 +27,15 @@ const source = data.resolved.sources.find((s) => s.siteId === sourceSiteId);
 if (!source) return notFound();
 const record = await env.CONFIG_KV.get<ArticleRecord>(articleKey(sourceSiteId, slug), 'json');
 if (!record || record.frontmatter.status !== 'published') return notFound();
-const summary = g.grid.story_mode === 'ai_summary'
-  ? await env.CONFIG_KV.get<GridSummaryRecord>(gridSummaryKey(sourceSiteId, slug), 'json')
-  : null;
-const text = storyText({ body: record.body, summary, mode: g.grid.story_mode, paragraphs: g.grid.excerpt_paragraphs, hostname: source.hostname });
-const placements = (g.config.ads_config?.ad_placements ?? []) as Parameters<typeof injectInlineAds>[1];
-const bodyHtml = injectInlineAds(text.html, placements, { staging: g.staging });
+// Always read the summary: a story-level ("Use AI summary") summary shows in any story mode.
+const summary = await env.CONFIG_KV.get<GridSummaryRecord>(gridSummaryKey(sourceSiteId, slug), 'json');
 const pills = data.resolved.pillsBySite.get(sourceSiteId) ?? [];
-const pillLabel = g.grid.topics.find((t) => t.slug === pills[0])?.label;
-const related = relatedItems(data.pool.items, { site: sourceSiteId, slug }, pills, 3);
 const sites = new Map((data.directory?.sites ?? []).map((s) => [s.siteId, s]));
-const outbound = buildOutboundUrl(source.hostname, slug, g.canonicalHost, g.grid.outbound_utm);
+const view = buildNetworkStoryView({ grid: g.grid, canonicalHost: g.canonicalHost, sites, now, sourceSiteId, hostname: source.hostname, record, summary, pills });
+const placements = (g.config.ads_config?.ad_placements ?? []) as Parameters<typeof injectInlineAds>[1];
+const articleHtml = renderStoryArticleHtml(view, injectInlineAds(view.bodyHtml, placements, { staging: g.staging }), 'h1');
+const related = relatedItems(data.pool.items, { site: sourceSiteId, slug }, pills, 3);
 const fm = record.frontmatter;
-const sourceLine = renderSourceLineHtml(
-  { site: sourceSiteId, slug, title: fm.title, publishDate: fm.publishDate, pills, pinned: false },
-  { now, card: GRID_CARD_DEFAULTS, showIntro: false, sites, placements: [], pageType: 'article', staging: g.staging, reservedHeight: 0 },
-);
-const published = new Date(fm.publishDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
 ---
 <GridLayout title={`${fm.title} | ${g.config.site_name}`} description={fm.description ?? fm.title} pageType="article" image={fm.featuredImage}>
@@ -52,15 +43,9 @@ Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, s
   <div class="g-story">
     <main class="g-story__main">
       <AdSlot position="above-content" pageType="article" server:defer />
-      <article class="g-story__article">
-        {pillLabel && <p class="g-story__topic">{pillLabel}</p>}
-        <h1 class="g-story__title">{fm.title}</h1>
-        <div class="g-story__byline"><span class="g-story__by">Original story by</span> <Fragment set:html={sourceLine} /> <span class="g-story__date">{published}</span></div>
-        {fm.featuredImage && <img class="g-story__hero" src={fm.featuredImage} alt={fm.title} />}
-        <div class="g-story__prose" set:html={bodyHtml} />
-        <a class="g-story__cta" href={outbound} target="_blank" rel="noopener">Read full story</a>
-      </article>
+      <Fragment set:html={articleHtml} />
       <AdSlot position="below-content" pageType="article" server:defer />
+      <NextStories storyKey={view.key} storyPath={view.path} storyTitle={view.title} pill={pills[0] ?? null} siteName={g.config.site_name} />
     </main>
     <aside class="g-story__side">
       <AdSlot position="sidebar" pageType="article" server:defer />

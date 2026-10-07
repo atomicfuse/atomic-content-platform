@@ -177,6 +177,12 @@ body.g-body .g-card__link:focus-visible { outline-offset: -2px; border-radius: i
 .g-story__cta:active { transform: translateY(1px); }
 .g-story__side { display: flex; flex-direction: column; gap: 24px; }
 .g-story__bottom { display: none; max-width: 1200px; margin: 0 auto; padding: 0 var(--g-gutter) 32px; width: 100%; }
+/* Endless story page: stories appended below the first one (NextStories.astro). */
+.g-next-stories { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
+.g-next-stories:empty { display: none; }
+.g-next { display: flex; flex-direction: column; gap: 16px; padding-top: 32px; border-top: 1px solid var(--g-border); }
+.g-next-more { display: flex; width: fit-content; align-items: center; min-height: 44px; padding: 0 24px; border-radius: var(--g-radius-pill); border: 1px solid var(--g-border); color: var(--g-heading); font-weight: 600; margin: 24px auto 0; }
+.g-next-more[hidden] { display: none; }
 
 .g-related__heading { font-size: 1.1rem; font-weight: 700; margin: 0 0 12px; color: var(--g-heading); }
 .g-related__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
