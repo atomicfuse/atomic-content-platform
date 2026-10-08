@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/Button";
+import { LogoThumb } from "@/components/ui/LogoThumb";
 import { useToast } from "@/components/ui/Toast";
 import { ColorPickerField } from "@/components/wizard/ColorPickerField";
 import { FontPickerField } from "@/components/wizard/FontPickerField";
@@ -328,7 +329,8 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
         // Settle pending footer-logo state into the new "existing" baseline
         if (footerLogoPending !== null) {
           setExistingFooterLogo(
-            footerLogoPending === "" ? null : "/assets/logo-footer.png",
+            // The saved file has a content-hashed name now — keep previewing the image just uploaded.
+            footerLogoPending === "" ? null : `data:image/png;base64,${footerLogoPending}`,
           );
           setFooterLogoPending(null);
         }
@@ -666,9 +668,11 @@ export function SiteThemeTab({ domain }: SiteThemeTabProps): React.ReactElement 
             </div>
             {footerLogoPreviewSrc && (
               <div className="flex items-center gap-3">
-                <img
+                <LogoThumb
                   src={footerLogoPreviewSrc}
                   alt="Footer logo preview"
+                  background={state.colors.footer_bg || undefined}
+                  backgroundLabel="footer"
                   className="w-16 h-16 rounded-lg object-contain bg-[#1a1a2e] border border-[var(--border-secondary)] p-1"
                 />
                 <button

@@ -8,6 +8,10 @@ import sharp from "sharp";
  * this handles gradient backgrounds (e.g. dark-to-darker) that a
  * single-average approach misses.
  *
+ * An image whose corners are already transparent (e.g. an OpenAI logo generated with a transparent
+ * background) is only trimmed, resized and compressed — its transparent corners are not a colour to
+ * remove (their RGB is 0,0,0, so dark logo strokes would be erased).
+ *
  * Returns a PNG buffer with alpha channel.
  */
 export async function removeBackground(
@@ -29,6 +33,10 @@ export async function removeBackground(
     (info.height - 1) * stride,                           // bottom-left
     (info.height - 1) * stride + (info.width - 1) * 4,   // bottom-right
   ];
+
+  if (cornerOffsets.every((offset) => data[offset + 3] === 0)) {
+    return finish(data, info.width, info.height);
+  }
 
   // Store each corner's RGB independently (handles gradient backgrounds)
   const cornerColors = cornerOffsets.map((offset) => ({
@@ -55,9 +63,11 @@ export async function removeBackground(
     }
   }
 
-  return sharp(data, {
-    raw: { width: info.width, height: info.height, channels: 4 },
-  })
+  return finish(data, info.width, info.height);
+}
+
+function finish(data: Buffer, width: number, height: number): Promise<Buffer> {
+  return sharp(data, { raw: { width, height, channels: 4 } })
     .trim()   // Remove transparent padding so the logo fills its bounding box
     .resize({ width: 800, withoutEnlargement: true }) // Cap width for web use
     .png({ palette: true, quality: 80, compressionLevel: 9 })

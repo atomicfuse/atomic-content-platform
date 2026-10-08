@@ -12,6 +12,7 @@ import type { StagingSiteConfig } from "@/actions/wizard";
 import { extractFaviconFromLogo } from "@/lib/favicon-extractor";
 import { removeBackground } from "@/lib/remove-background";
 import { uploadToR2 } from "@/lib/r2-upload";
+import { versionedAsset } from "@/lib/versioned-asset";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 import { applyGridConfigUpdates } from "@/lib/grid-config";
@@ -308,6 +309,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Content-hashed names: the R2 bucket is shared by staging and production, so a fixed name would put
+    // this staging save live on production immediately. Production keeps its file until publish.
+    const logoAsset = processedLogoBase64 ? versionedAsset(domain, "logo", Buffer.from(processedLogoBase64, "base64")) : null;
+    const footerAsset = processedFooterLogoBase64 ? versionedAsset(domain, "logo-footer", Buffer.from(processedFooterLogoBase64, "base64")) : null;
+    const faviconAsset = effectiveFaviconBase64 ? versionedAsset(domain, "favicon", Buffer.from(effectiveFaviconBase64, "base64")) : null;
+
     const shouldClearLogo = clearLogo && !processedLogoBase64;
     const shouldClearFooterLogo = (clearFooterLogo || footerLogoBase64 === null) && !processedFooterLogoBase64;
 
@@ -319,19 +326,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       || shouldClearFooterLogo
     ) {
       const theme = (existing.theme ?? {}) as Record<string, unknown>;
-      if (processedLogoBase64) {
-        theme.logo = "/assets/logo.png";
+      if (logoAsset) {
+        theme.logo = logoAsset.path;
       } else if (shouldClearLogo) {
         delete theme.logo;
         delete theme.favicon;
       }
-      if (effectiveFaviconBase64) {
-        theme.favicon = "/assets/favicon.png";
+      if (faviconAsset) {
+        theme.favicon = faviconAsset.path;
       }
       if (shouldClearFooterLogo) {
         delete theme.footer_logo;
-      } else if (processedFooterLogoBase64) {
-        theme.footer_logo = "/assets/logo-footer.png";
+      } else if (footerAsset) {
+        theme.footer_logo = footerAsset.path;
       }
       existing.theme = theme;
     }
@@ -346,14 +353,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // Logos/favicons are R2-native: upload bytes directly to R2 (binary-safe),
     // never commit them to git. Only site.yaml (theme refs) goes to git below.
-    if (processedLogoBase64) {
-      await uploadToR2(`${domain}/assets/logo.png`, Buffer.from(processedLogoBase64, "base64"), "image/png");
+    if (logoAsset && processedLogoBase64) {
+      await uploadToR2(logoAsset.key, Buffer.from(processedLogoBase64, "base64"), "image/png");
     }
-    if (processedFooterLogoBase64) {
-      await uploadToR2(`${domain}/assets/logo-footer.png`, Buffer.from(processedFooterLogoBase64, "base64"), "image/png");
+    if (footerAsset && processedFooterLogoBase64) {
+      await uploadToR2(footerAsset.key, Buffer.from(processedFooterLogoBase64, "base64"), "image/png");
     }
-    if (effectiveFaviconBase64) {
-      await uploadToR2(`${domain}/assets/favicon.png`, Buffer.from(effectiveFaviconBase64, "base64"), "image/png");
+    if (faviconAsset && effectiveFaviconBase64) {
+      await uploadToR2(faviconAsset.key, Buffer.from(effectiveFaviconBase64, "base64"), "image/png");
     }
 
     const hasAssets = processedLogoBase64 || effectiveFaviconBase64;

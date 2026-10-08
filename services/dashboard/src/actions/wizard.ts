@@ -42,6 +42,11 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
+import { buildLogoPrompt, isDarkColor } from "@/lib/logo-prompt";
+import { editOpenAIImage, generateOpenAIImage } from "@/lib/openai-image";
+import { logoMedianContrast, MIN_LOGO_CONTRAST } from "@/lib/logo-contrast";
+import sharp from "sharp";
+import { versionedAsset } from "@/lib/versioned-asset";
 import { logoBackgroundFor } from "@/lib/logo-background";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
@@ -140,18 +145,19 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
       logoBuffer = Buffer.from(data.logoBase64, "base64");
     }
   } else {
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey) {
+    if (process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY) {
       try {
         const { header: headerBg } = logoBackgroundFor(data.template, data.themeColors);
-        logoBuffer = await generateLogoWithGemini(
-          geminiKey,
+        const generated = await generateLogo(
           data.siteName,
           data.vertical,
           data.audiences.join(", ") || undefined,
           headerBg,
           data.themeColors,
         );
+        logoBuffer = generated?.png ?? null;
+        // A generated logo gets a real favicon (simplified mark); null → cropped from the logo below.
+        if (logoBuffer && !data.faviconBase64) faviconBuffer = await generateFavicon(logoBuffer);
       } catch (err) {
         console.warn("[wizard] Logo generation failed, continuing without:", err);
       }
@@ -160,7 +166,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   if (data.faviconBase64) {
     faviconBuffer = Buffer.from(data.faviconBase64, "base64");
-  } else if (logoBuffer) {
+  } else if (logoBuffer && !faviconBuffer) {
     // Auto-extract a square icon favicon from the landscape logo so the
     // browser tab shows a recognizable icon rather than the full logo+text
     // shrunk to 16x16.
@@ -1184,13 +1190,12 @@ export async function updateStagingSite(
 export async function generateLogoPreview(
   domain: string,
   options: { generateFooterVariant?: boolean } = {},
-): Promise<{ logo: string | null; footerLogo: string | null }> {
+): Promise<{ logo: string | null; footerLogo: string | null; favicon: string | null; model: string | null }> {
   const { generateFooterVariant = true } = options;
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === domain);
 
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error("GEMINI_API_KEY not configured");
+  if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) throw new Error("No image model configured (OPENAI_API_KEY or GEMINI_API_KEY)");
 
   const config = site?.staging_branch
     ? await readSiteConfigFromGit(domain, site.staging_branch)
@@ -1206,20 +1211,25 @@ export async function generateLogoPreview(
   const template = theme?.template === "grid" ? "grid" : "modern";
   const { header: headerBg, footer: footerBg } = logoBackgroundFor(template, colors);
 
-  const mainBuf = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
-  const logo = mainBuf?.toString("base64") ?? null;
+  const generated = await generateLogo(siteName, vertical, audience, headerBg, colors);
+  if (!generated) return { logo: null, footerLogo: null, favicon: null, model: null };
+  const mainBuf = generated.png;
 
-  // Footer variant is a RECOLOR of the main logo (image-to-image), not a fresh
-  // generation — independent generations would produce a different mascot /
-  // composition for the same site. The recolor preserves design and only
-  // inverts colors for the opposite-contrast background.
-  let footerLogo: string | null = null;
-  if (generateFooterVariant && mainBuf && footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg)) {
-    const footerBuf = await recolorLogoForBackground(geminiKey, mainBuf, footerBg);
-    footerLogo = footerBuf?.toString("base64") ?? null;
-  }
+  // Footer variant is a RECOLOR of the main logo (image-to-image), not a fresh generation — independent
+  // generations would produce a different mascot for the same site. It's made only when header and footer
+  // backgrounds invert (one dark, one light). Footer and favicon run in parallel.
+  const wantFooter = generateFooterVariant && !!footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg);
+  const [footerBuf, faviconBuf] = await Promise.all([
+    wantFooter ? generateFooterLogo(mainBuf, footerBg) : Promise.resolve(null),
+    generateFavicon(mainBuf),
+  ]);
 
-  return { logo, footerLogo };
+  return {
+    logo: mainBuf.toString("base64"),
+    footerLogo: footerBuf?.toString("base64") ?? null,
+    favicon: faviconBuf?.toString("base64") ?? null,
+    model: generated.model,
+  };
 }
 
 /**
@@ -1271,13 +1281,24 @@ export async function saveAllStagingEdits(
     }
   }
 
-  // If we have a logo, set theme references (preserve separate favicon if set)
+  // Logo: processed first, then saved under a content-hashed name (the R2 bucket is shared with
+  // production — a fixed name would make this staging edit live immediately).
+  let processedLogo: Buffer | null = null;
   if (logoBase64) {
-    const theme = (existing.theme ?? {}) as Record<string, unknown>;
-    theme.logo = "/assets/logo.png";
-    if (theme.favicon !== "/assets/favicon.png") {
-      theme.favicon = "/assets/logo.png";
+    const raw = Buffer.from(logoBase64, "base64");
+    try {
+      processedLogo = await removeBackground(raw);
+    } catch (bgErr) {
+      console.warn("[wizard] removeBackground failed, using original image:", bgErr);
+      processedLogo = raw;
     }
+  }
+  const logoAsset = processedLogo ? versionedAsset(domain, "logo", processedLogo) : null;
+  if (logoAsset) {
+    const theme = (existing.theme ?? {}) as Record<string, unknown>;
+    const faviconWasLogo = typeof theme.favicon !== "string" || theme.favicon === theme.logo;
+    theme.logo = logoAsset.path;
+    if (faviconWasLogo) theme.favicon = logoAsset.path; // keep a separately uploaded favicon
     existing.theme = theme;
   }
 
@@ -1289,19 +1310,9 @@ export async function saveAllStagingEdits(
     },
   ];
 
-  if (logoBase64) {
-    const raw = Buffer.from(logoBase64, "base64");
-    // EC-9: removeBackground can throw on malformed images — use original
-    // image as fallback so the deploy doesn't fail over a cosmetic issue.
-    let processed: Buffer;
-    try {
-      processed = await removeBackground(raw);
-    } catch (bgErr) {
-      console.warn("[wizard] removeBackground failed, using original image:", bgErr);
-      processed = raw;
-    }
+  if (logoAsset && processedLogo) {
     // R2-native: upload logo bytes to R2, never commit to git.
-    await uploadToR2(`${domain}/assets/logo.png`, processed, "image/png");
+    await uploadToR2(logoAsset.key, processedLogo, "image/png");
   }
 
   const commitMsg = logoBase64 && configUpdates
@@ -1336,18 +1347,18 @@ export async function uploadStagingLogo(
     logoBuffer = raw;
   }
 
-  // R2-native: upload logo bytes straight to R2 (binary-safe), never git.
-  await uploadToR2(`${domain}/assets/logo.png`, logoBuffer, "image/png");
+  // R2-native, content-hashed name (shared bucket with production — never overwrite its file).
+  const logoAsset = versionedAsset(domain, "logo", logoBuffer);
+  await uploadToR2(logoAsset.key, logoBuffer, "image/png");
 
   // Read existing config to update theme references (committed to git).
   const config = await readSiteConfigFromGit(domain, site.staging_branch);
 
   if (config) {
     const theme = (config.theme ?? {}) as Record<string, unknown>;
-    theme.logo = "/assets/logo.png";
-    if (theme.favicon !== "/assets/favicon.png") {
-      theme.favicon = "/assets/logo.png";
-    }
+    const faviconWasLogo = typeof theme.favicon !== "string" || theme.favicon === theme.logo;
+    theme.logo = logoAsset.path;
+    if (faviconWasLogo) theme.favicon = logoAsset.path;
     config.theme = theme;
     await commitSiteFiles(
       domain,
@@ -1473,15 +1484,132 @@ function getFallbackTopics(siteName: string, vertical: string, theme?: string): 
 
 const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 
-/** Simple luminance check — returns true if the hex color is dark. */
-function isDarkColor(hex: string): boolean {
-  const c = hex.replace("#", "");
-  if (c.length < 6) return true;
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  // Relative luminance (ITU-R BT.709)
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.5;
+const OPENAI_LOGO_MODEL = "gpt-image-2.5-sunburst";
+
+interface GeneratedLogo {
+  png: Buffer;
+  /** Which image model made it — shown to the user and logged. */
+  model: string;
+}
+
+/** Trim/resize/compress an image; already-transparent images keep their pixels (see removeBackground). */
+async function tidyLogo(png: Buffer): Promise<Buffer> {
+  try {
+    return await removeBackground(png);
+  } catch {
+    return png;
+  }
+}
+
+async function openAILogo(openaiKey: string, prompt: string): Promise<Buffer | null> {
+  const png = await generateOpenAIImage({
+    apiKey: openaiKey,
+    model: OPENAI_LOGO_MODEL,
+    size: "1536x1024",
+    background: "transparent",
+    quality: "high",
+    // ~30 s measured; 60 s leaves headroom while keeping the worst case (OpenAI timeout + Gemini 20 s) ~80 s.
+    timeoutMs: 60_000,
+    prompt,
+  });
+  return png ? tidyLogo(png) : null;
+}
+
+/**
+ * Site logo: OpenAI gpt-image-2.5-sunburst (transparent PNG), else today's Gemini path. The OpenAI logo is
+ * measured against the header (WCAG contrast of its visible pixels); a faint one is regenerated once and
+ * the clearer of the two kept.
+ */
+async function generateLogo(
+  siteName: string,
+  vertical: string,
+  audience?: string,
+  headerBg?: string,
+  colors?: Record<string, string>,
+): Promise<GeneratedLogo | null> {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    const header = headerBg ?? "#1a1a2e";
+    const prompt = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: true });
+    const first = await openAILogo(openaiKey, prompt);
+    if (first) {
+      const firstContrast = await logoMedianContrast(first, header).catch(() => MIN_LOGO_CONTRAST);
+      if (firstContrast >= MIN_LOGO_CONTRAST) {
+        console.log(`[wizard] logo by ${OPENAI_LOGO_MODEL} (contrast ${firstContrast.toFixed(1)}:1 on ${header})`);
+        return { png: first, model: OPENAI_LOGO_MODEL };
+      }
+      console.warn(`[wizard] logo contrast ${firstContrast.toFixed(1)}:1 on ${header} is too low — regenerating once`);
+      const retry = await openAILogo(
+        openaiKey,
+        `${prompt}\n\nThe previous attempt was too faint on the ${header} header (its colours were too close in brightness). Use much stronger contrast this time.`,
+      );
+      const retryContrast = retry ? await logoMedianContrast(retry, header).catch(() => 0) : 0;
+      const best = retry && retryContrast > firstContrast ? retry : first;
+      console.log(`[wizard] logo by ${OPENAI_LOGO_MODEL} (contrast ${Math.max(firstContrast, retryContrast).toFixed(1)}:1 on ${header}, after retry)`);
+      return { png: best, model: OPENAI_LOGO_MODEL };
+    }
+    console.warn("[wizard] OpenAI logo failed — falling back to Gemini");
+  }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) return null;
+  const png = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
+  if (png) console.log(`[wizard] logo by ${GEMINI_IMAGE_MODEL}`);
+  return png ? { png, model: GEMINI_IMAGE_MODEL } : null;
+}
+
+/** Footer variant: the same logo recoloured for the opposite-contrast footer (OpenAI edit, else Gemini). */
+async function generateFooterLogo(sourceLogo: Buffer, footerBg: string): Promise<Buffer | null> {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    const png = await editOpenAIImage({
+      apiKey: openaiKey,
+      model: OPENAI_LOGO_MODEL,
+      image: sourceLogo,
+      size: "1536x1024",
+      background: "transparent",
+      quality: "high",
+      timeoutMs: 60_000,
+      prompt: footerRecolorPrompt(footerBg, true),
+    });
+    if (png) return tidyLogo(png);
+    console.warn("[wizard] OpenAI footer logo failed — falling back to Gemini");
+  }
+  const geminiKey = process.env.GEMINI_API_KEY;
+  return geminiKey ? recolorLogoForBackground(geminiKey, sourceLogo, footerBg) : null;
+}
+
+/**
+ * Favicon: an OpenAI edit of the logo into a simplified, bold square mark (no text) that reads at 16px.
+ * Returns null when it can't be made — callers then crop the icon out of the logo (extractFaviconFromLogo).
+ */
+async function generateFavicon(sourceLogo: Buffer): Promise<Buffer | null> {
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) return null;
+  const png = await editOpenAIImage({
+    apiKey: openaiKey,
+    model: OPENAI_LOGO_MODEL,
+    image: sourceLogo,
+    size: "1024x1024",
+    background: "transparent",
+    quality: "high",
+    timeoutMs: 60_000,
+    prompt: `Turn this logo into a website FAVICON (browser-tab icon).
+• Keep ONLY the icon / mascot from the logo — remove all text and letters.
+• SIMPLIFY it into a bold, flat mark: few shapes, thick strokes, no fine detail, so it stays recognisable at 16×16 pixels.
+• Keep the same character/symbol and the logo's main colours; add a strong dark outline so it reads on both light and dark browser tabs.
+• Fill most of the square canvas, centred, with only a little padding.
+• Fully TRANSPARENT background. No glow, no drop shadow, no outer halo, no backdrop shape.`,
+  });
+  if (!png) return null;
+  try {
+    return await sharp(png)
+      .trim()
+      .resize(180, 180, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png({ palette: true, quality: 80 })
+      .toBuffer();
+  } catch {
+    return png;
+  }
 }
 
 async function generateLogoWithGemini(
@@ -1492,44 +1620,7 @@ async function generateLogoWithGemini(
   headerBg?: string,
   colors?: Record<string, string>,
 ): Promise<Buffer | null> {
-  const headerHex = headerBg ?? "#1a1a2e";
-  const dark = isDarkColor(headerHex);
-
-  // Palette is filtered by lightness so dark hex values can't bleed into a light-version
-  // logo (and vice versa). The previous palette line was the main cause of contrast failures.
-  const paletteEntries = Object.entries(colors ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("#"));
-  const filteredPalette = paletteEntries.filter(([, hex]) => isDarkColor(hex) !== dark);
-  const paletteLine = filteredPalette.length > 0
-    ? `\n• BRAND PALETTE (reference values for the designer — these codes must NEVER appear as text in the rendered image): inspired by ${filteredPalette.map(([k, v]) => `${k} ${v}`).join(", ")}. Use complementary ${dark ? "light" : "dark"} neutrals where helpful.`
-    : "";
-
-  const contrastDirective = dark
-    ? `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
-The logo CANVAS is a solid ${headerHex} background (DARK). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be LIGHT colors: pure WHITE, off-white, cream, pale pastels, or BRIGHT/VIBRANT saturated colors. Do NOT use black, dark grey, navy, dark brown, or any dark hex — those would be invisible.`
-    : `BACKGROUND & CONTRAST (MOST IMPORTANT — overrides any palette suggestion below):
-The logo CANVAS is a solid ${headerHex} background (LIGHT). Design the logo as it will actually appear on the live website header. Every visible element — icon fills, icon outlines, brand text — MUST be DARK colors: deep black, charcoal, navy, dark brown, or rich saturated colors. Do NOT use white, off-white, cream, or pale pastels — those would be invisible.`;
-
-  const prompt = `${contrastDirective}
-
-Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
-
-LAYOUT & STRUCTURE:
-• COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
-• BALANCE: The icon and text should be vertically centered and horizontally aligned.
-• ASPECT RATIO: Wide horizontal format (suitable for a website navigation bar).
-
-VISUAL STYLE:
-• ICON: A single, bold, recognizable symbol or stylized mascot representing ${vertical}. Crafted illustration with personality — confident outlines, soft internal shading, and a subtle sense of depth (think a modern brand mascot, NOT a flat two-tone icon).
-• TYPOGRAPHY: Bold, modern, clean sans-serif. The text must read exactly "${siteName}".
-• ART STYLE: Premium vector-illustration with subtle gradients, soft highlights, and shading WITHIN shapes for depth and richness. NOT photorealistic, NOT 3D-rendered, NOT a generic flat icon.
-• COLORS: 2-4 ${dark ? "light/bright" : "dark/saturated"} brand colors with subtle shading variations.${paletteLine}
-
-CRITICAL CONSTRAINTS:
-• BACKGROUND: Solid uniform ${headerHex} background, edge to edge. No textures, patterns, gradients, or drop shadows. (This solid background will be stripped to transparency in post-processing — only the logo elements should remain.)
-• TEXT IN IMAGE: The ONLY text rendered in the image is exactly "${siteName}". Do NOT render any hex codes, color codes, numbers, palette labels, version tags, or watermarks anywhere in the image.
-• CONTRAST CHECK: ${dark ? "Re-verify before finalizing — every logo element must be clearly visible against a dark background." : "Re-verify before finalizing — every logo element must be clearly visible against a light background."}
-• CLARITY: Perfect spelling of "${siteName}".
-• PADDING: Leave a small amount of breathing room/padding around the edges.`;
+  const prompt = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: false });
 
   try {
     // EC-8: 15s timeout prevents the entire action from hanging if Gemini
@@ -1584,21 +1675,15 @@ CRITICAL CONSTRAINTS:
   }
 }
 
-/**
- * Image-to-image recolor: pass an existing logo as input and ask Gemini to
- * produce an identical design with inverted colors for the opposite-contrast
- * background. Used to generate the footer-variant logo when header and footer
- * backgrounds invert (e.g. light header + dark footer). The source image is
- * already a transparent-background PNG produced by `generateLogoWithGemini`.
- */
-async function recolorLogoForBackground(
-  apiKey: string,
-  sourceLogo: Buffer,
-  targetBg: string,
-): Promise<Buffer | null> {
+/** Recolour prompt for the footer variant; `transparentOutput` for OpenAI, solid canvas for Gemini. */
+function footerRecolorPrompt(targetBg: string, transparentOutput: boolean): string {
   const dark = isDarkColor(targetBg);
-
-  const prompt = `Recolor this exact logo so it is clearly visible on a solid ${targetBg} background (${dark ? "DARK" : "LIGHT"}).
+  const canvas = transparentOutput
+    ? `BACKGROUND:
+• Fully TRANSPARENT background — the logo will sit on a solid ${targetBg} website footer. No glow, no drop shadow, no outer halo, no backdrop shape.`
+    : `CANVAS:
+• Render on a solid uniform ${targetBg} background, edge to edge. No textures, gradients, patterns, or drop shadows. (This solid background will be stripped to transparency in post-processing.)`;
+  return `Recolor this exact logo so it is clearly visible on a solid ${targetBg} background (${dark ? "DARK" : "LIGHT"}).
 
 CRITICAL — keep the design 100% IDENTICAL to the source image:
 • Same icon, mascot, or character — same pose, same details.
@@ -1612,11 +1697,25 @@ ${dark
   ? "• Every currently-dark element (black outlines, dark fills, dark text) → swap to LIGHT equivalents: white, off-white, cream, or bright tints of the source color.\n• Keep colorful brand elements but lighten their tone if needed for visibility on the dark background."
   : "• Every currently-light element (white outlines, light fills, light text) → swap to DARK equivalents: black, charcoal, or rich saturated shades of the source color.\n• Keep colorful brand elements but darken their tone if needed for visibility on the light background."}
 
-CANVAS:
-• Render on a solid uniform ${targetBg} background, edge to edge. No textures, gradients, patterns, or drop shadows. (This solid background will be stripped to transparency in post-processing.)
+${canvas}
 
 TEXT IN IMAGE:
 • The ONLY text rendered is exactly the same brand name as the source image. Do NOT add or change any text. No hex codes, color codes, numbers, palette labels, or watermarks.`;
+}
+
+/**
+ * Image-to-image recolor: pass an existing logo as input and ask Gemini to
+ * produce an identical design with inverted colors for the opposite-contrast
+ * background. Used to generate the footer-variant logo when header and footer
+ * backgrounds invert (e.g. light header + dark footer). The source image is
+ * already a transparent-background PNG produced by `generateLogoWithGemini`.
+ */
+async function recolorLogoForBackground(
+  apiKey: string,
+  sourceLogo: Buffer,
+  targetBg: string,
+): Promise<Buffer | null> {
+  const prompt = footerRecolorPrompt(targetBg, false);
 
   try {
     const url = `${GEMINI_API_BASE}/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;

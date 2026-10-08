@@ -1,11 +1,13 @@
 "use client";
 
+import { logoBackgroundFor } from "@/lib/logo-background";
 import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Textarea } from "@/components/ui/Textarea";
 import { Button } from "@/components/ui/Button";
+import { LogoThumb } from "@/components/ui/LogoThumb";
 import { Tabs } from "@/components/ui/Tabs";
 import { useToast } from "@/components/ui/Toast";
 import dynamic from "next/dynamic";
@@ -93,6 +95,11 @@ export function ContentAgentTab({
   // per-topic migration) don't apply. Derived the same way as the existing
   // Grid-tab check below, per src/lib/grid-config.ts.
   const isGrid = isGridSiteConfig(siteConfig);
+  // The colours the logo sits on — the hover preview shows it there.
+  const logoBgs = logoBackgroundFor(
+    isGrid ? "grid" : "modern",
+    (siteConfig?.theme as { colors?: Record<string, string> } | undefined)?.colors,
+  );
 
   // --- Identity state ---
   const [savingIdentity, setSavingIdentity] = useState(false);
@@ -180,16 +187,20 @@ export function ContentAgentTab({
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const { logo, footerLogo } = await generateLogoPreview(domain, {
+        const { logo, footerLogo, favicon, model } = await generateLogoPreview(domain, {
           generateFooterVariant: autoFooterVariant,
         });
         if (logo) {
           setLogoAndSync(logo);
+          // A generated favicon (simplified mark) replaces "same as logo"; the toggle brings the logo back.
+          if (favicon) {
+            setPendingFavicon(favicon);
+            setFaviconSameAsLogo(false);
+          }
           setPendingFooterLogo(footerLogo);
           setClearFooterLogo(false);
-          if (footerLogo) {
-            toast("Generated a footer variant — header and footer backgrounds invert", "info");
-          }
+          const extras = [favicon && "favicon", footerLogo && "footer variant"].filter(Boolean).join(" + ");
+          toast(`Logo generated with ${model ?? "AI"}${extras ? ` (+ ${extras})` : ""} — save to apply`, "success");
         } else {
           toast("AI could not generate an image — try again", "error");
         }
@@ -695,9 +706,11 @@ export function ContentAgentTab({
 
             {!pendingLogo && currentLogoPath && (
               <div className="flex items-center gap-3">
-                <img
+                <LogoThumb
                   src={assetUrl(currentLogoPath)}
                   alt="Current logo"
+                  background={logoBgs.header}
+                  backgroundLabel="header"
                   className="w-14 h-14 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
                   onError={(e): void => { (e.target as HTMLImageElement).style.display = "none"; }}
                 />
@@ -707,9 +720,11 @@ export function ContentAgentTab({
 
             {pendingLogo && (
               <div className="flex items-center gap-3">
-                <img
+                <LogoThumb
                   src={`data:image/png;base64,${pendingLogo}`}
                   alt="Logo preview"
+                  background={logoBgs.header}
+                  backgroundLabel="header"
                   className="w-14 h-14 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
                 />
                 <div className="flex-1">
@@ -765,9 +780,11 @@ export function ContentAgentTab({
             {(!!pendingFooterLogo || !!(siteConfig?.theme as Record<string, unknown> | undefined)?.footer_logo) && !clearFooterLogo && (
               <div className="flex items-center gap-2">
                 {pendingFooterLogo && (
-                  <img
+                  <LogoThumb
                     src={`data:image/png;base64,${pendingFooterLogo}`}
                     alt="Footer logo preview"
+                    background={logoBgs.footer}
+                    backgroundLabel="footer"
                     className="w-10 h-10 rounded object-contain bg-[var(--bg-elevated)] border border-[var(--border-secondary)]"
                   />
                 )}
