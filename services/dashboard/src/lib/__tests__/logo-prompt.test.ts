@@ -35,4 +35,27 @@ describe("buildLogoPrompt", () => {
     expect(p).not.toContain("MID-TONE");
     expect(p).toContain("MUST be LIGHT colors");
   });
+  it("adds the site's tagline, topics and tone as personality cues — never as text to render", () => {
+    const p = buildLogoPrompt({
+      ...base, transparentOutput: true,
+      tagline: "Pop culture with a wink", topics: ["Movies", "Celebrities", "TV"], tone: "playful and witty",
+    });
+    expect(p).toContain("SITE PERSONALITY");
+    expect(p).toContain('Tagline: "Pop culture with a wink"');
+    expect(p).toContain("Covers: Movies, Celebrities, TV");
+    expect(p).toContain("Voice: playful and witty");
+    expect(p).toMatch(/never render these words/i);
+  });
+  it("leaves out each missing cue, and the whole block when there are none (prompt unchanged)", () => {
+    const only = buildLogoPrompt({ ...base, transparentOutput: true, topics: ["Movies"] });
+    expect(only).toContain("Covers: Movies");
+    expect(only).not.toContain("Tagline:");
+    expect(only).not.toContain("Voice:");
+    for (const transparentOutput of [true, false]) {
+      const plain = buildLogoPrompt({ ...base, transparentOutput });
+      expect(buildLogoPrompt({ ...base, transparentOutput, tagline: "  ", topics: [], tone: "" })).toBe(plain);
+      expect(plain).not.toContain("SITE PERSONALITY");
+    }
+  });
 });
+
