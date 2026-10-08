@@ -15,6 +15,7 @@ import { moveR2ObjectsByPrefix } from "@/lib/cloudflare";
 import { R2_BUCKET_PROD } from "@/lib/constants";
 import { getMongoDb } from "@/lib/mongo";
 import { COLLECTIONS } from "@/lib/db/collections";
+import { siteRenameKey } from "@/lib/site-rename-key";
 
 interface RenameRequestBody {
   oldDomain: string;
@@ -232,6 +233,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         R2_BUCKET_PROD,
         `${oldDomain}/`,
         `${newDomain}/`,
+        undefined,
+        (key) => siteRenameKey(key, oldDomain, newDomain),
       );
       console.log(`[sites/rename] Moved ${count} R2 objects from ${oldDomain}/ to ${newDomain}/`);
     } catch (err) {

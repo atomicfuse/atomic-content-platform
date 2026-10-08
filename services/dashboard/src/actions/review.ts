@@ -6,7 +6,6 @@ import {
   readFileContent,
   commitSiteFiles,
   deleteFilesFromBranch,
-  triggerWorkflowViaPush,
   copySiteTreeToMain,
   invalidateTreeCache,
 } from "@/lib/github";
@@ -64,10 +63,10 @@ export async function getReviewQueue(): Promise<ReviewArticle[]> {
  * Apply all review decisions in one batch.
  *
  * Per domain:
- * 1. ONE commitSiteFiles() for all approved articles (Git Data API — no webhook)
- * 2. ONE deleteFilesFromBranch() for all rejected articles (Git Data API — no webhook)
- * 3. ONE triggerWorkflowViaPush() to fire Cloudflare build
- * 4. If site is Live/Ready → merge staging to main
+ * 1. ONE commitSiteFiles() for all approved articles
+ * 2. ONE deleteFilesFromBranch() for all rejected articles
+ *    (each commit's push under sites/** starts sync-kv — no extra trigger commit)
+ * 3. If site is Live/Ready → merge staging to main
  */
 export async function applyReviewDecisions(decisions: {
   approved: Array<{ domain: string; slug: string }>;
@@ -175,12 +174,7 @@ export async function applyReviewDecisions(decisions: {
       // Only trigger build + merge if something actually changed
       const hasChanges = actualApproved > 0 || rejected.length > 0;
 
-      // 3. ONE build trigger per domain
-      if (hasChanges && site?.staging_branch) {
-        await triggerWorkflowViaPush(site.staging_branch, domain);
-      }
-
-      // 4. If site is Live or Ready → merge staging to main + clean up deleted articles
+      // 3. If site is Live or Ready → merge staging to main + clean up deleted articles
       if (hasChanges && site?.staging_branch && (site.status === "Live" || site.status === "Ready")) {
         const mergeMsg = `review: merge ${domain} staging → main (${actualApproved} approved, ${rejected.length} rejected)`;
         const deletedSlugs = await mergeOrCopySiteToMain(domain, site.staging_branch, mergeMsg);

@@ -38,7 +38,7 @@ graph TB
     Dashboard -->|"reads/writes site configs,\narticles, index"| GitHubAPI
     Dashboard -->|"creates Pages projects,\nattaches domains"| CF
     Dashboard -->|"stores subscribers"| GSheets
-    Dashboard -->|"generates logos"| Gemini
+    Dashboard -->|"generates logos"| OpenAI
 
     Pipeline -->|"fetches source articles"| Aggregator
     Pipeline -->|"generates + scores articles"| Claude
@@ -88,7 +88,7 @@ The result is a `ResolvedConfig` with every field guaranteed present.
 - **Monorepo:** Turborepo + pnpm
 - **Site Builder:** Astro 6 (static output)
 - **Dashboard:** Next.js 15 (App Router, Server Actions)
-- **AI:** Claude (article writing + quality scoring), Gemini (logos + topic suggestions)
+- **AI:** Claude (article writing + quality scoring), OpenAI `gpt-image-2.5-sunburst` (logos; Gemini as fallback), Gemini (topic suggestions)
 - **Hosting:** Cloudflare Pages + CDN
 - **Deployment:** CloudGrid
 - **Data Storage:** GitHub (configs + articles), Google Sheets (subscribers)

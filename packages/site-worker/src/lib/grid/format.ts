@@ -29,10 +29,11 @@ export function buildOutboundUrl(hostname: string, slug: string, gridHost: strin
 }
 
 /**
- * "Read full story" on the publisher's site for an aggregator story (UTM tags when enabled).
+ * "Read full story" on the publisher's site for an aggregator story. Publishers aren't network sites, so
+ * the link never carries UTM tags — ours are never added and any `utm_*` already in the feed URL is removed.
  * Null for anything that isn't an absolute http(s) URL — the page then omits the button.
  */
-export function buildExternalOutboundUrl(url: string, gridHost: string, utm: boolean): string | null {
+export function buildExternalOutboundUrl(url: string): string | null {
   let u: URL;
   try {
     u = new URL(url);
@@ -40,9 +41,8 @@ export function buildExternalOutboundUrl(url: string, gridHost: string, utm: boo
     return null;
   }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-  if (utm) {
-    u.searchParams.set('utm_source', gridHost);
-    u.searchParams.set('utm_medium', 'grid');
+  for (const key of [...u.searchParams.keys()]) {
+    if (key.toLowerCase().startsWith('utm_')) u.searchParams.delete(key);
   }
   return u.toString();
 }

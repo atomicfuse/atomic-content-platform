@@ -23,6 +23,8 @@ vi.mock("@/lib/github", () => ({
   readFileContent: vi.fn(),
   commitNetworkFiles: vi.fn().mockResolvedValue(undefined),
   copySiteTreeToMain: vi.fn().mockResolvedValue([]),
+  getBranchHeadSha: vi.fn().mockResolvedValue("s1"),
+  resetBranchToMainIfUnchanged: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("@/lib/cloudflare", () => ({
   listZones: vi.fn(),

@@ -3,6 +3,7 @@
 import { useState, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
+import { LogoThumb } from "@/components/ui/LogoThumb";
 import { useToast } from "@/components/ui/Toast";
 import { generateLogoPreview } from "@/actions/wizard";
 
@@ -68,18 +69,18 @@ export function StagingEditPanel({
   function handleGenerateLogo(): void {
     startGenLogo(async () => {
       try {
-        const { logo, footerLogo } = await generateLogoPreview(domain, {
+        const { logo, footerLogo, favicon, model } = await generateLogoPreview(domain, {
           generateFooterVariant: autoFooterVariant,
         });
         if (logo) {
           setPendingLogo(logo);
           setPendingFooterLogo(footerLogo);
+          if (favicon) setPendingFavicon(favicon);
           setClearLogo(false);
           setClearFooterLogo(false);
           setShowSuccess(false);
-          if (footerLogo) {
-            toast("Generated a footer variant — header and footer backgrounds invert", "info");
-          }
+          const extras = [favicon && "favicon", footerLogo && "footer variant"].filter(Boolean).join(" + ");
+          toast(`Logo generated with ${model ?? "AI"}${extras ? ` (+ ${extras})` : ""} — save to apply`, "success");
         } else {
           toast("AI could not generate an image — try again", "error");
         }
@@ -278,7 +279,7 @@ export function StagingEditPanel({
           {/* Current logo from staging */}
           {!pendingLogo && currentLogoPath && previewUrl && (
             <div className="flex items-start gap-4 p-3 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)]">
-              <img
+              <LogoThumb
                 src={`${previewUrl}${currentLogoPath}`}
                 alt="Current logo"
                 className="w-16 h-16 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
@@ -293,7 +294,7 @@ export function StagingEditPanel({
 
           {pendingLogo && (
             <div className="flex items-start gap-4 p-3 rounded-lg border border-cyan/20 bg-cyan/5">
-              <img
+              <LogoThumb
                 src={`data:image/png;base64,${pendingLogo}`}
                 alt="Logo preview"
                 className="w-16 h-16 rounded-lg object-contain bg-white border border-[var(--border-secondary)]"
@@ -369,7 +370,7 @@ export function StagingEditPanel({
           </label>
           {pendingFooterLogo && !clearFooterLogo && (
             <div className="flex items-center gap-2">
-              <img
+              <LogoThumb
                 src={`data:image/png;base64,${pendingFooterLogo}`}
                 alt="Footer logo preview"
                 className="w-10 h-10 rounded object-contain bg-[var(--bg-elevated)] border border-[var(--border-secondary)]"

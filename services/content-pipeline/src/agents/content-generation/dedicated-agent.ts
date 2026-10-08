@@ -23,6 +23,7 @@ import { createOctokit, readFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import { generateContent } from "../../lib/ai.js";
 import { brandSafeSlug } from "../../lib/brand-safety.js";
+import { defaultImagePath as siteDefaultImagePath, siteDefaultImage } from "../../lib/site-default-image.js";
 import { DEFAULT_CLAUDE_MODEL } from "../../lib/models.js";
 import { writeArticleBatch } from "../../lib/writer.js";
 import { upsertArticleMeta } from "../../lib/db/articles.js";
@@ -256,7 +257,9 @@ export async function runDedicatedGeneration(
 
   // Step 8: Build frontmatter
   const publishDate = new Date().toISOString().slice(0, 10);
-  const defaultImagePath = `/assets/images/${siteDomain}-general-article.webp`;
+  // The default image shows until the hero image arrives — make sure the site has one.
+  await siteDefaultImage.ensure({ domain: siteDomain, siteName, vertical: brief.vertical, topics: brief.topics });
+  const defaultImagePath = siteDefaultImagePath(siteDomain);
 
   // Estimate reading time (average 200 wpm)
   const wordCount = generated.body.trim().split(/\s+/).filter(Boolean).length;

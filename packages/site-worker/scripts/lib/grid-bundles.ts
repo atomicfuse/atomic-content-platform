@@ -10,6 +10,7 @@ import type { ExternalBundleIndex, ExternalIndexEntry, ExternalStoryRecord } fro
 import { slugifyTopic } from '../../src/lib/grid/normalize';
 import { externalIndexKey, externalItemKey } from '../../src/lib/kv-schema';
 import { splitFrontmatter } from './resolve';
+import { brokenImageIds } from './grid-image-check';
 
 /** Content Aggregator item fields the sync uses (GET /api/content). */
 export interface AggregatorItem {
@@ -178,6 +179,13 @@ export interface BundleSyncDeps {
   now(): Date;
   /** Publisher domain → favicon path for the domains that have one (scripts/lib/grid-favicons.ts). Optional. */
   favicons?(domains: string[]): Promise<ReadonlyMap<string, string>>;
+  /**
+   * Does this image load? (scripts/lib/grid-image-check.ts). Optional. Stories seen for the first time are
+   * checked and skipped when it doesn't — they're simply new again next run, so a brief outage self-heals.
+   */
+  imageLoads?(url: string): Promise<boolean>;
+  /** Also re-check stories already in the index and remove those whose image no longer loads (manual runs). */
+  recheckImages?: boolean;
 }
 
 /**
@@ -218,7 +226,7 @@ export async function syncBundles(
   for (const bundleId of bundleIds) {
     try {
       const now = deps.now();
-      const records: ExternalStoryRecord[] = [];
+      let records: ExternalStoryRecord[] = [];
       for (const item of await deps.fetchItems(bundleId)) {
         // One malformed item (third-party data) is skipped, never the whole bundle.
         try {
@@ -228,11 +236,25 @@ export async function syncBundles(
           console.warn(`[seed-grid] bundle ${bundleId}: skipped malformed item ${String((item as { id?: unknown })?.id)}:`, err instanceof Error ? err.message : err);
         }
       }
-      const existing = await deps.readIndex(bundleId);
+      let existing = await deps.readIndex(bundleId);
+      const originalCount = existing?.items.length ?? 0;
+      if (deps.imageLoads) {
+        const known = new Set((existing?.items ?? []).map((e) => e.id));
+        const candidates = [
+          ...records.filter((r) => deps.recheckImages || !known.has(r.id)),
+          ...(deps.recheckImages ? (existing?.items ?? []).filter((e) => !records.some((r) => r.id === e.id)) : []),
+        ];
+        const broken = await brokenImageIds(candidates, deps.imageLoads);
+        if (broken.size > 0) {
+          console.log(`[seed-grid] bundle ${bundleId}: ${broken.size} stories skipped — image does not load`);
+          records = records.filter((r) => !broken.has(r.id));
+          if (existing) existing = { ...existing, items: existing.items.filter((e) => !broken.has(e.id)) };
+        }
+      }
       const index = mergeBundleIndex(existing, bundleId, names.get(bundleId) ?? '', records, now, rewritten);
       const faviconsChanged = await applyFavicons(index, existing, deps.favicons);
       // Nothing new, nothing dropped and no new icons → leave this bundle's KV as it is.
-      if (records.length === 0 && index.items.length === (existing?.items.length ?? 0) && !faviconsChanged) continue;
+      if (records.length === 0 && index.items.length === originalCount && !faviconsChanged) continue;
       for (const r of records) {
         if (written.has(r.id)) continue; // same story in two bundles → one record
         written.add(r.id);

@@ -201,7 +201,7 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
             onChange={(e): void => set("outbound_utm", e.target.checked)}
             className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
           />
-          Add UTM tags to &quot;Read full story&quot; links
+          Add UTM tags to &quot;Read full story&quot; links to network sites (never on outside publishers)
         </label>
       </section>
     </div>

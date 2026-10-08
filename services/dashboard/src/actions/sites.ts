@@ -9,7 +9,6 @@ import {
   deleteSiteFilesFromRepo,
   deleteFileFromBranch,
   deleteFilesFromBranch,
-  triggerWorkflowViaPush,
   branchExists,
   deleteBranch,
 } from "@/lib/github";
@@ -260,7 +259,7 @@ export async function deleteArticleFromStaging(
   // 1. Delete from staging branch in Git
   const filePath = `sites/${domain}/articles/${slug}.md`;
   await deleteFileFromBranch(filePath, site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
+  // The commit above already starts sync-kv (its push touches sites/**); no extra trigger commit.
 
   // 2. Immediately delete the staging KV entry so the preview site reflects the deletion
   try {
@@ -295,7 +294,7 @@ export async function deleteArticlesFromStaging(
     (slug) => `sites/${domain}/articles/${slug}.md`
   );
   await deleteFilesFromBranch(filePaths, site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
+  // The commit above already starts sync-kv (its push touches sites/**); no extra trigger commit.
 
   // 2. Immediately delete the staging KV entries so the preview site reflects the deletions
   try {

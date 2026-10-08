@@ -33,6 +33,7 @@ import { randomUUID } from "node:crypto";
 import { generateSEOMetadata } from "./seo/metadata-generator.js";
 import { generateSlug } from "./seo/slug-generator.js";
 import { brandSafeSlug } from "../../lib/brand-safety.js";
+import { defaultImagePath, siteDefaultImage } from "../../lib/site-default-image.js";
 import type { ContentItem, AggregatorSettings, GeneratedArticle as V2GeneratedArticle } from "./types.js";
 import type { Generator, GeneratorConfig } from "./generators/base-generator.js";
 
@@ -699,9 +700,10 @@ async function processItem(
     const baseSlug = await brandSafeSlug(generated.slug || generateSlug(generated.title), generated.title);
     const slug = await resolveUniqueSlug(config, siteDomain, baseSlug, branch);
 
-    // Step 4: Default image — real image generated async by n8n after commit
-    const defaultImagePath = `/assets/images/${siteDomain}-general-article.webp`;
-    const featuredImageUrl = defaultImagePath;
+    // Step 4: Default image — real image generated async by n8n after commit. The default must
+    // exist (it shows until the hero image arrives), so create it now if the site has none.
+    await siteDefaultImage.ensure({ domain: siteDomain, siteName, vertical: brief.vertical, topics: brief.topics });
+    const featuredImageUrl = defaultImagePath(siteDomain);
 
     // Step 5: SEO metadata
     const seo = generateSEOMetadata(generated, item, decision.isFactual, featuredImageUrl);

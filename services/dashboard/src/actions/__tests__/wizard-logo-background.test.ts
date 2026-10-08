@@ -44,6 +44,11 @@ vi.mock("@/lib/remove-background", () => ({
   removeBackground: vi.fn().mockImplementation(async (buf: Buffer) => buf),
 }));
 vi.mock("@/lib/favicon-extractor", () => ({ extractFaviconFromLogo: vi.fn() }));
+// Fake image bytes aren't real PNGs: measure contrast via a mock (default: readable).
+vi.mock("@/lib/logo-contrast", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/logo-contrast")>()),
+  logoMedianContrast: vi.fn().mockResolvedValue(12),
+}));
 vi.mock("@/lib/r2-upload", () => ({ uploadToR2: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/email-routing", () => ({ enableEmailRouting: vi.fn(), createEmailRoutingRule: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -52,8 +57,10 @@ vi.mock("@/lib/general-image", () => ({
 }));
 
 import { createSiteAndBuildStaging, generateLogoPreview } from "../wizard";
+import { removeBackground } from "@/lib/remove-background";
 import { getDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig } from "@/lib/db/site-configs";
+import { logoMedianContrast } from "@/lib/logo-contrast";
 
 function makeFormData(overrides: Partial<WizardFormData> = {}): WizardFormData {
   return {
@@ -120,6 +127,7 @@ describe("logo generation picks the right background colour", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.GEMINI_API_KEY = "test-key";
+    delete process.env.OPENAI_API_KEY; // these tests cover the Gemini path
     global.fetch = vi.fn().mockResolvedValue(fakeGeminiImageResponse());
   });
 
@@ -190,5 +198,100 @@ describe("logo generation picks the right background colour", () => {
       expect(prompt).toContain("solid #101010 background");
       expect(prompt).not.toContain("solid #f0f0f0 background");
     });
+  });
+});
+
+describe("logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback", () => {
+  const originalFetch = global.fetch;
+  const originalGemini = process.env.GEMINI_API_KEY;
+  const originalOpenAI = process.env.OPENAI_API_KEY;
+  const openaiOk = (): Response => ({ ok: true, status: 200, json: async () => ({ data: [{ b64_json: Buffer.from("openai-png").toString("base64") }] }) }) as Response;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.GEMINI_API_KEY = "gk";
+    process.env.OPENAI_API_KEY = "ok";
+  });
+  afterEach(() => {
+    global.fetch = originalFetch;
+    process.env.GEMINI_API_KEY = originalGemini;
+    if (originalOpenAI === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = originalOpenAI;
+  });
+
+  it("uses OpenAI with a transparent background and the header-contrast rules (no glow), then the transparency-aware trim/resize", async () => {
+    const fetchMock = vi.fn(async (url: string) => (String(url).includes("openai.com") ? openaiOk() : (fakeGeminiImageResponse() as unknown as Response)));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await createSiteAndBuildStaging(makeFormData());
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("api.openai.com/v1/images/generations");
+    const body = JSON.parse(init.body as string) as { model: string; background: string; prompt: string };
+    expect(body.model).toBe("gpt-image-2.5-sunburst");
+    expect(body.background).toBe("transparent");
+    expect(body.prompt).toContain("#101010");
+    expect(body.prompt).toMatch(/no glow/i);
+    // removeBackground only trims/resizes/compresses an already-transparent image (see remove-background.test.ts).
+    expect(vi.mocked(removeBackground)).toHaveBeenCalledWith(Buffer.from("openai-png"));
+  });
+
+  it("falls back to Gemini when OpenAI fails", async () => {
+    const fetchMock = vi.fn(async (url: string) => (String(url).includes("openai.com")
+      ? ({ ok: false, status: 500, json: async () => ({}) } as Response)
+      : (fakeGeminiImageResponse() as unknown as Response)));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await createSiteAndBuildStaging(makeFormData());
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("generativelanguage.googleapis.com"))).toBe(true);
+  });
+
+  it("works with only an OpenAI key (logo preview no longer requires GEMINI_API_KEY)", async () => {
+    delete process.env.GEMINI_API_KEY;
+    global.fetch = vi.fn(async () => openaiOk()) as unknown as typeof fetch;
+    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    expect(out.logo).toBe(Buffer.from("openai-png").toString("base64"));
+  });
+
+  it("regenerates once when the logo reads faint on the header, and keeps the clearer one", async () => {
+    let n = 0;
+    global.fetch = vi.fn(async () => {
+      n += 1;
+      return ({ ok: true, status: 200, json: async () => ({ data: [{ b64_json: Buffer.from(`png-${n}`).toString("base64") }] }) }) as Response;
+    }) as unknown as typeof fetch;
+    vi.mocked(logoMedianContrast).mockResolvedValueOnce(1.4).mockResolvedValueOnce(9);
+    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    const gens = vi.mocked(global.fetch).mock.calls.filter(([u]) => String(u).includes("/images/generations"));
+    expect(gens).toHaveLength(2);
+    expect(JSON.parse(gens[1]![1]!.body as string).prompt).toMatch(/too faint/i);
+    expect(out.logo).toBe(Buffer.from("png-2").toString("base64"));
+  });
+
+  it("reports which model made the logo", async () => {
+    global.fetch = vi.fn(async () => openaiOk()) as unknown as typeof fetch;
+    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    expect(out.model).toBe("gpt-image-2.5-sunburst");
+  });
+
+  it("makes the favicon with an OpenAI edit of the logo (simplified mark, no glow)", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    const edit = fetchMock.mock.calls.find(([u]) => String(u).includes("/images/edits")) as unknown as [string, RequestInit] | undefined;
+    expect(edit).toBeDefined();
+    const form = edit![1].body as FormData;
+    expect(form.get("size")).toBe("1024x1024");
+    expect(String(form.get("prompt"))).toMatch(/no glow/i);
+    expect(out.favicon).toBe(Buffer.from("openai-png").toString("base64"));
+  });
+
+  it("makes the footer variant with an OpenAI edit when header and footer invert", async () => {
+    vi.mocked(getDashboardIndex).mockResolvedValue({ sites: [{ domain: "inv.example", staging_branch: "staging/inv.example" }] } as never);
+    vi.mocked(getSiteConfig).mockResolvedValue({
+      site_name: "Inv", theme: { colors: { primary: "#ffffff", footer_bg: "#111111" } },
+    } as never);
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const out = await generateLogoPreview("inv.example");
+    const edits = fetchMock.mock.calls.filter(([u]) => String(u).includes("/images/edits")) as unknown as Array<[string, RequestInit]>;
+    expect(edits.some(([, init]) => /#111111/.test(String((init.body as FormData).get("prompt"))))).toBe(true);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("generativelanguage"))).toBe(false);
+    expect(out.footerLogo).toBe(Buffer.from("openai-png").toString("base64"));
   });
 });

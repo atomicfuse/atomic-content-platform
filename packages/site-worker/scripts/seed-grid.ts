@@ -4,6 +4,8 @@
  *   grid-summary:<siteId>:<slug>   ← grid-summaries/<siteId>/<slug>.md (changed files, or all with --all-summaries)
  *   grid-ext-item:<itemId>         ← Content Aggregator bundles used by Grid pills (every run)
  *   grid-ext-index:<bundleId>      ← same; merged with the existing index, never pruned
+ * Bundle stories whose image doesn't load (publisher blocks hotlinking) are skipped; --recheck-images also
+ * removes already-indexed ones (scripts/lib/grid-image-check.ts).
  * Also stores publisher favicons in R2 (aggregator/assets/favicons/<domain>.png, once per domain — see
  * scripts/lib/grid-favicons.ts). Skipped with --local. R2_BUCKET overrides the bucket (default atl-assets-prod).
  * Env (CI): NETWORK_DATA_PATH, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_API_TOKEN, KV_NAMESPACE_ID_PROD, KV_NAMESPACE_ID_STAGING,
@@ -21,6 +23,7 @@ import { bundleIdsFromEnvironments, readNetworkArticleFrontmatter, rewrittenIdsF
 import { aggregatorBase, bundleSyncExitCode, fetchBundleItems, fetchBundleNames } from './lib/aggregator-client';
 import { parseSummaryFile } from './lib/grid-summary-html';
 import { createFaviconStore, r2FaviconDeps } from './lib/grid-favicons';
+import { imageLoads } from './lib/grid-image-check';
 import { bulkPut } from './lib/kv-bulk';
 
 const STAGING_DEFAULT = 'f6c35e1fa8c841b8b193509a3a237f7f';
@@ -46,6 +49,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const local = args.includes('--local');
   const all = args.includes('--all-summaries');
+  const recheckImages = args.includes('--recheck-images');
   const changedIdx = args.indexOf('--changed-file');
   const root = requireEnv('NETWORK_DATA_PATH');
 
@@ -87,6 +91,8 @@ async function main(): Promise<void> {
       fetchItems: (id) => fetchBundleItems(base, id),
       readIndex,
       now: () => new Date(),
+      imageLoads: (url: string) => imageLoads(url),
+      recheckImages,
       ...(favicons ? { favicons: (domains: string[]) => favicons.resolve(domains) } : {}),
     });
     // Icons are cosmetic: a failed manifest write only means some domains are re-checked next run.

@@ -107,3 +107,31 @@ describe('syncBundles — publisher favicons', () => {
     expect(indexOf(out).items[0]).not.toHaveProperty('favicon');
   });
 });
+
+describe('syncBundles — images that do not load', () => {
+  const withImage = (id: string, img: string): AggregatorItem => ({ ...art(id), thumbnail: { url: img } });
+  const indexed = (ids: string[]) => ({ bundleId: 'b', name: 'n', updatedAt: 'u', items: ids.map((id) => ({ id, slug: 's', title: 't', description: '', imageUrl: `https://img/${id}`, sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' })) });
+
+  it('skips a new story whose image fails to load, checking only stories not yet indexed', async () => {
+    const imageLoads = vi.fn(async (url: string) => !url.includes('blocked'));
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [withImage('ok', 'https://img/ok'), withImage('bad', 'https://img/blocked'), withImage('old', 'https://img/old')],
+      readIndex: async () => indexed(['old']), now: () => NOW, imageLoads,
+    });
+    const keys = out.entries.map((e) => e.key);
+    expect(keys).toContain('grid-ext-item:ok');
+    expect(keys).not.toContain('grid-ext-item:bad');
+    const index = JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value) as { items: Array<{ id: string }> };
+    expect(index.items.map((i) => i.id).sort()).toEqual(['ok', 'old']);
+    expect(imageLoads.mock.calls.map(([u]) => u).sort()).toEqual(['https://img/blocked', 'https://img/ok']);
+  });
+
+  it('recheckImages also removes already-indexed stories whose image no longer loads', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [], readIndex: async () => indexed(['keep', 'gone']), now: () => NOW,
+      imageLoads: async (url) => !url.endsWith('/gone'), recheckImages: true,
+    });
+    const index = JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value) as { items: Array<{ id: string }> };
+    expect(index.items.map((i) => i.id)).toEqual(['keep']);
+  });
+});

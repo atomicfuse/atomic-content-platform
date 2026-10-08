@@ -98,7 +98,7 @@ export function buildExternalStoryView(input: ViewContext & {
     heroImage: r.imageUrl,
     heroFallback: true,
     bodyHtml: text.html,
-    outbound: buildExternalOutboundUrl(r.url, input.canonicalHost, input.grid.outbound_utm),
+    outbound: buildExternalOutboundUrl(r.url),
   };
 }
 

@@ -143,7 +143,8 @@ cloudgrid secrets set atomic-content-platform KEY=value
 | `GOOGLE_CLIENT_SECRET`       | dashboard                   | Google OAuth for dashboard login        |
 | `GITHUB_TOKEN`               | dashboard, content-pipeline | GitHub API access for network repo      |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | dashboard                   | Google Sheets API (subscriber storage)  |
-| `GEMINI_API_KEY`             | dashboard, content-pipeline | Gemini for logos and topic suggestions  |
+| `GEMINI_API_KEY`             | dashboard, content-pipeline | Gemini for topic suggestions; logo fallback + footer-logo recolour |
+| `OPENAI_API_KEY`             | dashboard, content-pipeline | Logos (`gpt-image-2.5-sunburst`); last step of the text provider chain |
 | `CLOUDFLARE_API_TOKEN`       | dashboard                   | Cloudflare API for Pages/DNS management |
 | `CLOUDFLARE_ACCOUNT_ID`      | dashboard                   | Cloudflare account identifier           |
 
