@@ -5,7 +5,18 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { LogoThumb } from "@/components/ui/LogoThumb";
 import { useToast } from "@/components/ui/Toast";
-import { generateLogoPreview } from "@/actions/wizard";
+import { generateLogoExtras, generateLogoPreview } from "@/actions/wizard";
+import { runLogoGeneration, type LogoStep } from "@/lib/logo-generation-flow";
+import { GeneratedLogoSet } from "@/components/site-detail/GeneratedLogoSet";
+
+interface GenSetState {
+  step: LogoStep;
+  model: string | null;
+  footerNeeded: boolean;
+  logo: string | null;
+  footerLogo: string | null;
+  favicon: string | null;
+}
 
 interface StagingEditPanelProps {
   domain: string;
@@ -53,6 +64,8 @@ export function StagingEditPanel({
   const [isOpen, setIsOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingLogo, startGenLogo] = useTransition();
+  // The AI logo set (step + header/footer logo + favicon) while it's made and until saved or discarded.
+  const [genSet, setGenSet] = useState<GenSetState | null>(null);
   const { toast } = useToast();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -67,30 +80,49 @@ export function StagingEditPanel({
   const [showSuccess, setShowSuccess] = useState(false);
 
   function handleGenerateLogo(): void {
+    const footerSwitchedOn = autoFooterVariant;
+    setGenSet({ step: "logo", model: null, footerNeeded: false, logo: null, footerLogo: null, favicon: null });
     startGenLogo(async () => {
       try {
-        const { logo, footerLogo, favicon, model } = await generateLogoPreview(domain, {
-          generateFooterVariant: autoFooterVariant,
-        });
-        if (logo) {
-          setPendingLogo(logo);
-          setPendingFooterLogo(footerLogo);
-          if (favicon) setPendingFavicon(favicon);
-          setClearLogo(false);
-          setClearFooterLogo(false);
-          setShowSuccess(false);
-          const extras = [favicon && "favicon", footerLogo && "footer variant"].filter(Boolean).join(" + ");
-          toast(`Logo generated with ${model ?? "AI"}${extras ? ` (+ ${extras})` : ""} — save to apply`, "success");
-        } else {
+        const result = await runLogoGeneration(
+          {
+            preview: (opts) => generateLogoPreview(domain, opts),
+            extras: (logo) => generateLogoExtras(domain, logo, { generateFooterVariant: footerSwitchedOn }),
+          },
+          {
+            onStep: (step) => setGenSet((g) => (g ? { ...g, step } : g)),
+            onLogo: (logo, model, footerNeeded) => {
+              setPendingLogo(logo);
+              setClearLogo(false);
+              setClearFooterLogo(false);
+              setShowSuccess(false);
+              setGenSet((g) => (g ? { ...g, logo, model, footerNeeded: footerNeeded && footerSwitchedOn } : g));
+            },
+          },
+        );
+        if (!result) {
+          setGenSet(null);
           toast("AI could not generate an image — try again", "error");
+          return;
         }
+        setPendingFooterLogo(result.footerLogo);
+        if (result.favicon) setPendingFavicon(result.favicon);
+        setGenSet((g) => (g ? { ...g, step: "done", footerLogo: result.footerLogo, favicon: result.favicon } : g));
       } catch (err) {
+        setGenSet(null);
         toast(
           `Generation failed: ${err instanceof Error ? err.message : "Unknown"}`,
           "error"
         );
       }
     });
+  }
+
+  function handleDiscardGenerated(): void {
+    setPendingLogo(null);
+    setPendingFooterLogo(null);
+    if (genSet?.favicon) setPendingFavicon(null);
+    setGenSet(null);
   }
 
   function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>): void {
@@ -106,6 +138,7 @@ export function StagingEditPanel({
       return;
     }
 
+    setGenSet(null);
     const reader = new FileReader();
     reader.onload = (): void => {
       const result = reader.result as string;
@@ -155,6 +188,7 @@ export function StagingEditPanel({
   }
 
   function handleRemoveLogo(): void {
+    setGenSet(null);
     setPendingLogo(null);
     setPendingFavicon(null);
     setClearLogo(true);
@@ -184,6 +218,7 @@ export function StagingEditPanel({
       });
       const data = (await res.json()) as { status: string; message?: string };
       if (!res.ok) throw new Error(data.message ?? "Save failed");
+      setGenSet(null);
       setPendingLogo(null);
       setPendingFooterLogo(null);
       setPendingFavicon(null);
@@ -292,7 +327,25 @@ export function StagingEditPanel({
             </div>
           )}
 
-          {pendingLogo && (
+          {genSet && (
+            <div className="space-y-2">
+              <GeneratedLogoSet
+                step={genSet.step}
+                model={genSet.model}
+                logo={genSet.logo}
+                footerLogo={genSet.footerLogo}
+                favicon={genSet.favicon}
+                footerExpected={genSet.footerNeeded}
+              />
+              {genSet.step === "done" && (
+                <button type="button" onClick={handleDiscardGenerated} className="text-xs text-[var(--text-muted)] underline hover:text-red-400">
+                  Discard generated logos
+                </button>
+              )}
+            </div>
+          )}
+
+          {pendingLogo && !genSet && (
             <div className="flex items-start gap-4 p-3 rounded-lg border border-cyan/20 bg-cyan/5">
               <LogoThumb
                 src={`data:image/png;base64,${pendingLogo}`}
@@ -368,7 +421,7 @@ export function StagingEditPanel({
               Auto-generate footer variant when header/footer contrast inverts
             </span>
           </label>
-          {pendingFooterLogo && !clearFooterLogo && (
+          {pendingFooterLogo && !clearFooterLogo && !genSet && (
             <div className="flex items-center gap-2">
               <LogoThumb
                 src={`data:image/png;base64,${pendingFooterLogo}`}

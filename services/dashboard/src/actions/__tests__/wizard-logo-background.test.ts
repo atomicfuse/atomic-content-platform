@@ -56,7 +56,7 @@ vi.mock("@/lib/general-image", () => ({
   generateAndUploadDefaultSiteImage: vi.fn().mockResolvedValue({ success: true }),
 }));
 
-import { createSiteAndBuildStaging, generateLogoPreview } from "../wizard";
+import { createSiteAndBuildStaging, generateLogoExtras, generateLogoPreview } from "../wizard";
 import { removeBackground } from "@/lib/remove-background";
 import { getDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig } from "@/lib/db/site-configs";
@@ -173,7 +173,7 @@ describe("logo generation picks the right background colour", () => {
         theme: { template: "grid", colors: { primary: "#101010", surface: "#f0f0f0" } },
       } as never);
 
-      await generateLogoPreview("grid.example", { generateFooterVariant: false });
+      await generateLogoPreview("grid.example");
 
       const fetchMock = vi.mocked(global.fetch);
       expect(fetchMock).toHaveBeenCalled();
@@ -189,7 +189,7 @@ describe("logo generation picks the right background colour", () => {
         theme: { colors: { primary: "#101010", surface: "#f0f0f0" } },
       } as never);
 
-      await generateLogoPreview("grid.example", { generateFooterVariant: false });
+      await generateLogoPreview("grid.example");
 
       const fetchMock = vi.mocked(global.fetch);
       expect(fetchMock).toHaveBeenCalled();
@@ -245,53 +245,95 @@ describe("logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallba
   it("works with only an OpenAI key (logo preview no longer requires GEMINI_API_KEY)", async () => {
     delete process.env.GEMINI_API_KEY;
     global.fetch = vi.fn(async () => openaiOk()) as unknown as typeof fetch;
-    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    const out = await generateLogoPreview("testsite.com");
     expect(out.logo).toBe(Buffer.from("openai-png").toString("base64"));
   });
 
-  it("regenerates once when the logo reads faint on the header, and keeps the clearer one", async () => {
-    let n = 0;
-    global.fetch = vi.fn(async () => {
-      n += 1;
-      return ({ ok: true, status: 200, json: async () => ({ data: [{ b64_json: Buffer.from(`png-${n}`).toString("base64") }] }) }) as Response;
-    }) as unknown as typeof fetch;
-    vi.mocked(logoMedianContrast).mockResolvedValueOnce(1.4).mockResolvedValueOnce(9);
-    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
-    const gens = vi.mocked(global.fetch).mock.calls.filter(([u]) => String(u).includes("/images/generations"));
-    expect(gens).toHaveLength(2);
-    expect(JSON.parse(gens[1]![1]!.body as string).prompt).toMatch(/too faint/i);
-    expect(out.logo).toBe(Buffer.from("png-2").toString("base64"));
+  // CloudGrid's gateway cuts requests at ~60 s, so each server action makes at most one OpenAI call
+  // per step: the logo, an optional contrast retry (asked for by the browser), then favicon + footer.
+  it("preview makes exactly one OpenAI generation and no edits, and flags a faint logo", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
+    global.fetch = fetchMock as unknown as typeof fetch;
+    vi.mocked(logoMedianContrast).mockResolvedValueOnce(1.4);
+    const out = await generateLogoPreview("testsite.com");
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.filter((u) => u.includes("/images/generations"))).toHaveLength(1);
+    expect(urls.some((u) => u.includes("/images/edits"))).toBe(false);
+    expect(out.lowContrast).toBe(true);
+    expect(out.contrast).toBeCloseTo(1.4);
+  });
+
+  it("retryForContrast asks for much stronger contrast", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await generateLogoPreview("testsite.com", { retryForContrast: true });
+    const body = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { prompt: string };
+    expect(body.prompt).toMatch(/too faint/i);
   });
 
   it("reports which model made the logo", async () => {
     global.fetch = vi.fn(async () => openaiOk()) as unknown as typeof fetch;
-    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    const out = await generateLogoPreview("testsite.com");
     expect(out.model).toBe("gpt-image-2.5-sunburst");
   });
 
-  it("makes the favicon with an OpenAI edit of the logo (simplified mark, no glow)", async () => {
+  it("extras: the favicon is an OpenAI edit of the logo (simplified mark, no glow)", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
     global.fetch = fetchMock as unknown as typeof fetch;
-    const out = await generateLogoPreview("testsite.com", { generateFooterVariant: false });
+    const out = await generateLogoExtras("testsite.com", Buffer.from("logo").toString("base64"), { generateFooterVariant: false });
     const edit = fetchMock.mock.calls.find(([u]) => String(u).includes("/images/edits")) as unknown as [string, RequestInit] | undefined;
     expect(edit).toBeDefined();
     const form = edit![1].body as FormData;
     expect(form.get("size")).toBe("1024x1024");
     expect(String(form.get("prompt"))).toMatch(/no glow/i);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/images/generations"))).toBe(false);
     expect(out.favicon).toBe(Buffer.from("openai-png").toString("base64"));
   });
 
-  it("makes the footer variant with an OpenAI edit when header and footer invert", async () => {
+  it("extras: the footer variant is an OpenAI edit when header and footer invert", async () => {
     vi.mocked(getDashboardIndex).mockResolvedValue({ sites: [{ domain: "inv.example", staging_branch: "staging/inv.example" }] } as never);
     vi.mocked(getSiteConfig).mockResolvedValue({
       site_name: "Inv", theme: { colors: { primary: "#ffffff", footer_bg: "#111111" } },
     } as never);
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => openaiOk());
     global.fetch = fetchMock as unknown as typeof fetch;
-    const out = await generateLogoPreview("inv.example");
+    const out = await generateLogoExtras("inv.example", Buffer.from("logo").toString("base64"), { generateFooterVariant: true });
     const edits = fetchMock.mock.calls.filter(([u]) => String(u).includes("/images/edits")) as unknown as Array<[string, RequestInit]>;
     expect(edits.some(([, init]) => /#111111/.test(String((init.body as FormData).get("prompt"))))).toBe(true);
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("generativelanguage"))).toBe(false);
     expect(out.footerLogo).toBe(Buffer.from("openai-png").toString("base64"));
   });
+
+  it("new-site wizard: one logo generation, no edits (favicon is cropped from the logo)", async () => {
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (String(url).includes("openai.com") ? openaiOk() : (fakeGeminiImageResponse() as unknown as Response)));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    vi.mocked(logoMedianContrast).mockResolvedValueOnce(1.4);
+    await createSiteAndBuildStaging(makeFormData());
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.filter((u) => u.includes("/images/generations"))).toHaveLength(1);
+    expect(urls.some((u) => u.includes("/images/edits"))).toBe(false);
+  });
+
+  it("passes the site's tagline, topics and tone into the logo prompt (site page and new-site wizard)", async () => {
+    vi.mocked(getDashboardIndex).mockResolvedValue({ sites: [{ domain: "cues.example", staging_branch: "staging/cues.example" }] } as never);
+    vi.mocked(getSiteConfig).mockResolvedValue({
+      site_name: "Cues", site_tagline: "Pop culture with a wink",
+      brief: { topics: ["Movies", "TV"], tone: "playful" }, theme: { colors: { primary: "#101010" } },
+    } as never);
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => (String(url).includes("openai.com") ? openaiOk() : (fakeGeminiImageResponse() as unknown as Response)));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await generateLogoPreview("cues.example");
+    const previewPrompt = (JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { prompt: string }).prompt;
+    expect(previewPrompt).toContain('Tagline: "Pop culture with a wink"');
+    expect(previewPrompt).toContain("Covers: Movies, TV");
+    expect(previewPrompt).toContain("Voice: playful");
+
+    fetchMock.mockClear();
+    await createSiteAndBuildStaging(makeFormData({ siteTagline: "Trips worth taking" }));
+    const wizardPrompt = (JSON.parse(fetchMock.mock.calls[0]![1]!.body as string) as { prompt: string }).prompt;
+    expect(wizardPrompt).toContain('Tagline: "Trips worth taking"');
+    expect(wizardPrompt).toContain("Covers: Destinations");
+    expect(wizardPrompt).toContain("Voice: informative");
+  });
 });
+

@@ -23,9 +23,24 @@ export interface LogoPromptInput {
   colors?: Record<string, string>;
   /** true: the model returns a transparent PNG (OpenAI); false: solid header colour, removed later (Gemini). */
   transparentOutput: boolean;
+  /** Optional personality cues — each one is left out when missing. */
+  tagline?: string | null;
+  topics?: string[];
+  tone?: string | null;
 }
 
-export function buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput }: LogoPromptInput): string {
+/** "SITE PERSONALITY" block from the site's tagline, topics and tone; empty when none are set. */
+function personalityBlock(tagline?: string | null, topics?: string[], tone?: string | null): string {
+  const lines: string[] = [];
+  if (tagline?.trim()) lines.push(`• Tagline: "${tagline.trim()}"`);
+  const covers = (topics ?? []).map((t) => t.trim()).filter(Boolean).slice(0, 6);
+  if (covers.length > 0) lines.push(`• Covers: ${covers.join(", ")}`);
+  if (tone?.trim()) lines.push(`• Voice: ${tone.trim()}`);
+  if (lines.length === 0) return "";
+  return `\n\nSITE PERSONALITY (let these shape the mascot, its expression and the overall style so the logo feels made for this site — never render these words in the image):\n${lines.join("\n")}`;
+}
+
+export function buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput, tagline, topics, tone }: LogoPromptInput): string {
   const headerHex = headerBg ?? "#1a1a2e";
   // Ink is chosen by WCAG contrast, not a 50% luminance split: on a mid-tone header (e.g. a coffee
   // orange) only near-black or pure white survives, so browns/greys are banned outright there.
@@ -58,7 +73,7 @@ ${transparentOutput ? `The logo will be placed on a solid ${headerHex} website h
 
   return `${contrastDirective}${midToneRule}
 
-Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.
+Create a polished, professional, horizontal BRAND LOGO for "${siteName}", a website about ${vertical}${audience ? ` targeting ${audience}` : ""}.${personalityBlock(tagline, topics, tone)}
 
 LAYOUT & STRUCTURE:
 • COMPOSITION: One clear icon on the left, with the text "${siteName}" on the right.
