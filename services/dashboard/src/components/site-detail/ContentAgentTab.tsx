@@ -35,7 +35,9 @@ const GridSiteTab = dynamic(
   () => import("./grid/GridSiteTab").then((m) => m.GridSiteTab),
   { loading: () => <div className="h-64 animate-pulse rounded-lg bg-[var(--bg-surface)]" /> },
 );
-import { generateLogoPreview } from "@/actions/wizard";
+import { generateLogoExtras, generateLogoPreview } from "@/actions/wizard";
+import { runLogoGeneration, type LogoStep } from "@/lib/logo-generation-flow";
+import { GeneratedLogoSet } from "@/components/site-detail/GeneratedLogoSet";
 import Link from "next/link";
 
 interface ContentAgentTabProps {
@@ -73,6 +75,16 @@ const DAY_MAP: Record<string, string> = {
   Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday",
   Fri: "Friday", Sat: "Saturday", Sun: "Sunday",
 };
+
+
+interface GenSetState {
+  step: LogoStep;
+  model: string | null;
+  footerNeeded: boolean;
+  logo: string | null;
+  footerLogo: string | null;
+  favicon: string | null;
+}
 
 export function ContentAgentTab({
   domain,
@@ -145,6 +157,8 @@ export function ContentAgentTab({
   const [clearLogo, setClearLogo] = useState(false);
   const [clearFooterLogo, setClearFooterLogo] = useState(false);
   const [isGeneratingLogo, startGenLogo] = useTransition();
+  // The AI logo set (step + header/footer logo + favicon) while it's made and until saved or discarded.
+  const [genSet, setGenSet] = useState<GenSetState | null>(null);
 
   // When logo changes and sync is on, auto-copy to favicon
   function setLogoAndSync(base64: string): void {
@@ -161,7 +175,10 @@ export function ContentAgentTab({
     const reader = new FileReader();
     reader.onload = (): void => {
       const base64Data = (reader.result as string).split(",")[1];
-      if (base64Data) setLogoAndSync(base64Data);
+      if (base64Data) {
+        setLogoAndSync(base64Data);
+        setGenSet(null);
+      }
     };
     reader.readAsDataURL(file);
     e.target.value = "";
@@ -185,32 +202,55 @@ export function ContentAgentTab({
   }
 
   function handleGenerateLogo(): void {
+    const footerSwitchedOn = autoFooterVariant;
+    setGenSet({ step: "logo", model: null, footerNeeded: false, logo: null, footerLogo: null, favicon: null });
     startGenLogo(async () => {
       try {
-        const { logo, footerLogo, favicon, model } = await generateLogoPreview(domain, {
-          generateFooterVariant: autoFooterVariant,
-        });
-        if (logo) {
-          setLogoAndSync(logo);
-          // A generated favicon (simplified mark) replaces "same as logo"; the toggle brings the logo back.
-          if (favicon) {
-            setPendingFavicon(favicon);
-            setFaviconSameAsLogo(false);
-          }
-          setPendingFooterLogo(footerLogo);
-          setClearFooterLogo(false);
-          const extras = [favicon && "favicon", footerLogo && "footer variant"].filter(Boolean).join(" + ");
-          toast(`Logo generated with ${model ?? "AI"}${extras ? ` (+ ${extras})` : ""} — save to apply`, "success");
-        } else {
+        const result = await runLogoGeneration(
+          {
+            preview: (opts) => generateLogoPreview(domain, opts),
+            extras: (logo) => generateLogoExtras(domain, logo, { generateFooterVariant: footerSwitchedOn }),
+          },
+          {
+            onStep: (step) => setGenSet((g) => (g ? { ...g, step } : g)),
+            onLogo: (logo, model, footerNeeded) => {
+              setLogoAndSync(logo);
+              setClearFooterLogo(false);
+              setGenSet((g) => (g ? { ...g, logo, model, footerNeeded: footerNeeded && footerSwitchedOn } : g));
+            },
+          },
+        );
+        if (!result) {
+          setGenSet(null);
           toast("AI could not generate an image — try again", "error");
+          return;
         }
+        // A generated favicon (simplified mark) replaces "same as logo"; the toggle brings the logo back.
+        if (result.favicon) {
+          setPendingFavicon(result.favicon);
+          setFaviconSameAsLogo(false);
+        }
+        setPendingFooterLogo(result.footerLogo);
+        setGenSet((g) => (g ? { ...g, step: "done", footerLogo: result.footerLogo, favicon: result.favicon } : g));
       } catch (err) {
+        setGenSet(null);
         toast(`Generation failed: ${err instanceof Error ? err.message : "Unknown"}`, "error");
       }
     });
   }
 
+  function handleDiscardGenerated(): void {
+    setPendingLogo(null);
+    setPendingFooterLogo(null);
+    if (genSet?.favicon) {
+      setPendingFavicon(null);
+      setFaviconSameAsLogo(true);
+    }
+    setGenSet(null);
+  }
+
   function handleRemoveLogo(): void {
+    setGenSet(null);
     setPendingLogo(null);
     setPendingFavicon(null);
     setClearLogo(true);
@@ -514,6 +554,7 @@ export function ContentAgentTab({
         router.push(`/sites/${activeDomain}`);
       } else {
         toast("Identity saved", "success");
+        setGenSet(null);
         setPendingLogo(null);
         setPendingFooterLogo(null);
         setPendingFavicon(null);
@@ -718,7 +759,27 @@ export function ContentAgentTab({
               </div>
             )}
 
-            {pendingLogo && (
+            {genSet && (
+              <div className="space-y-2">
+                <GeneratedLogoSet
+                  step={genSet.step}
+                  model={genSet.model}
+                  logo={genSet.logo}
+                  footerLogo={genSet.footerLogo}
+                  favicon={genSet.favicon}
+                  footerExpected={genSet.footerNeeded}
+                  headerBg={logoBgs.header}
+                  footerBg={logoBgs.footer}
+                />
+                {genSet.step === "done" && (
+                  <button type="button" onClick={handleDiscardGenerated} className="text-xs text-[var(--text-muted)] underline hover:text-red-400">
+                    Discard generated logos
+                  </button>
+                )}
+              </div>
+            )}
+
+            {pendingLogo && !genSet && (
               <div className="flex items-center gap-3">
                 <LogoThumb
                   src={`data:image/png;base64,${pendingLogo}`}
@@ -779,7 +840,7 @@ export function ContentAgentTab({
             </label>
             {(!!pendingFooterLogo || !!(siteConfig?.theme as Record<string, unknown> | undefined)?.footer_logo) && !clearFooterLogo && (
               <div className="flex items-center gap-2">
-                {pendingFooterLogo && (
+                {pendingFooterLogo && !genSet && (
                   <LogoThumb
                     src={`data:image/png;base64,${pendingFooterLogo}`}
                     alt="Footer logo preview"

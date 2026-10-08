@@ -154,10 +154,11 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
           data.audiences.join(", ") || undefined,
           headerBg,
           data.themeColors,
+          { tagline: data.siteTagline, topics: data.topics, tone: data.tone },
         );
+        // One logo call only: site creation runs in a single request under the gateway's ~60 s limit.
+        // The favicon is cropped from the logo below; "Generate with AI" on the site makes a full one.
         logoBuffer = generated?.png ?? null;
-        // A generated logo gets a real favicon (simplified mark); null → cropped from the logo below.
-        if (logoBuffer && !data.faviconBase64) faviconBuffer = await generateFavicon(logoBuffer);
       } catch (err) {
         console.warn("[wizard] Logo generation failed, continuing without:", err);
       }
@@ -166,7 +167,7 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
 
   if (data.faviconBase64) {
     faviconBuffer = Buffer.from(data.faviconBase64, "base64");
-  } else if (logoBuffer && !faviconBuffer) {
+  } else if (logoBuffer) {
     // Auto-extract a square icon favicon from the landscape logo so the
     // browser tab shows a recognizable icon rather than the full logo+text
     // shrunk to 16x16.
@@ -1177,58 +1178,86 @@ export async function updateStagingSite(
   revalidatePath(`/sites/${domain}`);
 }
 
+interface LogoContext extends LogoCues {
+  siteName: string;
+  vertical: string;
+  audience?: string;
+  colors?: Record<string, string>;
+  headerBg: string;
+  footerBg?: string;
+}
+
+async function loadLogoContext(domain: string): Promise<LogoContext> {
+  const index = await readDashboardIndex();
+  const site = index.sites.find((s) => s.domain === domain);
+  const config = site?.staging_branch ? await readSiteConfigFromGit(domain, site.staging_branch) : null;
+  const brief = config?.brief as Record<string, unknown> | undefined;
+  const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
+  const theme = config?.theme as Record<string, unknown> | undefined;
+  const colors = theme?.colors as Record<string, string> | undefined;
+  const { header, footer } = logoBackgroundFor(theme?.template === "grid" ? "grid" : "modern", colors);
+  return {
+    siteName: (config?.site_name as string) ?? domain,
+    vertical: site?.vertical ?? "Other",
+    audience: audiences.join(", ") || undefined,
+    colors,
+    headerBg: header,
+    footerBg: footer,
+    tagline: typeof config?.site_tagline === "string" ? config.site_tagline : null,
+    topics: Array.isArray(brief?.topics) ? (brief.topics as unknown[]).filter((t): t is string => typeof t === "string") : [],
+    tone: typeof brief?.tone === "string" ? brief.tone : null,
+  };
+}
+
 /**
- * Generate a logo preview (returns base64 PNGs, does NOT commit).
- *
- * Returns `{ logo, footerLogo }`. `footerLogo` is non-null ONLY when the footer
- * background contrast category differs from the header (one dark + one light) —
- * in that case the same header logo would be invisible on the footer, so a
- * second variant is generated. When both backgrounds share the same lightness
- * category, `footerLogo` is null and the caller should leave `footer_logo`
- * unset (falls back to the main logo).
+ * Generate a logo preview (base64 PNG, does NOT commit). One image call, so the request stays inside the
+ * gateway's ~60 s. `lowContrast` tells the caller to ask once more with `retryForContrast` and keep the
+ * clearer one; favicon + footer variant come from `generateLogoExtras` (see lib/logo-generation-flow.ts).
  */
 export async function generateLogoPreview(
   domain: string,
-  options: { generateFooterVariant?: boolean } = {},
-): Promise<{ logo: string | null; footerLogo: string | null; favicon: string | null; model: string | null }> {
-  const { generateFooterVariant = true } = options;
-  const index = await readDashboardIndex();
-  const site = index.sites.find((s) => s.domain === domain);
-
+  options: { retryForContrast?: boolean } = {},
+): Promise<{ logo: string | null; model: string | null; contrast: number | null; lowContrast: boolean; footerNeeded: boolean }> {
   if (!process.env.OPENAI_API_KEY && !process.env.GEMINI_API_KEY) throw new Error("No image model configured (OPENAI_API_KEY or GEMINI_API_KEY)");
-
-  const config = site?.staging_branch
-    ? await readSiteConfigFromGit(domain, site.staging_branch)
-    : null;
-  const siteName = (config?.site_name as string) ?? domain;
-  const vertical = site?.vertical ?? "Other";
-  const brief = config?.brief as Record<string, unknown> | undefined;
-  const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
-  const audience = audiences.join(", ") || undefined;
-
-  const theme = config?.theme as Record<string, unknown> | undefined;
-  const colors = theme?.colors as Record<string, string> | undefined;
-  const template = theme?.template === "grid" ? "grid" : "modern";
-  const { header: headerBg, footer: footerBg } = logoBackgroundFor(template, colors);
-
-  const generated = await generateLogo(siteName, vertical, audience, headerBg, colors);
-  if (!generated) return { logo: null, footerLogo: null, favicon: null, model: null };
-  const mainBuf = generated.png;
-
-  // Footer variant is a RECOLOR of the main logo (image-to-image), not a fresh generation — independent
-  // generations would produce a different mascot for the same site. It's made only when header and footer
-  // backgrounds invert (one dark, one light). Footer and favicon run in parallel.
-  const wantFooter = generateFooterVariant && !!footerBg && isDarkColor(headerBg) !== isDarkColor(footerBg);
-  const [footerBuf, faviconBuf] = await Promise.all([
-    wantFooter ? generateFooterLogo(mainBuf, footerBg) : Promise.resolve(null),
-    generateFavicon(mainBuf),
-  ]);
-
+  const ctx = await loadLogoContext(domain);
+  const generated = await generateLogo(ctx.siteName, ctx.vertical, ctx.audience, ctx.headerBg, ctx.colors, {
+    ...options,
+    tagline: ctx.tagline,
+    topics: ctx.topics,
+    tone: ctx.tone,
+  });
+  const footerNeeded = !!ctx.footerBg && isDarkColor(ctx.headerBg) !== isDarkColor(ctx.footerBg);
+  if (!generated) return { logo: null, model: null, contrast: null, lowContrast: false, footerNeeded };
   return {
-    logo: mainBuf.toString("base64"),
-    footerLogo: footerBuf?.toString("base64") ?? null,
-    favicon: faviconBuf?.toString("base64") ?? null,
+    footerNeeded,
+    logo: generated.png.toString("base64"),
     model: generated.model,
+    contrast: generated.contrast,
+    lowContrast: generated.contrast !== null && generated.contrast < MIN_LOGO_CONTRAST,
+  };
+}
+
+/**
+ * Favicon (simplified mark) and, when header and footer backgrounds invert (one dark, one light), a footer
+ * variant — both image-to-image edits of the chosen logo, so the mascot stays the same. Run in parallel.
+ */
+export async function generateLogoExtras(
+  domain: string,
+  logoBase64: string,
+  options: { generateFooterVariant?: boolean } = {},
+): Promise<{ favicon: string | null; footerLogo: string | null }> {
+  const { generateFooterVariant = true } = options;
+  const ctx = await loadLogoContext(domain);
+  const logo = Buffer.from(logoBase64, "base64");
+  const footerBg = ctx.footerBg;
+  const wantFooter = generateFooterVariant && !!footerBg && isDarkColor(ctx.headerBg) !== isDarkColor(footerBg);
+  const [footerBuf, faviconBuf] = await Promise.all([
+    wantFooter && footerBg ? generateFooterLogo(logo, footerBg) : Promise.resolve(null),
+    generateFavicon(logo),
+  ]);
+  return {
+    favicon: faviconBuf?.toString("base64") ?? null,
+    footerLogo: footerBuf?.toString("base64") ?? null,
   };
 }
 
@@ -1486,11 +1515,29 @@ const GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image-preview";
 
 const OPENAI_LOGO_MODEL = "gpt-image-2.5-sunburst";
 
+/** Optional personality cues for the logo prompt (each left out when missing). */
+interface LogoCues {
+  tagline?: string | null;
+  topics?: string[];
+  tone?: string | null;
+}
+
 interface GeneratedLogo {
   png: Buffer;
   /** Which image model made it — shown to the user and logged. */
   model: string;
+  /** WCAG median contrast against the header (OpenAI logos only; null when not measured). */
+  contrast: number | null;
 }
+
+/**
+ * CloudGrid's nginx gateway cuts a request at ~60 s, so every logo server action stays well inside that:
+ * one OpenAI call per step (each capped below), and a fallback only when there's still time for it.
+ */
+const OPENAI_LOGO_TIMEOUT_MS = 45_000;
+const OPENAI_EDIT_TIMEOUT_MS = 50_000;
+/** A fallback (Gemini, ~20 s) only starts when the first attempt failed this fast. */
+const FALLBACK_BUDGET_MS = 25_000;
 
 /** Trim/resize/compress an image; already-transparent images keep their pixels (see removeBackground). */
 async function tidyLogo(png: Buffer): Promise<Buffer> {
@@ -1508,17 +1555,17 @@ async function openAILogo(openaiKey: string, prompt: string): Promise<Buffer | n
     size: "1536x1024",
     background: "transparent",
     quality: "high",
-    // ~30 s measured; 60 s leaves headroom while keeping the worst case (OpenAI timeout + Gemini 20 s) ~80 s.
-    timeoutMs: 60_000,
+    // ~30 s measured; capped so the request ends inside the gateway's ~60 s.
+    timeoutMs: OPENAI_LOGO_TIMEOUT_MS,
     prompt,
   });
   return png ? tidyLogo(png) : null;
 }
 
 /**
- * Site logo: OpenAI gpt-image-2.5-sunburst (transparent PNG), else today's Gemini path. The OpenAI logo is
- * measured against the header (WCAG contrast of its visible pixels); a faint one is regenerated once and
- * the clearer of the two kept.
+ * Site logo: OpenAI gpt-image-2.5-sunburst (transparent PNG), else today's Gemini path. One OpenAI call;
+ * the logo's contrast against the header is measured and returned so the caller can ask for a retry
+ * (`retryForContrast` adds a "much stronger contrast" instruction) in a separate request.
  */
 async function generateLogo(
   siteName: string,
@@ -1526,39 +1573,39 @@ async function generateLogo(
   audience?: string,
   headerBg?: string,
   colors?: Record<string, string>,
+  options: { retryForContrast?: boolean } & LogoCues = {},
 ): Promise<GeneratedLogo | null> {
+  const cues: LogoCues = { tagline: options.tagline, topics: options.topics, tone: options.tone };
+  const started = Date.now();
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey) {
     const header = headerBg ?? "#1a1a2e";
-    const prompt = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: true });
-    const first = await openAILogo(openaiKey, prompt);
-    if (first) {
-      const firstContrast = await logoMedianContrast(first, header).catch(() => MIN_LOGO_CONTRAST);
-      if (firstContrast >= MIN_LOGO_CONTRAST) {
-        console.log(`[wizard] logo by ${OPENAI_LOGO_MODEL} (contrast ${firstContrast.toFixed(1)}:1 on ${header})`);
-        return { png: first, model: OPENAI_LOGO_MODEL };
-      }
-      console.warn(`[wizard] logo contrast ${firstContrast.toFixed(1)}:1 on ${header} is too low — regenerating once`);
-      const retry = await openAILogo(
-        openaiKey,
-        `${prompt}\n\nThe previous attempt was too faint on the ${header} header (its colours were too close in brightness). Use much stronger contrast this time.`,
-      );
-      const retryContrast = retry ? await logoMedianContrast(retry, header).catch(() => 0) : 0;
-      const best = retry && retryContrast > firstContrast ? retry : first;
-      console.log(`[wizard] logo by ${OPENAI_LOGO_MODEL} (contrast ${Math.max(firstContrast, retryContrast).toFixed(1)}:1 on ${header}, after retry)`);
-      return { png: best, model: OPENAI_LOGO_MODEL };
+    const base = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: true, ...cues });
+    const prompt = options.retryForContrast
+      ? `${base}\n\nThe previous attempt was too faint on the ${header} header (its colours were too close in brightness). Use much stronger contrast this time.`
+      : base;
+    const png = await openAILogo(openaiKey, prompt);
+    if (png) {
+      const contrast = await logoMedianContrast(png, header).catch(() => null);
+      console.log(`[wizard] logo by ${OPENAI_LOGO_MODEL} (contrast ${contrast?.toFixed(1) ?? "?"}:1 on ${header}${options.retryForContrast ? ", contrast retry" : ""})`);
+      return { png, model: OPENAI_LOGO_MODEL, contrast };
+    }
+    if (Date.now() - started > FALLBACK_BUDGET_MS) {
+      console.warn("[wizard] OpenAI logo failed too late for a Gemini fallback inside the gateway timeout");
+      return null;
     }
     console.warn("[wizard] OpenAI logo failed — falling back to Gemini");
   }
   const geminiKey = process.env.GEMINI_API_KEY;
   if (!geminiKey) return null;
-  const png = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors);
+  const png = await generateLogoWithGemini(geminiKey, siteName, vertical, audience, headerBg, colors, cues);
   if (png) console.log(`[wizard] logo by ${GEMINI_IMAGE_MODEL}`);
-  return png ? { png, model: GEMINI_IMAGE_MODEL } : null;
+  return png ? { png, model: GEMINI_IMAGE_MODEL, contrast: null } : null;
 }
 
 /** Footer variant: the same logo recoloured for the opposite-contrast footer (OpenAI edit, else Gemini). */
 async function generateFooterLogo(sourceLogo: Buffer, footerBg: string): Promise<Buffer | null> {
+  const started = Date.now();
   const openaiKey = process.env.OPENAI_API_KEY;
   if (openaiKey) {
     const png = await editOpenAIImage({
@@ -1568,10 +1615,14 @@ async function generateFooterLogo(sourceLogo: Buffer, footerBg: string): Promise
       size: "1536x1024",
       background: "transparent",
       quality: "high",
-      timeoutMs: 60_000,
+      timeoutMs: OPENAI_EDIT_TIMEOUT_MS,
       prompt: footerRecolorPrompt(footerBg, true),
     });
     if (png) return tidyLogo(png);
+    if (Date.now() - started > FALLBACK_BUDGET_MS) {
+      console.warn("[wizard] OpenAI footer logo failed too late for a Gemini fallback");
+      return null;
+    }
     console.warn("[wizard] OpenAI footer logo failed — falling back to Gemini");
   }
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -1592,7 +1643,7 @@ async function generateFavicon(sourceLogo: Buffer): Promise<Buffer | null> {
     size: "1024x1024",
     background: "transparent",
     quality: "high",
-    timeoutMs: 60_000,
+    timeoutMs: OPENAI_EDIT_TIMEOUT_MS,
     prompt: `Turn this logo into a website FAVICON (browser-tab icon).
 • Keep ONLY the icon / mascot from the logo — remove all text and letters.
 • SIMPLIFY it into a bold, flat mark: few shapes, thick strokes, no fine detail, so it stays recognisable at 16×16 pixels.
@@ -1619,8 +1670,9 @@ async function generateLogoWithGemini(
   audience?: string,
   headerBg?: string,
   colors?: Record<string, string>,
+  cues: LogoCues = {},
 ): Promise<Buffer | null> {
-  const prompt = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: false });
+  const prompt = buildLogoPrompt({ siteName, vertical, audience, headerBg, colors, transparentOutput: false, ...cues });
 
   try {
     // EC-8: 15s timeout prevents the entire action from hanging if Gemini
