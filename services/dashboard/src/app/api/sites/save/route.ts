@@ -5,7 +5,6 @@ import { getDashboardIndex as readDashboardIndex } from "@/lib/db/dashboard-inde
 import { getSiteConfig as readSiteConfigFromGit } from "@/lib/db/site-configs";
 import {
   commitSiteFiles,
-  triggerWorkflowViaPush,
   updateSiteInIndex,
 } from "@/lib/github";
 import { upsertDnsTxtRecord, deleteDnsTxtRecord } from "@/lib/cloudflare";
@@ -369,8 +368,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ? `update ${assetLabel}`
         : "update site config";
 
+    // The commit's push (sites/**) starts sync-kv on its own — no extra trigger commit.
     await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
-    await triggerWorkflowViaPush(site.staging_branch, domain);
 
     // Dual-write: mirror site config to MongoDB (soft-fail)
     if (configUpdates) {

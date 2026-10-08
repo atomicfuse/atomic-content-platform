@@ -3,7 +3,6 @@ import {
   commitNetworkFiles,
   listNetworkDirectory,
   deleteNetworkFile,
-  triggerWorkflowViaPush,
   listStagingSites,
 } from "@/lib/github";
 import { NETWORK_REPO_OWNER } from "@/lib/constants";
@@ -135,9 +134,8 @@ export async function readOverride(name: string, siteId: string): Promise<string
  *
  * Each override is committed to that site's `staging/{site}` branch so it
  * shows up on the staging URL first (mirroring how site config edits flow
- * via wizard.ts → save/route.ts). After the commit, we push a build-trigger
- * via the Contents API because Git Data API commits don't fire Actions
- * (see triggerWorkflowViaPush in github.ts).
+ * via wizard.ts → save/route.ts). The commit's push (overrides/**) starts sync-kv
+ * for that site on its own — no extra trigger commit.
  */
 export async function createOverrides(
   name: string,
@@ -152,7 +150,6 @@ export async function createOverrides(
         `shared-pages: create ${name} override for ${site}`,
         branch,
       );
-      await triggerWorkflowViaPush(branch, site);
     }),
   );
 }
@@ -169,7 +166,6 @@ export async function updateOverride(
     `shared-pages: update ${name} override for ${siteId}`,
     branch,
   );
-  await triggerWorkflowViaPush(branch, siteId);
 }
 
 /** Delete a site-specific override (from the site's staging branch). */
@@ -180,7 +176,6 @@ export async function deleteOverride(name: string, siteId: string): Promise<void
     `shared-pages: delete ${name} override for ${siteId}`,
     branch,
   );
-  await triggerWorkflowViaPush(branch, siteId);
 }
 
 // --- ads.txt profiles ---

@@ -800,9 +800,11 @@ export async function commitSiteFiles(
  * Contents API. The push event on `sites/**` fires `sync-kv.yml`, which
  * seeds CONFIG_KV + R2 for the site.
  *
- * Git Data API commits (createTree → createCommit → updateRef) do NOT trigger
- * GitHub Actions. The Contents API (createOrUpdateFileContents) DOES. So after
- * committing site files, we push a small trigger file to fire the workflow.
+ * Only for "sync without changing anything" (Rebuild buttons, rename, new-site
+ * creation). Any commit pushed under sites/** or overrides/** — including Git
+ * Data API commits (createTree → createCommit → updateRef) — already fires
+ * sync-kv; calling this after one just doubles the CI runs (the first gets
+ * cancelled). Verified 2026-10-08 on the network repo's Actions history.
  *
  * NOTE: workflow_dispatch would be cleaner but requires `actions:write` scope
  * which the current GITHUB_TOKEN does not have.
@@ -834,6 +836,38 @@ export async function triggerWorkflowViaPush(
     sha: existingSha,
     branch,
   });
+}
+
+/** Current HEAD commit of a branch. */
+export async function getBranchHeadSha(branch: string): Promise<string> {
+  const octokit = getOctokit();
+  const { data } = await octokit.git.getRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+  });
+  return data.object.sha;
+}
+
+/**
+ * Point `branch` at main's HEAD — but only if it is still at `expectedSha`, i.e. nothing was pushed
+ * to it since the caller copied it to main. Returns false (branch untouched) when it moved, so the
+ * caller can publish again instead of wiping the new commit. Moves the ref in place (one push
+ * event) rather than delete + recreate. The check-then-update window is a single API round trip.
+ */
+export async function resetBranchToMainIfUnchanged(branch: string, expectedSha: string): Promise<boolean> {
+  if ((await getBranchHeadSha(branch)) !== expectedSha) return false;
+  const mainSha = await getBranchHeadSha("main");
+  const octokit = getOctokit();
+  await octokit.git.updateRef({
+    owner: NETWORK_REPO_OWNER,
+    repo: NETWORK_REPO_NAME,
+    ref: `heads/${branch}`,
+    sha: mainSha,
+    force: true,
+  });
+  invalidateTreeCache(branch);
+  return true;
 }
 
 /** Create a new branch from an existing branch. */

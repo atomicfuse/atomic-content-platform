@@ -9,7 +9,8 @@ import {
   updateSiteInIndex,
   addSitesToIndex,
   createBranch,
-  deleteBranch,
+  getBranchHeadSha,
+  resetBranchToMainIfUnchanged,
   branchExists,
   triggerWorkflowViaPush,
   readFileBase64,
@@ -274,10 +275,10 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     console.warn(`[wizard] Default site image generation failed: ${imageResult.reason}`);
   }
 
-  // 8. Fire sync-kv.yml. The Git Data API push above does NOT trigger
-  // GitHub Actions; only a Contents-API push does. triggerWorkflowViaPush
-  // writes a .build-trigger file via the Contents API to wake up sync-kv,
-  // which then seeds CONFIG_KV_STAGING + R2 for the new site.
+  // 8. Make sure sync-kv runs for the brand-new site. The commit above already
+  // fires it; this explicit trigger is a deliberate safety net on the one-time
+  // creation path (the preview poll depends on it). Elsewhere, don't add one
+  // after a commit — see triggerWorkflowViaPush.
   // (workflow_dispatch would be cleaner but the token lacks actions:write.)
   //
   // EC-3: Retry once after a 2s delay if the trigger push fails (network
@@ -401,6 +402,26 @@ async function mergeOrCopySiteToMain(
   return copySiteTreeToMain(domain, stagingBranch, commitMessage);
 }
 
+const PUBLISH_ATTEMPTS = 3;
+
+/**
+ * Copy staging → main, then point staging at main — without losing commits that land on staging
+ * meanwhile (n8n hero-image callbacks keep arriving after generation). If staging moved during the
+ * copy, copy again; if it keeps moving, leave it as is (its extra commits go out with the next
+ * publish). Returns every deleted article slug seen across attempts, for the production cleanup.
+ */
+async function publishSiteToMain(domain: string, stagingBranch: string, commitMessage: string): Promise<string[]> {
+  const deleted = new Set<string>();
+  for (let attempt = 1; attempt <= PUBLISH_ATTEMPTS; attempt++) {
+    const stagingSha = await getBranchHeadSha(stagingBranch);
+    for (const slug of await mergeOrCopySiteToMain(domain, stagingBranch, commitMessage)) deleted.add(slug);
+    if (await resetBranchToMainIfUnchanged(stagingBranch, stagingSha)) return [...deleted];
+    console.warn(`[wizard] ${stagingBranch} changed during publish (attempt ${attempt}) — copying again`);
+  }
+  console.warn(`[wizard] ${stagingBranch} kept changing during publish — left as is; nothing lost, the next publish includes the rest`);
+  return [...deleted];
+}
+
 /** Best-effort cleanup of deleted articles after publishing to production.
  *  Order: prod KV → MongoDB → R2 images (R2 last so the live site never
  *  shows broken images if an earlier step fails). */
@@ -468,16 +489,12 @@ export async function goLive(domain: string): Promise<void> {
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // 3. Merge staging branch to main (with conflict fallback)
-  const deletedSlugs = await mergeOrCopySiteToMain(domain, stagingBranch, `site(${domain}): go live`);
+  // 3. Copy staging to main and point staging at main (kept for future edits) — safely:
+  // commits that land on staging mid-publish are never wiped.
+  const deletedSlugs = await publishSiteToMain(domain, stagingBranch, `site(${domain}): go live`);
 
   // 3b. Clean up any articles that were deleted on staging before go-live
   await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
-
-  // 4. Delete and recreate staging branch from the new main HEAD
-  // This resets it to be in sync with production, ready for future edits
-  await deleteBranch(stagingBranch);
-  await createBranch(stagingBranch, "main");
 
   // 5. Update index, KEEP staging_branch and preview_url. A site with a
   // custom domain attached is serving production traffic — publishing staged
@@ -509,8 +526,9 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
     throw new Error(`No staging branch found for ${domain}`);
   }
 
-  // Step 3: Merge staging → main (handles additions + deletions via tree copy)
-  const deletedSlugs = await mergeOrCopySiteToMain(
+  // Step 3: Copy staging → main (additions + deletions via tree copy), then point staging at main
+  // (clean slate for the next edit cycle) — never wiping commits that land on staging mid-publish.
+  const deletedSlugs = await publishSiteToMain(
     domain,
     stagingBranch,
     `site(${domain}): publish staging edits to production`,
@@ -518,10 +536,6 @@ export async function publishStagingToProduction(domain: string): Promise<void> 
 
   // Steps 4-6: Clean up deleted articles (prod KV → MongoDB → R2 images)
   await cleanupDeletedArticles(domain, deletedSlugs, stagingBranch);
-
-  // Reset staging branch to match main (clean slate for next edit cycle)
-  await deleteBranch(stagingBranch);
-  await createBranch(stagingBranch, "main");
 
   revalidatePath("/");
   revalidatePath(`/sites/${domain}`);
@@ -1151,8 +1165,8 @@ export async function updateStagingSite(
     },
   ];
 
+  // The commit's push (sites/**) starts sync-kv on its own — no extra trigger commit.
   await commitSiteFiles(domain, files, "update site config", site.staging_branch);
-  await triggerWorkflowViaPush(site.staging_branch, domain);
 
   revalidatePath(`/sites/${domain}`);
 }
@@ -1299,8 +1313,7 @@ export async function saveAllStagingEdits(
   // files now only ever contains site.yaml (logo went to R2). Skip the commit
   // entirely if there's nothing textual to write.
   if (files.length > 0) {
-    await commitSiteFiles(domain, files, commitMsg, site.staging_branch);
-    await triggerWorkflowViaPush(site.staging_branch, domain);
+    await commitSiteFiles(domain, files, commitMsg, site.staging_branch); // starts sync-kv itself
   }
 }
 
@@ -1341,8 +1354,7 @@ export async function uploadStagingLogo(
       [{ path: `sites/${domain}/site.yaml`, content: stringifyYaml(config, { lineWidth: 0 }) }],
       "upload custom logo",
       site.staging_branch,
-    );
-    await triggerWorkflowViaPush(site.staging_branch, domain);
+    ); // starts sync-kv itself
   }
 
   revalidatePath(`/sites/${domain}`);
