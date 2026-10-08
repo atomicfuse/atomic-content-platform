@@ -27,6 +27,7 @@ import { recordImageGenEvent } from "../../stats/recorder.js";
 import { recordImageUsage } from "../../costs/recorder.js";
 import { incrementR2Tally } from "../../stats/r2-tally.js";
 import { upsertArticleMeta, upsertArticlesBatch } from "../../lib/db/articles.js";
+import { applyHeroImagesToMain, type HeroImage } from "./hero-image-main.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -492,6 +493,15 @@ async function flushBulkBuffer(): Promise<void> {
         };
       });
       await upsertArticlesBatch(mongoDocs);
+
+      // Articles already published get the hero image on production too (not only at the next publish).
+      if (branch !== "main") {
+        const heroImages: HeroImage[] = mongoDocs.map((d) => ({
+          siteDomain: d.domain, slug: d.slug,
+          imageUrl: String(d.frontmatter.featuredImage ?? ""), altText: String(d.frontmatter.image_alt ?? ""),
+        })).filter((h) => h.imageUrl);
+        await enqueueForBranch("main", () => applyHeroImagesToMain(octokit, run.github.repo, heroImages));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
@@ -801,6 +811,12 @@ export async function processN8nImageResult(
           featuredImage: imageUrl,
           image_alt: altText,
         });
+
+        // Already published? Put the hero image on production too (queued behind other main commits).
+        if (branch !== "main") {
+          void enqueueForBranch("main", () =>
+            applyHeroImagesToMain(octokit, github.repo, [{ siteDomain, slug, imageUrl, altText }]));
+        }
 
         return; // success
       } catch (err) {
