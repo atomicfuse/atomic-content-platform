@@ -836,6 +836,8 @@ export async function moveR2ObjectsByPrefix(
   oldPrefix: string,
   newPrefix: string,
   domain?: string,
+  /** Optional final key for each object (e.g. siteRenameKey, which also renames the default image). */
+  mapKey?: (oldKey: string) => string,
 ): Promise<number> {
   const client = getR2Client(domain);
   if (!client) return 0;
@@ -860,7 +862,7 @@ export async function moveR2ObjectsByPrefix(
     await Promise.all(
       objects.map(async (obj) => {
         if (!obj.Key) return;
-        const newKey = newPrefix + obj.Key.slice(oldPrefix.length);
+        const newKey = mapKey ? mapKey(obj.Key) : newPrefix + obj.Key.slice(oldPrefix.length);
         await client.send(
           new CopyObjectCommand({
             Bucket: bucket,

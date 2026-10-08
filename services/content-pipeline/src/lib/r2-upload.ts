@@ -4,7 +4,7 @@
  * without committing them to Git.
  */
 
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 let _client: S3Client | null = null;
 
@@ -74,5 +74,23 @@ export async function uploadToR2(
       err instanceof Error ? err.message : err,
     );
     return false;
+  }
+}
+
+/**
+ * True/false when R2 answers; null when R2 isn't configured (e.g. local dev without R2 keys), so
+ * callers can tell "missing" apart from "can't check". Other errors (network, 5xx) throw.
+ */
+export async function r2ObjectExists(key: string): Promise<boolean | null> {
+  const client = getClient();
+  if (!client) return null;
+  const bucket = process.env.R2_BUCKET ?? "atl-assets-prod";
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch (err) {
+    const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status === 404 || (err as { name?: string }).name === "NotFound") return false;
+    throw err;
   }
 }
