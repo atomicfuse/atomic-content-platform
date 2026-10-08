@@ -25,12 +25,13 @@ A pill can also pull stories straight from the **Content Aggregator**: add one o
 - **Stories per bundle** (default 20) is the bundle equivalent of "Articles per source site". **Maximum age** and **Pinned** work the same way.
 - **Blocked categories**: aggregator categories (e.g. "War and Conflicts") whose stories never appear on this site — in the feed or on story pages. A story is hidden if *any* of its categories is blocked, so blocking a main category also blocks its subcategories.
 - **Blocked publishers**: type a website (or paste any link from it) to block every aggregator story from that publisher and its subdomains, whatever bundle it comes from. E.g. `thetruthseeker.co.uk`.
+- A story is only picked up if its image actually loads — some publishers block other sites from showing their images, and those stories are skipped (they are checked again on each sync). To clear out stories already listed whose image stopped loading, run the network repo's **Sync Grid data to KV** workflow manually with **recheck images** ticked.
 - Bundles refresh **hourly**. Once picked up, a story stays on the site — the aggregator's own expiry does not remove it; newer stories push it down the feed.
 - In Grid → Stories, aggregator stories show an **External · <publisher>** badge.
 - Cards show the publisher's domain (e.g. cnn.com) with its real favicon. Each publisher's icon is fetched once and stored on our own storage, so visitors never load it from a third party; a publisher with no icon gets a letter badge. New publishers get their icon on the next hourly sync.
 
 ## Story pages
-Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab, with UTM tags unless turned off).
+Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab). Links to network sites carry UTM tags unless turned off; links to outside publishers (bundle stories) never carry UTM tags — any `utm_*` in the feed URL is removed too.
 
 **Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story has its own ad slots (above the content, in the text and below it; the sidebar and sticky ads stay single). The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
 - **Excerpt** (default): the opening paragraphs of the source article, never more than half of it.

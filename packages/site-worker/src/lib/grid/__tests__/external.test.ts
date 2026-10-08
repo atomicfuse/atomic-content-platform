@@ -33,16 +33,19 @@ describe('resolveExternalRequest', () => {
 });
 
 describe('buildExternalOutboundUrl', () => {
-  it('adds UTM to the publisher URL only when enabled, keeping its query', () => {
-    expect(buildExternalOutboundUrl('https://www.instyle.com/x?a=1', 'grid.example', true))
-      .toBe('https://www.instyle.com/x?a=1&utm_source=grid.example&utm_medium=grid');
-    expect(buildExternalOutboundUrl('https://www.instyle.com/x', 'grid.example', false)).toBe('https://www.instyle.com/x');
+  it('never tags a publisher link with UTM (not a network site), keeping its other query params', () => {
+    expect(buildExternalOutboundUrl('https://www.instyle.com/x?a=1')).toBe('https://www.instyle.com/x?a=1');
+  });
+  it('strips utm_* params the feed URL already carries', () => {
+    expect(buildExternalOutboundUrl('https://www.instyle.com/x?utm_source=feed&a=1&UTM_Medium=rss&utm_campaign=c'))
+      .toBe('https://www.instyle.com/x?a=1');
+    expect(buildExternalOutboundUrl('https://www.instyle.com/x?utm_source=feed')).toBe('https://www.instyle.com/x');
   });
 });
 
 describe('buildExternalOutboundUrl — unsafe input', () => {
   it.each(['javascript:alert(1)', '/relative', '', 'not a url'])('returns null for %s', (u) => {
-    expect(buildExternalOutboundUrl(u, 'grid.example', true)).toBeNull();
+    expect(buildExternalOutboundUrl(u)).toBeNull();
   });
 });
 
