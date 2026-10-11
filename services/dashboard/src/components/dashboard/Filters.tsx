@@ -5,6 +5,7 @@ import type { SiteStatus, Vertical } from "@/types/dashboard";
 import { COMPANIES, STATUSES } from "@/lib/constants";
 import { useVerticals } from "@/hooks/useReferenceData";
 import { NO_COMPANY, NO_GROUP, extraCategoryOptions, type CompanyFilterValue, type GroupFilterValue } from "@/lib/site-filters";
+import type { SimilarwebFilter } from "@/lib/similarweb/types";
 
 interface GroupOption {
   id: string;
@@ -30,6 +31,10 @@ interface FiltersProps {
   onVerticalChange: (value: Vertical | "") => void;
   onStatusChange: (value: SiteStatus | "") => void;
   onGroupChange: (value: GroupFilterValue) => void;
+  similarweb: SimilarwebFilter;
+  onSimilarwebChange: (value: SimilarwebFilter) => void;
+  /** True while the Similarweb data hasn't loaded — the filter result isn't reliable yet. */
+  similarwebLoading: boolean;
 }
 
 export function Filters({
@@ -46,6 +51,9 @@ export function Filters({
   onVerticalChange,
   onStatusChange,
   onGroupChange,
+  similarweb,
+  onSimilarwebChange,
+  similarwebLoading,
 }: FiltersProps): React.ReactElement {
   const { verticals } = useVerticals();
 
@@ -134,6 +142,22 @@ export function Filters({
           <option key={s} value={s}>{s}</option>
         ))}
       </select>
+
+      {/* Similarweb filter */}
+      <select
+        aria-label="Similarweb filter"
+        value={similarweb}
+        onChange={(e): void => onSimilarwebChange(e.target.value as SimilarwebFilter)}
+        className="px-3 py-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 appearance-none"
+      >
+        <option value="">Similarweb: all</option>
+        <option value="yes">Has rank</option>
+        <option value="no">No rank</option>
+        <option value="unchecked">Not checked</option>
+      </select>
+      {similarweb && similarwebLoading && (
+        <span className="text-xs text-[var(--text-muted)]">Loading Similarweb data…</span>
+      )}
     </div>
   );
 }

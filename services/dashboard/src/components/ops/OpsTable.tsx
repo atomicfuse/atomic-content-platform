@@ -3,12 +3,17 @@
 import { useState, useMemo } from "react";
 import type { OpsRow } from "@/lib/ops-helpers";
 import { OpsTableRow } from "./OpsTableRow";
+import { compareSimilarweb } from "@/lib/similarweb/format";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
 
 interface OpsTableProps {
   rows: OpsRow[];
+  /** Latest Similarweb result per site id (from /api/sites/similarweb). */
+  similarweb?: Record<string, SimilarwebStatus>;
+  similarwebLoaded?: boolean;
 }
 
-type SortKey = "site" | "status" | "failed7d" | "imgFail" | "uptime" | "sync" | "review" | "ssl" | "tracking" | "domain";
+type SortKey = "site" | "status" | "similarweb" | "failed7d" | "imgFail" | "uptime" | "sync" | "review" | "ssl" | "tracking" | "domain";
 type SortDir = "asc" | "desc";
 
 interface ColumnDef {
@@ -19,6 +24,7 @@ interface ColumnDef {
 const COLUMNS: ColumnDef[] = [
   { label: "Site", key: "site" },
   { label: "Status", key: "status" },
+  { label: "Similarweb", key: "similarweb" },
   { label: "Failed 7d", key: "failed7d" },
   { label: "Img Fail", key: "imgFail" },
   { label: "Uptime", key: "uptime" },
@@ -40,6 +46,7 @@ function getSortValue(row: OpsRow, key: SortKey): string | number {
   switch (key) {
     case "site": return (row.customDomain ?? row.domain).toLowerCase();
     case "status": return row.status;
+    case "similarweb": return 0; // sorted with compareSimilarweb (see sortedRows)
     case "failed7d": return row.failedArticles7d;
     case "imgFail": return row.imageGenFailed7d;
     case "uptime": return row.uptime.state === "n/a" ? -1 : row.uptime.ok ? 1 : 0;
@@ -51,7 +58,7 @@ function getSortValue(row: OpsRow, key: SortKey): string | number {
   }
 }
 
-export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
+export function OpsTable({ rows, similarweb = {}, similarwebLoaded = false }: OpsTableProps): React.ReactElement {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(25);
@@ -60,6 +67,10 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
 
   const sortedRows = useMemo(() => {
     if (!sortKey) return rows;
+    if (sortKey === "similarweb") {
+      return [...rows].sort((a, b) =>
+        compareSimilarweb({ custom_domain: a.customDomain }, similarweb[a.domain], { custom_domain: b.customDomain }, similarweb[b.domain], sortDir));
+    }
     return [...rows].sort((a, b) => {
       const aVal = getSortValue(a, sortKey);
       const bVal = getSortValue(b, sortKey);
@@ -71,7 +82,7 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [rows, sortKey, sortDir]);
+  }, [rows, sortKey, sortDir, similarweb]);
 
   const totalPages = Math.ceil(sortedRows.length / pageSize);
   const pageRows = useMemo(
@@ -128,12 +139,14 @@ export function OpsTable({ rows }: OpsTableProps): React.ReactElement {
               <OpsTableRow
                 key={row.domain}
                 row={row}
+                similarweb={similarweb[row.domain]}
+                similarwebLoaded={similarwebLoaded}
                 expanded={expandedRows.has(row.domain)}
                 onToggle={() => toggleRow(row.domain)}
               />
             ))}
             {pageRows.length === 0 && (
-              <tr><td colSpan={10} className="px-3.5 py-8 text-center text-secondary">No sites match the current filters.</td></tr>
+              <tr><td colSpan={11} className="px-3.5 py-8 text-center text-secondary">No sites match the current filters.</td></tr>
             )}
           </tbody>
         </table>

@@ -17,6 +17,8 @@ import { FilterCards } from "./FilterCards";
 import { CostStrip } from "./CostStrip";
 import { FilterBar } from "./FilterBar";
 import { OpsTable } from "./OpsTable";
+import { SimilarwebImportModal } from "@/components/dashboard/SimilarwebImportModal";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
 
 interface R2Data {
   totalBytes: number;
@@ -90,6 +92,23 @@ export default function OpsDashboard({
   const [attention, setAttention] = useState(_cache?.attention ?? initialAttention);
   const [r2, setR2] = useState(_cache?.r2 ?? safeR2(initialR2));
   const [lastRefreshed, setLastRefreshed] = useState(_cache?.lastRefreshed ?? Date.now());
+  const [similarweb, setSimilarweb] = useState<Record<string, SimilarwebStatus>>({});
+  const [similarwebLoaded, setSimilarwebLoaded] = useState(false);
+  const [similarwebError, setSimilarwebError] = useState(false);
+  const [similarwebImportOpen, setSimilarwebImportOpen] = useState(false);
+
+  // Similarweb status per site (network repo similarweb.yaml) — loaded once; reloaded after an import.
+  const loadSimilarweb = useCallback((): void => {
+    fetch("/api/sites/similarweb")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as { statuses?: Record<string, SimilarwebStatus> };
+      })
+      .then((data) => { setSimilarweb(data.statuses ?? {}); setSimilarwebError(false); })
+      .catch(() => setSimilarwebError(true))
+      .finally(() => setSimilarwebLoaded(true));
+  }, []);
+  useEffect(() => { loadSimilarweb(); }, [loadSimilarweb]);
   const [failCount, setFailCount] = useState(0);
 
   const [reviewTotal, setReviewTotal] = useState(initialReviewTotal);
@@ -216,6 +235,14 @@ export default function OpsDashboard({
 
   return (
     <div className="space-y-4">
+      {similarwebImportOpen && (
+        <SimilarwebImportModal
+          open={similarwebImportOpen}
+          onClose={(): void => setSimilarwebImportOpen(false)}
+          sites={initialIndex}
+          onImported={loadSimilarweb}
+        />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -225,12 +252,21 @@ export default function OpsDashboard({
             {failCount >= 3 && <span className="text-warning ml-2">· Connection issues</span>}
           </p>
         </div>
-        <button
-          onClick={poll}
-          className="px-3.5 py-1.5 bg-card border border-primary-border rounded-lg text-primary text-xs font-medium cursor-pointer"
-        >
-          ↻ Refresh now
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(): void => setSimilarwebImportOpen(true)}
+            title="Paste this month's Similarweb checklist results"
+            className="px-3.5 py-1.5 bg-card border border-card-border rounded-lg text-secondary text-xs font-medium cursor-pointer"
+          >
+            Update Similarweb data
+          </button>
+          <button
+            onClick={poll}
+            className="px-3.5 py-1.5 bg-card border border-primary-border rounded-lg text-primary text-xs font-medium cursor-pointer"
+          >
+            ↻ Refresh now
+          </button>
+        </div>
       </div>
 
       <FilterCards rows={allRows} activeCard={activeCard} onCardClick={handleCardClick} reviewTotal={reviewTotal} />
@@ -244,7 +280,8 @@ export default function OpsDashboard({
         onAlertFilterChange={setAlertFilter}
         onReset={handleReset}
       />
-      <OpsTable rows={filteredRows} />
+      {similarwebError && <p role="alert" className="text-xs text-error">Couldn&apos;t load Similarweb data</p>}
+      <OpsTable rows={filteredRows} similarweb={similarweb} similarwebLoaded={similarwebLoaded} />
     </div>
   );
 }

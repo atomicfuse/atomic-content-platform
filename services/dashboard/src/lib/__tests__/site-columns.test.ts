@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import {
   SITE_COLUMNS,
   DEFAULT_VISIBLE_COLUMN_IDS,
@@ -8,6 +8,8 @@ import {
   getColumnById,
   formatSchedule,
   COLUMN_STORAGE_KEY,
+  COLUMNS_SEEN_KEY,
+  hasColumnSource,
   type SiteColumnContext,
   type LiveConfigEntry,
 } from "../site-columns";
@@ -69,6 +71,7 @@ describe("DEFAULT_VISIBLE_COLUMN_IDS", () => {
       "group",
       "category",
       "status",
+      "similarweb",
       "articles",
       "lastArticles",
       "siteId",
@@ -303,6 +306,10 @@ describe("loadVisibleColumnIds / saveVisibleColumnIds", () => {
 
   it("drops unknown ids and falls back to defaults if nothing valid remains", () => {
     window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(["not-a-real-column"]));
+    // A selection saved before seen-tracking gets new default columns (Similarweb) once…
+    expect(loadVisibleColumnIds()).toEqual(["similarweb"]);
+    // …and a selection that hides every column afterwards stays empty.
+    saveVisibleColumnIds([]);
     expect(loadVisibleColumnIds()).toEqual([]);
   });
 
@@ -325,3 +332,46 @@ describe("loadVisibleColumnIds / saveVisibleColumnIds", () => {
     expect(() => saveVisibleColumnIds(["company"])).not.toThrow();
   });
 });
+
+describe("Similarweb column", () => {
+  const ctx = { siteGroups: {}, articleCounts: {}, latestArticles: {}, liveConfig: {} };
+  const site = { domain: "journeypeaks", custom_domain: "journeypeaks.com" } as never;
+  it("is a default column right after Status, sourced separately", () => {
+    expect(DEFAULT_VISIBLE_COLUMN_IDS.indexOf("similarweb")).toBe(DEFAULT_VISIBLE_COLUMN_IDS.indexOf("status") + 1);
+    expect(hasColumnSource(["similarweb"], "similarweb")).toBe(true);
+    expect(hasColumnSource(DEFAULT_VISIBLE_COLUMN_IDS.filter((id) => id !== "similarweb"), "similarweb")).toBe(false);
+  });
+  it("CSV cell uses the same text as the table", () => {
+    const col = getColumnById("similarweb")!;
+    const status = { site: "journeypeaks", domain: "journeypeaks.com", has_rank: true, global_rank: 79692, monthly_visits: 1340000, checked_at: "x", source: "manual" as const };
+    expect(col.csv(site, { ...ctx, similarweb: { journeypeaks: status } })).toBe("#79,692 · 1.34M/mo");
+    expect(col.csv(site, ctx)).toBe("");
+  });
+});
+
+describe("new default columns reach people who customised their columns", () => {
+  beforeEach(() => window.localStorage.clear());
+  it("a saved selection from before the column existed gets it appended once", () => {
+    window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(["company", "status"]));
+    expect(loadVisibleColumnIds()).toEqual(["company", "status", "similarweb"]);
+  });
+  it("hiding it afterwards sticks", () => {
+    window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(["company", "status"]));
+    loadVisibleColumnIds();
+    saveVisibleColumnIds(["company", "status"]);
+    expect(loadVisibleColumnIds()).toEqual(["company", "status"]);
+    expect(JSON.parse(window.localStorage.getItem(COLUMNS_SEEN_KEY) ?? "[]")).toContain("similarweb");
+  });
+});
+
+describe("revealed column survives repeated loads", () => {
+  beforeEach(() => window.localStorage.clear());
+  it("loading twice (reload / Strict Mode double mount) keeps the new column until it is hidden", () => {
+    window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(["company", "status"]));
+    expect(loadVisibleColumnIds()).toEqual(["company", "status", "similarweb"]);
+    expect(loadVisibleColumnIds()).toEqual(["company", "status", "similarweb"]);
+    saveVisibleColumnIds(["company", "status"]);
+    expect(loadVisibleColumnIds()).toEqual(["company", "status"]);
+  });
+});
+

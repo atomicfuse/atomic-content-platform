@@ -3,9 +3,13 @@
 import { type OpsRow, ALERT_LABELS } from "@/lib/ops-helpers";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { SiteDetailPanel } from "./SiteDetailPanel";
+import { SimilarwebCell } from "@/components/dashboard/SimilarwebCell";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
 
 interface OpsTableRowProps {
   row: OpsRow;
+  similarweb?: SimilarwebStatus;
+  similarwebLoaded?: boolean;
   expanded: boolean;
   onToggle: () => void;
 }
@@ -18,7 +22,7 @@ const STATUS_STYLES: Record<string, string> = {
   New: "bg-card text-secondary border-card-border",
 };
 
-export function OpsTableRow({ row, expanded, onToggle }: OpsTableRowProps): React.ReactElement {
+export function OpsTableRow({ row, similarweb, similarwebLoaded = false, expanded, onToggle }: OpsTableRowProps): React.ReactElement {
   const tierBg = row.tier === 0 ? "bg-error-light" : "";
 
   return (
@@ -46,6 +50,9 @@ export function OpsTableRow({ row, expanded, onToggle }: OpsTableRowProps): Reac
         </td>
         <td className="px-3.5 py-2.5">
           <span className={`text-[9px] font-semibold px-2 py-0.5 rounded-full border ${STATUS_STYLES[row.status] ?? ""}`}>{row.status}</span>
+        </td>
+        <td className="px-3.5 py-2.5">
+          <SimilarwebCell site={{ custom_domain: row.customDomain }} status={similarweb} loaded={similarwebLoaded} />
         </td>
         <td className={`px-3.5 py-2.5 font-bold ${row.failedArticles7d > 3 ? "text-error" : row.failedArticles7d === 0 ? "text-muted" : "text-secondary"}`}>{row.failedArticles7d}</td>
         <td className={`px-3.5 py-2.5 ${row.imageGenFailed7d > 0 ? "text-warning font-semibold" : "text-muted"}`}>{row.imageGenFailed7d}</td>
@@ -77,7 +84,7 @@ export function OpsTableRow({ row, expanded, onToggle }: OpsTableRowProps): Reac
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={10} className="p-0">
+          <td colSpan={11} className="p-0">
             <SiteDetailPanel row={row} />
           </td>
         </tr>

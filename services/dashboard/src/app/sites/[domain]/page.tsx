@@ -4,6 +4,7 @@ import { getSiteConfig as readSiteConfig } from "@/lib/db/site-configs";
 import { readArticlesFromDb as readArticlesWithKVFallback } from "@/lib/db/articles";
 import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
+import { readSimilarwebStatus } from "@/lib/similarweb/store";
 import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
 import { isGridSiteConfig } from "@/lib/grid-config";
 import { SiteDetailTabs } from "./SiteDetailTabs";
@@ -19,6 +20,8 @@ export default async function SiteDetailPage({
 }: PageProps): Promise<React.ReactElement> {
   const { domain } = await params;
   const decodedDomain = decodeURIComponent(domain);
+  // Similarweb badge — started now so it runs alongside the reads below; a failed read just hides the badge.
+  const similarwebPromise = readSimilarwebStatus(decodedDomain).catch(() => null);
 
   const index = await readDashboardIndex();
   const site = index.sites.find((s) => s.domain === decodedDomain);
@@ -80,10 +83,13 @@ export default async function SiteDetailPage({
       }
     : null;
 
+  const similarweb = await similarwebPromise;
+
   return (
     <div className="space-y-6">
       <SiteDetailHeader
         site={site}
+        similarweb={similarweb}
         logoUrl={
           (siteConfig?.theme as Record<string, unknown> | undefined)?.logo
             ? `/api/sites/asset?domain=${encodeURIComponent(decodedDomain)}&file=${encodeURIComponent(((siteConfig!.theme as Record<string, unknown>).logo as string).replace(/^\//, ""))}`

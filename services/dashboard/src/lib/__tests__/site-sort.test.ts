@@ -67,3 +67,17 @@ describe("sortSites", () => {
     expect(domains(sortSites(dated, { key: "created", dir: "desc" }, CTX))).toEqual(["new", "old"]);
   });
 });
+
+describe("similarweb sort", () => {
+  it("asc = best rank first, then no rank, not checked, no domain", () => {
+    const mk = (domain: string, custom: string | null) => ({ domain, custom_domain: custom } as never);
+    const sites = [mk("nodomain", null), mk("unchecked", "u.com"), mk("norank", "n.com"), mk("rank9", "r9.com"), mk("rank1", "r1.com")];
+    const sw = {
+      norank: { site: "norank", domain: "n.com", has_rank: false, global_rank: null, monthly_visits: null, checked_at: "x", source: "manual" as const },
+      rank9: { site: "rank9", domain: "r9.com", has_rank: true, global_rank: 900, monthly_visits: null, checked_at: "x", source: "manual" as const },
+      rank1: { site: "rank1", domain: "r1.com", has_rank: true, global_rank: 1, monthly_visits: null, checked_at: "x", source: "manual" as const },
+    };
+    const ctx = { articleCounts: {}, latestArticles: {}, siteGroups: {}, groupNames: {}, similarweb: sw };
+    expect(sortSites(sites, { key: "similarweb", dir: "asc" }, ctx).map((s) => s.domain)).toEqual(["rank1", "rank9", "norank", "unchecked", "nodomain"]);
+  });
+});

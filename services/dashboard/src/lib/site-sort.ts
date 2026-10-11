@@ -1,4 +1,6 @@
 import type { DashboardSiteEntry } from "@/types/dashboard";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
+import { compareSimilarweb } from "@/lib/similarweb/format";
 
 /**
  * Single source of truth for Sites-table sorting. `SitesTable` keeps one
@@ -7,7 +9,7 @@ import type { DashboardSiteEntry } from "@/types/dashboard";
  */
 
 /** Sortable columns. Except "website", each key is also the column id in `SITE_COLUMNS`. */
-export type SiteSortKey = "website" | "group" | "category" | "articles" | "lastArticles" | "created";
+export type SiteSortKey = "website" | "group" | "category" | "articles" | "lastArticles" | "created" | "similarweb";
 export type SortDirection = "asc" | "desc";
 
 export interface SiteSort {
@@ -22,6 +24,8 @@ export interface SiteSortContext {
   siteGroups: Record<string, string[]>;
   /** Group id → display name (falls back to the id). */
   groupNames: Record<string, string>;
+  /** Latest Similarweb result per site id. */
+  similarweb?: Record<string, SimilarwebStatus>;
 }
 
 /** Header click: asc → desc → off on the same column; a new column starts at asc. */
@@ -81,6 +85,9 @@ export function sortSites(
   const { key, dir } = sort;
   if (key === "website" || key === "group" || key === "category") {
     return sorted.sort((a, b) => compareText(sortText(a, key, ctx), sortText(b, key, ctx), dir));
+  }
+  if (key === "similarweb") {
+    return sorted.sort((a, b) => compareSimilarweb(a, ctx.similarweb?.[a.domain], b, ctx.similarweb?.[b.domain], dir));
   }
   return sorted.sort((a, b) => {
     const diff = sortNumber(a, key, ctx) - sortNumber(b, key, ctx);
