@@ -41,6 +41,7 @@ Both live at `~/Documents/ATL-content-network/`.
 | Deploy config | This repo, `cloudgrid.yaml` |
 | In-app docs | This repo, `services/dashboard/public/guide/*.md` |
 | Grid summaries | Network repo, main, grid-summaries/<site>/<slug>.md (pipeline-written) |
+| Similarweb status | Network repo, main, `similarweb.yaml` (dashboard-written via Update Similarweb data) |
 
 ## Layout
 

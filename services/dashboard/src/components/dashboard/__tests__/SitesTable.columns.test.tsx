@@ -192,6 +192,7 @@ describe("SitesTable — column chooser", () => {
       "group",
       "category",
       "status",
+      "similarweb",
       "articles",
       "lastArticles",
       "siteId",

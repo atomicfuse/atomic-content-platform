@@ -25,11 +25,16 @@ import {
   loadVisibleColumnIds,
   saveVisibleColumnIds,
   hasLiveColumn,
+  hasColumnSource,
   formatSchedule,
   type SiteColumnDef,
   type LiveConfigEntry,
 } from "@/lib/site-columns";
 import { isPublishEligible } from "@/lib/pending-changes";
+import { SimilarwebCell } from "./SimilarwebCell";
+import { SimilarwebImportModal } from "./SimilarwebImportModal";
+import { latestCheckedAt, matchesSimilarwebFilter } from "@/lib/similarweb/format";
+import type { SimilarwebFilter, SimilarwebStatus } from "@/lib/similarweb/types";
 import { BULK_PUBLISH_BUSY_MESSAGE, useBulkPublishBusy } from "@/lib/bulk-publish-activity";
 
 // Loaded on first open only: it pulls in the publish server action.
@@ -147,6 +152,31 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const [liveConfig, setLiveConfig] = useState<Record<string, LiveConfigEntry>>({});
   const [liveConfigLoaded, setLiveConfigLoaded] = useState(false);
   const liveConfigRequested = useRef(false);
+  const [similarweb, setSimilarweb] = useState<Record<string, SimilarwebStatus>>({});
+  const [similarwebLoaded, setSimilarwebLoaded] = useState(false);
+  const [similarwebFilter, setSimilarwebFilter] = useState<SimilarwebFilter>("");
+  const [similarwebError, setSimilarwebError] = useState(false);
+  const similarwebRequested = useRef(false);
+  const [similarwebImportOpen, setSimilarwebImportOpen] = useState(false);
+
+  const loadSimilarweb = useCallback((): void => {
+    fetch("/api/sites/similarweb")
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return (await r.json()) as { statuses?: Record<string, SimilarwebStatus> };
+      })
+      .then((data) => { setSimilarweb(data.statuses ?? {}); setSimilarwebError(false); })
+      .catch(() => setSimilarwebError(true))
+      .finally(() => setSimilarwebLoaded(true));
+  }, []);
+
+  // Fetch once, the first time the column is visible or the filter is used.
+  useEffect(() => {
+    if (similarwebRequested.current) return;
+    if (!hasColumnSource(visibleColumnIds, "similarweb") && !similarwebFilter) return;
+    similarwebRequested.current = true;
+    loadSimilarweb();
+  }, [visibleColumnIds, similarwebFilter, loadSimilarweb]);
 
   useEffect(() => {
     setVisibleColumnIds(loadVisibleColumnIds());
@@ -210,6 +240,14 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         return sortHeader("Category", "category");
       case "status":
         return "Status";
+      case "similarweb": {
+        const last = latestCheckedAt(similarweb);
+        return (
+          <span title={last ? `Similarweb global rank and monthly visits · last checked ${new Date(last).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : "Similarweb global rank and monthly visits · not checked yet"}>
+            {sortHeader("Similarweb", "similarweb")}
+          </span>
+        );
+      }
       case "articles":
         return sortHeader("Articles", "articles", "ml-auto");
       case "lastArticles":
@@ -243,6 +281,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       case "articlesPerDay":
         return "px-4 py-3 text-[var(--text-secondary)] text-xs whitespace-nowrap tabular-nums";
       case "status":
+      case "similarweb":
         return "px-4 py-3";
       case "siteId":
         return "px-4 py-3 text-[var(--text-muted)] font-mono text-xs";
@@ -297,6 +336,8 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         return site.vertical;
       case "status":
         return <StatusBadge status={site.status} />;
+      case "similarweb":
+        return <SimilarwebCell site={site} status={similarweb[site.domain]} loaded={similarwebLoaded} />;
       case "articles":
         return countsLoaded
           ? (articleCounts[site.domain] ?? "—")
@@ -426,15 +467,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       },
       siteGroups,
     );
+    const swFiltered = similarwebFilter
+      ? filtered.filter((s) => matchesSimilarwebFilter(s, similarweb[s.domain], similarwebFilter))
+      : filtered;
     // Data-driven sorts wait for their lazily-fetched data; until then keep the filtered order.
     const sortReady =
       !sort ||
       (sort.key === "articles" ? countsLoaded
         : sort.key === "lastArticles" ? latestLoaded
           : sort.key === "group" ? groupsLoaded
-            : true);
-    return sortSites(filtered, sortReady ? sort : null, { articleCounts, latestArticles, siteGroups, groupNames });
-  }, [sites, search, companyFilter, verticalFilter, statusFilter, groupFilter, siteGroups, sort, articleCounts, countsLoaded, latestArticles, latestLoaded, groupsLoaded, groupNames]);
+            : sort.key === "similarweb" ? similarwebLoaded
+              : true);
+    return sortSites(swFiltered, sortReady ? sort : null, { articleCounts, latestArticles, siteGroups, groupNames, similarweb });
+  }, [sites, search, companyFilter, verticalFilter, statusFilter, groupFilter, siteGroups, sort, articleCounts, countsLoaded, latestArticles, latestLoaded, groupsLoaded, groupNames, similarweb, similarwebFilter, similarwebLoaded]);
 
   const siteVerticals = useMemo(() => sites.map((s) => s.vertical), [sites]);
 
@@ -444,9 +489,13 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   // filter is unreliable until groups have loaded, regardless of what
   // `filteredSites` currently computes to.
   const groupFilterPending = Boolean(groupFilter) && !groupsLoaded;
+  const similarwebFilterPending = Boolean(similarwebFilter) && !similarwebLoaded;
+  const filterPending = groupFilterPending || similarwebFilterPending;
 
   const needsLiveConfigForExport = hasLiveColumn(visibleColumnIds);
-  const exportWaitingOnLiveConfig = needsLiveConfigForExport && !liveConfigLoaded;
+  const exportWaitingOnLiveConfig =
+    (needsLiveConfigForExport && !liveConfigLoaded) ||
+    (hasColumnSource(visibleColumnIds, "similarweb") && !similarwebLoaded);
 
   function handleExportCsv(): void {
     const csv = buildSitesCsvForColumns(filteredSites, visibleColumns, {
@@ -454,6 +503,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
       articleCounts,
       latestArticles,
       liveConfig,
+      similarweb,
     });
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -499,6 +549,9 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
           onVerticalChange={setVerticalFilter}
           onStatusChange={setStatusFilter}
           onGroupChange={setGroupFilter}
+          similarweb={similarwebFilter}
+          onSimilarwebChange={setSimilarwebFilter}
+          similarwebLoading={!similarwebLoaded}
         />
         <div className="flex items-center gap-2">
           <ColumnChooser
@@ -511,11 +564,20 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             type="button"
             variant="secondary"
             size="md"
+            onClick={(): void => setSimilarwebImportOpen(true)}
+            title="Paste this month's Similarweb checklist results"
+          >
+            Update Similarweb data
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
             onClick={handleExportCsv}
-            disabled={filteredSites.length === 0 || groupFilterPending || exportWaitingOnLiveConfig}
+            disabled={filteredSites.length === 0 || filterPending || exportWaitingOnLiveConfig}
             title={
               exportWaitingOnLiveConfig
-                ? "Waiting for live site data to finish loading…"
+                ? "Waiting for site data to finish loading…"
                 : "Export the currently filtered sites as CSV"
             }
           >
@@ -553,6 +615,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         />
       )}
 
+      {similarwebError && (
+        <p role="alert" className="text-xs text-red-400">Couldn&apos;t load Similarweb data</p>
+      )}
+
+      {similarwebImportOpen && (
+        <SimilarwebImportModal
+          open={similarwebImportOpen}
+          onClose={(): void => setSimilarwebImportOpen(false)}
+          sites={sites}
+          onImported={(): void => { similarwebRequested.current = true; loadSimilarweb(); }}
+        />
+      )}
+
       <div className="rounded-xl bg-[var(--bg-surface)] border border-[var(--border-secondary)] overflow-hidden">
         <div className="overflow-auto max-h-[80vh]">
           <table className="w-full text-sm">
@@ -572,17 +647,17 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
               </tr>
             </thead>
             <tbody>
-              {groupFilterPending && (
+              {filterPending && (
                 <tr>
                   <td
                     colSpan={2 + visibleColumns.length}
                     className="px-4 py-8 text-center text-[var(--text-muted)]"
                   >
-                    Loading groups…
+                    Loading…
                   </td>
                 </tr>
               )}
-              {!groupFilterPending && filteredSites.length === 0 && (
+              {!filterPending && filteredSites.length === 0 && (
                 <tr>
                   <td
                     colSpan={2 + visibleColumns.length}
@@ -594,7 +669,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
                   </td>
                 </tr>
               )}
-              {!groupFilterPending && paginatedSites.map((site) => (
+              {!filterPending && paginatedSites.map((site) => (
                 <tr
                   key={site.domain}
                   onClick={(): void => handleRowClick(site)}
@@ -626,7 +701,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
         </div>
 
         {/* Pagination */}
-        {!groupFilterPending && filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
+        {!filterPending && filteredSites.length > PAGE_SIZE_OPTIONS[0] && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--border-secondary)]">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">

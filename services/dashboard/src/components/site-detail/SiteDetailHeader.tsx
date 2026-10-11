@@ -2,16 +2,23 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { workerPreviewUrl } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { RefreshCacheButton } from "./RefreshCacheButton";
+import { similarwebBadgeText } from "@/lib/similarweb/format";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
 
 interface SiteDetailHeaderProps {
   site: DashboardSiteEntry;
   logoUrl?: string | null;
+  /** Latest Similarweb result (badge next to the status); null/undefined = none shown. */
+  similarweb?: SimilarwebStatus | null;
 }
 
 export function SiteDetailHeader({
   site,
   logoUrl,
+  similarweb,
 }: SiteDetailHeaderProps): React.ReactElement {
+  // No badge for a site without a real domain (spec: "nothing for sites without a domain").
+  const similarwebText = site.custom_domain ? similarwebBadgeText(similarweb) : null;
   // Post-Phase-7 layout. Three possible affordances, each ungated by
   // each other:
   //   - Live Site:    custom_domain → that hostname, served by the prod Worker.
@@ -45,6 +52,14 @@ export function SiteDetailHeader({
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold">{site.domain}</h1>
             <StatusBadge status={site.status} />
+            {similarwebText && similarweb && (
+              <span
+                title={`Checked ${new Date(similarweb.checked_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} (${similarweb.source})`}
+                className={`rounded-full border px-2.5 py-0.5 text-xs tabular-nums ${similarweb.has_rank ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400" : "border-[var(--border-secondary)] text-[var(--text-muted)]"}`}
+              >
+                {similarwebText}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-sm text-[var(--text-secondary)]">
             <span>{site.company}</span>

@@ -36,6 +36,7 @@ const GUIDE_PAGES = [
   { slug: "22-ops-console-api", title: "Ops Console API" },
   { slug: "23-topic-rotation", title: "Topic Rotation (Round-Robin)" },
   { slug: "24-grid-template", title: "Grid Template" },
+  { slug: "25-similarweb", title: "Similarweb" },
 ];
 
 export default function GuidePage(): React.ReactElement {

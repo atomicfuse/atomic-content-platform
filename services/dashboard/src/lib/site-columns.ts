@@ -1,4 +1,6 @@
 import type { DashboardSiteEntry } from "@/types/dashboard";
+import type { SimilarwebStatus } from "@/lib/similarweb/types";
+import { similarwebCell } from "@/lib/similarweb/format";
 
 /**
  * Single source of truth for the Sites table's optional columns: their
@@ -29,7 +31,7 @@ export interface LiveConfigEntry {
   last_synced_at: string | null;
 }
 
-export type SiteColumnSource = "index" | "groups" | "articles" | "live";
+export type SiteColumnSource = "index" | "groups" | "articles" | "live" | "similarweb";
 
 /** Everything a column's `csv` accessor might need, gathered from the
  *  table's various data sources (some fetched eagerly, some lazily). */
@@ -38,6 +40,8 @@ export interface SiteColumnContext {
   articleCounts: Record<string, number>;
   latestArticles: Record<string, string>;
   liveConfig: Record<string, LiveConfigEntry>;
+  /** Latest Similarweb result per site id (fetched lazily; absent until loaded). */
+  similarweb?: Record<string, SimilarwebStatus>;
 }
 
 export interface SiteColumnDef {
@@ -135,6 +139,19 @@ export const SITE_COLUMNS: SiteColumnDef[] = [
     defaultVisible: true,
     source: "index",
     csv: (site) => site.status,
+  },
+  {
+    id: "similarweb",
+    label: "Similarweb",
+    defaultVisible: true,
+    source: "similarweb",
+    sortable: true,
+    tooltip: "Similarweb global rank and monthly visits from the last monthly check (Update Similarweb data). No rank = Similarweb has no ranking for the domain.",
+    csv: (site, ctx) => {
+      const status = ctx.similarweb?.[site.domain];
+      const cell = similarwebCell(site, status);
+      return cell.kind === "unchecked" ? "" : cell.text;
+    },
   },
   {
     id: "articles",
@@ -256,6 +273,18 @@ export const DEFAULT_VISIBLE_COLUMN_IDS: string[] = SITE_COLUMNS.filter(
 
 export const COLUMN_STORAGE_KEY = "sites-table-columns-v1";
 
+/** Column ids this browser has already been offered — lets a NEW default column appear once for people who
+ *  customised their columns before it existed, without overriding a later choice to hide it. */
+export const COLUMNS_SEEN_KEY = "sites-table-columns-seen-v1";
+/** Every column that existed before seen-tracking was added (2026-10-11). */
+const COLUMNS_BEFORE_SEEN_TRACKING = SITE_COLUMNS.map((c) => c.id).filter((id) => id !== "similarweb");
+
+function markAllSeen(): void {
+  try {
+    window.localStorage.setItem(COLUMNS_SEEN_KEY, JSON.stringify(SITE_COLUMNS.map((c) => c.id)));
+  } catch { /* storage unavailable */ }
+}
+
 const VALID_COLUMN_IDS = new Set(SITE_COLUMNS.map((c) => c.id));
 
 /**
@@ -274,7 +303,23 @@ export function loadVisibleColumnIds(): string[] {
     if (!raw) return DEFAULT_VISIBLE_COLUMN_IDS;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return DEFAULT_VISIBLE_COLUMN_IDS;
-    return parsed.filter((id): id is string => typeof id === "string" && VALID_COLUMN_IDS.has(id));
+    const stored = parsed.filter((id): id is string => typeof id === "string" && VALID_COLUMN_IDS.has(id));
+    let seen: string[] = COLUMNS_BEFORE_SEEN_TRACKING;
+    try {
+      const rawSeen = window.localStorage.getItem(COLUMNS_SEEN_KEY);
+      const parsedSeen: unknown = rawSeen ? JSON.parse(rawSeen) : null;
+      if (Array.isArray(parsedSeen)) seen = parsedSeen.filter((id): id is string => typeof id === "string");
+    } catch { /* keep the pre-tracking list */ }
+    const added = SITE_COLUMNS.filter((c) => c.defaultVisible && !seen.includes(c.id) && !stored.includes(c.id)).map((c) => c.id);
+    const result = [...stored, ...added];
+    // Persist the revealed column before marking it seen, so a reload (or React's double mount) keeps it.
+    if (added.length > 0) {
+      try {
+        window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(result));
+      } catch { /* storage unavailable — shown for this session only */ }
+    }
+    markAllSeen();
+    return result;
   } catch {
     return DEFAULT_VISIBLE_COLUMN_IDS;
   }
@@ -286,6 +331,7 @@ export function loadVisibleColumnIds(): string[] {
 export function saveVisibleColumnIds(ids: string[]): void {
   try {
     window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(ids));
+    markAllSeen();
   } catch {
     // Storage unavailable — nothing to recover; see doc comment above.
   }
@@ -293,6 +339,12 @@ export function saveVisibleColumnIds(ids: string[]): void {
 
 export function getColumnById(id: string): SiteColumnDef | undefined {
   return SITE_COLUMNS.find((c) => c.id === id);
+}
+
+/** Whether any visible column reads from the given lazily-fetched source. */
+export function hasColumnSource(visibleIds: string[], source: SiteColumnSource): boolean {
+  const visible = new Set(visibleIds);
+  return SITE_COLUMNS.some((c) => c.source === source && visible.has(c.id));
 }
 
 /** Whether any currently-visible column reads from the live-config endpoint
