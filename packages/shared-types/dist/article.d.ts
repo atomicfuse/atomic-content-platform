@@ -33,6 +33,8 @@ export interface ArticleFrontmatter {
     publishDate: Date | string;
     /** Display name of the article author. */
     author: string;
+    /** Library author id (`authors/<id>.yaml`) — set on new articles; older ones match by name. */
+    author_id?: string;
     /** Taxonomy tags for categorisation and filtering. */
     tags: string[];
     /** Topic-membership list (per-topic-filter model). The first entry is the

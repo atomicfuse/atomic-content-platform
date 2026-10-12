@@ -8,6 +8,7 @@ import { COMPANIES } from "@/lib/constants";
 import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
 import { TemplateSelector } from "@/components/shared/TemplateSelector";
 import type { WizardFormData } from "@/types/dashboard";
+import { isReservedSiteId } from "@/lib/reserved-site-ids";
 
 interface StepIdentityProps {
   data: WizardFormData;
@@ -48,8 +49,12 @@ export function StepIdentity({
   // AI site theme) are hidden and the site theme isn't required.
   const isGrid = template === "grid";
 
+  // Platform-owned ids (author portraits, Grid stories) — caught here, not at the final deploy step.
+  const slugReserved = isReservedSiteId(data.pagesProjectName ?? "");
+
   // EC-16: Trim whitespace before checking — "   " is truthy but blank.
   const canProceed =
+    !slugReserved &&
     data.pagesProjectName?.trim() &&
     data.siteName?.trim() &&
     (isGrid || data.theme.trim().length > 0);
@@ -77,6 +82,7 @@ export function StepIdentity({
           value={data.pagesProjectName}
           onChange={(e): void => handleProjectNameChange(e.target.value)}
           maxLength={63}
+          error={slugReserved ? `“${data.pagesProjectName}” is reserved by the platform — choose a different slug.` : undefined}
         />
         <p className="text-xs text-[var(--text-muted)]">
           Used as the network-repo folder name. Creates a staging branch{" "}

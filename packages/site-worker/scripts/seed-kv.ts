@@ -65,6 +65,7 @@ import { parseFeatured } from './lib/parse-featured';
 import { contentTypeForFile } from './lib/content-types';
 import { validateResolvedConfig } from './lib/validate-config';
 import { parseRedirectFrom, redirectEntries } from './lib/article-redirects';
+import { normalizeSiteAuthors } from '../src/lib/author-ids';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -366,6 +367,7 @@ async function loadArticles(siteId: string, redirects: Array<{ slug: string; fro
       title: String(front.title ?? slug),
       description: front.description ? String(front.description) : undefined,
       author: String(front.author ?? 'Editorial Team'),
+      author_id: typeof front.author_id === 'string' && front.author_id ? front.author_id : undefined,
       publishDate: new Date(String(front.publishDate ?? Date.now())).toISOString(),
       featuredImage: rewriteFrontmatterUrl(front.featuredImage ? String(front.featuredImage) : undefined, siteId),
       tags: Array.isArray(front.tags) ? front.tags.map(String) : [],
@@ -656,6 +658,8 @@ async function resolveSiteConfig(
     site_name: String(site.site_name ?? siteId),
     site_tagline: site.site_tagline == null ? null : String(site.site_tagline),
     pages_project: String(site.pages_project ?? siteId),
+    // Authors are site-only (never inherited from org/groups/overrides).
+    authors: normalizeSiteAuthors(site.authors),
   } as unknown as ResolvedConfig;
 
   // Resolve support_email from the org-level pattern + site domain.

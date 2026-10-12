@@ -1,4 +1,5 @@
 export type { NetworkManifest } from "./network.js";
+export type { AuthorLinks, AuthorProfile, SiteAuthorAssignment } from "./author.js";
 export type { CustomTrackingScript, TrackingConfig, } from "./tracking.js";
 export type { ScriptEntry, AdPlacementSizes, AdPlacement, InterstitialTrigger, InterstitialFrequency, InterstitialPageType, InterstitialConfig, AdsConfig, } from "./ads.js";
 export type { ArticleType, ArticleScript, ArticleScriptPosition, ArticleVideo, ArticleVideoPosition, ArticleFrontmatter, QualityScoreBreakdown, } from "./article.js";

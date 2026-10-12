@@ -19,6 +19,8 @@ import { articleRedirectTarget } from '../../lib/redirects';
 import { injectInlineAds } from '../../lib/inline-ads';
 import { injectVideos } from '../../lib/inject-videos';
 import { injectArticleScripts } from '../../lib/inject-scripts';
+import AboutAuthor from '../../themes/modern/components/AboutAuthor.astro';
+import { authorPath, loadAuthorProfiles, resolveByline } from '../../lib/authors';
 
 const SHARED_PAGES = new Set(['about', 'contact', 'privacy', 'terms', 'dmca', 'amazon']);
 
@@ -69,6 +71,14 @@ const articleBodyWithVideos = article
 const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article
   ? injectArticleScripts(articleBodyWithVideos, article.frontmatter.scripts)
   : { headScripts: '', bodyHtml: articleBodyWithVideos };
+
+// Bylines link to the author page only when the author is on this site and has a profile.
+// Sites without `authors` make no extra KV reads and render exactly as before.
+const siteAuthors = config.authors ?? [];
+const authorProfiles = article && siteAuthors.length > 0 ? await loadAuthorProfiles(env.CONFIG_KV, siteAuthors) : new Map();
+const byline = article ? resolveByline(article.frontmatter.author, article.frontmatter.author_id, siteAuthors, authorProfiles) : null;
+const authorHref = byline?.id ? authorPath(byline.id) : undefined;
+const authorUrl = authorHref ? `https://${getCanonicalDomain(Astro)}${authorHref}` : undefined;
 
 // Compute related articles and category-list articles
 let related: ArticleIndexEntry[] = [];
@@ -135,13 +145,14 @@ if (article) {
         siteBaseUrl={`https://${getCanonicalDomain(Astro)}`}
         publishDate={article.frontmatter.publishDate}
         author={article.frontmatter.author}
+        authorUrl={authorUrl}
         tags={article.frontmatter.tags}
       />
     </Fragment>
     {articleHeadScripts && <Fragment slot="head" set:html={articleHeadScripts} />}
 
     <Header config={config} currentPath={`/${slug}`} />
-    <ArticleHero article={article.frontmatter} />
+    <ArticleHero article={article.frontmatter} authorHref={authorHref} />
 
     <main class="article-page">
       <AdSlot position="above-content" pageType="article" server:defer />
@@ -151,6 +162,7 @@ if (article) {
           {article.frontmatter.tags && article.frontmatter.tags.length > 0 && (
             <p class="article-tags">{article.frontmatter.tags.map((t: string) => `#${t}`).join(' ')}</p>
           )}
+          {byline?.profile && authorHref && <AboutAuthor profile={byline.profile} href={authorHref} />}
         </article>
         <Sidebar variant="article" config={config} categories={categoryLists} />
       </div>

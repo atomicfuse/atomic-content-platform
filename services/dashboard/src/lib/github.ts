@@ -1299,7 +1299,7 @@ export async function listNetworkDirectory(
   path: string,
   branch?: string,
   repo?: { owner: string; name: string },
-): Promise<Array<{ name: string; type: string; path: string }>> {
+): Promise<Array<{ name: string; type: string; path: string; sha?: string }>> {
   const octokit = getOctokit();
   const repoOwner = repo?.owner ?? NETWORK_REPO_OWNER;
   const repoName = repo?.name ?? NETWORK_REPO_NAME;
@@ -1315,6 +1315,7 @@ export async function listNetworkDirectory(
       name: item.name,
       type: item.type,
       path: item.path,
+      sha: item.sha,
     }));
   } catch (error: unknown) {
     if (isNotFoundError(error)) return [];

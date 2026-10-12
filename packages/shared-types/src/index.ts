@@ -1,5 +1,7 @@
 export type { NetworkManifest } from "./network.js";
 
+export type { AuthorLinks, AuthorProfile, SiteAuthorAssignment } from "./author.js";
+
 export type {
   CustomTrackingScript,
   TrackingConfig,

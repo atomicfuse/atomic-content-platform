@@ -39,6 +39,8 @@ import type { Generator, GeneratorConfig } from "./generators/base-generator.js"
 
 // Existing infrastructure
 import { createOctokit } from "../../lib/github.js";
+import { createBylineResolver, normalizeSiteAuthors, type BylineResolver } from "../../authors/bylines.js";
+import { authorFileReader, siteAuthorsReader } from "../../authors/byline-reader.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
 import type { PendingArticle } from "../../lib/writer.js";
 import { scoreArticle, resolveStatus as resolveQualityStatus } from "../content-quality/scorer.js";
@@ -48,6 +50,7 @@ import type { GenerationSource } from "../../stats/types.js";
 import { selectTopicsRoundRobin, readTopicRotation, saveTopicRotation } from "../../stats/topic-rotation.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
+import { isReservedArticleSlug } from "../../lib/reserved-slugs.js";
 
 // ---------------------------------------------------------------------------
 // Body validation — rejects empty/garbage content before quality scoring
@@ -109,6 +112,7 @@ export interface ContentGenerationParams {
   preloadedBrief?: {
     siteName: string;
     author?: string;
+    authors?: Array<{ id: string; topics: string[] }>;
     group: string;
     brief: SiteBrief;
   };
@@ -440,7 +444,7 @@ async function resolveUniqueSlug(
   let candidate = baseSlug;
   let counter = 2;
 
-  while (await slugExists(config, siteDomain, candidate, branch)) {
+  while (isReservedArticleSlug(candidate) || await slugExists(config, siteDomain, candidate, branch)) {
     candidate = `${baseSlug}-${counter}`;
     counter++;
   }
@@ -526,6 +530,7 @@ async function readLocalSiteBrief(localNetworkPath: string, siteDomain: string) 
     domain: siteConfig.domain,
     siteName: siteConfig.site_name,
     author: siteConfig.author,
+    authors: normalizeSiteAuthors(siteConfig.authors),
     group: siteConfig.group,
     brief: siteConfig.brief,
   };
@@ -628,7 +633,7 @@ async function processItem(
   branch?: string,
   author?: string,
   topicsArray?: string[],
-  opts: { source: GenerationSource } = { source: "dashboard" },
+  opts: { source: GenerationSource; bylineFor?: BylineResolver } = { source: "dashboard" },
 ): Promise<ContentGenerationResult> {
   // Skip items without summary (unenriched leaked through)
   if (!item.summary || item.summary.length < 20) {
@@ -771,15 +776,18 @@ async function processItem(
     }
 
     // Step 9: Build frontmatter
-    const publishDate = new Date().toISOString().slice(0, 10);
+    // Full timestamp: a date alone leaves same-day articles in alphabetical order on the site and dashboard.
+    const publishDate = new Date().toISOString();
 
+    const byline = opts.bylineFor ? await opts.bylineFor(topicsArray?.[0]) : { name: author || "Editorial Team" };
     const frontmatter: ArticleFrontmatterWithExtras = {
       title: generated.title,
       description: seo.metaDescription,
       type: articleType,
       status: articleStatus,
       publishDate,
-      author: author || "Editorial Team",
+      author: byline.name,
+      ...(byline.authorId ? { author_id: byline.authorId } : {}),
       tags,
       slug,
       reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",
@@ -1052,16 +1060,22 @@ export async function runContentGeneration(
 
   try {
     // Step 1: Read site brief (skip GitHub read if preloaded from scheduler)
-    const { siteName, author: siteAuthor, brief } = await getSiteBrief(
+    const { siteName, author: siteAuthor, authors: siteAuthors, brief } = await getSiteBrief(
       config, siteDomain, branch, params.preloadedBrief,
     );
+    // Each article's author: the site author covering its topic, else the next in turn (legacy name if none).
+    // The site's authors are read fresh: the brief can come from a cache filled before they were saved.
+    const currentAuthors = (await siteAuthorsReader(config)(siteDomain, branch)) ?? siteAuthors ?? [];
+    const bylineFor = createBylineResolver({ siteDomain, siteAuthors: currentAuthors, legacyAuthor: siteAuthor, readAuthorFile: authorFileReader(config, branch) });
 
     // Step 2: Load existing articles for deduplication
     const existing = await getAllExistingArticles(config, siteDomain, branch);
 
-    // Step 3: Resolve tag IDs from topics if the brief doesn't have them
+    // Step 3: Resolve tag IDs from topics if the brief doesn't have them. Legacy sites only: a per-topic site's
+    // topics carry their own category/tag filters, and looking topic names up as tags would try to create them.
+    const { isPerTopicSite: perTopicBrief } = await import("./per-topic-fetch.js");
     let tagIds = brief.tag_ids?.filter((id) => !!id && id.length > 0);
-    if ((!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
+    if (!perTopicBrief(brief) && (!tagIds || tagIds.length === 0) && brief.topics.length > 0) {
       console.log(`[agent] No tag_ids in brief — resolving from topics: ${brief.topics.join(", ")}`);
       tagIds = await resolveTopicTagIds(brief.topics);
       tagIds = tagIds.filter((id) => !!id && id.length > 0);
@@ -1080,6 +1094,7 @@ export async function runContentGeneration(
           siteDomain,
           siteName,
           author: siteAuthor,
+          bylineFor,
           brief,
           branch,
           count,
@@ -1173,7 +1188,7 @@ export async function runContentGeneration(
       newItems,
       MAX_CONCURRENCY,
       targetCount,
-      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor, undefined, { source: params.source ?? "dashboard" }),
+      (item) => processItem(item, settings, config, siteDomain, siteName, brief, branch, siteAuthor, undefined, { source: params.source ?? "dashboard", bylineFor }),
       (result) => result.status === "created",
     );
 
@@ -1220,6 +1235,8 @@ async function runPerTopicGeneration(args: {
   siteDomain: string;
   siteName: string;
   author?: string;
+  /** Resolves each article's byline from the site's authors (set by runContentGeneration). */
+  bylineFor?: BylineResolver;
   brief: SiteBrief;
   branch?: string;
   count?: number;
@@ -1518,7 +1535,7 @@ async function runPerTopicGeneration(args: {
         args.branch,
         args.author,
         topicNames,
-        { source: args.source ?? "dashboard" },
+        { source: args.source ?? "dashboard", bylineFor: args.bylineFor },
       );
       allResults.push(result);
       if (result.status === "created") {

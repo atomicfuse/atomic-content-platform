@@ -1,8 +1,8 @@
 ---
 import type { ArticleIndexEntry } from '../../../lib/kv-schema';
 
-interface Props { article: ArticleIndexEntry; }
-const { article } = Astro.props;
+interface Props { article: ArticleIndexEntry; authorHref?: string; }
+const { article, authorHref } = Astro.props;
 const date = new Date(article.publishDate).toLocaleDateString('en-US', {
   year: 'numeric', month: 'long', day: 'numeric',
 });
@@ -15,7 +15,9 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
       <p class="article-hero-meta">
         {article.author && (
           <>
-            <span class="article-hero-author">By {article.author}</span>
+            {authorHref
+              ? <a class="article-hero-author article-hero-author-link" href={authorHref}>By {article.author}</a>
+              : <span class="article-hero-author">By {article.author}</span>}
             <span class="article-hero-separator">&middot;</span>
           </>
         )}
@@ -60,6 +62,13 @@ const date = new Date(article.publishDate).toLocaleDateString('en-US', {
     color: var(--color-article_hero_meta, var(--color-muted, #6b7280));
     font-weight: 600;
   }
+  .article-hero-author-link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  .article-hero-author-link:hover { opacity: 0.85; }
   .article-hero-separator {
     opacity: 0.6;
   }

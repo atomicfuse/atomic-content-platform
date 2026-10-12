@@ -39,6 +39,8 @@ import { generateLogoExtras, generateLogoPreview } from "@/actions/wizard";
 import { runLogoGeneration, type LogoStep } from "@/lib/logo-generation-flow";
 import { GeneratedLogoSet } from "@/components/site-detail/GeneratedLogoSet";
 import Link from "next/link";
+import { SiteAuthorsSection } from "./SiteAuthorsSection";
+import { normalizeSiteAuthors, siteAudienceOf } from "@/lib/authors/assignment";
 
 interface ContentAgentTabProps {
   domain: string;
@@ -131,7 +133,6 @@ export function ContentAgentTab({
   const [siteName, setSiteName] = useState(initSiteName);
   const [siteTagline, setSiteTagline] = useState(initSiteTagline);
   const initAuthor = (siteConfig?.author as string) ?? "";
-  const [author, setAuthor] = useState(initAuthor);
   const [audiences, setAudiences] = useState<string[]>(() => {
     const raw = briefRaw?.audiences;
     if (Array.isArray(raw)) return raw as string[];
@@ -508,7 +509,6 @@ export function ContentAgentTab({
       const hasConfigChanges =
         siteName !== initSiteName ||
         siteTagline !== initSiteTagline ||
-        author !== initAuthor ||
         tone !== initTone ||
         JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
         !!pendingLogo ||
@@ -531,7 +531,6 @@ export function ContentAgentTab({
             configUpdates: {
               siteName,
               siteTagline,
-              author,
               audiences,
               audienceIds,
               tone,
@@ -636,7 +635,6 @@ export function ContentAgentTab({
     siteSlug !== domain ||
     siteName !== initSiteName ||
     siteTagline !== initSiteTagline ||
-    author !== initAuthor ||
     tone !== initTone ||
     JSON.stringify(audienceIds) !== JSON.stringify(initAudienceIds) ||
     !!pendingLogo ||
@@ -666,9 +664,6 @@ export function ContentAgentTab({
         <Input label="Site Slug" value={siteSlug} onChange={(e): void => setSiteSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, ""))} placeholder="e.g. sillycapybara" />
         <Input label="Site Name" value={siteName} onChange={(e): void => setSiteName(e.target.value)} />
         <Input label="Tagline" value={siteTagline} onChange={(e): void => setSiteTagline(e.target.value)} />
-        {!isGrid && (
-          <Input label="Default Author" value={author} onChange={(e): void => setAuthor(e.target.value)} placeholder="e.g. Sarah Mitchell" />
-        )}
         {!isGrid && (
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
@@ -1645,8 +1640,24 @@ export function ContentAgentTab({
     </div>
   );
 
+  const siteAuthors = normalizeSiteAuthors(siteConfig?.authors);
+  const authorsContent = (
+    <SiteAuthorsSection
+      domain={domain}
+      siteName={initSiteName}
+      vertical={(briefRaw?.vertical as string | undefined) || undefined}
+      topics={isPerTopic ? (briefRaw?.topics_v2 as Array<{ name: string }>).map((t) => t.name) : initTopics}
+      tone={initTone || undefined}
+      audience={siteAudienceOf(siteConfig)}
+      initial={siteAuthors}
+      legacyAuthor={initAuthor || undefined}
+    />
+  );
+
   const tabs = [
     { id: "identity", label: "Identity", content: identityContent },
+    // Who writes for the site (Modern only; Grid sites credit their sources).
+    ...(isGrid ? [] : [{ id: "authors", label: siteAuthors.length > 0 ? `Authors (${siteAuthors.length})` : "Authors", content: authorsContent }]),
     { id: "theme", label: "Theme", content: <SiteThemeTab domain={domain} /> },
     ...(isGrid
       ? [{ id: "grid", label: "Grid", content: <GridSiteTab domain={domain} /> }]

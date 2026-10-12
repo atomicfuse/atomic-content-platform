@@ -9,11 +9,14 @@ import { parse as parseYaml } from "yaml";
 import { Octokit } from "@octokit/rest";
 import { readFile } from "./github.js";
 import type { SiteConfig, SiteBrief } from "../types.js";
+import { normalizeSiteAuthors, type SiteAuthor } from "../authors/bylines.js";
 
 export interface SiteBriefData {
   domain: string;
   siteName: string;
   author?: string;
+  /** Library authors writing for this site (bylines). */
+  authors?: SiteAuthor[];
   group: string;
   brief: SiteBrief;
   /** `theme.template` from site.yaml ("grid" → the scheduler must skip this site). */
@@ -63,6 +66,7 @@ export async function readSiteBrief(
     domain: config.domain,
     siteName: config.site_name,
     author: config.author,
+    authors: normalizeSiteAuthors(config.authors),
     group: config.group,
     brief,
     ...(typeof themeTemplate === "string" ? { themeTemplate } : {}),

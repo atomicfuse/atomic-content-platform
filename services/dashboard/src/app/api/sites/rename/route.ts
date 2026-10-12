@@ -16,6 +16,7 @@ import { R2_BUCKET_PROD } from "@/lib/constants";
 import { getMongoDb } from "@/lib/mongo";
 import { COLLECTIONS } from "@/lib/db/collections";
 import { siteRenameKey } from "@/lib/site-rename-key";
+import { isReservedSiteId } from "@/lib/reserved-site-ids";
 
 interface RenameRequestBody {
   oldDomain: string;
@@ -56,6 +57,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         status: "error",
         message: "Slug must contain only lowercase letters and numbers",
       },
+      { status: 400 },
+    );
+  }
+  if (isReservedSiteId(newDomain)) {
+    return NextResponse.json(
+      { status: "error", message: `"${newDomain}" is reserved by the platform — choose a different slug` },
       { status: 400 },
     );
   }

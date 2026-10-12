@@ -48,6 +48,7 @@ import { logoMedianContrast, MIN_LOGO_CONTRAST } from "@/lib/logo-contrast";
 import sharp from "sharp";
 import { versionedAsset } from "@/lib/versioned-asset";
 import { logoBackgroundFor } from "@/lib/logo-background";
+import { isReservedSiteId } from "@/lib/reserved-site-ids";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
@@ -78,6 +79,9 @@ export async function createSiteAndBuildStaging(
   // through unchanged (same object).
   const data = wizardDataForTemplate(formData);
   const projectName = data.pagesProjectName;
+  if (isReservedSiteId(projectName)) {
+    throw new Error(`"${projectName}" is reserved by the platform — choose a different slug.`);
+  }
 
   // The site folder in the network repo uses the project name as identifier.
   // sync-kv.yml iterates sites/*/ on commits to staging/** and main, and
@@ -1058,6 +1062,12 @@ export interface StagingSiteConfig {
    *  rewritten to the new per-topic shape and legacy bundle_ids/category_ids/
    *  tag_ids are stripped. */
   topics_v2?: TopicV2[];
+  /** Site authors (Content Agent tab Authors section). Validated and topic-split by the save route. */
+  authors?: Array<{ id: string; topics: string[] }>;
+  /** Author ids the user confirmed assigning although they're exclusive to other sites (D2). */
+  confirmedExclusive?: string[];
+  /** "Give every site an author": refuse (409 has-authors) if the site already has authors in git. */
+  onlyIfNoAuthors?: boolean;
 }
 
 /** Read the current site config from the staging branch. */

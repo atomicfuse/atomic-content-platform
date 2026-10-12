@@ -1,4 +1,4 @@
-export type GenerationSource = "scheduler" | "dashboard" | "wp-import" | "grid-summaries";
+export type GenerationSource = "scheduler" | "dashboard" | "wp-import" | "grid-summaries" | "authors";
 export type RunStatus = "success" | "partial" | "error" | "no_content";
 
 export interface GenerationEvent {

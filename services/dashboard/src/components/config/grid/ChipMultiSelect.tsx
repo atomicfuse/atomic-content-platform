@@ -33,10 +33,14 @@ const chipClass =
  * "+ Add" list. Replaces walls of checkboxes for long option lists (verticals, bundles, categories).
  * Values no longer in `options` stay visible as "(missing)" chips so they can be removed.
  */
+/** Search box + up to 16rem of options, plus a little margin. */
+const POPOVER_HEIGHT = 320;
+
 export function ChipMultiSelect({
   label, addLabel, value, options, onChange, emptyText = "None", addAriaLabel,
 }: ChipMultiSelectProps): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const [placement, setPlacement] = useState<"below" | "above">("below");
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +65,15 @@ export function ChipMultiSelect({
   function close(): void {
     setOpen(false);
     setQuery("");
+  }
+
+  /** Opens above the control when the space below can't hold the list (e.g. near a sticky save bar). */
+  function openPopover(): void {
+    const rect = rootRef.current?.getBoundingClientRect();
+    const spaceBelow = rect ? window.innerHeight - rect.bottom : Infinity;
+    const spaceAbove = rect ? rect.top : 0;
+    setPlacement(spaceBelow < POPOVER_HEIGHT && spaceAbove > spaceBelow ? "above" : "below");
+    setOpen(true);
   }
 
   let lastGroup: string | undefined;
@@ -89,7 +102,7 @@ export function ChipMultiSelect({
           type="button"
           aria-label={addAriaLabel ?? addLabel}
           aria-expanded={open}
-          onClick={(): void => (open ? close() : setOpen(true))}
+          onClick={(): void => (open ? close() : openPopover())}
           className="inline-flex items-center gap-1 rounded-full border border-dashed border-[var(--border-primary)] px-2.5 py-0.5 text-xs font-medium text-cyan hover:border-cyan hover:bg-cyan/5 transition-colors"
         >
           + {addLabel}
@@ -97,7 +110,11 @@ export function ChipMultiSelect({
       </div>
 
       {open && (
-        <div className="absolute left-0 z-20 mt-1.5 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg">
+        <div
+          data-popover
+          data-placement={placement}
+          className={`absolute left-0 z-20 w-72 max-w-[calc(100vw-2rem)] rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] shadow-lg ${placement === "above" ? "bottom-full mb-1.5 origin-bottom-left" : "top-full mt-1.5 origin-top-left"}`}
+        >
           <input
             type="search"
             autoFocus

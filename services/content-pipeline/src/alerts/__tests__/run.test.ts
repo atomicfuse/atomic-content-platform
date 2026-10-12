@@ -253,6 +253,12 @@ describe("runAlerts — zero_articles_14d", () => {
     );
   });
 
+  it("does not fire when the article count couldn't be read (unknown is not zero)", async () => {
+    mockGatherInputs.mockResolvedValue({ ...OK_INPUTS, createdLast14d: null, createdLast30d: null, failedLast30d: null });
+    await runAlerts(NOW);
+    expect(mockNotifyAttention).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Article creation alert"));
+  });
+
   it("does not fire when articles were created in 14d", async () => {
     mockGatherInputs.mockResolvedValue({
       ...OK_INPUTS,

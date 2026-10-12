@@ -64,6 +64,8 @@ import { getWeeklySummary, getSchedulerTimezone, backfillWeeklySummary } from ".
 import { upsertArticlesBatch } from "../../lib/db/articles.js";
 import { regenerateSummary, saveEditedSummary, setSummaryPinned, startGridSummariesRun } from "../grid-summaries/index.js";
 import { GridSummaryError } from "../grid-summaries/errors.js";
+import { generateAuthorPart } from "../../authors/generate.js";
+import { AuthorGenerateError, parseGenerateBody } from "../../authors/http.js";
 import { parsePinBody, parseRegenerateBody, parseSaveBody } from "../grid-summaries/http.js";
 
 function sendJson(
@@ -821,6 +823,23 @@ async function handleRequest(
         const status = err instanceof GridSummaryError ? err.status : 500;
         const message = err instanceof Error ? err.message : String(err);
         console.error(`[server] ${pathname} error:`, message);
+        sendJson(res, status, { status: "error", message });
+      }
+      return;
+    }
+  }
+
+  // Authors — POST /authors/generate: one profile part, not saved (the dashboard shows it as unsaved).
+  {
+    const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (req.method === "POST" && pathname === "/authors/generate") {
+      try {
+        const out = await generateAuthorPart(parseGenerateBody(await readBody(req)));
+        sendJson(res, 200, { status: "ok", ...out });
+      } catch (err) {
+        const status = err instanceof AuthorGenerateError ? err.status : 500;
+        const message = err instanceof Error ? err.message : String(err);
+        console.error("[server] /authors/generate error:", message);
         sendJson(res, status, { status: "error", message });
       }
       return;

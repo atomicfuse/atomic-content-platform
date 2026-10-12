@@ -16,6 +16,10 @@ import { versionedAsset } from "@/lib/versioned-asset";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 import { applyGridConfigUpdates } from "@/lib/grid-config";
+import { applySiteAuthors, refuseIfHasAuthors } from "@/lib/authors/site-assignment";
+import { siteTopicsOf } from "@/lib/authors/assignment";
+import { invalidateConnectedSites } from "@/lib/authors/with-sites";
+import type { SiteAuthor } from "@/lib/authors/types";
 
 interface SaveRequestBody {
   domain: string;
@@ -343,6 +347,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       existing.theme = theme;
     }
 
+    // Authors last, so topics changed in this same request are what gets split among them.
+    let savedAuthors: SiteAuthor[] | undefined;
+    if (configUpdates?.authors !== undefined) {
+      const refused = refuseIfHasAuthors(existing.authors, configUpdates.onlyIfNoAuthors === true);
+      if (refused && !refused.ok) {
+        return NextResponse.json({ status: "error", message: refused.error, code: refused.code }, { status: refused.status });
+      }
+      const applied = await applySiteAuthors(domain, configUpdates.authors, siteTopicsOf(existing), configUpdates.confirmedExclusive ?? []);
+      if (!applied.ok) {
+        return NextResponse.json({ status: "error", message: applied.error, exclusive: applied.exclusive }, { status: applied.status });
+      }
+      if (applied.authors.length > 0) existing.authors = applied.authors;
+      else delete existing.authors;
+      savedAuthors = applied.authors;
+      invalidateConnectedSites();
+    }
+
     // Build the file list — single commit for everything
     const files: Array<{ path: string; content: string | Buffer }> = [
       {
@@ -439,7 +460,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    return NextResponse.json({ status: "ok" });
+    return NextResponse.json({ status: "ok", ...(savedAuthors ? { authors: savedAuthors } : {}) });
   } catch (err) {
     return NextResponse.json(
       { status: "error", message: err instanceof Error ? err.message : "Unknown error" },

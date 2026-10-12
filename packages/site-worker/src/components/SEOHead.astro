@@ -21,6 +21,10 @@ interface Props {
   tags?: string[];
   /** When true, emits a noindex robots meta tag. */
   noindex?: boolean;
+  /** Author page URL (absolute). Adds `url` to the article's author JSON-LD. */
+  authorUrl?: string;
+  /** Pre-built JSON-LD (already escaped, e.g. from authorJsonLd). Replaces the Article JSON-LD. */
+  jsonLd?: string;
 }
 
 const {
@@ -34,6 +38,8 @@ const {
   author,
   tags,
   noindex = false,
+  authorUrl,
+  jsonLd: customJsonLd,
 } = Astro.props;
 
 // Resolve image to absolute URL — social scrapers can't handle relative paths
@@ -49,7 +55,7 @@ const jsonLd = publishDate
       image: absoluteImage ?? undefined,
       datePublished: publishDate,
       ...(author
-        ? { author: { '@type': 'Person', name: author } }
+        ? { author: { '@type': 'Person', name: author, ...(authorUrl ? { url: authorUrl } : {}) } }
         : {}),
       publisher: {
         '@type': 'Organization',
@@ -90,4 +96,4 @@ const jsonLd = publishDate
 {absoluteImage && <meta name="twitter:image" content={absoluteImage} />}
 
 {/* ---- JSON-LD ---- */}
-{jsonLd && <script is:inline type="application/ld+json" set:html={jsonLd} />}
+{(customJsonLd ?? jsonLd) && <script is:inline type="application/ld+json" set:html={customJsonLd ?? jsonLd} />}

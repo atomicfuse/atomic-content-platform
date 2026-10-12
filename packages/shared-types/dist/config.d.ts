@@ -2,6 +2,7 @@ import type { TrackingConfig } from "./tracking.js";
 import type { ScriptEntry, AdsConfig } from "./ads.js";
 import type { AdPlaceholderHeights, InlineAdConfig } from "./monetization.js";
 import type { GridConfig, ResolvedGridConfig, GridCardConfig, ResolvedGridCardConfig } from "./grid.js";
+import type { SiteAuthorAssignment } from "./author.js";
 /**
  * Per-criterion weight configuration for the content quality agent.
  * Values should sum to 100. Defaults to 20 each when not configured.
@@ -492,6 +493,8 @@ export interface SiteConfig {
     site_tagline?: string | null;
     /** Default author name for generated articles. */
     author?: string;
+    /** Authors writing for this site, each with optional topics (supersedes `author` once set). */
+    authors?: SiteAuthorAssignment[];
     /**
      * @deprecated Legacy single-group field. Use `groups` array instead.
      * If only `group` is present, treated as `groups: [group]`.
@@ -609,6 +612,8 @@ export interface ResolvedConfig {
     inlineAdConfig: InlineAdConfig;
     /** Fully-resolved Grid template configuration. Present only on Grid sites. */
     grid?: ResolvedGridConfig;
+    /** Site authors (runtime default `[]` in the worker — KV entries seeded before authors lack it). */
+    authors?: SiteAuthorAssignment[];
 }
 /**
  * Recursively makes all properties of T optional.

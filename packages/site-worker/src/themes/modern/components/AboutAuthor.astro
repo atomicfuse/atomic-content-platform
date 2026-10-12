@@ -1,0 +1,76 @@
+---
+import type { AuthorProfile } from '@atomic-platform/shared-types';
+import { firstName, initials } from '../../../lib/authors';
+
+interface Props { profile: AuthorProfile; href: string; }
+const { profile, href } = Astro.props;
+---
+
+<aside class="about-author" aria-labelledby="about-author-name">
+  <a class="about-author-portrait" href={href} tabindex="-1" aria-hidden="true">
+    {profile.portrait
+      ? <img src={profile.portrait} alt="" width="72" height="72" loading="lazy" />
+      : <span class="about-author-initials">{initials(profile.name)}</span>}
+  </a>
+  <div class="about-author-body">
+    <p class="about-author-eyebrow">About the author</p>
+    <h2 id="about-author-name" class="about-author-name"><a href={href}>{profile.name}</a></h2>
+    {profile.tagline && <p class="about-author-tagline">{profile.tagline}</p>}
+    {profile.bio && <p class="about-author-bio">{profile.bio}</p>}
+    <a class="about-author-more" href={href}>More from {firstName(profile.name)} &rarr;</a>
+  </div>
+</aside>
+
+<style>
+  .about-author {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    margin-top: 2.5rem;
+    padding: 1.25rem;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface, #f9fafb);
+  }
+  .about-author-portrait { flex-shrink: 0; }
+  .about-author-portrait img,
+  .about-author-initials {
+    width: 72px;
+    height: 72px;
+    border-radius: 9999px;
+    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .about-author-initials {
+    background: var(--color-primary, #1a1a2e);
+    color: var(--color-article_hero_title, #fff);
+    font-weight: 700;
+    font-size: 1.375rem;
+  }
+  .about-author-eyebrow {
+    margin: 0 0 0.25rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-muted, #6b7280);
+  }
+  .about-author-name { margin: 0; font-size: 1.125rem; }
+  .about-author-name a { color: inherit; text-decoration: none; }
+  .about-author-name a:hover { text-decoration: underline; }
+  .about-author-tagline { margin: 0.125rem 0 0.5rem; color: var(--color-muted, #6b7280); font-size: 0.9375rem; }
+  .about-author-bio {
+    margin: 0 0 0.5rem;
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .about-author-more { font-weight: 600; font-size: 0.9375rem; color: var(--color-link, var(--color-primary, #1a1a2e)); }
+  @media (max-width: 480px) {
+    .about-author { flex-direction: column; }
+  }
+</style>

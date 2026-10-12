@@ -265,6 +265,7 @@ async function processSingleSite(
         preloadedBrief: {
           siteName: briefData.siteName,
           author: briefData.author,
+          authors: briefData.authors,
           group: briefData.group,
           brief,
         },

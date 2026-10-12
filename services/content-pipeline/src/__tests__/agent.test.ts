@@ -237,6 +237,13 @@ describe("runContentGeneration", () => {
     }
   });
 
+  it("writes publishDate with the time, so same-day articles sort newest first", async () => {
+    const result = await runContentGeneration({ siteDomain: "coolnews.dev" }, config);
+    const created = result.results.find((r) => r.status === "created");
+    const written = created?._pendingArticle?.content ?? "";
+    expect(written).toMatch(/publishDate: '?\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z'?/);
+  });
+
   it("records the original aggregator title as source_title in frontmatter", async () => {
     const result = await runContentGeneration(
       { siteDomain: "coolnews.dev" },
