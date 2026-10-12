@@ -167,14 +167,14 @@ function planConditions(
 
   if (want("monthly_creation_alert") && cfg.monthlyCreationAlert.enabled) {
     const thresholdFailed =
-      inputs.expectedMonthly > 0
+      inputs.expectedMonthly > 0 && inputs.failedLast30d !== null
         ? inputs.failedLast30d > (cfg.monthlyCreationAlert.failureThresholdPct / 100) * inputs.expectedMonthly
         : false;
     plans.push({
       conditionId: "monthly_creation_alert",
       input: {
         alerting: thresholdFailed,
-        value: inputs.createdLast30d,
+        value: inputs.createdLast30d ?? 0,
         policy: "transition_then_interval" as FirePolicy,
         intervalMs: 30 * DAY_MS,
       },
@@ -186,6 +186,7 @@ function planConditions(
     plans.push({
       conditionId: "zero_articles_14d",
       input: {
+        // null = the count couldn't be read: unknown, so it must not alert.
         alerting: inputs.createdLast14d === 0,
         value: 0,
         policy: "transition_then_interval" as FirePolicy,

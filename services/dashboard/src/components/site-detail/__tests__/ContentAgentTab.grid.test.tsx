@@ -47,11 +47,11 @@ function renderTab(siteConfig: Record<string, unknown> | null): void {
 }
 
 describe("ContentAgentTab — Grid vs Modern site-settings menus", () => {
-  it("Grid site: hides Content Brief tab and Default Author/Target Audiences/Tone fields", () => {
+  it("Grid site: hides Content Brief and Authors tabs and Target Audiences/Tone fields", () => {
     renderTab({ theme: { template: "grid" } });
 
     // Identity is the default tab — its fields render immediately.
-    expect(screen.queryByLabelText("Default Author")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Authors/ })).not.toBeInTheDocument();
     expect(screen.queryByText("Target Audiences")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Tone")).not.toBeInTheDocument();
 
@@ -66,10 +66,10 @@ describe("ContentAgentTab — Grid vs Modern site-settings menus", () => {
     expect(screen.getByRole("button", { name: "Save Identity" })).toBeInTheDocument();
   });
 
-  it("Modern site: keeps Content Brief tab and Default Author/Target Audiences/Tone fields (unchanged)", () => {
+  it("Modern site: keeps Content Brief tab, an Authors tab (replaces Default Author), Target Audiences and Tone", () => {
     renderTab({ theme: { base: "classic" } });
 
-    expect(screen.getByLabelText("Default Author")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Authors/ })).toBeInTheDocument();
     expect(screen.getByText("Target Audiences")).toBeInTheDocument();
     expect(screen.getByLabelText("Tone")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Content Brief" })).toBeInTheDocument();
@@ -78,7 +78,7 @@ describe("ContentAgentTab — Grid vs Modern site-settings menus", () => {
   it("Modern site (no siteConfig at all): keeps Content Brief tab and content-agent fields", () => {
     renderTab(null);
 
-    expect(screen.getByLabelText("Default Author")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Authors/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Content Brief" })).toBeInTheDocument();
   });
 });

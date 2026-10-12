@@ -4,7 +4,7 @@ import type { AuthorInput, AuthorPart, AuthorRecord, PortraitStyle } from "./typ
  * Browser-side order of profile generation. Each part is its own request (CloudGrid cuts requests at ~60 s), and
  * every result feeds the next part (a bio is written for the generated name and beats). Nothing is saved here.
  */
-export const ALL_PARTS: AuthorPart[] = ["name", "tagline", "bio", "beats", "portrait"];
+export const ALL_PARTS: AuthorPart[] = ["name", "tagline", "bio", "beats", "verticals", "portrait"];
 
 export interface GenerateContext {
   site?: string;
@@ -12,6 +12,8 @@ export interface GenerateContext {
   category?: string;
   topics?: string[];
   tone?: string;
+  /** Who reads the site, e.g. "New parents, Expecting moms". */
+  audience?: string;
   beatHint?: string;
 }
 
@@ -20,7 +22,7 @@ export type PartStatus = "pending" | "running" | "done" | "error";
 export async function generatePart(
   part: AuthorPart,
   draft: Partial<AuthorInput>,
-  opts: { authorId?: string; context?: GenerateContext; takenNames: string[]; portraitStyle?: PortraitStyle },
+  opts: { authorId?: string; context?: GenerateContext; takenNames: string[]; portraitStyle?: PortraitStyle; verticalOptions?: string[] },
   fetchFn: typeof fetch = fetch,
 ): Promise<Partial<AuthorInput>> {
   const res = await fetchFn("/api/authors/generate", {
@@ -30,6 +32,7 @@ export async function generatePart(
       part,
       ...(opts.authorId ? { authorId: opts.authorId } : {}),
       ...(part === "portrait" && opts.portraitStyle ? { portraitStyle: opts.portraitStyle } : {}),
+      ...(part === "verticals" ? { verticalOptions: opts.verticalOptions ?? [] } : {}),
       draft: { name: draft.name, tagline: draft.tagline, bio: draft.bio, beats: draft.beats },
       siteContext: opts.context ?? {},
       takenNames: opts.takenNames,
@@ -37,6 +40,11 @@ export async function generatePart(
   });
   const out = (await res.json().catch(() => ({}))) as { status?: string; value?: unknown; message?: string };
   if (!res.ok || out.status !== "ok") throw new Error(out.message ?? `Generation failed (${res.status})`);
+  const isList = part === "beats" || part === "verticals";
+  const shapeOk = isList ? Array.isArray(out.value) && out.value.every((v) => typeof v === "string")
+    : part === "portrait" ? !!out.value && typeof out.value === "object"
+      : typeof out.value === "string";
+  if (!shapeOk) throw new Error(`Generation returned an unexpected ${part}. Try again.`);
   return { [part]: out.value } as Partial<AuthorInput>;
 }
 
@@ -48,6 +56,7 @@ export async function runParts(
     context?: GenerateContext;
     takenNames: string[];
     portraitStyle?: PortraitStyle;
+    verticalOptions?: string[];
     /** Each part's result as soon as it lands, so the caller can apply just that field. */
     onPatch?: (patch: Partial<AuthorInput>) => void;
   },
@@ -59,7 +68,7 @@ export async function runParts(
   for (const part of parts) {
     onStatus(part, "running");
     try {
-      const patch = await generatePart(part, current, { authorId: part === "portrait" ? opts.authorIdFor(current) : undefined, context: opts.context, takenNames: opts.takenNames, portraitStyle: opts.portraitStyle }, fetchFn);
+      const patch = await generatePart(part, current, { authorId: part === "portrait" ? opts.authorIdFor(current) : undefined, context: opts.context, takenNames: opts.takenNames, portraitStyle: opts.portraitStyle, verticalOptions: opts.verticalOptions }, fetchFn);
       current = { ...current, ...patch };
       opts.onPatch?.(patch);
       onStatus(part, "done");
@@ -70,13 +79,14 @@ export async function runParts(
   return current;
 }
 
-export function missingParts(a: Pick<AuthorRecord, "tagline" | "bio" | "beats" | "portrait">): AuthorPart[] {
+export function missingParts(a: Pick<AuthorRecord, "tagline" | "bio" | "beats" | "verticals" | "portrait">): AuthorPart[] {
   const parts: AuthorPart[] = [];
   if (!a.bio.trim()) {
     if (!a.tagline.trim()) parts.push("tagline");
     parts.push("bio");
     if (a.beats.length === 0) parts.push("beats");
   }
+  if (!a.verticals?.length) parts.push("verticals");
   if (!a.portrait) parts.push("portrait");
   return parts;
 }

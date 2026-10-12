@@ -25,11 +25,14 @@ export interface AlertInputs {
   trackingOff: boolean;
   reviewCount: number;
   /** Sum of `created` from generation_events with status success/partial in last 30d. */
-  createdLast30d: number;
+  /** null when it couldn't be read (unknown, not zero: a zero would fire false alerts). */
+  createdLast30d: number | null;
   /** Sum of `failed` from generation_events in last 30d. */
-  failedLast30d: number;
+  /** null when it couldn't be read (unknown, not zero: a zero would fire false alerts). */
+  failedLast30d: number | null;
   /** Sum of `created` from generation_events with status success/partial in last 14d. */
-  createdLast14d: number;
+  /** null when it couldn't be read (unknown, not zero: a zero would fire false alerts). */
+  createdLast14d: number | null;
   /** Expected monthly article count from the schedule. */
   expectedMonthly: number;
   /** Human-readable site name from site.yaml. */
@@ -168,25 +171,25 @@ export async function gatherInputs(
 
       // (4) createdLast30d — sum of created with status success/partial
       sumFieldWithStatus(domain, "created", cutoff30d, successStatuses).catch(
-        (err: unknown) => {
+        (err: unknown): number | null => {
           console.error(`[alerts/inputs] sumFieldWithStatus(created,30d) failed for ${domain}:`, err);
-          return 0;
+          return null;
         },
       ),
 
       // (5) failedLast30d — sum of failed from all events in last 30d
       sumFieldWithStatus(domain, "failed", cutoff30d, successStatuses.concat("error")).catch(
-        (err: unknown) => {
+        (err: unknown): number | null => {
           console.error(`[alerts/inputs] sumFieldWithStatus(failed,30d) failed for ${domain}:`, err);
-          return 0;
+          return null;
         },
       ),
 
       // (6) createdLast14d — sum of created with status success/partial
       sumFieldWithStatus(domain, "created", cutoff14d, successStatuses).catch(
-        (err: unknown) => {
+        (err: unknown): number | null => {
           console.error(`[alerts/inputs] sumFieldWithStatus(created,14d) failed for ${domain}:`, err);
-          return 0;
+          return null;
         },
       ),
 

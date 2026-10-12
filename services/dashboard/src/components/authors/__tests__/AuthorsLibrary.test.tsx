@@ -16,7 +16,7 @@ import type { AuthorListItem } from "@/lib/authors/types";
 afterEach(() => { cleanup(); replace.mockClear(); search = ""; });
 
 const mk = (id: string, extra: Partial<AuthorListItem> = {}): AuthorListItem => ({
-  id, name: id, tagline: "", bio: "Bio", beats: [], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
+  id, name: id, tagline: "", bio: "Bio", beats: [], verticals: [], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
   links: {}, exclusive_sites: [], created_at: "", updated_at: "", sites: [], ...extra,
 });
 
@@ -47,5 +47,12 @@ describe("AuthorsLibrary", () => {
   it("empty library explains how to start", () => {
     render(<AuthorsLibrary authors={[]} />);
     expect(screen.getByText("No authors yet")).toBeTruthy();
+  });
+
+  it("vertical filter is in the URL; cards show the Best fit categories as text", async () => {
+    render(<AuthorsLibrary authors={[mk("ella-hughes", { name: "Ella Hughes", verticals: ["Entertainment"] }), mk("ben-foster", { name: "Ben Foster" })]} />);
+    expect(document.querySelector("[data-verticals]")?.textContent).toBe("Entertainment");
+    await userEvent.selectOptions(screen.getByLabelText("Best fit"), "Entertainment");
+    expect(replace).toHaveBeenCalledWith("/authors?v=Entertainment", { scroll: false });
   });
 });

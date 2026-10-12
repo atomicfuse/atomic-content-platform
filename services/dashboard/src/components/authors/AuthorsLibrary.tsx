@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { filterAuthors, filterCounts, type LibraryFilter, type LibrarySort } from "@/lib/authors/library";
+import { filterAuthors, filterCounts, verticalsIn, type LibraryFilter, type LibrarySort } from "@/lib/authors/library";
 import type { AuthorListItem } from "@/lib/authors/types";
 import { AuthorCard } from "./AuthorCard";
 
@@ -31,6 +31,7 @@ export function AuthorsLibrary({ authors, actions }: AuthorsLibraryProps): React
   const params = useSearchParams();
   const filter = (FILTERS.some((f) => f.id === params.get("filter")) ? params.get("filter") : "all") as LibraryFilter;
   const sort = (SORTS.some((s) => s.id === params.get("sort")) ? params.get("sort") : "updated") as LibrarySort;
+  const vertical = params.get("v") ?? "";
   const [q, setQ] = useState(params.get("q") ?? "");
 
   function setParam(key: string, value: string, fallback: string): void {
@@ -41,7 +42,8 @@ export function AuthorsLibrary({ authors, actions }: AuthorsLibraryProps): React
   }
 
   const counts = useMemo(() => filterCounts(authors), [authors]);
-  const shown = useMemo(() => filterAuthors(authors, q, filter, sort), [authors, q, filter, sort]);
+  const shown = useMemo(() => filterAuthors(authors, q, filter, sort, vertical), [authors, q, filter, sort, vertical]);
+  const verticalOptions = useMemo(() => verticalsIn(authors), [authors]);
 
   return (
     <div className="space-y-6">
@@ -75,7 +77,16 @@ export function AuthorsLibrary({ authors, actions }: AuthorsLibraryProps): React
             </button>
           ))}
         </div>
-        <label className="ml-auto flex items-center gap-2 text-xs text-[var(--text-muted)]">
+        {verticalOptions.length > 0 && (
+          <label className="ml-auto flex items-center gap-2 text-xs text-[var(--text-muted)]">
+            Best fit
+            <select aria-label="Best fit" value={vertical} onChange={(e): void => setParam("v", e.target.value, "")} className="rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50">
+              <option value="">Any</option>
+              {verticalOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+        )}
+        <label className={`${verticalOptions.length > 0 ? "" : "ml-auto "}flex items-center gap-2 text-xs text-[var(--text-muted)]`}>
           Sort
           <select
             value={sort}

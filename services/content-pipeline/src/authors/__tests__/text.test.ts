@@ -95,3 +95,25 @@ describe("name heritage", () => {
   });
 });
 
+describe("verticals part", () => {
+  const OPTIONS = ["Travel", "Food & Drink", "Entertainment", "Home & Garden"];
+  it("prompt lists the allowed categories", () => {
+    const p = buildTextPrompt("verticals", { name: "Maya Ortiz", beats: ["Coffee", "Cafes"] }, {}, [], () => 0, OPTIONS);
+    expect(p.user).toContain("Travel | Food & Drink | Entertainment | Home & Garden");
+  });
+  it("keeps 1–3 names from the list, fixing case and dropping unknown or repeated ones", () => {
+    expect(parseTextPart("verticals", '{"verticals":["food & drink","Travel","Cooking","travel"]}', [], OPTIONS))
+      .toEqual({ ok: true, value: ["Food & Drink", "Travel"] });
+  });
+  it("rejects none or more than three valid picks", () => {
+    expect(parseTextPart("verticals", '{"verticals":["Cooking"]}', [], OPTIONS)).toMatchObject({ ok: false });
+    expect(parseTextPart("verticals", '{"verticals":["Travel","Food & Drink","Entertainment","Home & Garden"]}', [], OPTIONS)).toMatchObject({ ok: false });
+  });
+});
+
+describe("site audience", () => {
+  it("is part of the site context the AI writes for", () => {
+    expect(buildTextPrompt("bio", { name: "Maya Ortiz" }, { siteName: "Baby Parent Trends", audience: "New parents, Expecting moms" }, []).user).toContain("Site audience: New parents, Expecting moms");
+  });
+});
+

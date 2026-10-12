@@ -27,6 +27,7 @@ export function parseAuthorYaml(id: string, raw: string): AuthorRecord | null {
     tagline: typeof d.tagline === "string" ? d.tagline.trim() : "",
     bio: typeof d.bio === "string" ? d.bio.trim() : "",
     beats: strList(d.beats),
+    verticals: strList(d.verticals),
     portrait: p && validPortraitPath(p.path) ? { kind: p.kind === "uploaded" ? "uploaded" : "generated", path: p.path } : null,
     links,
     exclusive_sites: strList(d.exclusive_sites),
@@ -37,7 +38,7 @@ export function parseAuthorYaml(id: string, raw: string): AuthorRecord | null {
 
 export function serializeAuthor(a: AuthorRecord): string {
   const doc: Record<string, unknown> = {
-    id: a.id, name: a.name, tagline: a.tagline, bio: a.bio, beats: a.beats,
+    id: a.id, name: a.name, tagline: a.tagline, bio: a.bio, beats: a.beats, verticals: a.verticals,
     ...(a.portrait ? { portrait: a.portrait } : {}),
     links: a.links, exclusive_sites: a.exclusive_sites,
     created_at: a.created_at, updated_at: a.updated_at,
@@ -68,6 +69,8 @@ export function validateAuthorInput(input: unknown): { ok: true; value: AuthorIn
   if (bio.length > 1500) return { ok: false, error: "Bio is too long" };
   const beats = strList(i.beats);
   if (beats.length > 8) return { ok: false, error: "At most 8 beats" };
+  const verticals = strList(i.verticals);
+  if (verticals.length > 3) return { ok: false, error: "At most 3 best-fit categories" };
   const links: AuthorInput["links"] = {};
   const rawLinks = (i.links && typeof i.links === "object" ? i.links : {}) as Record<string, unknown>;
   for (const k of LINK_KEYS) {
@@ -81,7 +84,7 @@ export function validateAuthorInput(input: unknown): { ok: true; value: AuthorIn
   return {
     ok: true,
     value: {
-      name, tagline, bio, beats, links,
+      name, tagline, bio, beats, verticals, links,
       portrait: p ? { kind: p.kind === "uploaded" ? "uploaded" : "generated", path: p.path as string } : null,
       exclusive_sites: strList(i.exclusive_sites),
     },

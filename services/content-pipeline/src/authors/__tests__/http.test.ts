@@ -18,4 +18,12 @@ describe("parseGenerateBody", () => {
     expect(parseGenerateBody('{"part":"portrait","authorId":"maya-ortiz","portraitStyle":"illustrated","draft":{}}').portraitStyle).toBe("illustrated");
     expect(() => parseGenerateBody('{"part":"portrait","authorId":"maya-ortiz","portraitStyle":"anime","draft":{}}')).toThrow(/portraitStyle/);
   });
+  it("verticals needs the option list; other parts don't", () => {
+    expect(() => parseGenerateBody('{"part":"verticals","draft":{}}')).toThrow(/verticalOptions/);
+    expect(parseGenerateBody('{"part":"verticals","draft":{},"verticalOptions":["Travel"]}').verticalOptions).toEqual(["Travel"]);
+  });
+  it("keeps the site audience in the context", () => {
+    expect(parseGenerateBody('{"part":"bio","draft":{},"siteContext":{"audience":"New parents"}}').siteContext).toEqual({ audience: "New parents" });
+  });
 });
+

@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 
 export default async function AuthorsPage(): Promise<React.ReactElement> {
   const [authors, index] = await Promise.all([listAuthors().then(withSites), getDashboardIndex()]);
-  return <AuthorsPageClient authors={authors} sites={index.sites.map((s) => ({ domain: s.domain }))} />;
+  return <AuthorsPageClient authors={authors} sites={index.sites.map((s) => ({ domain: s.domain, vertical: s.vertical || undefined, status: s.status }))} />;
 }

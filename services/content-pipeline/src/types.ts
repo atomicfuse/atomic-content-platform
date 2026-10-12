@@ -31,6 +31,8 @@ export interface ArticleFrontmatter {
   status: "draft" | "review" | "approved" | "published";
   publishDate: Date | string;
   author: string;
+  /** Library author id (authors/<id>.yaml) — set on new articles credited to a site author. */
+  author_id?: string;
   tags: string[];
   featuredImage?: string;
   reviewer_notes: string;
@@ -147,5 +149,7 @@ export interface SiteConfig {
   brief: SiteBrief;
   /** Default author name for generated articles. */
   author?: string;
+  /** Library authors writing for this site (site.yaml authors:). */
+  authors?: Array<{ id: string; topics: string[] }>;
   [key: string]: unknown;
 }

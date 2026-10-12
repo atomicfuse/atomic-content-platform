@@ -4,7 +4,7 @@ import type { AuthorRecord } from "../types";
 
 const ELLA: AuthorRecord = {
   id: "ella-hughes", name: "Ella Hughes", tagline: "Celebrity & royals writer", bio: "Writes about royals.",
-  beats: ["Celebrities", "Royals"], portrait: { kind: "generated", path: "/authors/assets/ella-hughes-abc1234567.webp" },
+  beats: ["Celebrities", "Royals"], verticals: ["Entertainment"], portrait: { kind: "generated", path: "/authors/assets/ella-hughes-abc1234567.webp" },
   links: { x: "https://x.com/ella" }, exclusive_sites: ["scoopella"],
   created_at: "2026-10-12T08:00:00.000Z", updated_at: "2026-10-12T08:00:00.000Z",
 };
@@ -49,5 +49,18 @@ describe("isIncomplete", () => {
     expect(isIncomplete(ELLA)).toBe(false);
     expect(isIncomplete({ ...ELLA, portrait: null })).toBe(true);
     expect(isIncomplete({ ...ELLA, bio: " " })).toBe(true);
+  });
+});
+
+describe("verticals (Best fit)", () => {
+  it("round-trips through YAML and defaults to []", () => {
+    const a = parseAuthorYaml("ann-lee", "id: ann-lee\nname: Ann Lee\nverticals: [Travel, Food & Drink]\n")!;
+    expect(a.verticals).toEqual(["Travel", "Food & Drink"]);
+    expect(parseAuthorYaml("ann-lee", serializeAuthor(a))!.verticals).toEqual(["Travel", "Food & Drink"]);
+    expect(parseAuthorYaml("bo-kim", "id: bo-kim\nname: Bo Kim\n")!.verticals).toEqual([]);
+  });
+  it("accepts at most 3", () => {
+    expect(validateAuthorInput({ name: "Ann Lee", verticals: ["A", "B", "C", "D"] })).toMatchObject({ ok: false });
+    expect(validateAuthorInput({ name: "Ann Lee", verticals: ["Travel"] })).toMatchObject({ ok: true, value: { verticals: ["Travel"] } });
   });
 });

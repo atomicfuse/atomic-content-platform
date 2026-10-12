@@ -3,6 +3,7 @@ import { getDashboardIndex } from "@/lib/db/dashboard-index";
 import { getSiteConfig } from "@/lib/db/site-configs";
 import { AuthorProfileEditor } from "@/components/authors/AuthorProfileEditor";
 import type { GenerateContext } from "@/lib/authors/generate-flow";
+import { siteAudienceOf } from "@/lib/authors/assignment";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +22,14 @@ export default async function NewAuthorPage({ searchParams }: { searchParams: Pr
       category: entry.vertical ?? undefined,
       topics: Array.isArray(brief.topics) ? (brief.topics as unknown[]).filter((t): t is string => typeof t === "string") : undefined,
       tone: typeof brief.tone === "string" ? brief.tone : undefined,
+      audience: siteAudienceOf(cfg),
     });
   }
   return (
     <AuthorProfileEditor
       author={null}
       mode="create"
-      sites={index.sites.map((s) => ({ domain: s.domain }))}
+      sites={index.sites.map((s) => ({ domain: s.domain, vertical: s.vertical || undefined }))}
       takenNames={all.map((a) => a.name)} takenIds={all.map((a) => a.id)}
       autoGenerate={sp.generate === "1"}
       context={context}

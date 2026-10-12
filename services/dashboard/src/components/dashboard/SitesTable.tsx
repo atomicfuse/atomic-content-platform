@@ -31,6 +31,8 @@ import {
   type LiveConfigEntry,
 } from "@/lib/site-columns";
 import { isPublishEligible } from "@/lib/pending-changes";
+import { InlineCategorySelect, TrackingCell } from "./InlineSiteEditors";
+import { useVerticals } from "@/hooks/useReferenceData";
 import { SimilarwebCell } from "./SimilarwebCell";
 import { SimilarwebImportModal } from "./SimilarwebImportModal";
 import { latestCheckedAt, matchesSimilarwebFilter } from "@/lib/similarweb/format";
@@ -123,6 +125,8 @@ function formatRelativeDate(dateStr: string): string {
 
 export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
   const router = useRouter();
+  // The network's categories, for the inline Category editor.
+  const { verticals } = useVerticals();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [bulkPublishOpen, setBulkPublishOpen] = useState(false);
@@ -333,7 +337,19 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
           />
         );
       case "category":
-        return site.vertical;
+        return (
+          <InlineCategorySelect
+            domain={site.domain}
+            value={site.vertical}
+            verticals={verticals}
+            onSaved={(name): void => {
+              site.vertical = name;
+              toast(`Category updated for ${site.domain}`, "success");
+              router.refresh();
+            }}
+            onError={(msg): void => { toast(msg, "error"); }}
+          />
+        );
       case "status":
         return <StatusBadge status={site.status} />;
       case "similarweb":
@@ -367,11 +383,21 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             return "—";
           }
           case "ga4":
-            return entry?.ga4 ?? "—";
-          case "facebookPixel":
-            return entry?.facebook_pixel ?? "—";
           case "gtm":
-            return entry?.gtm ?? "—";
+          case "facebookPixel": {
+            const field = column.id === "ga4" ? "ga4" : column.id === "gtm" ? "gtm" : "facebook_pixel";
+            return (
+              <TrackingCell
+                domain={site.domain}
+                field={field}
+                liveValue={entry?.[field] ?? null}
+                loaded={liveConfigLoaded}
+                isLive={site.status === "Live"}
+                onSaved={(message): void => { toast(message, "success"); }}
+                onError={(msg): void => { toast(msg, "error"); }}
+              />
+            );
+          }
           case "googleAds":
             return entry?.google_ads ?? "—";
           case "articlesPerDay":

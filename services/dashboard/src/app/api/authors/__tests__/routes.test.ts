@@ -40,7 +40,7 @@ import { POST as generate } from "../generate/route";
 import { GET as list, POST as create } from "../route";
 import { DELETE as remove, GET as one } from "../[id]/route";
 
-const ELLA: AuthorRecord = { id: "ella-hughes", name: "Ella Hughes", tagline: "", bio: "", beats: [], portrait: null, links: {}, exclusive_sites: [], created_at: "t", updated_at: "t" };
+const ELLA: AuthorRecord = { id: "ella-hughes", name: "Ella Hughes", tagline: "", bio: "", beats: [], verticals: [], portrait: null, links: {}, exclusive_sites: [], created_at: "t", updated_at: "t" };
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
 describe("authors API", () => {

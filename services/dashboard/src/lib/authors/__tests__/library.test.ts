@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { filterAuthors, filterCounts } from "../library";
+import { filterAuthors, filterCounts, verticalsIn } from "../library";
 import type { AuthorListItem } from "../types";
 
 const mk = (id: string, extra: Partial<AuthorListItem> = {}): AuthorListItem => ({
-  id, name: id, tagline: "", bio: "A bio.", beats: [], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
+  id, name: id, tagline: "", bio: "A bio.", beats: [], verticals: [], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
   links: {}, exclusive_sites: [], created_at: "2026-01-01", updated_at: "2026-01-01", sites: [], ...extra,
 });
 const ITEMS = [
@@ -30,5 +30,13 @@ describe("filterAuthors", () => {
   });
   it("counts per filter", () => {
     expect(filterCounts(ITEMS)).toEqual({ all: 3, exclusive: 1, unassigned: 1, incomplete: 1 });
+  });
+});
+
+describe("vertical filter", () => {
+  it("keeps authors whose Best fit includes the vertical (any case); lists the verticals in use", () => {
+    const items = [mk("a", { verticals: ["Travel"] }), mk("b", { verticals: ["Food & Drink", "travel"] }), mk("c")];
+    expect(filterAuthors(items, "", "all", "name", "TRAVEL").map((x) => x.id)).toEqual(["a", "b"]);
+    expect(verticalsIn(items)).toEqual(["Food & Drink", "Travel"]);
   });
 });

@@ -37,6 +37,8 @@ import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown } from "../../types.js";
 import type { GeneratedArticle } from "./types.js";
 import { isReservedArticleSlug } from "../../lib/reserved-slugs.js";
+import { createBylineResolver } from "../../authors/bylines.js";
+import { authorFileReader, siteAuthorsReader } from "../../authors/byline-reader.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -138,7 +140,7 @@ export async function runDedicatedGeneration(
     return { status: "error", message: `Could not read site brief: ${message}`, n8nImageTriggered: false };
   }
 
-  const { siteName, brief, author } = siteBriefData;
+  const { siteName, brief, author, authors } = siteBriefData;
   console.log(`[dedicated] Generating article for ${siteDomain} (${siteName}) on branch ${branch}`);
 
   // Step 2: Generate article via Claude
@@ -257,7 +259,8 @@ export async function runDedicatedGeneration(
   }
 
   // Step 8: Build frontmatter
-  const publishDate = new Date().toISOString().slice(0, 10);
+  // Full timestamp: a date alone leaves same-day articles in alphabetical order on the site and dashboard.
+  const publishDate = new Date().toISOString();
   // The default image shows until the hero image arrives — make sure the site has one.
   await siteDefaultImage.ensure({ domain: siteDomain, siteName, vertical: brief.vertical, topics: brief.topics });
   const defaultImagePath = siteDefaultImagePath(siteDomain);
@@ -266,13 +269,17 @@ export async function runDedicatedGeneration(
   const wordCount = generated.body.trim().split(/\s+/).filter(Boolean).length;
   const readingTime = Math.max(1, Math.round(wordCount / 200));
 
+  // No per-article topic here: the site's authors take turns (legacy name if the site has none).
+  const currentAuthors = (await siteAuthorsReader(config)(siteDomain, branch)) ?? authors ?? [];
+  const byline = await createBylineResolver({ siteDomain, siteAuthors: currentAuthors, legacyAuthor: author, readAuthorFile: authorFileReader(config, branch) })();
   const frontmatter: ArticleFrontmatterWithExtras = {
     title: generated.title,
     description: generated.description,
     type: articleType,
     status: articleStatus,
     publishDate,
-    author: author || "Editorial Team",
+    author: byline.name,
+    ...(byline.authorId ? { author_id: byline.authorId } : {}),
     tags,
     slug,
     reviewer_notes: articleStatus === "review" ? (qualityNote ?? "") : "",

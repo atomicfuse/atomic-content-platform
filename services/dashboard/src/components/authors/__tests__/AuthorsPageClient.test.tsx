@@ -17,7 +17,7 @@ import type { AuthorListItem } from "@/lib/authors/types";
 afterEach(() => { cleanup(); refresh.mockClear(); toast.mockClear(); });
 
 const mk = (id: string, name: string): AuthorListItem => ({
-  id, name, tagline: "Writer", bio: "", beats: ["A", "B"], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
+  id, name, tagline: "Writer", bio: "", beats: ["A", "B"], verticals: [], portrait: { kind: "generated", path: `/authors/assets/${id}.webp` },
   links: {}, exclusive_sites: [], created_at: "", updated_at: "", sites: [],
 });
 
@@ -55,4 +55,12 @@ describe("AuthorsPageClient: Generate missing profiles", () => {
     await waitFor(() => expect(toast).toHaveBeenCalledWith("Profiles generated for 2 authors", "success"));
     expect(refresh).toHaveBeenCalledTimes(2);
   });
+
+  it("counts authors without Best fit as missing too", () => {
+    global.fetch = vi.fn(async () => new Response("{}", { status: 404 })) as unknown as typeof fetch;
+    const done: AuthorListItem = { ...mk("cy-ng", "Cy Ng"), bio: "A full bio.", verticals: [] };
+    render(<AuthorsPageClient authors={[done]} sites={[]} />);
+    expect(screen.getByRole("button", { name: "Generate missing profiles (1)" })).toBeTruthy();
+  });
 });
+

@@ -9,15 +9,19 @@ import { Modal } from "@/components/ui/Modal";
 import { useToast } from "@/components/ui/Toast";
 import { ChipMultiSelect } from "@/components/config/grid/ChipMultiSelect";
 import { authorIdFromName } from "@/lib/authors/record";
+import { normalizeSiteAuthors } from "@/lib/authors/assignment";
 import { ALL_PARTS, generatePart, runParts, type GenerateContext, type PartStatus } from "@/lib/authors/generate-flow";
 import type { AuthorInput, AuthorListItem, AuthorPart, PortraitStyle } from "@/lib/authors/types";
 import { AuthorAvatar } from "./AuthorAvatar";
+import { LockIcon, PlusIcon, SparkIcon } from "./icons";
+import { AssignToSiteModal } from "./AssignToSiteModal";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
+import { useVerticals } from "@/hooks/useReferenceData";
 
 interface AuthorProfileEditorProps {
   author: AuthorListItem | null;
   mode: "create" | "edit";
-  sites: Array<{ domain: string }>;
+  sites: Array<{ domain: string; vertical?: string }>;
   takenNames: string[];
   /** Ids already in the library, so files made before the first save use the id the author will get. */
   takenIds?: string[];
@@ -25,30 +29,14 @@ interface AuthorProfileEditorProps {
   context?: GenerateContext;
 }
 
-const EMPTY: AuthorInput = { name: "", tagline: "", bio: "", beats: [], portrait: null, links: {}, exclusive_sites: [] };
-const PART_LABEL: Record<AuthorPart, string> = { name: "Name", tagline: "Tagline", bio: "Bio", beats: "Beats", portrait: "Portrait" };
-const FIELD_PART: Record<string, string> = { name: "name", tagline: "tagline", bio: "bio", beats: "beats", portrait: "portrait", links: "links", exclusive_sites: "exclusive sites" };
+const EMPTY: AuthorInput = { name: "", tagline: "", bio: "", beats: [], verticals: [], portrait: null, links: {}, exclusive_sites: [] };
+const PART_LABEL: Record<AuthorPart, string> = { name: "Name", tagline: "Tagline", bio: "Bio", beats: "Beats", verticals: "Best fit", portrait: "Portrait" };
+const FIELD_PART: Record<string, string> = { name: "name", tagline: "tagline", bio: "bio", beats: "beats", verticals: "best fit", portrait: "portrait", links: "links", exclusive_sites: "exclusive sites" };
 
 const toInput = (a: AuthorListItem | null): AuthorInput =>
-  a ? { name: a.name, tagline: a.tagline, bio: a.bio, beats: a.beats, portrait: a.portrait, links: a.links, exclusive_sites: a.exclusive_sites } : EMPTY;
+  a ? { name: a.name, tagline: a.tagline, bio: a.bio, beats: a.beats, verticals: a.verticals ?? [], portrait: a.portrait, links: a.links, exclusive_sites: a.exclusive_sites } : EMPTY;
 
 const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
-
-function SparkIcon(): React.ReactElement {
-  return (
-    <svg aria-hidden="true" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z" />
-    </svg>
-  );
-}
-
-function LockIcon(): React.ReactElement {
-  return (
-    <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
-    </svg>
-  );
-}
 
 function SectionCard({ eyebrow, action, children }: { eyebrow: string; action?: React.ReactNode; children: React.ReactNode }): React.ReactElement {
   return (
@@ -130,11 +118,19 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
   const [checklist, setChecklist] = useState<Partial<Record<AuthorPart, PartStatus>> | null>(null);
   const [running, setRunning] = useState(false);
   const [portraitStyle, setPortraitStyle] = useState<PortraitStyle>("realistic");
+  const { verticals: verticalItems, loading: verticalsLoading } = useVerticals();
+  const verticalOptions = verticalItems.map((v) => v.name);
+  // The verticals part needs the network's category list; without it, it is left out of Generate everything.
+  const genParts = ALL_PARTS.filter((p) => p !== "verticals" || verticalOptions.length > 0);
   /** A new name was generated while a generated portrait (made for the old name) is shown. */
   const [portraitBehindName, setPortraitBehindName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [removeFrom, setRemoveFrom] = useState<string | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [showAllMatches, setShowAllMatches] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const generatedOnce = useRef(false);
 
@@ -147,7 +143,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
     setBusy((b) => ({ ...b, [part]: true }));
     setErrors((e) => ({ ...e, [part]: undefined }));
     try {
-      const patch = await generatePart(part, draft, { authorId: part === "portrait" ? idFor(draft) : undefined, context, takenNames: others, portraitStyle });
+      const patch = await generatePart(part, draft, { authorId: part === "portrait" ? idFor(draft) : undefined, context, takenNames: others, portraitStyle, verticalOptions });
       setDraft((d) => ({ ...d, ...patch }));
       if (part === "name" && draft.portrait?.kind === "generated") setPortraitBehindName(true);
       if (part === "portrait") setPortraitBehindName(false);
@@ -164,7 +160,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
     setRunning(true);
     setChecklist({});
     try {
-      await runParts(ALL_PARTS, draft, { authorIdFor: idFor, context, takenNames: others, portraitStyle, onPatch: (patch) => setDraft((d) => ({ ...d, ...patch })) }, (part, status, error) => {
+      await runParts(genParts, draft, { authorIdFor: idFor, context, takenNames: others, portraitStyle, verticalOptions, onPatch: (patch) => setDraft((d) => ({ ...d, ...patch })) }, (part, status, error) => {
         setChecklist((c) => ({ ...c, [part]: status }));
         if (status === "error") setErrors((e) => ({ ...e, [part]: error }));
       });
@@ -173,10 +169,11 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
     }
   }
 
+  // Waits for the category list, so a generated author gets Best fit too.
   useEffect(() => {
-    if (autoGenerate && !generatedOnce.current) { generatedOnce.current = true; void generateEverything(); }
+    if (autoGenerate && !verticalsLoading && !generatedOnce.current) { generatedOnce.current = true; void generateEverything(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenerate]);
+  }, [autoGenerate, verticalsLoading]);
 
   async function save(): Promise<void> {
     setSaving(true);
@@ -220,6 +217,59 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
     }
   }
 
+  /** Adds this author to a site's authors (the site's saved list, read fresh) through the regular site save. */
+  async function assignToSite(site: string, confirmedExclusive: boolean): Promise<void> {
+    const cfgRes = await fetch(`/api/sites/site-config?domain=${encodeURIComponent(site)}`);
+    if (!cfgRes.ok) throw new Error("Couldn't read the site's settings. Try again.");
+    const config = ((await cfgRes.json()) as { config?: { authors?: unknown } }).config;
+    const current = normalizeSiteAuthors(config?.authors);
+    const res = await fetch("/api/sites/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: site, logoBase64: null, faviconBase64: null, configUpdates: { authors: [...current, { id: author!.id, topics: [] }], confirmedExclusive: confirmedExclusive ? [author!.id] : [] } }),
+    });
+    const out = (await res.json().catch(() => ({}))) as { status?: string; message?: string };
+    if (!res.ok || out.status !== "ok") throw new Error(out.message ?? "Couldn't assign the author");
+    toast(`${author!.name} now writes for ${site}`, "success");
+    router.refresh();
+  }
+
+  /**
+   * Takes this author off a site's authors (the site's saved list, read fresh) and, if they were exclusive to it,
+   * drops that reservation from their saved profile. Unsaved edits on this page are left as they are.
+   */
+  async function removeFromSite(site: string): Promise<void> {
+    setRemoving(true);
+    try {
+      const cfgRes = await fetch(`/api/sites/site-config?domain=${encodeURIComponent(site)}`);
+      if (!cfgRes.ok) throw new Error("Couldn't read the site's settings. Try again.");
+      const config = ((await cfgRes.json()) as { config?: { authors?: unknown } }).config;
+      const rest = normalizeSiteAuthors(config?.authors).filter((a) => a.id !== author!.id);
+      const res = await fetch("/api/sites/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain: site, logoBase64: null, faviconBase64: null, configUpdates: { authors: rest } }),
+      });
+      const out = (await res.json().catch(() => ({}))) as { status?: string; message?: string };
+      if (!res.ok || out.status !== "ok") throw new Error(out.message ?? "Couldn't remove the author from the site");
+      if (saved.exclusive_sites.includes(site)) {
+        const nextSaved = { ...saved, exclusive_sites: saved.exclusive_sites.filter((x) => x !== site) };
+        const put = await fetch(`/api/authors/${author!.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ author: nextSaved }) });
+        if (put.ok) {
+          setSaved(nextSaved);
+          setDraft((d) => ({ ...d, exclusive_sites: d.exclusive_sites.filter((x) => x !== site) }));
+        }
+      }
+      toast(`${author!.name} no longer writes for ${site}`, "success");
+      setRemoveFrom(null);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Couldn't remove the author from the site", "error");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   async function remove(): Promise<void> {
     // Delete checks every site's config and removes the portrait files, so it takes a few seconds.
     setDeleting(true);
@@ -230,8 +280,11 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
     router.push("/authors");
   }
 
-  const exclusiveOptions = sites.map((s) => ({ value: s.domain, label: s.domain }));
   const bioWords = wordCount(draft.bio);
+  const onSites = new Set((author?.sites ?? []).map((s) => s.site));
+  const wantedVerticals = new Set(draft.verticals.map((v) => v.toLowerCase()));
+  const connectedSites = (author?.sites ?? []).map((s) => s.site);
+  const goodMatch = sites.filter((s) => s.vertical && wantedVerticals.has(s.vertical.toLowerCase()) && !onSites.has(s.domain));
 
   return (
     <div className="space-y-6 pb-24">
@@ -281,7 +334,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
           </Button>
           {checklist && (
             <ul aria-label="Generation progress" className="space-y-1 text-xs">
-              {ALL_PARTS.map((p) => (
+              {genParts.map((p) => (
                 <li key={p} className="flex justify-between text-[var(--text-secondary)]">
                   <span>{PART_LABEL[p]}</span>
                   <span className={checklist[p] === "error" ? "text-red-400" : checklist[p] === "done" ? "text-emerald-500" : "text-[var(--text-muted)]"}>
@@ -311,6 +364,36 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
             {errors.beats && <p role="alert" className="text-xs text-red-400">{errors.beats}</p>}
           </SectionCard>
 
+          <SectionCard eyebrow="Best fit" action={<RegenerateButton part="verticals" busy={!!busy.verticals} locked={running || verticalOptions.length === 0} onClick={(): void => { void regenerate("verticals"); }} />}>
+            <ChipMultiSelect
+              label="Site categories this author fits"
+              addLabel="+ Category"
+              value={draft.verticals}
+              options={[...new Set([...verticalOptions, ...draft.verticals])].map((v) => ({ value: v, label: v }))}
+              onChange={(next): void => setDraft((d) => ({ ...d, verticals: next.slice(0, 3) }))}
+              emptyText="No categories yet"
+            />
+            {draft.verticals.length >= 3 && <p className="text-xs text-[var(--text-muted)]">Up to 3 categories. Remove one to add another.</p>}
+            {errors.verticals && <p role="alert" className="text-xs text-red-400">{errors.verticals}</p>}
+            {goodMatch.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-xs text-[var(--text-muted)]">Good match for</p>
+                <ul aria-label="Good match for" className="flex flex-wrap gap-1.5">
+                  {(showAllMatches ? goodMatch : goodMatch.slice(0, 8)).map((s) => (
+                    <li key={s.domain}><a href={`/sites/${s.domain}`} className="inline-flex min-h-8 items-center rounded-full border border-[var(--border-primary)] px-3 text-xs text-[var(--text-primary)] hover:border-cyan/60">{s.domain}</a></li>
+                  ))}
+                  {goodMatch.length > 8 && (
+                    <li>
+                      <button type="button" onClick={(): void => setShowAllMatches((v) => !v)} className="inline-flex min-h-8 items-center rounded-full px-3 text-xs font-medium text-cyan hover:bg-cyan/10">
+                        {showAllMatches ? "Show fewer" : `Show all ${goodMatch.length}`}
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              </div>
+            )}
+          </SectionCard>
+
           <SectionCard eyebrow="Links">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {(["website", "x", "instagram", "linkedin"] as const).map((k) => (
@@ -319,25 +402,55 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
             </div>
           </SectionCard>
 
-          <SectionCard eyebrow="Sites">
+          <SectionCard
+            eyebrow="Writes for"
+            action={mode === "edit" && author ? (
+              <Button variant="secondary" size="sm" className="min-h-9" onClick={(): void => setAssignOpen(true)}><PlusIcon />Assign to a site</Button>
+            ) : undefined}
+          >
             {author && author.sites.length > 0 ? (
-              <ul className="divide-y divide-[var(--border-secondary)] text-sm">
+              <ul className="space-y-2">
                 {author.sites.map((s) => (
-                  <li key={s.site} className="flex items-center justify-between py-2">
-                    <span className="text-[var(--text-primary)]">{s.site} <span className="text-xs text-[var(--text-muted)]">{s.topics.join(", ")}</span></span>
-                    <a className="text-xs text-cyan underline" href={`/sites/${s.site}`}>Open site</a>
+                  <li key={s.site} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--bg-elevated)] px-3 py-2.5">
+                    <div className="min-w-0">
+                      <a href={`/sites/${s.site}`} className="text-sm font-medium text-[var(--text-primary)] hover:text-cyan">{s.site}</a>
+                      <p className="truncate text-xs text-[var(--text-muted)]">{s.topics.length > 0 ? `Covers ${s.topics.join(", ")}` : "Writes on every topic"}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <a href={`/sites/${s.site}`} className="inline-flex min-h-9 items-center rounded-lg px-2 text-xs font-medium text-cyan hover:bg-cyan/10">Open site</a>
+                      {mode === "edit" && (
+                        <Button variant="ghost" size="sm" className="min-h-9" aria-label={`Remove from ${s.site}`} onClick={(): void => setRemoveFrom(s.site)}>Remove</Button>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
-            ) : <p className="text-sm text-[var(--text-muted)]">Not on any site yet.</p>}
-            <ChipMultiSelect
-              label="Exclusive to"
-              addLabel="+ Add site"
-              value={draft.exclusive_sites}
-              options={exclusiveOptions}
-              onChange={(next): void => setDraft((d) => ({ ...d, exclusive_sites: next }))}
-              emptyText="Not exclusive. Can be picked for any site."
-            />
+            ) : (
+              <p className="text-sm text-[var(--text-secondary)]">
+                {mode === "edit" ? "Not on any site yet. Assign this author to a site, or add them from a site's Authors tab." : "Save the author first, then assign them to a site."}
+              </p>
+            )}
+            <div className="flex items-start justify-between gap-4 border-t border-[var(--border-secondary)] pt-3">
+              <div className="min-w-0">
+                <p id="exclusive-label" className="text-sm font-medium text-[var(--text-primary)]">Exclusive</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {draft.exclusive_sites.length > 0
+                    ? `Reserved for ${draft.exclusive_sites.join(", ")}. Other sites have to confirm before using this author.`
+                    : connectedSites.length > 0 ? "Any site can add this author." : "Assign a site first to make this author exclusive to it."}
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={draft.exclusive_sites.length > 0}
+                aria-labelledby="exclusive-label"
+                disabled={draft.exclusive_sites.length === 0 && connectedSites.length === 0}
+                onClick={(): void => setDraft((d) => ({ ...d, exclusive_sites: d.exclusive_sites.length > 0 ? [] : connectedSites }))}
+                className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan/60 disabled:cursor-not-allowed disabled:opacity-40 ${draft.exclusive_sites.length > 0 ? "bg-cyan" : "bg-[var(--border-primary)]"}`}
+              >
+                <span aria-hidden="true" className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none ${draft.exclusive_sites.length > 0 ? "translate-x-5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
           </SectionCard>
 
           {mode === "edit" && (
@@ -359,6 +472,33 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds 
             </div>
           </div>
         </div>
+      )}
+
+      {removeFrom && author && (
+        <Modal open onClose={(): void => { if (!removing) setRemoveFrom(null); }} title={`Remove ${author.name} from ${removeFrom}?`} size="sm">
+          <div role="dialog" aria-label={`Remove ${author.name} from ${removeFrom}?`} className="space-y-3">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Articles {author.name} already wrote on {removeFrom} keep their name. New articles there go to the site&apos;s other authors, or to its default name if none are left.
+              {saved.exclusive_sites.includes(removeFrom) ? ` ${author.name} also stops being exclusive to ${removeFrom}.` : ""}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" disabled={removing} onClick={(): void => setRemoveFrom(null)}>Cancel</Button>
+              <Button variant="danger" loading={removing} onClick={(): void => { void removeFromSite(removeFrom); }}>Remove</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {assignOpen && author && (
+        <AssignToSiteModal
+          authorName={author.name}
+          exclusiveSites={author.exclusive_sites}
+          currentSites={connectedSites}
+          sites={sites}
+          verticals={draft.verticals}
+          onClose={(): void => setAssignOpen(false)}
+          onAssign={assignToSite}
+        />
       )}
 
       {confirmDelete && author && (

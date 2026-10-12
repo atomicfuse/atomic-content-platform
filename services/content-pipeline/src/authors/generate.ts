@@ -13,6 +13,8 @@ export interface GenerateRequest {
   draft: AuthorDraft;
   siteContext: SiteContext & { site?: string };
   takenNames: string[];
+  /** Allowed names for the "verticals" part. */
+  verticalOptions?: string[];
   /** Portrait requests only (default realistic). */
   portraitStyle?: PortraitStyle;
 }
@@ -67,7 +69,7 @@ export async function generateAuthorPart(
       throw new AuthorGenerateError(`Portrait failed: ${err instanceof Error ? err.message : String(err)}`, 502);
     }
   }
-  const prompt = buildTextPrompt(req.part, req.draft, req.siteContext, req.takenNames);
+  const prompt = buildTextPrompt(req.part, req.draft, req.siteContext, req.takenNames, Math.random, req.verticalOptions ?? []);
   let reason = "";
   for (let attempt = 0; attempt < 2; attempt++) {
     const userPrompt = attempt === 0 ? prompt.user : `${prompt.user}\n\nYour previous answer was rejected: ${reason}. Try again, following every rule.`;
@@ -77,7 +79,7 @@ export async function generateAuthorPart(
     recorded.catch(() => undefined);
     const out = await withinDeadline(call, left(), req.part);
     await recorded;
-    const parsed = parseTextPart(req.part, out.text, req.takenNames);
+    const parsed = parseTextPart(req.part, out.text, req.takenNames, req.verticalOptions ?? []);
     if (parsed.ok) return { part: req.part, value: parsed.value, model: out.model };
     reason = parsed.reason;
   }

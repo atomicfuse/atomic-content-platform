@@ -11,5 +11,5 @@ export default async function AuthorPage({ params }: { params: Promise<{ id: str
   const author = await readAuthor(id);
   if (!author) notFound();
   const [[withConnected], all, index] = await Promise.all([withSites([author]), listAuthors(), getDashboardIndex()]);
-  return <AuthorProfileEditor author={withConnected!} mode="edit" sites={index.sites.map((s) => ({ domain: s.domain }))} takenNames={all.map((a) => a.name)} takenIds={all.map((a) => a.id)} />;
+  return <AuthorProfileEditor author={withConnected!} mode="edit" sites={index.sites.map((s) => ({ domain: s.domain, vertical: s.vertical || undefined }))} takenNames={all.map((a) => a.name)} takenIds={all.map((a) => a.id)} />;
 }

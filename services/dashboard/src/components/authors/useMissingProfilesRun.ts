@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/Toast";
 import { missingParts, runParts } from "@/lib/authors/generate-flow";
+import { getVerticals } from "@/lib/reference-data";
 import type { AuthorListItem, AuthorRecord } from "@/lib/authors/types";
 
 export interface MissingRunProgress {
@@ -25,13 +26,15 @@ export function useMissingProfilesRun(): { progress: MissingRunProgress | null; 
 
   async function run(authors: AuthorListItem[]): Promise<void> {
     const taken = authors.map((a) => a.name);
+    // The verticals part needs the network's category list; without it that part is left out.
+    const verticalOptions = (await getVerticals().catch(() => [])).map((v) => v.name);
     let done = 0;
     let failed = 0;
     for (const a of authors) {
       setProgress({ done, failed, total: authors.length, current: a.name });
       let partFailed = false;
       let patch: Partial<AuthorRecord> = {};
-      await runParts(missingParts(a), a, { authorIdFor: () => a.id, takenNames: taken, onPatch: (part) => { patch = { ...patch, ...part }; } }, (_p, s) => { if (s === "error") partFailed = true; });
+      await runParts(missingParts(a).filter((p) => p !== "verticals" || verticalOptions.length > 0), a, { authorIdFor: () => a.id, takenNames: taken, verticalOptions, onPatch: (part) => { patch = { ...patch, ...part }; } }, (_p, s) => { if (s === "error") partFailed = true; });
       let ok = false;
       try {
         const latest = await fetch(`/api/authors/${a.id}`);

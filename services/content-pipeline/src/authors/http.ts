@@ -7,7 +7,7 @@ export class AuthorGenerateError extends Error {
   }
 }
 
-const PARTS: ReadonlySet<AuthorPart> = new Set(["name", "tagline", "bio", "beats", "portrait"]);
+const PARTS: ReadonlySet<AuthorPart> = new Set(["name", "tagline", "bio", "beats", "verticals", "portrait"]);
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined);
@@ -23,7 +23,7 @@ export function parseGenerateBody(raw: string): GenerateRequest {
     throw new AuthorGenerateError("body must be JSON", 400);
   }
   const part = body.part as AuthorPart;
-  if (!PARTS.has(part)) throw new AuthorGenerateError("part must be name, tagline, bio, beats or portrait", 400);
+  if (!PARTS.has(part)) throw new AuthorGenerateError("part must be name, tagline, bio, beats, verticals or portrait", 400);
   const d = (body.draft && typeof body.draft === "object" ? body.draft : {}) as Record<string, unknown>;
   const draft: AuthorDraft = {};
   if (str(d.name)) draft.name = str(d.name);
@@ -32,14 +32,17 @@ export function parseGenerateBody(raw: string): GenerateRequest {
   if (strs(d.beats)?.length) draft.beats = strs(d.beats);
   const c = (body.siteContext && typeof body.siteContext === "object" ? body.siteContext : {}) as Record<string, unknown>;
   const siteContext: SiteContext & { site?: string } = {};
-  for (const k of ["site", "siteName", "category", "tone", "guidelines", "beatHint"] as const) if (str(c[k])) siteContext[k] = str(c[k]);
+  for (const k of ["site", "siteName", "category", "tone", "audience", "guidelines", "beatHint"] as const) if (str(c[k])) siteContext[k] = str(c[k]);
   if (strs(c.topics)?.length) siteContext.topics = strs(c.topics);
   const authorId = str(body.authorId);
   if (part === "portrait" && (!authorId || !ID_RE.test(authorId))) throw new AuthorGenerateError("portrait needs a valid authorId", 400);
   const style = body.portraitStyle ?? "realistic";
   if (part === "portrait" && style !== "realistic" && style !== "illustrated") throw new AuthorGenerateError("portraitStyle must be realistic or illustrated", 400);
+  const verticalOptions = strs(body.verticalOptions)?.map((o) => o.trim()).filter(Boolean) ?? [];
+  if (part === "verticals" && verticalOptions.length === 0) throw new AuthorGenerateError("verticals needs verticalOptions", 400);
   return {
     part,
+    ...(part === "verticals" ? { verticalOptions } : {}),
     ...(authorId && ID_RE.test(authorId) ? { authorId } : {}),
     ...(part === "portrait" ? { portraitStyle: style as "realistic" | "illustrated" } : {}),
     draft,

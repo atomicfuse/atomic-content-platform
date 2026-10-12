@@ -30,6 +30,7 @@ export function AuthorCard({ author }: { author: AuthorListItem }): React.ReactE
             )}
           </div>
           <p className="truncate text-xs text-[var(--text-secondary)]">{author.tagline || "No tagline yet"}</p>
+          {(author.verticals?.length ?? 0) > 0 && <p data-verticals className="truncate text-[11px] font-medium text-cyan">{author.verticals.join(" · ")}</p>}
         </div>
       </div>
       {shownBeats.length > 0 && (

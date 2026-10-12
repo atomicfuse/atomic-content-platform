@@ -1062,6 +1062,12 @@ export interface StagingSiteConfig {
    *  rewritten to the new per-topic shape and legacy bundle_ids/category_ids/
    *  tag_ids are stripped. */
   topics_v2?: TopicV2[];
+  /** Site authors (Content Agent tab Authors section). Validated and topic-split by the save route. */
+  authors?: Array<{ id: string; topics: string[] }>;
+  /** Author ids the user confirmed assigning although they're exclusive to other sites (D2). */
+  confirmedExclusive?: string[];
+  /** "Give every site an author": refuse (409 has-authors) if the site already has authors in git. */
+  onlyIfNoAuthors?: boolean;
 }
 
 /** Read the current site config from the staging branch. */

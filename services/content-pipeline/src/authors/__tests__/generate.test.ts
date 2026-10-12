@@ -78,3 +78,11 @@ describe("generateAuthorPart deadline", () => {
   });
 });
 
+describe("generateAuthorPart verticals", () => {
+  it("passes the options to the prompt and the parser", async () => {
+    const d = deps(['{"verticals":["travel"]}']);
+    const out = await generateAuthorPart({ part: "verticals", draft: { beats: ["Hiking"] }, siteContext: {}, takenNames: [], verticalOptions: ["Travel", "Science"] }, d);
+    expect(out.value).toEqual(["Travel"]);
+    expect(d.calls[0]).toContain("Travel | Science");
+  });
+});

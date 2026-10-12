@@ -18,6 +18,8 @@ export interface AuthorRecord {
   tagline: string;
   bio: string;
   beats: string[];
+  /** Best-fit site categories (dashboard-index verticals), 0–3. Dashboard-only. */
+  verticals: string[];
   portrait: AuthorPortrait | null;
   links: AuthorLinks;
   exclusive_sites: string[];
@@ -38,7 +40,16 @@ export interface AuthorListItem extends AuthorRecord {
   sites: ConnectedSite[];
 }
 
-export type AuthorPart = "name" | "tagline" | "bio" | "beats" | "portrait";
+export type AuthorPart = "name" | "tagline" | "bio" | "beats" | "verticals" | "portrait";
 
 /** How a generated portrait looks. Chosen when generating; not stored on the author. */
 export type PortraitStyle = "realistic" | "illustrated";
+
+/** One author on a site (`site.yaml` `authors:`), with the topics they write. */
+export interface SiteAuthor {
+  id: string;
+  topics: string[];
+}
+
+/** How well a library author suits a site. */
+export type AuthorFit = "strong" | "close" | "none";

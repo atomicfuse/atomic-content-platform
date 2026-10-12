@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runContentGeneration } from "../agents/content-generation/agent.js";
 import type { AgentConfig } from "../lib/config.js";
+import { resolveTopicTagIds } from "../agents/content-generation/api-client.js";
 
 // Aggregator mock — behavior is configured per-test via mockGetContent.
 const mockGetContent = vi.fn();
@@ -154,4 +155,11 @@ describe("manual 'Generate N' across all topics", () => {
     const result = await runContentGeneration({ siteDomain: "scoopella", bypassSchedule: true, count: 5 }, config);
     expect(created(result)).toBe(5);
   });
+
+  it("per-topic sites don't resolve (or create) site-level tags from topic names — each topic brings its own filters", async () => {
+    serveTopics();
+    await runContentGeneration({ siteDomain: "scoopella", bypassSchedule: true, count: 2 }, config);
+    expect(resolveTopicTagIds).not.toHaveBeenCalled();
+  });
 });
+

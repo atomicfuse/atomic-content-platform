@@ -14,6 +14,8 @@ const CACHE_MS = 60_000;
 const NETWORK = { owner: NETWORK_REPO_OWNER, name: NETWORK_REPO_NAME };
 let cache: { at: number; authors: AuthorRecord[]; fileIds: string[] } | null = null;
 let generation = 0;
+/** Parsed files by path, kept with the git blob sha they were read at: an unchanged file is never read again. */
+const fileCache = new Map<string, { sha: string; record: AuthorRecord | null }>();
 
 export function _resetAuthorCache(): void {
   cache = null;
@@ -37,6 +39,8 @@ async function load(): Promise<{ authors: AuthorRecord[]; fileIds: string[] }> {
   const fileIds = entries.map((e) => e.name.replace(/\.yaml$/, ""));
   let readFailed = false;
   const authors = (await Promise.all(entries.map(async (e, i) => {
+    const known = e.sha ? fileCache.get(e.path) : undefined;
+    if (known && known.sha === e.sha) return known.record;
     const raw = await readFresh(e.path).catch((err: unknown) => {
       readFailed = true;
       console.warn(`[authors] couldn't read ${e.path}:`, err instanceof Error ? err.message : err);
@@ -44,6 +48,7 @@ async function load(): Promise<{ authors: AuthorRecord[]; fileIds: string[] }> {
     });
     const parsed = raw ? parseAuthorYaml(fileIds[i]!, raw) : null;
     if (raw && !parsed) console.warn(`[authors] skipping unreadable ${e.path}`);
+    if (raw !== null && e.sha) fileCache.set(e.path, { sha: e.sha, record: parsed });
     return parsed;
   }))).filter((a): a is AuthorRecord => a !== null);
   authors.sort(byName);

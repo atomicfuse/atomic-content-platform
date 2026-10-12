@@ -61,6 +61,7 @@ export async function processGenerateJob(
       preloadedBrief = {
         siteName: parsed.siteName,
         author: parsed.author,
+        authors: parsed.authors,
         group: parsed.group,
         brief: parsed.brief,
       };

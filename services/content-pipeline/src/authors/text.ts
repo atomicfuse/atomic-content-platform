@@ -2,7 +2,7 @@
  * Author profile text: one part per call (name, tagline, bio or beats), returned as JSON and validated.
  * Bios must read like a real writer's note about their beat — never invented credentials (spec D8).
  */
-export type TextPart = "name" | "tagline" | "bio" | "beats";
+export type TextPart = "name" | "tagline" | "bio" | "beats" | "verticals";
 
 export interface AuthorDraft {
   name?: string;
@@ -16,6 +16,8 @@ export interface SiteContext {
   category?: string;
   topics?: string[];
   tone?: string;
+  /** Who reads the site (brief audiences), e.g. "New parents, Expecting moms". */
+  audience?: string;
   guidelines?: string;
   /** Free-text beat typed in "New author" (e.g. "royals"). */
   beatHint?: string;
@@ -70,6 +72,7 @@ function contextLines(draft: AuthorDraft, ctx: SiteContext): string {
     ctx.category ? `Category: ${ctx.category}` : "",
     ctx.topics?.length ? `Site topics: ${ctx.topics.join(", ")}` : "",
     ctx.tone ? `Site tone: ${ctx.tone}` : "",
+    ctx.audience ? `Site audience: ${ctx.audience}` : "",
     ctx.guidelines ? `Content guidelines: ${ctx.guidelines.slice(0, 600)}` : "",
     ctx.beatHint ? `Requested beat: ${ctx.beatHint}` : "",
     draft.name ? `Author name: ${draft.name}` : "",
@@ -83,6 +86,7 @@ const ASK: Record<TextPart, string> = {
   tagline: 'Write a short tagline for the author (max 60 characters, no trailing period), e.g. "Celebrity & royals writer". Return {"tagline": "..."}.',
   bio: 'Write the author\'s bio: 60–120 words, third person, warm and specific about what they cover and how they approach it. Return {"bio": "..."}.',
   beats: 'List 2–5 short beats (topics) the author covers, preferring the site\'s topics. Return {"beats": ["...", "..."]}.',
+  verticals: 'Choose the 1–3 site categories this author fits best, using ONLY names from the "Categories" list below, spelled exactly as listed. Return {"verticals": ["...", "..."]}.',
 };
 
 /**
@@ -98,13 +102,15 @@ export const NAME_HERITAGES = [
 
 export function buildTextPrompt(
   part: TextPart, draft: AuthorDraft, ctx: SiteContext, takenNames: string[], rng: () => number = Math.random,
+  verticalOptions: string[] = [],
 ): { system: string; user: string } {
   const taken = part === "name" && takenNames.length > 0 ? `\nNames already used (do not reuse): ${takenNames.join(", ")}` : "";
   const heritage = part === "name"
     ? `\nName heritage: ${NAME_HERITAGES[Math.min(NAME_HERITAGES.length - 1, Math.floor(rng() * NAME_HERITAGES.length))]}. Use a natural, everyday first and last name a person of that heritage writing for an English-language site could have (not a stereotype, not a famous person).`
     : "";
+  const categories = part === "verticals" ? `\nCategories: ${verticalOptions.join(" | ")}` : "";
   const ctxText = contextLines(draft, ctx);
-  return { system: SYSTEM, user: `${ctxText ? `${ctxText}\n\n` : ""}${ASK[part]}${heritage}${taken}` };
+  return { system: SYSTEM, user: `${ctxText ? `${ctxText}\n\n` : ""}${ASK[part]}${heritage}${categories}${taken}` };
 }
 
 /** Strip a markdown code fence some models wrap JSON in. */
@@ -124,11 +130,17 @@ function parseJson(raw: string): Record<string, unknown> | null {
 const NAME_RE = /^[A-Z][\p{L}'’-]+(?: [A-Z][\p{L}'’-]+){1,2}$/u;
 
 export function parseTextPart(
-  part: TextPart, raw: string, takenNames: string[],
+  part: TextPart, raw: string, takenNames: string[], verticalOptions: string[] = [],
 ): { ok: true; value: string | string[] } | { ok: false; reason: string } {
   const obj = parseJson(raw);
   if (!obj) return { ok: false, reason: "reply was not a JSON object" };
   const v = obj[part];
+  if (part === "verticals") {
+    if (!Array.isArray(v)) return { ok: false, reason: "verticals must be an array" };
+    const byKey = new Map(verticalOptions.map((o) => [o.toLowerCase(), o]));
+    const picked = [...new Set(v.filter((x): x is string => typeof x === "string").map((x) => byKey.get(x.trim().toLowerCase())).filter((x): x is string => !!x))];
+    return picked.length >= 1 && picked.length <= 3 ? { ok: true, value: picked } : { ok: false, reason: "pick 1–3 categories from the Categories list, spelled exactly" };
+  }
   if (part === "beats") {
     if (!Array.isArray(v)) return { ok: false, reason: "beats must be an array" };
     const seen = new Set<string>();

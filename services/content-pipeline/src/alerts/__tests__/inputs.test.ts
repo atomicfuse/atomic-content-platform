@@ -276,9 +276,10 @@ describe("gatherInputs", () => {
     expect(inputs.syncOk).toBeNull();
     expect(inputs.trackingOff).toBe(false);
     expect(inputs.reviewCount).toBe(0);
-    expect(inputs.createdLast30d).toBe(0);
-    expect(inputs.failedLast30d).toBe(0);
-    expect(inputs.createdLast14d).toBe(0);
+    // Unknown, not zero: a failed read must not look like "no articles" (that fired false alerts).
+    expect(inputs.createdLast30d).toBeNull();
+    expect(inputs.failedLast30d).toBeNull();
+    expect(inputs.createdLast14d).toBeNull();
     expect(inputs.expectedMonthly).toBe(0);
     expect(inputs.siteName).toBe(DOMAIN);
     expect(inputs.generalImages).toBe(0);
