@@ -25,6 +25,11 @@ const PRICES: Record<string, Price> = {
 
   // Google Gemini 2.5 Flash Image — $0.039 per image
   "gemini-2.5-flash-image": { kind: "image", perImage: 0.039 },
+
+  // OpenAI GPT Image 2.5 (flare = author portraits, sunburst = dashboard logos) — ~$0.053 per
+  // 1024×1024 high-quality image (OpenAI calculator estimate, 2026-10; both models price the same).
+  "gpt-image-2.5-flare": { kind: "image", perImage: 0.053 },
+  "gpt-image-2.5-sunburst": { kind: "image", perImage: 0.053 },
 };
 
 /** Aliases that resolve to a canonical PRICES key */
