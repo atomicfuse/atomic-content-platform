@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const yamls: Record<string, string> = {};
-vi.mock("@/lib/db/site-configs", () => ({ listSiteConfigs: vi.fn(async () => []) }));
+vi.mock("@/lib/db/site-configs", () => ({
+  listSiteConfigEntries: vi.fn(async () => [{ siteId: "scoopella", config: { domain: "scoopella.com", authors: [{ id: "fiona-galbraith", topics: [] }] } }]),
+}));
 vi.mock("@/lib/db/dashboard-index", () => ({ getDashboardIndex: vi.fn(async () => ({ sites: [{ domain: "dailybuzzalley" }, { domain: "scoopella" }] })) }));
 vi.mock("@/lib/github", () => ({ readFileContent: vi.fn(async (p: string, ref: string) => yamls[`${ref}:${p}`] ?? null) }));
 
@@ -35,3 +37,12 @@ describe("withSites without Mongo reads (local grid dev)", () => {
     expect(vi.mocked(readFileContent).mock.calls.length).toBeGreaterThan(reads);
   });
 });
+
+describe("withSites with Mongo reads (production)", () => {
+  it("names sites by their dashboard id, not the real hostname stored in the config", async () => {
+    vi.stubEnv("USE_MONGO_READS", "true");
+    const [out] = await withSites([FIONA]);
+    expect(out!.sites).toEqual([{ site: "scoopella", topics: [] }]);
+  });
+});
+

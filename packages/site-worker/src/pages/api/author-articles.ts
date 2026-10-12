@@ -4,11 +4,11 @@ import type { AuthorProfile } from '@atomic-platform/shared-types';
 import { getConfig, getSiteId, isPreviewMode } from '../../lib/config';
 import { articleIndexKey, authorKey, type ArticleIndexEntry } from '../../lib/kv-schema';
 import { articlesByAuthor, authorPageSlice, isAssignedAuthor } from '../../lib/authors';
-import { renderFeedCardsHtml } from '../../themes/modern/components/_render-feed-cards';
+import { renderAuthorCardsHtml } from '../../themes/modern/components/_render-author-cards';
 
 export const prerender = false;
 
-/** Next page of an author's articles as feed-card HTML (Load More on /author/<id>). */
+/** Next page of an author's articles as author-card HTML (Load More on /author/<id>). */
 export const GET: APIRoute = async (ctx) => {
   const url = new URL(ctx.request.url);
   const id = url.searchParams.get('id') ?? '';
@@ -20,7 +20,7 @@ export const GET: APIRoute = async (ctx) => {
   if (!profile) return notFound;
   const index = (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(getSiteId(ctx)), 'json')) ?? [];
   const { items } = authorPageSlice(articlesByAuthor(index, profile, isPreviewMode(ctx), config.authors ?? []), page, config.categories.per_page);
-  return new Response(renderFeedCardsHtml(items), {
+  return new Response(renderAuthorCardsHtml(items), {
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, s-maxage=60, stale-while-revalidate=300' },
   });
 };
