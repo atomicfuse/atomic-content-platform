@@ -1,12 +1,17 @@
 import { connectedSitesByAuthor } from "./connected";
 import { parse as parseYaml } from "yaml";
-import { listSiteConfigs } from "@/lib/db/site-configs";
+import { listSiteConfigEntries } from "@/lib/db/site-configs";
 import { getDashboardIndex } from "@/lib/db/dashboard-index";
 import { readFileContent } from "@/lib/github";
 import { NETWORK_REPO_NAME, NETWORK_REPO_OWNER } from "@/lib/constants";
 import type { AuthorListItem, AuthorRecord } from "./types";
 
 const mongoReads = (): boolean => process.env.USE_MONGO_READS === "true";
+
+/** Mongo site configs keyed by their dashboard site id (the restored `domain` can be the real hostname). */
+async function siteConfigsFromMongo(): Promise<Array<Record<string, unknown>>> {
+  return (await listSiteConfigEntries()).map((e) => ({ ...e.config, domain: e.siteId }));
+}
 
 /**
  * Every site's site.yaml from git (its staging branch, else main), fresh. Used where Mongo reads are off (local grid
@@ -33,7 +38,7 @@ export function invalidateConnectedSites(): void {
 
 /** Display only: a minute-old git read is fine, and a failed read shows no sites rather than failing the page. */
 async function siteConfigsForDisplay(): Promise<Array<Record<string, unknown>>> {
-  if (mongoReads()) return listSiteConfigs().catch(() => []);
+  if (mongoReads()) return siteConfigsFromMongo().catch(() => []);
   if (!gitCache || Date.now() - gitCache.at > GIT_CACHE_MS) {
     const configs = siteConfigsFromGit();
     gitCache = { at: Date.now(), configs };
@@ -53,6 +58,6 @@ export async function withSites(authors: AuthorRecord[]): Promise<AuthorListItem
  * site.yaml read fresh from git (never the display cache). Throws when any of that can't be read.
  */
 export async function connectedSitesStrict(id: string): Promise<string[]> {
-  const configs = mongoReads() ? await listSiteConfigs() : await siteConfigsFromGit();
+  const configs = mongoReads() ? await siteConfigsFromMongo() : await siteConfigsFromGit();
   return (connectedSitesByAuthor(configs).get(id) ?? []).map((s) => s.site);
 }

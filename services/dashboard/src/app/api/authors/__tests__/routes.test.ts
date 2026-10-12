@@ -29,10 +29,10 @@ vi.mock("@/lib/r2-upload", () => ({
 vi.mock("@/lib/authors/portrait-cleanup", () => ({ deleteAuthorPortraits: vi.fn(async () => 0) }));
 vi.mock("@/lib/grid-agent-url", () => ({ getAgentUrl: () => "http://pipeline" }));
 vi.mock("@/lib/db/site-configs", () => ({
-  listSiteConfigs: vi.fn(async () => [{ domain: "scoopella", authors: [{ id: "ella-hughes", topics: ["Royals"] }] }]),
+  listSiteConfigEntries: vi.fn(async () => [{ siteId: "scoopella", config: { domain: "scoopella.com", authors: [{ id: "ella-hughes", topics: ["Royals"] }] } }]),
 }));
 
-import { listSiteConfigs } from "@/lib/db/site-configs";
+import { listSiteConfigEntries } from "@/lib/db/site-configs";
 import { deleteAuthor } from "@/lib/authors/store";
 import { deleteAuthorPortraits } from "@/lib/authors/portrait-cleanup";
 import { GET as servePortrait, POST as uploadPortrait } from "../portrait/route";
@@ -71,7 +71,7 @@ describe("authors API", () => {
 
   it("delete refuses (503) when the sites using the author can't be checked, instead of assuming none", async () => {
     db.push({ ...ELLA, id: "maya-ortiz", name: "Maya Ortiz" });
-    vi.mocked(listSiteConfigs).mockRejectedValueOnce(new Error("no primary"));
+    vi.mocked(listSiteConfigEntries).mockRejectedValueOnce(new Error("no primary"));
     expect((await remove(new Request("http://x", { method: "DELETE" }) as never, ctx("maya-ortiz"))).status).toBe(503);
     expect(deleteAuthor).not.toHaveBeenCalled();
   });

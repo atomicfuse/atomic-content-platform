@@ -79,6 +79,18 @@ export async function listSiteConfigs(): Promise<Array<Record<string, unknown>>>
   return docs.map((doc) => restoreSiteConfigDoc(doc as Record<string, unknown>));
 }
 
+/**
+ * Every site config with its dashboard site id (the Mongo key). The config's own `domain` is restored to the real
+ * hostname (e.g. "scoopella.com"), so callers that need the id the dashboard uses in URLs read `siteId`.
+ * Empty when Mongo reads are off.
+ */
+export async function listSiteConfigEntries(): Promise<Array<{ siteId: string; config: Record<string, unknown> }>> {
+  if (!useMongoReads()) return [];
+  const db = await getMongoDb();
+  const docs = await db.collection(COLLECTIONS.siteConfigs).find({}).sort({ domain: 1 }).toArray();
+  return docs.map((doc) => ({ siteId: String((doc as Record<string, unknown>).domain), config: restoreSiteConfigDoc(doc as Record<string, unknown>) }));
+}
+
 // ---------------------------------------------------------------------------
 // Writes (soft-fail: log warning, never throw)
 // These ALWAYS write to MongoDB regardless of the feature flag.
