@@ -6,12 +6,8 @@ import { useToast } from "@/components/ui/Toast";
 import { normalizeSiteAuthors, siteAudienceOf, siteTopicsOf } from "@/lib/authors/assignment";
 import { generateSiteAuthor } from "@/lib/authors/site-author-flow";
 import { getVerticals } from "@/lib/reference-data";
+import type { PlanStep } from "@/lib/authors/pairing";
 import type { AuthorRecord } from "@/lib/authors/types";
-
-export interface AssignableSite {
-  domain: string;
-  vertical?: string;
-}
 
 export interface AssignAllProgress {
   done: number;
@@ -21,19 +17,46 @@ export interface AssignAllProgress {
   current: string;
 }
 
+type SiteState = { kind: "ok"; config: Record<string, unknown> } | { kind: "skip" } | { kind: "fail" };
+
+async function readSite(domain: string): Promise<SiteState> {
+  const res = await fetch(`/api/sites/site-config?domain=${encodeURIComponent(domain)}`).catch(() => null);
+  const config = res?.ok ? ((await res.json().catch(() => ({}))) as { config?: Record<string, unknown> }).config : undefined;
+  if (!config) return { kind: "fail" };
+  const theme = (config.theme ?? {}) as { template?: unknown };
+  return normalizeSiteAuthors(config.authors).length > 0 || theme.template === "grid" ? { kind: "skip" } : { kind: "ok", config };
+}
+
+/** Saves one author onto a site that must still have none (the server re-checks against git). */
+async function saveAuthorTo(domain: string, authorId: string, confirmExclusive: boolean): Promise<"ok" | "skip" | "fail"> {
+  const res = await fetch("/api/sites/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      domain, logoBase64: null, faviconBase64: null,
+      configUpdates: { authors: [{ id: authorId, topics: [] }], onlyIfNoAuthors: true, ...(confirmExclusive ? { confirmedExclusive: [authorId] } : {}) },
+    }),
+  }).catch(() => null);
+  const out = (await res?.json().catch(() => ({})) ?? {}) as { status?: string; code?: string };
+  if (res?.ok && out.status === "ok") return "ok";
+  return out.code === "has-authors" ? "skip" : "fail";
+}
+
 /**
- * Option A in bulk: every chosen site without authors gets one new author written for it and exclusive to it.
- * One site at a time (each step is a short request); skips sites that already have authors and Grid sites.
+ * Carries out the "Give every site an author" plan, one step at a time (each request is short): an existing author
+ * joins a site, or one new author (not exclusive) is written for a pair of sites in the same category and saved to both. Every site
+ * is re-checked first; a new author no site took is removed again.
  */
-export function useAssignAllRun(): { progress: AssignAllProgress | null; start: (sites: AssignableSite[]) => void } {
+export function useAssignAllRun(): { progress: AssignAllProgress | null; start: (steps: PlanStep[]) => void } {
   const router = useRouter();
   const { toast } = useToast();
   const [progress, setProgress] = useState<AssignAllProgress | null>(null);
   const active = useRef(false);
 
-  async function run(sites: AssignableSite[]): Promise<void> {
-    // Show the run (and disable the button) before the first request.
-    setProgress({ done: 0, skipped: 0, failed: 0, total: sites.length, current: sites[0]!.domain });
+  async function run(steps: PlanStep[]): Promise<void> {
+    const total = steps.reduce((n, s) => n + (s.kind === "join" ? 1 : s.sites.length), 0);
+    const first = steps[0]!;
+    setProgress({ done: 0, skipped: 0, failed: 0, total, current: first.kind === "join" ? first.site : first.sites.join(" and ") });
     // Taken names keep every new author unique; without the library list names could repeat, so stop.
     const libRes = await fetch("/api/authors").catch(() => null);
     const library = libRes?.ok ? ((await libRes.json().catch(() => ({}))) as { authors?: AuthorRecord[] }).authors : undefined;
@@ -47,45 +70,55 @@ export function useAssignAllRun(): { progress: AssignAllProgress | null; start: 
     let done = 0;
     let skipped = 0;
     let failed = 0;
-    const removeOrphan = (id: string): Promise<unknown> => fetch(`/api/authors/${id}`, { method: "DELETE" }).catch(() => null);
-    for (const s of sites) {
-      setProgress({ done, skipped, failed, total: sites.length, current: s.domain });
+    let created = 0;
+    const tally = (r: "ok" | "skip" | "fail"): void => { if (r === "ok") done++; else if (r === "skip") skipped++; else failed++; };
+
+    for (const step of steps) {
+      setProgress({ done, skipped, failed, total, current: step.kind === "join" ? step.site : step.sites.join(" and ") });
       try {
-        const cfgRes = await fetch(`/api/sites/site-config?domain=${encodeURIComponent(s.domain)}`);
-        const config = cfgRes.ok ? ((await cfgRes.json()) as { config?: Record<string, unknown> }).config : undefined;
-        if (!config) { failed++; continue; }
-        const theme = (config.theme ?? {}) as { template?: unknown };
-        if (normalizeSiteAuthors(config.authors).length > 0 || theme.template === "grid") { skipped++; continue; }
-        const brief = (config.brief ?? {}) as { vertical?: unknown; tone?: unknown };
+        if (step.kind === "join") {
+          const state = await readSite(step.site);
+          if (state.kind !== "ok") { tally(state.kind === "skip" ? "skip" : "fail"); continue; }
+          tally(await saveAuthorTo(step.site, step.authorId, true));
+          continue;
+        }
+        const states = await Promise.all(step.sites.map(async (d) => ({ domain: d, state: await readSite(d) })));
+        const usable = states.filter((x): x is { domain: string; state: { kind: "ok"; config: Record<string, unknown> } } => x.state.kind === "ok");
+        for (const x of states) if (x.state.kind !== "ok") tally(x.state.kind === "skip" ? "skip" : "fail");
+        if (usable.length === 0) continue;
+        const configs = usable.map((x) => x.state.config);
+        const brief = (configs[0]!.brief ?? {}) as { vertical?: unknown; tone?: unknown };
         const draft = await generateSiteAuthor(
           {
-            domain: s.domain,
-            siteName: typeof config.site_name === "string" ? config.site_name : s.domain,
-            vertical: typeof brief.vertical === "string" && brief.vertical ? brief.vertical : s.vertical,
-            topics: siteTopicsOf(config),
+            domain: usable[0]!.domain,
+            siteName: configs.map((c, i) => (typeof c.site_name === "string" ? c.site_name : usable[i]!.domain)).join(" and "),
+            vertical: typeof brief.vertical === "string" && brief.vertical ? brief.vertical : undefined,
+            topics: [...new Set(configs.flatMap((c) => siteTopicsOf(c)))],
             tone: typeof brief.tone === "string" ? brief.tone : undefined,
-            audience: siteAudienceOf(config),
+            audience: [...new Set(configs.map((c) => siteAudienceOf(c)).filter((a): a is string => !!a))].join(", ") || undefined,
           },
           taken,
           verticalOptions,
         );
-        if (!draft) { failed++; continue; }
-        const created = await fetch("/api/authors", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ author: draft }) });
-        const author = ((await created.json()) as { author?: { id: string } }).author;
-        if (!created.ok || !author) { failed++; continue; }
-        taken.names.push(draft.name);
-        taken.ids.push(author.id);
-        // onlyIfNoAuthors: the save refuses if git shows authors the site list (Mongo) didn't — never replace them.
-        const save = await fetch("/api/sites/save", {
+        if (!draft) { usable.forEach(() => tally("fail")); continue; }
+        const res = await fetch("/api/authors", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ domain: s.domain, logoBase64: null, faviconBase64: null, configUpdates: { authors: [{ id: author.id, topics: [] }], onlyIfNoAuthors: true } }),
-        });
-        const out = (await save.json().catch(() => ({}))) as { status?: string; code?: string };
-        if (save.ok && out.status === "ok") { done++; continue; }
+          body: JSON.stringify({ author: draft }),
+        }).catch(() => null);
+        const author = res?.ok ? ((await res.json().catch(() => ({}))) as { author?: { id: string } }).author : undefined;
+        if (!author) { usable.forEach(() => tally("fail")); continue; }
+        taken.names.push(draft.name);
+        taken.ids.push(author.id);
+        let placed = 0;
+        for (const x of usable) {
+          const r = await saveAuthorTo(x.domain, author.id, false);
+          tally(r);
+          if (r === "ok") placed++;
+        }
         // Not used by any site: remove it so a later run doesn't leave a second one behind.
-        await removeOrphan(author.id);
-        if (out.code === "has-authors") skipped++; else failed++;
+        if (placed === 0) await fetch(`/api/authors/${author.id}`, { method: "DELETE" }).catch(() => null);
+        else created++;
       } catch {
         failed++;
       } finally {
@@ -95,15 +128,15 @@ export function useAssignAllRun(): { progress: AssignAllProgress | null; start: 
     setProgress(null);
     const site = (n: number): string => `${n} site${n === 1 ? "" : "s"}`;
     toast(
-      `Authors created for ${site(done)}.${skipped ? ` ${skipped} skipped (already had authors or Grid).` : ""}${failed ? ` ${failed} need another try.` : ""}`,
+      `Authors set for ${site(done)}${created ? ` (${created} new author${created === 1 ? "" : "s"})` : ""}.${skipped ? ` ${skipped} skipped (already had authors or Grid).` : ""}${failed ? ` ${failed} need another try.` : ""}`,
       failed ? "info" : "success",
     );
   }
 
-  function start(sites: AssignableSite[]): void {
-    if (active.current || sites.length === 0) return;
+  function start(steps: PlanStep[]): void {
+    if (active.current || steps.length === 0) return;
     active.current = true;
-    void run(sites).finally(() => { active.current = false; });
+    void run(steps).finally(() => { active.current = false; });
   }
 
   return { progress, start };

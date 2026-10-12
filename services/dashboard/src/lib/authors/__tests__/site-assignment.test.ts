@@ -56,3 +56,14 @@ describe("exclusive append reads the author fresh", () => {
   });
 });
 
+describe("an author just created (the library listing hasn't caught up yet)", () => {
+  it("is confirmed by reading their file directly instead of being refused as unknown", async () => {
+    const fresh = mk("layla-haddad", { exclusive_sites: ["journeypeaks"] });
+    const d = deps([]);
+    d.readAuthor.mockImplementation(async (id: string) => (id === "layla-haddad" ? fresh : null));
+    const out = await applySiteAuthors("journeypeaks", [{ id: "layla-haddad", topics: [] }], [], [], d);
+    expect(out).toEqual({ ok: true, authors: [{ id: "layla-haddad", topics: [] }] });
+    expect(await applySiteAuthors("journeypeaks", [{ id: "nobody", topics: [] }], [], [], d)).toMatchObject({ ok: false, status: 400 });
+  });
+});
+

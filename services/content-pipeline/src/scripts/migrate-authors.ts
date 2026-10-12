@@ -114,6 +114,7 @@ function plan(): void {
   const by = (k: "from" | "site"): string => Object.entries(p.recredit.reduce<Record<string, number>>((acc, r) => { acc[r[k]] = (acc[r[k]] ?? 0) + 1; return acc; }, {})).map(([n, c]) => `${n} ${c}`).join(", ");
   console.log(`Sites read: ${sites.length}. Library authors: ${library.length}.`);
   console.log(`New library authors: ${p.createAuthors.map((a) => `${a.name} (exclusive to ${a.exclusive_sites.join(", ")})`).join(", ") || "none"}.`);
+  console.log(`No longer exclusive (created by the first bulk run): ${p.clearExclusive.join(", ") || "none"}.`);
   console.log(`Articles re-credited: ${p.recredit.length} (by old byline: ${by("from") || "none"}).`);
   console.log(`Sites still without authors (their bad bylines wait): ${p.waiting.map((w) => `${w.site} ${w.articles}`).join(", ") || "none"}.`);
   console.log(`Review ${out}, then: npx tsx src/scripts/migrate-authors.ts apply --plan ${out}`);
@@ -138,6 +139,14 @@ function apply(): void {
     const doc = parseDocument(readFileSync(f, "utf8"));
     const cur = (doc.get("exclusive_sites") as { toJSON(): unknown } | undefined)?.toJSON();
     doc.set("exclusive_sites", [...new Set([...(Array.isArray(cur) ? (cur as string[]) : []), ...x.sites])]);
+    doc.set("updated_at", now);
+    writeFileSync(f, doc.toString({ lineWidth: 0 }));
+  }
+  for (const id of p.clearExclusive ?? []) {
+    const f = path.join(main, "authors", `${id}.yaml`);
+    if (!existsSync(f)) continue;
+    const doc = parseDocument(readFileSync(f, "utf8"));
+    doc.set("exclusive_sites", []);
     doc.set("updated_at", now);
     writeFileSync(f, doc.toString({ lineWidth: 0 }));
   }
