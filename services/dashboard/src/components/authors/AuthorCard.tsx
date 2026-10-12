@@ -19,7 +19,7 @@ export function AuthorCard({ author }: { author: AuthorListItem }): React.ReactE
       className="group flex flex-col gap-3 rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-surface)] p-4 transition-[transform,box-shadow] duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-px hover:shadow-[0_6px_20px_-12px_rgb(6_182_212/0.35)] motion-reduce:transition-none motion-reduce:hover:translate-y-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan/60"
     >
       <div className="flex items-start gap-3">
-        <AuthorAvatar name={author.name} portrait={author.portrait} />
+        <AuthorAvatar name={author.name} portrait={author.portrait} preview="hover" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate text-sm font-semibold text-[var(--text-primary)]">{author.name}</h3>

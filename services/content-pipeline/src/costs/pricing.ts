@@ -28,7 +28,8 @@ const PRICES: Record<string, Price> = {
 
   // OpenAI GPT Image 2.5 (flare = author portraits, sunburst = dashboard logos) — ~$0.053 per
   // 1024×1024 high-quality image (OpenAI calculator estimate, 2026-10; both models price the same).
-  "gpt-image-2.5-flare": { kind: "image", perImage: 0.053 },
+  // Portraits use medium quality: estimated at a quarter of high (the high:medium ratio of earlier GPT Image models).
+  "gpt-image-2.5-flare": { kind: "image", perImage: 0.013 },
   "gpt-image-2.5-sunburst": { kind: "image", perImage: 0.053 },
 };
 

@@ -28,7 +28,7 @@ export default async function NewAuthorPage({ searchParams }: { searchParams: Pr
       author={null}
       mode="create"
       sites={index.sites.map((s) => ({ domain: s.domain }))}
-      takenNames={all.map((a) => a.name)}
+      takenNames={all.map((a) => a.name)} takenIds={all.map((a) => a.id)}
       autoGenerate={sp.generate === "1"}
       context={context}
     />

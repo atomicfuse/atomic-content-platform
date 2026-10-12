@@ -18,7 +18,7 @@ authors **assigned per site** (with topics), **author pages** on the sites, byli
 | D5 | Each author on a site gets **their own author page** on that site; bylines link to it; an **"About the author"** box ends each article. |
 | D6 | **AI generation:** "Generate everything" in one click **and** a separate regenerate per part (portrait, bio, tagline, beats). |
 | D7 | **Migration:** every existing author name becomes a library author linked to its site(s), **non-exclusive — except Ella Hughes, exclusive to scoopella**. |
-| D8 | **Portraits:** OpenAI **`gpt-image-2.5-flare`**, one consistent **illustrated editorial style — not photorealistic** (agreed: no fabricated photographs of people who don't exist). Uploading a real photo is always possible; initials are the fallback. Bios are warm and human about the author's beat, with **no invented credentials, degrees or employers**. |
+| D8 | **Portraits:** OpenAI **`gpt-image-2.5-flare`** (medium quality). **Revised 2026-10-12 (Asaf):** a per-generation choice of **Realistic** (default) or **Illustrated**, with randomly drawn looks per portrait; the style is not stored on the author. (Originally illustrated only.) Uploading a real photo is always possible; initials are the fallback. Bios are warm and human about the author's beat, with **no invented credentials, degrees or employers**. |
 | D9 | **Logos** (separate small part): wizard + "Generate logo" switch from Gemini to OpenAI **`gpt-image-2.5-sunburst`** (precision tier), Gemini kept as fallback. |
 
 Model ids verified against the account's `/v1/models` on 2026-10-08: `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` (dated variants `…-2026-09-08`).

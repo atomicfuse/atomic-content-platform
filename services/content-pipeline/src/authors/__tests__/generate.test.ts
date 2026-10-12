@@ -53,4 +53,28 @@ describe("portraitKey", () => {
   it("is content-hashed under authors/assets", () => {
     expect(portraitKey("maya-ortiz", Buffer.from("x"))).toMatch(/^authors\/assets\/maya-ortiz-[0-9a-f]{10}\.webp$/);
   });
+
 });
+
+describe("generateAuthorPart deadline", () => {
+  it("answers within its deadline (504) when the AI is too slow, and still records the cost when the call finishes", async () => {
+    const d = deps([]);
+    let finish: () => void = () => undefined;
+    d.generateText = vi.fn(() => new Promise<Awaited<ReturnType<GenerateDeps["generateText"]>>>((r) => { finish = () => r({ text: `{"bio":"${BIO}"}`, usage: { inputTokens: 1, outputTokens: 1 }, model: "m" }); }));
+    const started = Date.now();
+    await expect(generateAuthorPart({ part: "bio", draft: {}, siteContext: {}, takenNames: [] }, d, { deadlineMs: 30 }))
+      .rejects.toMatchObject({ status: 504 });
+    expect(Date.now() - started).toBeLessThan(1000);
+    finish();
+    await vi.waitFor(() => expect(d.recordText).toHaveBeenCalled());
+  });
+
+  it("doesn't start a retry it has no time left for", async () => {
+    const d = deps([]);
+    d.generateText = vi.fn(async () => { await new Promise((r) => setTimeout(r, 40)); return { text: '{"bio":"too short"}', usage: { inputTokens: 1, outputTokens: 1 }, model: "m" }; });
+    await expect(generateAuthorPart({ part: "bio", draft: {}, siteContext: {}, takenNames: [] }, d, { deadlineMs: 30 }))
+      .rejects.toMatchObject({ status: 504 });
+    expect(d.generateText).toHaveBeenCalledTimes(1);
+  });
+});
+

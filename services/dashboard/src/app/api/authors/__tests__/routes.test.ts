@@ -21,12 +21,22 @@ vi.mock("@/lib/github", () => ({
     return raw ?? null;
   }),
 }));
+const r2 = { objects: new Map<string, Buffer>() };
+vi.mock("@/lib/r2-upload", () => ({
+  readFromR2: vi.fn(async (k: string) => r2.objects.get(k) ?? null),
+  uploadToR2: vi.fn(async () => true),
+}));
+vi.mock("@/lib/authors/portrait-cleanup", () => ({ deleteAuthorPortraits: vi.fn(async () => 0) }));
+vi.mock("@/lib/grid-agent-url", () => ({ getAgentUrl: () => "http://pipeline" }));
 vi.mock("@/lib/db/site-configs", () => ({
   listSiteConfigs: vi.fn(async () => [{ domain: "scoopella", authors: [{ id: "ella-hughes", topics: ["Royals"] }] }]),
 }));
 
 import { listSiteConfigs } from "@/lib/db/site-configs";
 import { deleteAuthor } from "@/lib/authors/store";
+import { deleteAuthorPortraits } from "@/lib/authors/portrait-cleanup";
+import { GET as servePortrait, POST as uploadPortrait } from "../portrait/route";
+import { POST as generate } from "../generate/route";
 import { GET as list, POST as create } from "../route";
 import { DELETE as remove, GET as one } from "../[id]/route";
 
@@ -80,4 +90,38 @@ describe("authors API", () => {
     gitSites.set("coffeeactually", "domain: coffeeactually\n");
     expect((await remove(new Request("http://x", { method: "DELETE" }) as never, ctx("maya-ortiz"))).status).toBe(200);
   });
+
+  it("deleting an author also removes its portrait files", async () => {
+    db.push({ ...ELLA, id: "maya-ortiz", name: "Maya Ortiz" });
+    expect((await remove(new Request("http://x", { method: "DELETE" }) as never, ctx("maya-ortiz"))).status).toBe(200);
+    expect(deleteAuthorPortraits).toHaveBeenCalledWith("maya-ortiz");
+  });
+
+  it("generate proxy adds the library's names to takenNames (except the name being replaced)", async () => {
+    db.push({ ...ELLA, id: "maya-ortiz", name: "Maya Ortiz" });
+    const sent: Array<Record<string, unknown>> = [];
+    global.fetch = vi.fn(async (_u: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init!.body)));
+      return new Response(JSON.stringify({ status: "ok", value: "x" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const req = new Request("http://x", { method: "POST", body: JSON.stringify({ part: "name", draft: { name: "Maya Ortiz" }, siteContext: {}, takenNames: [] }) });
+    expect((await generate(req as never)).status).toBe(200);
+    expect(sent[0]!.takenNames).toEqual(["Ella Hughes"]);
+  });
+
+  it("portrait serve sends nosniff", async () => {
+    r2.objects.set("authors/assets/ella-hughes-abc.webp", Buffer.from("x"));
+    const req = { nextUrl: new URL("http://x/api/authors/portrait?path=/authors/assets/ella-hughes-abc.webp") };
+    const res = await servePortrait(req as never);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  it("portrait upload refuses an oversized body before reading it", async () => {
+    const formData = vi.fn();
+    const req = { headers: new Headers({ "content-length": String(20 * 1024 * 1024) }), formData };
+    const res = await uploadPortrait(req as never);
+    expect(res.status).toBe(413);
+    expect(formData).not.toHaveBeenCalled();
+  });
 });
+

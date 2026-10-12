@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { deleteAuthor, readAuthor, updateAuthor } from "@/lib/authors/store";
 import { validateAuthorInput } from "@/lib/authors/record";
+import { deleteAuthorPortraits } from "@/lib/authors/portrait-cleanup";
 import { connectedSitesStrict, withSites } from "@/lib/authors/with-sites";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -40,5 +41,6 @@ export async function DELETE(_req: NextRequest, { params }: Ctx): Promise<NextRe
     return NextResponse.json({ error: "Remove this author from their sites first", sites }, { status: 409 });
   }
   await deleteAuthor(id);
+  await deleteAuthorPortraits(id);
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/Toast";
 import { ChipMultiSelect } from "@/components/config/grid/ChipMultiSelect";
 import { authorIdFromName } from "@/lib/authors/record";
 import { ALL_PARTS, generatePart, runParts, type GenerateContext, type PartStatus } from "@/lib/authors/generate-flow";
-import type { AuthorInput, AuthorListItem, AuthorPart } from "@/lib/authors/types";
+import type { AuthorInput, AuthorListItem, AuthorPart, PortraitStyle } from "@/lib/authors/types";
 import { AuthorAvatar } from "./AuthorAvatar";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
 
@@ -19,6 +19,8 @@ interface AuthorProfileEditorProps {
   mode: "create" | "edit";
   sites: Array<{ domain: string }>;
   takenNames: string[];
+  /** Ids already in the library, so files made before the first save use the id the author will get. */
+  takenIds?: string[];
   autoGenerate?: boolean;
   context?: GenerateContext;
 }
@@ -87,6 +89,28 @@ function BeatsEditor({ value, onChange }: { value: string[]; onChange: (next: st
   );
 }
 
+const STYLE_OPTIONS: Array<{ id: PortraitStyle; label: string }> = [
+  { id: "realistic", label: "Realistic" },
+  { id: "illustrated", label: "Illustrated" },
+];
+
+/** Segmented choice for the next generated portrait (Regenerate and Generate everything). */
+function PortraitStylePicker({ value, onChange, disabled }: { value: PortraitStyle; onChange: (s: PortraitStyle) => void; disabled: boolean }): React.ReactElement {
+  return (
+    <div role="radiogroup" aria-label="Portrait style" className="mx-auto flex w-fit rounded-full border border-[var(--border-primary)] bg-[var(--bg-elevated)] p-1">
+      {STYLE_OPTIONS.map((o) => (
+        <label
+          key={o.id}
+          className={`flex min-h-9 cursor-pointer items-center rounded-full px-4 text-xs font-medium transition-colors duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan/50 ${value === o.id ? "bg-[var(--bg-surface)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"} ${disabled ? "pointer-events-none opacity-50" : ""}`}
+        >
+          <input type="radio" name="portrait-style" value={o.id} checked={value === o.id} disabled={disabled} onChange={(): void => onChange(o.id)} className="sr-only" />
+          {o.label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function RegenerateButton({ part, busy, locked, onClick }: { part: AuthorPart; busy: boolean; locked?: boolean; onClick: () => void }): React.ReactElement {
   return (
     <Button variant="ghost" size="sm" onClick={onClick} disabled={busy || locked} aria-label={`Regenerate ${part}`} loading={busy}>
@@ -95,31 +119,38 @@ function RegenerateButton({ part, busy, locked, onClick }: { part: AuthorPart; b
   );
 }
 
-export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGenerate, context }: AuthorProfileEditorProps): React.ReactElement {
+export function AuthorProfileEditor({ author, mode, sites, takenNames, takenIds = [], autoGenerate, context }: AuthorProfileEditorProps): React.ReactElement {
   const router = useRouter();
   const { toast } = useToast();
-  const saved = useMemo(() => toInput(author), [author]);
+  const [saved, setSaved] = useState<AuthorInput>(() => toInput(author));
   const [draft, setDraft] = useState<AuthorInput>(saved);
+  useEffect(() => { setSaved(toInput(author)); }, [author]);
   const [busy, setBusy] = useState<Partial<Record<AuthorPart, boolean>>>({});
   const [errors, setErrors] = useState<Partial<Record<AuthorPart, string>>>({});
   const [checklist, setChecklist] = useState<Partial<Record<AuthorPart, PartStatus>> | null>(null);
   const [running, setRunning] = useState(false);
+  const [portraitStyle, setPortraitStyle] = useState<PortraitStyle>("realistic");
+  /** A new name was generated while a generated portrait (made for the old name) is shown. */
+  const [portraitBehindName, setPortraitBehindName] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const generatedOnce = useRef(false);
 
   const changed = (Object.keys(FIELD_PART) as Array<keyof AuthorInput>).filter((k) => JSON.stringify(draft[k]) !== JSON.stringify(saved[k]));
   const dirty = changed.length > 0;
-  const idFor = (d: Partial<AuthorInput>): string => author?.id ?? authorIdFromName(d.name || "author", []);
+  const idFor = (d: Partial<AuthorInput>): string => author?.id ?? authorIdFromName(d.name || "author", takenIds);
   const others = takenNames.filter((n) => n.toLowerCase() !== (author?.name ?? "").toLowerCase());
 
   async function regenerate(part: AuthorPart): Promise<void> {
     setBusy((b) => ({ ...b, [part]: true }));
     setErrors((e) => ({ ...e, [part]: undefined }));
     try {
-      const patch = await generatePart(part, draft, { authorId: part === "portrait" ? idFor(draft) : undefined, context, takenNames: others });
+      const patch = await generatePart(part, draft, { authorId: part === "portrait" ? idFor(draft) : undefined, context, takenNames: others, portraitStyle });
       setDraft((d) => ({ ...d, ...patch }));
+      if (part === "name" && draft.portrait?.kind === "generated") setPortraitBehindName(true);
+      if (part === "portrait") setPortraitBehindName(false);
     } catch (err) {
       setErrors((e) => ({ ...e, [part]: err instanceof Error ? err.message : String(err) }));
     } finally {
@@ -133,7 +164,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
     setRunning(true);
     setChecklist({});
     try {
-      await runParts(ALL_PARTS, draft, { authorIdFor: idFor, context, takenNames: others, onPatch: (patch) => setDraft((d) => ({ ...d, ...patch })) }, (part, status, error) => {
+      await runParts(ALL_PARTS, draft, { authorIdFor: idFor, context, takenNames: others, portraitStyle, onPatch: (patch) => setDraft((d) => ({ ...d, ...patch })) }, (part, status, error) => {
         setChecklist((c) => ({ ...c, [part]: status }));
         if (status === "error") setErrors((e) => ({ ...e, [part]: error }));
       });
@@ -155,9 +186,13 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ author: draft }),
       });
-      const out = (await res.json()) as { author?: { id: string }; error?: string };
+      const out = (await res.json()) as { author?: AuthorListItem; error?: string };
       if (!res.ok || !out.author) throw new Error(out.error ?? `Save failed (${res.status})`);
       toast("Author saved", "success");
+      // What the server stored (trimmed, empty links dropped) becomes the clean state, so nothing looks unsaved.
+      const stored = toInput(out.author);
+      setSaved(stored);
+      setDraft(stored);
       if (mode === "create") router.push(`/authors/${out.author.id}`); else router.refresh();
     } catch (err) {
       toast(err instanceof Error ? err.message : "Save failed", "error");
@@ -177,6 +212,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
       const out = (await res.json()) as { portrait?: AuthorInput["portrait"]; error?: string };
       if (!res.ok || !out.portrait) throw new Error(out.error ?? "Upload failed");
       setDraft((d) => ({ ...d, portrait: out.portrait! }));
+      setPortraitBehindName(false);
     } catch (err) {
       setErrors((e) => ({ ...e, portrait: err instanceof Error ? err.message : String(err) }));
     } finally {
@@ -185,9 +221,11 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
   }
 
   async function remove(): Promise<void> {
-    const res = await fetch(`/api/authors/${author!.id}`, { method: "DELETE" });
-    const out = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) { toast(out.error ?? "Delete failed", "error"); return; }
+    // Delete checks every site's config and removes the portrait files, so it takes a few seconds.
+    setDeleting(true);
+    const res = await fetch(`/api/authors/${author!.id}`, { method: "DELETE" }).catch(() => null);
+    const out = (await res?.json().catch(() => ({})) ?? {}) as { error?: string };
+    if (!res?.ok) { setDeleting(false); toast(out.error ?? "Delete failed", "error"); return; }
     toast(`${author!.name} deleted`, "success");
     router.push("/authors");
   }
@@ -206,14 +244,21 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
           <div className="flex justify-center">
             {busy.portrait
               ? <div aria-label="Generating portrait" className="h-40 w-40 rounded-2xl bg-[var(--bg-elevated)] animate-pulse motion-reduce:animate-none" />
-              : <AuthorAvatar name={draft.name || "New author"} portrait={draft.portrait} size="lg" />}
+              : <AuthorAvatar name={draft.name || "New author"} portrait={draft.portrait} size="lg" preview="button" />}
           </div>
+          <PortraitStylePicker value={portraitStyle} onChange={setPortraitStyle} disabled={running || !!busy.portrait} />
           <div className="flex flex-wrap justify-center gap-2">
             <Button variant="secondary" size="sm" onClick={(): void => { void regenerate("portrait"); }} disabled={running || busy.portrait} aria-label="Regenerate portrait"><SparkIcon />Regenerate</Button>
             <Button variant="secondary" size="sm" onClick={(): void => fileRef.current?.click()} disabled={running || busy.portrait}>Upload</Button>
-            {draft.portrait && <Button variant="ghost" size="sm" onClick={(): void => setDraft((d) => ({ ...d, portrait: null }))}>Remove</Button>}
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e): void => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
+            {draft.portrait && <Button variant="ghost" size="sm" onClick={(): void => { setDraft((d) => ({ ...d, portrait: null })); setPortraitBehindName(false); }}>Remove</Button>}
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e): void => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
           </div>
+          {portraitBehindName && !busy.portrait && (
+            <p className="text-center text-xs text-[var(--text-secondary)]">
+              This portrait was made for the previous name.{" "}
+              <button type="button" className="font-medium text-cyan underline-offset-2 hover:underline" disabled={running} onClick={(): void => { void regenerate("portrait"); }}>Make a matching portrait</button>
+            </p>
+          )}
           {errors.portrait && (
             <p role="alert" className="text-center text-xs text-red-400">
               {errors.portrait}{" "}
@@ -309,7 +354,7 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
           <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
             <p className="text-sm text-[var(--text-secondary)]">Unsaved changes: {changed.map((k) => FIELD_PART[k]).join(", ")}</p>
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={(): void => { setDraft(saved); setErrors({}); }}>Discard</Button>
+              <Button variant="ghost" onClick={(): void => { setDraft(saved); setErrors({}); setPortraitBehindName(false); }}>Discard</Button>
               <Button variant="primary" className="min-h-11" loading={saving} onClick={(): void => { void save(); }} disabled={!draft.name.trim()}>Save author</Button>
             </div>
           </div>
@@ -317,15 +362,15 @@ export function AuthorProfileEditor({ author, mode, sites, takenNames, autoGener
       )}
 
       {confirmDelete && author && (
-        <Modal open onClose={(): void => setConfirmDelete(false)} title={`Delete ${author.name}?`} size="sm">
+        <Modal open onClose={(): void => { if (!deleting) setConfirmDelete(false); }} title={`Delete ${author.name}?`} size="sm">
           {author.sites.length > 0 ? (
             <p className="text-sm text-[var(--text-secondary)]">{author.name} writes for {author.sites.map((s) => s.site).join(", ")}. Remove them from those sites first.</p>
           ) : (
             <p className="text-sm text-[var(--text-secondary)]">The profile and its portrait are removed from the library. Articles keep the name as plain text.</p>
           )}
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={(): void => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="danger" disabled={author.sites.length > 0} onClick={(): void => { void remove(); }}>Delete</Button>
+            <Button variant="ghost" disabled={deleting} onClick={(): void => setConfirmDelete(false)}>Cancel</Button>
+            <Button variant="danger" disabled={author.sites.length > 0} loading={deleting} onClick={(): void => { void remove(); }}>{deleting ? "Deleting…" : "Delete"}</Button>
           </div>
         </Modal>
       )}

@@ -81,3 +81,17 @@ describe("buildTextPrompt", () => {
     expect(n.user).toContain("Ella Hughes");
   });
 });
+
+describe("name heritage", () => {
+  it("each name request carries one heritage drawn from a broad list, so names vary across cultures", () => {
+    const heritageOf = (r: number): string => /heritage: ([^.\n]+)/i.exec(buildTextPrompt("name", {}, {}, [], () => r).user)?.[1] ?? "";
+    const seen = new Set(Array.from({ length: 20 }, (_, i) => heritageOf(i / 20)));
+    expect(seen.size).toBeGreaterThanOrEqual(15);
+    expect(heritageOf(0.5)).not.toBe("");
+  });
+
+  it("only the name request gets a heritage", () => {
+    expect(buildTextPrompt("bio", { name: "Maya Ortiz" }, {}, [], () => 0.5).user).not.toMatch(/heritage:/i);
+  });
+});
+

@@ -39,3 +39,6 @@ export interface AuthorListItem extends AuthorRecord {
 }
 
 export type AuthorPart = "name" | "tagline" | "bio" | "beats" | "portrait";
+
+/** How a generated portrait looks. Chosen when generating; not stored on the author. */
+export type PortraitStyle = "realistic" | "illustrated";

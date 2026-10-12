@@ -85,10 +85,26 @@ const ASK: Record<TextPart, string> = {
   beats: 'List 2–5 short beats (topics) the author covers, preferring the site\'s topics. Return {"beats": ["...", "..."]}.',
 };
 
-export function buildTextPrompt(part: TextPart, draft: AuthorDraft, ctx: SiteContext, takenNames: string[]): { system: string; user: string } {
+/**
+ * One heritage is drawn per name so the library spans many cultures (left alone, the model keeps returning the same
+ * kind of name). The portrait then follows the name, so face and name fit together.
+ */
+export const NAME_HERITAGES = [
+  "Irish", "English", "Scottish", "Italian", "Greek", "Polish", "German", "Swedish", "French", "Spanish",
+  "Mexican", "Puerto Rican", "Brazilian", "Colombian", "Nigerian", "Ghanaian", "Kenyan", "African American", "Jamaican",
+  "Lebanese", "Iranian", "Turkish", "Israeli", "Indian", "Pakistani", "Filipino", "Vietnamese", "Korean", "Japanese",
+  "Chinese American", "Australian", "Canadian",
+] as const;
+
+export function buildTextPrompt(
+  part: TextPart, draft: AuthorDraft, ctx: SiteContext, takenNames: string[], rng: () => number = Math.random,
+): { system: string; user: string } {
   const taken = part === "name" && takenNames.length > 0 ? `\nNames already used (do not reuse): ${takenNames.join(", ")}` : "";
+  const heritage = part === "name"
+    ? `\nName heritage: ${NAME_HERITAGES[Math.min(NAME_HERITAGES.length - 1, Math.floor(rng() * NAME_HERITAGES.length))]}. Use a natural, everyday first and last name a person of that heritage writing for an English-language site could have (not a stereotype, not a famous person).`
+    : "";
   const ctxText = contextLines(draft, ctx);
-  return { system: SYSTEM, user: `${ctxText ? `${ctxText}\n\n` : ""}${ASK[part]}${taken}` };
+  return { system: SYSTEM, user: `${ctxText ? `${ctxText}\n\n` : ""}${ASK[part]}${heritage}${taken}` };
 }
 
 /** Strip a markdown code fence some models wrap JSON in. */

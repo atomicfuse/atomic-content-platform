@@ -5,7 +5,7 @@ const files = new Map<string, string>();
 const unlisted = new Set<string>();
 vi.mock("@/lib/github", () => ({
   listNetworkDirectory: vi.fn(async (dir: string) => [...files.keys()].filter((p) => p.startsWith(`${dir}/`) && !unlisted.has(p)).map((p) => ({ name: p.split("/").pop()!, type: "file", path: p }))),
-  readFileContent: vi.fn(async (p: string) => files.get(p) ?? null),
+  readFileContent: vi.fn(async (p: string) => { if (files.get(p) === "THROW") throw new Error("rate limited"); return files.get(p) ?? null; }),
   commitNetworkFiles: vi.fn(async (f: Array<{ path: string; content: string }>) => { for (const x of f) files.set(x.path, String(x.content)); }),
   deleteNetworkFile: vi.fn(async (p: string) => { files.delete(p); }),
 }));
@@ -67,5 +67,12 @@ describe("author store (network repo authors/*.yaml)", () => {
     await deleteAuthor(b.id);
     expect((await listAuthors()).map((x) => x.id)).toEqual(["ann-lee"]);
     expect(vi.mocked(listNetworkDirectory).mock.calls.length - calls).toBeLessThanOrEqual(1);
+  });
+
+  it("one file that can't be read (rate limit) is skipped; the rest of the list still loads", async () => {
+    await createAuthor(input);
+    files.set("authors/flaky.yaml", "THROW");
+    _resetAuthorCache();
+    expect((await listAuthors()).map((x) => x.id)).toEqual(["ann-lee"]);
   });
 });

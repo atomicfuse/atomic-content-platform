@@ -4,7 +4,8 @@ import userEvent from "@testing-library/user-event";
 
 const push = vi.fn();
 const refresh = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh, replace: vi.fn() }) }));
+const replace = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh, replace }) }));
 const toast = vi.fn();
 vi.mock("@/components/ui/Toast", () => ({ useToast: () => ({ toast }) }));
 
@@ -70,7 +71,8 @@ describe("AuthorProfileEditor", () => {
     await userEvent.click(screen.getByRole("link", { name: "Sites" }));
     expect(screen.getByRole("dialog", { name: "Leave without saving?" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Leave" }));
-    expect(push).toHaveBeenCalledWith("/sites");
+    // replace: the page's Back-guard history entry becomes /sites, so Back from there returns here in one press.
+    expect(replace).toHaveBeenCalledWith("/sites");
   });
 
   it("Generate everything shows a checklist of parts", async () => {
@@ -106,5 +108,77 @@ describe("AuthorProfileEditor", () => {
     expect(screen.getByDisplayValue("New bio.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Generate everything" }) as HTMLButtonElement).disabled).toBe(false);
     expect(vi.mocked(global.fetch).mock.calls).toHaveLength(5);
+  });
+
+  it("after a save the bar clears even when the server tidied the values (trimmed bio)", async () => {
+    global.fetch = vi.fn(async (_u: RequestInfo | URL, init?: RequestInit) => {
+      const sent = JSON.parse(String(init!.body)).author as { bio: string };
+      return new Response(JSON.stringify({ author: { ...ELLA, ...sent, bio: sent.bio.trim() } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    render(<AuthorProfileEditor author={ELLA} mode="edit" sites={[]} takenNames={[]} />);
+    await userEvent.type(screen.getByLabelText("Bio"), " More.  ");
+    await userEvent.click(within(screen.getByRole("region", { name: "Unsaved changes" })).getByRole("button", { name: "Save author" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith("Author saved", "success"));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Unsaved changes" })).toBeNull());
+    expect(screen.getByDisplayValue("Old bio. More.")).toBeTruthy();
+  });
+
+  it("a portrait uploaded before the first save is named for the id the author will get", async () => {
+    const forms: FormData[] = [];
+    global.fetch = vi.fn(async (_u: RequestInfo | URL, init?: RequestInit) => {
+      forms.push(init!.body as FormData);
+      return new Response(JSON.stringify({ portrait: { kind: "uploaded", path: "/authors/assets/ann-lee-2-0123456789.webp" } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const { container } = render(<AuthorProfileEditor author={null} mode="create" sites={[]} takenNames={["Ann Lee"]} takenIds={["ann-lee"]} />);
+    await userEvent.type(screen.getByLabelText("Name"), "Ann Lee");
+    const picker = container.querySelector('input[type="file"]') as HTMLInputElement;
+    expect(picker.accept).toBe("image/jpeg,image/png,image/webp");
+    await userEvent.upload(picker, new File(["x"], "me.png", { type: "image/png" }));
+    await waitFor(() => expect(forms).toHaveLength(1));
+    expect(forms[0]!.get("authorId")).toBe("ann-lee-2");
+  });
+
+  it("portrait style: Realistic by default; switching to Illustrated is what Regenerate and Generate everything send", async () => {
+    const styles: unknown[] = [];
+    global.fetch = vi.fn(async (_u: RequestInfo | URL, init?: RequestInit) => {
+      const b = JSON.parse(String(init!.body)) as { part: string; portraitStyle?: string };
+      if (b.part === "portrait") styles.push(b.portraitStyle);
+      const value = b.part === "portrait" ? { kind: "generated", path: "/authors/assets/ella-hughes-0123456789.webp" } : b.part === "beats" ? ["A", "B"] : "x";
+      return new Response(JSON.stringify({ status: "ok", value }), { status: 200 });
+    }) as unknown as typeof fetch;
+    render(<AuthorProfileEditor author={ELLA} mode="edit" sites={[]} takenNames={[]} />);
+    const group = screen.getByRole("radiogroup", { name: "Portrait style" });
+    expect((within(group).getByRole("radio", { name: "Realistic" }) as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Regenerate portrait" }));
+    await waitFor(() => expect(styles).toEqual(["realistic"]));
+    await userEvent.click(within(group).getByRole("radio", { name: "Illustrated" }));
+    await userEvent.click(screen.getByRole("button", { name: "Generate everything" }));
+    await waitFor(() => expect(styles).toEqual(["realistic", "illustrated"]));
+  });
+
+  it("a new name on an author with a generated portrait suggests a matching portrait", async () => {
+    const withPortrait: AuthorListItem = { ...ELLA, portrait: { kind: "generated", path: "/authors/assets/ella-hughes-0123456789.webp" } };
+    respond({ name: "Ngozi Adeyemi", portrait: { kind: "generated", path: "/authors/assets/ella-hughes-abcdef0123.webp" } });
+    render(<AuthorProfileEditor author={withPortrait} mode="edit" sites={[]} takenNames={[]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Regenerate name" }));
+    await screen.findByDisplayValue("Ngozi Adeyemi");
+    const hint = screen.getByText(/portrait was made for the previous name/i);
+    await userEvent.click(within(hint.parentElement!).getByRole("button", { name: "Make a matching portrait" }));
+    await waitFor(() => expect(screen.queryByText(/portrait was made for the previous name/i)).toBeNull());
+    const portraitCall = vi.mocked(global.fetch).mock.calls.find(([, i]) => String(i?.body).includes('"part":"portrait"'))!;
+    expect(JSON.parse(String(portraitCall[1]!.body)).draft.name).toBe("Ngozi Adeyemi");
+  });
+
+  it("delete shows it's working (Deleting…, buttons locked) until the server answers", async () => {
+    let answer: () => void = () => undefined;
+    global.fetch = vi.fn(() => new Promise<Response>((r) => { answer = () => r(new Response(JSON.stringify({ ok: true }), { status: 200 })); })) as unknown as typeof fetch;
+    render(<AuthorProfileEditor author={ELLA} mode="edit" sites={[]} takenNames={[]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Delete author" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const busy = screen.getByRole("button", { name: /Deleting/ }) as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    answer();
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/authors"));
   });
 });

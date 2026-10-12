@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useHoverPreview } from "./useHoverPreview";
 
 interface LogoThumbProps {
   src: string;
@@ -22,30 +22,7 @@ const CHECKERBOARD =
  * actually sit on, so contrast problems are visible before saving.
  */
 export function LogoThumb({ src, alt, className, background, backgroundLabel, onError }: LogoThumbProps): React.ReactElement {
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-
-  function show(): void {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    setOpen(true);
-  }
-  function hideSoon(): void {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => setOpen(false), 120);
-  }
+  const { open, show, hideSoon, toggle } = useHoverPreview();
 
   return (
     <span className="relative inline-flex shrink-0" onMouseEnter={show} onMouseLeave={hideSoon}>
@@ -53,7 +30,7 @@ export function LogoThumb({ src, alt, className, background, backgroundLabel, on
         type="button"
         aria-label={`Enlarge ${alt}`}
         aria-expanded={open}
-        onClick={(): void => setOpen((o) => !o)}
+        onClick={toggle}
         onFocus={show}
         onBlur={hideSoon}
         className="cursor-zoom-in rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan/60"

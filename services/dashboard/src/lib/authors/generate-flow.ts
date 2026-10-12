@@ -1,4 +1,4 @@
-import type { AuthorInput, AuthorPart, AuthorRecord } from "./types";
+import type { AuthorInput, AuthorPart, AuthorRecord, PortraitStyle } from "./types";
 
 /**
  * Browser-side order of profile generation. Each part is its own request (CloudGrid cuts requests at ~60 s), and
@@ -20,7 +20,7 @@ export type PartStatus = "pending" | "running" | "done" | "error";
 export async function generatePart(
   part: AuthorPart,
   draft: Partial<AuthorInput>,
-  opts: { authorId?: string; context?: GenerateContext; takenNames: string[] },
+  opts: { authorId?: string; context?: GenerateContext; takenNames: string[]; portraitStyle?: PortraitStyle },
   fetchFn: typeof fetch = fetch,
 ): Promise<Partial<AuthorInput>> {
   const res = await fetchFn("/api/authors/generate", {
@@ -29,6 +29,7 @@ export async function generatePart(
     body: JSON.stringify({
       part,
       ...(opts.authorId ? { authorId: opts.authorId } : {}),
+      ...(part === "portrait" && opts.portraitStyle ? { portraitStyle: opts.portraitStyle } : {}),
       draft: { name: draft.name, tagline: draft.tagline, bio: draft.bio, beats: draft.beats },
       siteContext: opts.context ?? {},
       takenNames: opts.takenNames,
@@ -46,6 +47,7 @@ export async function runParts(
     authorIdFor(draft: Partial<AuthorInput>): string;
     context?: GenerateContext;
     takenNames: string[];
+    portraitStyle?: PortraitStyle;
     /** Each part's result as soon as it lands, so the caller can apply just that field. */
     onPatch?: (patch: Partial<AuthorInput>) => void;
   },
@@ -57,7 +59,7 @@ export async function runParts(
   for (const part of parts) {
     onStatus(part, "running");
     try {
-      const patch = await generatePart(part, current, { authorId: part === "portrait" ? opts.authorIdFor(current) : undefined, context: opts.context, takenNames: opts.takenNames }, fetchFn);
+      const patch = await generatePart(part, current, { authorId: part === "portrait" ? opts.authorIdFor(current) : undefined, context: opts.context, takenNames: opts.takenNames, portraitStyle: opts.portraitStyle }, fetchFn);
       current = { ...current, ...patch };
       opts.onPatch?.(patch);
       onStatus(part, "done");

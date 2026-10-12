@@ -10,22 +10,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   if (!path.startsWith("/authors/assets/") || path.includes("..")) return NextResponse.json({ error: "invalid path" }, { status: 400 });
   const buf = await readFromR2(path.slice(1));
   if (!buf) return NextResponse.json({ error: "not found" }, { status: 404 });
-  return new NextResponse(new Uint8Array(buf), { headers: { "Content-Type": "image/webp", "Cache-Control": "public, max-age=31536000, immutable" } });
+  return new NextResponse(new Uint8Array(buf), { headers: { "Content-Type": "image/webp", "X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=31536000, immutable" } });
 }
 
 /** Upload a real photo: square-cropped 512 px WebP, content-hashed name. Not saved to the author until Save. */
+const MAX_BYTES = 8 * 1024 * 1024;
+const READABLE = new Set(["jpeg", "png", "webp", "gif", "avif", "tiff"]);
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Refuse a large body before buffering it (the form part adds a little over the file itself).
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BYTES + 64 * 1024) return NextResponse.json({ error: "Image must be under 8 MB" }, { status: 413 });
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   const authorId = String(form?.get("authorId") ?? "");
   if (!(file instanceof Blob) || !AUTHOR_ID_RE.test(authorId)) return NextResponse.json({ error: "file and authorId are required" }, { status: 400 });
-  if (file.size > 8 * 1024 * 1024) return NextResponse.json({ error: "Image must be under 8 MB" }, { status: 400 });
+  if (file.size > MAX_BYTES) return NextResponse.json({ error: "Image must be under 8 MB" }, { status: 413 });
   try {
-    const webp = await sharp(Buffer.from(await file.arrayBuffer())).rotate().resize(512, 512, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
+    const input = Buffer.from(await file.arrayBuffer());
+    const { format } = await sharp(input).metadata();
+    if (!format || !READABLE.has(format)) return NextResponse.json({ error: "Use a JPG, PNG or WebP image (iPhone HEIC photos aren't supported)" }, { status: 400 });
+    const webp = await sharp(input).rotate().resize(512, 512, { fit: "cover" }).webp({ quality: 85 }).toBuffer();
     const key = `authors/assets/${authorId}-${createHash("sha256").update(webp).digest("hex").slice(0, 10)}.webp`;
     if (!(await uploadToR2(key, webp, "image/webp"))) return NextResponse.json({ error: "Upload failed" }, { status: 502 });
     return NextResponse.json({ portrait: { kind: "uploaded", path: `/${key}` } });
   } catch {
-    return NextResponse.json({ error: "That file isn't an image we can read" }, { status: 400 });
+    return NextResponse.json({ error: "That file isn't an image we can read. Use a JPG, PNG or WebP." }, { status: 400 });
   }
 }

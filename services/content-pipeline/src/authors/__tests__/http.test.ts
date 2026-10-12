@@ -13,4 +13,9 @@ describe("parseGenerateBody", () => {
     expect(() => parseGenerateBody('{"part":"portrait","authorId":"../x","draft":{}}')).toThrow(/authorId/);
     expect(() => parseGenerateBody("nope")).toThrow(/JSON/);
   });
+  it("portrait style: realistic by default, illustrated when asked, anything else refused", () => {
+    expect(parseGenerateBody('{"part":"portrait","authorId":"maya-ortiz","draft":{}}').portraitStyle).toBe("realistic");
+    expect(parseGenerateBody('{"part":"portrait","authorId":"maya-ortiz","portraitStyle":"illustrated","draft":{}}').portraitStyle).toBe("illustrated");
+    expect(() => parseGenerateBody('{"part":"portrait","authorId":"maya-ortiz","portraitStyle":"anime","draft":{}}')).toThrow(/portraitStyle/);
+  });
 });

@@ -36,9 +36,12 @@ export function parseGenerateBody(raw: string): GenerateRequest {
   if (strs(c.topics)?.length) siteContext.topics = strs(c.topics);
   const authorId = str(body.authorId);
   if (part === "portrait" && (!authorId || !ID_RE.test(authorId))) throw new AuthorGenerateError("portrait needs a valid authorId", 400);
+  const style = body.portraitStyle ?? "realistic";
+  if (part === "portrait" && style !== "realistic" && style !== "illustrated") throw new AuthorGenerateError("portraitStyle must be realistic or illustrated", 400);
   return {
     part,
     ...(authorId && ID_RE.test(authorId) ? { authorId } : {}),
+    ...(part === "portrait" ? { portraitStyle: style as "realistic" | "illustrated" } : {}),
     draft,
     siteContext,
     takenNames: strs(body.takenNames) ?? [],

@@ -35,15 +35,21 @@ async function load(): Promise<{ authors: AuthorRecord[]; fileIds: string[] }> {
   const startedAt = generation;
   const entries = (await listNetworkDirectory(AUTHORS_DIR, "main")).filter((e) => e.type === "file" && e.name.endsWith(".yaml"));
   const fileIds = entries.map((e) => e.name.replace(/\.yaml$/, ""));
+  let readFailed = false;
   const authors = (await Promise.all(entries.map(async (e, i) => {
-    const raw = await readFresh(e.path);
+    const raw = await readFresh(e.path).catch((err: unknown) => {
+      readFailed = true;
+      console.warn(`[authors] couldn't read ${e.path}:`, err instanceof Error ? err.message : err);
+      return null;
+    });
     const parsed = raw ? parseAuthorYaml(fileIds[i]!, raw) : null;
-    if (!parsed) console.warn(`[authors] skipping unreadable ${e.path}`);
+    if (raw && !parsed) console.warn(`[authors] skipping unreadable ${e.path}`);
     return parsed;
   }))).filter((a): a is AuthorRecord => a !== null);
   authors.sort(byName);
   const fresh = { at: Date.now(), authors, fileIds };
-  if (startedAt === generation) cache = fresh;
+  // A list missing an author only because a read failed isn't cached, so the next load tries again.
+  if (startedAt === generation && !readFailed) cache = fresh;
   return fresh;
 }
 
