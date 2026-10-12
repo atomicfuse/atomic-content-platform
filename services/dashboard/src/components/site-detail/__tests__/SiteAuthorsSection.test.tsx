@@ -81,14 +81,14 @@ describe("SiteAuthorsSection", () => {
     await waitFor(() => expect(saves[0]).toMatchObject({ confirmedExclusive: ["ella-hughes"] }));
   });
 
-  it("Create author for this site makes a dedicated author, shown as unsaved; Save creates it first, exclusive to the site", async () => {
+  it("Create author for this site makes a dedicated author, shown as unsaved; Save creates it first (not exclusive, so other sites can use it too)", async () => {
     render(<SiteAuthorsSection {...props} />);
     await userEvent.click(await screen.findByRole("button", { name: "Create author" }));
     expect(await within(await screen.findByRole("list", { name: "Site authors" })).findByText("Nia Okafor", {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByText(/New, added to the library when you save/)).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Save authors" }));
     await waitFor(() => expect(saves).toHaveLength(1));
-    expect(created[0]).toMatchObject({ name: "Nia Okafor", verticals: ["Travel"], exclusive_sites: ["journeypeaks"] });
+    expect(created[0]).toMatchObject({ name: "Nia Okafor", verticals: ["Travel"], exclusive_sites: [] });
     expect((saves[0]!.authors as Array<{ id: string }>).map((a) => a.id)).toEqual(["nia-okafor"]);
   });
 

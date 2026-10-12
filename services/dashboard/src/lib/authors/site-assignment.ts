@@ -29,7 +29,14 @@ export async function applySiteAuthors(
 ): Promise<ApplyResult> {
   const wanted = normalizeSiteAuthors(raw);
   if (wanted.length === 0) return { ok: true, authors: [] };
-  const library = await deps.listAuthors();
+  const library = [...(await deps.listAuthors())];
+  // The library listing lags a few seconds behind a new commit (and another server may hold an older cached list):
+  // an id it doesn't show is confirmed by reading that author's file directly before refusing it.
+  for (const w of wanted) {
+    if (library.some((a) => a.id === w.id)) continue;
+    const fresh = await deps.readAuthor(w.id).catch(() => null);
+    if (fresh) library.push(fresh);
+  }
   const known = new Set(library.map((a) => a.id));
   const unknown = wanted.filter((w) => !known.has(w.id)).map((w) => w.id);
   if (unknown.length > 0) return { ok: false, status: 400, error: `Unknown author: ${unknown.join(", ")}` };

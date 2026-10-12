@@ -19,6 +19,8 @@ export interface LibraryAuthor {
 export interface MigrationPlan {
   createAuthors: LibraryAuthor[];
   addExclusive: Array<{ id: string; sites: string[] }>;
+  /** Authors made exclusive by the first bulk run (before "not exclusive unless chosen"): their reservation is cleared. */
+  clearExclusive: string[];
   siteAuthors: Array<{ site: string; authors: SiteAuthor[] }>;
   recredit: Array<{ site: string; ref: "staging" | "main"; path: string; from: string; to: string; authorId: string }>;
   /** Sites with bad bylines but no authors yet: run "Give every site an author" first. */
@@ -42,7 +44,11 @@ export function slugFor(name: string, taken: Set<string>): string {
 }
 
 export function planMigration(sites: SiteState[], library: LibraryAuthor[]): MigrationPlan {
-  const plan: MigrationPlan = { createAuthors: [], addExclusive: [], siteAuthors: [], recredit: [], waiting: [] };
+  const plan: MigrationPlan = { createAuthors: [], addExclusive: [], clearExclusive: [], siteAuthors: [], recredit: [], waiting: [] };
+  const personaNames = new Set(PERSONAS.map((p) => p.name.toLowerCase()));
+  for (const a of library) {
+    if (!personaNames.has(a.name.toLowerCase()) && a.exclusive_sites.length > 0) plan.clearExclusive.push(a.id);
+  }
   const all = [...library];
   const taken = new Set(library.map((a) => a.id));
   const effective = new Map(sites.map((s) => [s.site, s.authors]));

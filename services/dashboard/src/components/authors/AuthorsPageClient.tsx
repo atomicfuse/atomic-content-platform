@@ -55,7 +55,7 @@ export function AuthorsPageClient({ authors, sites }: AuthorsPageClientProps): R
         }
       />
       {newOpen && <NewAuthorModal open={newOpen} onClose={(): void => setNewOpen(false)} sites={sites} />}
-      {assignOpen && <AssignAllModal open onClose={(): void => setAssignOpen(false)} onStart={(list): void => assignAll.start(list)} sites={assignable} />}
+      {assignOpen && <AssignAllModal open onClose={(): void => setAssignOpen(false)} onStart={(steps): void => assignAll.start(steps)} sites={assignable} authors={authors} />}
       {missingOpen && <GenerateMissingModal open={missingOpen} onClose={(): void => setMissingOpen(false)} onStart={(): void => missingRun.start(incomplete)} authors={incomplete} />}
     </>
   );

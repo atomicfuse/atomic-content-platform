@@ -13,8 +13,9 @@ export interface SiteForAuthor {
 }
 
 /**
- * Option A (one author per site): a complete new author written for this site and exclusive to it, generated part
- * by part in the browser (each part is its own short request). Not saved; null when no name could be generated.
+ * A complete new author written for this site, generated part by part in the browser (each part is its own short
+ * request). Not exclusive: any site can add them later; exclusivity is a deliberate choice on the author's profile.
+ * Not saved; null when no name could be generated.
  */
 export async function generateSiteAuthor(
   site: SiteForAuthor,
@@ -23,7 +24,7 @@ export async function generateSiteAuthor(
   onPart?: (part: AuthorPart) => void,
   fetchFn: typeof fetch = fetch,
 ): Promise<AuthorInput | null> {
-  let draft: AuthorInput = { name: "", tagline: "", bio: "", beats: [], verticals: [], portrait: null, links: {}, exclusive_sites: [site.domain] };
+  let draft: AuthorInput = { name: "", tagline: "", bio: "", beats: [], verticals: [], portrait: null, links: {}, exclusive_sites: [] };
   await runParts(
     ALL_PARTS.filter((p) => p !== "verticals" || verticalOptions.length > 0),
     draft,

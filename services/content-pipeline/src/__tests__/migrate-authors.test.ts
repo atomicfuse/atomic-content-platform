@@ -39,7 +39,20 @@ describe("planMigration", () => {
       [site("scoopella", { authors: [{ id: "ella-hughes", topics: [] }] })],
       [{ id: "ella-hughes", name: "Ella Hughes", exclusive_sites: ["scoopella"] }],
     );
-    expect(again).toEqual({ createAuthors: [], addExclusive: [], siteAuthors: [], recredit: [], waiting: [] });
+    expect(again).toEqual({ createAuthors: [], addExclusive: [], clearExclusive: [], siteAuthors: [], recredit: [], waiting: [] });
+  });
+
+  it("authors created exclusive by the first bulk run stop being exclusive; Ella keeps scoopella", () => {
+    const p = planMigration(
+      [site("scoopella", { authors: [{ id: "ella-hughes", topics: [] }] })],
+      [
+        { id: "ella-hughes", name: "Ella Hughes", exclusive_sites: ["scoopella"] },
+        { id: "selin-aksoy", name: "Selin Aksoy", exclusive_sites: ["geekytraveler", "journeypeaks"] },
+        { id: "free-one", name: "Free One", exclusive_sites: [] },
+      ],
+    );
+    expect(p.clearExclusive).toEqual(["selin-aksoy"]);
+    expect(p.addExclusive).toEqual([]);
   });
 
   it("an existing Ella without the exclusive gets it", () => {
