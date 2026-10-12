@@ -48,6 +48,7 @@ import { logoMedianContrast, MIN_LOGO_CONTRAST } from "@/lib/logo-contrast";
 import sharp from "sharp";
 import { versionedAsset } from "@/lib/versioned-asset";
 import { logoBackgroundFor } from "@/lib/logo-background";
+import { isReservedSiteId } from "@/lib/reserved-site-ids";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
@@ -78,6 +79,9 @@ export async function createSiteAndBuildStaging(
   // through unchanged (same object).
   const data = wizardDataForTemplate(formData);
   const projectName = data.pagesProjectName;
+  if (isReservedSiteId(projectName)) {
+    throw new Error(`"${projectName}" is reserved by the platform — choose a different slug.`);
+  }
 
   // The site folder in the network repo uses the project name as identifier.
   // sync-kv.yml iterates sites/*/ on commits to staging/** and main, and

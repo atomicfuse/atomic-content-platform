@@ -28,6 +28,8 @@ export interface ArticleIndexEntry {
   title: string;
   description?: string;
   author: string;
+  /** Library author id when the article was written with one (else bylines match by name). */
+  author_id?: string;
   publishDate: string;
   featuredImage?: string;
   tags: string[];
@@ -70,6 +72,8 @@ export const articleKey = (siteId: string, slug: string): string => `article:${s
 export const redirectKey = (siteId: string, slug: string): string => `redirect:${siteId}:${slug}`;
 export interface ArticleRedirect { to: string }
 export const syncStatusKey = (siteId: string): string => `sync-status:${siteId}`;
+/** Public author profile (written only by scripts/seed-authors.ts, prod + staging). */
+export const authorKey = (id: string): string => `author:${id}`;
 export const sharedPageKey = (siteId: string, name: string): string => `shared-page:${siteId}:${name}`;
 
 /** A conditional override stored in KV. Stripped of meta-fields except

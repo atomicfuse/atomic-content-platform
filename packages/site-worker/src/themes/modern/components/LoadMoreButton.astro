@@ -1,11 +1,11 @@
 ---
-interface Props { nextPage: number; hasMore: boolean; }
-const { nextPage, hasMore } = Astro.props;
+interface Props { nextPage: number; hasMore: boolean; endpoint?: string; targetId?: string; }
+const { nextPage, hasMore, endpoint = '/api/articles', targetId = 'more-on-list' } = Astro.props;
 ---
 
 {hasMore && (
   <div class="load-more-wrap">
-    <a href={`?page=${nextPage}`} data-load-more class="load-more-btn">Load More</a>
+    <a href={`?page=${nextPage}`} data-load-more data-endpoint={endpoint} data-target={targetId} class="load-more-btn">Load More</a>
     <p class="load-more-status" data-load-more-status></p>
   </div>
 )}
@@ -14,7 +14,8 @@ const { nextPage, hasMore } = Astro.props;
   (function () {
     var btn = document.querySelector('a[data-load-more]');
     if (!btn) return;
-    var feed = document.getElementById('more-on-list');
+    var feed = document.getElementById(btn.getAttribute('data-target') || 'more-on-list');
+    var endpoint = btn.getAttribute('data-endpoint') || '/api/articles';
     var status = document.querySelector('[data-load-more-status]');
     var page = parseInt(new URL(btn.href, window.location.href).searchParams.get('page'), 10) || 2;
     var loading = false;
@@ -25,7 +26,7 @@ const { nextPage, hasMore } = Astro.props;
       loading = true;
       btn.setAttribute('aria-disabled', 'true');
       try {
-        var res = await fetch('/api/articles?page=' + page);
+        var res = await fetch(endpoint + (endpoint.indexOf('?') === -1 ? '?' : '&') + 'page=' + page);
         if (!res.ok) throw new Error('http ' + res.status);
         var html = (await res.text()).trim();
         if (!html) {

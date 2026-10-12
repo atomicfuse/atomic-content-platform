@@ -48,6 +48,7 @@ import type { GenerationSource } from "../../stats/types.js";
 import { selectTopicsRoundRobin, readTopicRotation, saveTopicRotation } from "../../stats/topic-rotation.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown, SiteBrief, SiteConfig, TopicV2 } from "../../types.js";
+import { isReservedArticleSlug } from "../../lib/reserved-slugs.js";
 
 // ---------------------------------------------------------------------------
 // Body validation — rejects empty/garbage content before quality scoring
@@ -440,7 +441,7 @@ async function resolveUniqueSlug(
   let candidate = baseSlug;
   let counter = 2;
 
-  while (await slugExists(config, siteDomain, candidate, branch)) {
+  while (isReservedArticleSlug(candidate) || await slugExists(config, siteDomain, candidate, branch)) {
     candidate = `${baseSlug}-${counter}`;
     counter++;
   }

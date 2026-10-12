@@ -36,6 +36,7 @@ import { recordTextUsage } from "../../costs/recorder.js";
 import type { AgentConfig } from "../../lib/config.js";
 import type { ArticleFrontmatter, ArticleType, QualityScoreBreakdown } from "../../types.js";
 import type { GeneratedArticle } from "./types.js";
+import { isReservedArticleSlug } from "../../lib/reserved-slugs.js";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -108,7 +109,7 @@ async function resolveUniqueSlug(
   let candidate = baseSlug;
   let counter = 2;
 
-  while (await slugExists(config, siteDomain, candidate, branch)) {
+  while (isReservedArticleSlug(candidate) || await slugExists(config, siteDomain, candidate, branch)) {
     candidate = `${baseSlug}-${counter}`;
     counter++;
   }

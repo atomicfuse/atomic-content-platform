@@ -1,0 +1,134 @@
+---
+export const prerender = false;
+
+import { env } from 'cloudflare:workers';
+import type { AuthorProfile } from '@atomic-platform/shared-types';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SEOHead from '../../components/SEOHead.astro';
+import Header from '../../themes/modern/components/Header.astro';
+import Footer from '../../themes/modern/components/Footer.astro';
+import FeedCard from '../../themes/modern/components/FeedCard.astro';
+import LoadMoreButton from '../../themes/modern/components/LoadMoreButton.astro';
+import AdSlot from '../../components/AdSlot.astro';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../../lib/config';
+import { articleIndexKey, authorKey, type ArticleIndexEntry } from '../../lib/kv-schema';
+import { toAbsoluteImageUrl } from '../../lib/url';
+import {
+  AUTHOR_PAGE_MIN_ARTICLES, articlesByAuthor, authorJsonLd, authorPageSlice, beatLinks, initials, isAssignedAuthor,
+} from '../../lib/authors';
+
+const { id } = Astro.params;
+if (!id) return new Response('Not found', { status: 404 });
+
+const config = getConfig(Astro);
+const siteId = getSiteId(Astro);
+const preview = isPreviewMode(Astro);
+const staging = isStagingEnv(Astro);
+
+// Only authors assigned to this site, with a synced profile, have a page here.
+if (!isAssignedAuthor(config.authors ?? [], id)) return new Response('Not found', { status: 404 });
+const profile = await env.CONFIG_KV.get<AuthorProfile>(authorKey(id), 'json');
+if (!profile) return new Response('Not found', { status: 404 });
+
+const index = (await env.CONFIG_KV.get<ArticleIndexEntry[]>(articleIndexKey(siteId), 'json')) ?? [];
+const articles = articlesByAuthor(index, profile, preview, config.authors ?? []);
+const perPage = config.categories.per_page;
+const first = authorPageSlice(articles, 1, perPage);
+const published = preview ? articlesByAuthor(index, profile, false, config.authors ?? []).length : articles.length;
+
+const domain = getCanonicalDomain(Astro);
+const canonicalUrl = `https://${domain}/author/${id}`;
+const portraitUrl = profile.portrait ? (toAbsoluteImageUrl(profile.portrait, `https://${domain}`) ?? null) : null;
+const title = `${profile.name}${profile.tagline ? ` — ${profile.tagline}` : ''} | ${config.site_name}`;
+const description = profile.bio ? profile.bio.slice(0, 160) : `Articles by ${profile.name} on ${config.site_name}`;
+const beats = beatLinks(profile.beats, config.brief?.topics ?? []);
+const links = Object.entries(profile.links).filter(([, v]) => typeof v === 'string' && v);
+const LINK_LABELS: Record<string, string> = { website: 'Website', x: 'X', instagram: 'Instagram', linkedin: 'LinkedIn' };
+
+Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
+---
+
+<BaseLayout title={title} description={description} pageType="category">
+  <Fragment slot="head">
+    <SEOHead
+      title={title}
+      description={description}
+      canonicalUrl={canonicalUrl}
+      image={profile.portrait ?? undefined}
+      siteName={config.site_name}
+      siteBaseUrl={`https://${domain}`}
+      noindex={published < AUTHOR_PAGE_MIN_ARTICLES}
+      jsonLd={authorJsonLd(profile, canonicalUrl, portraitUrl)}
+    />
+  </Fragment>
+
+  <Header config={config} currentPath={`/author/${id}`} />
+
+  <main class="author-page">
+    <section class="author-profile">
+      <div class="author-portrait">
+        {profile.portrait
+          ? <img src={profile.portrait} alt={`Portrait of ${profile.name}`} width="160" height="160" />
+          : <span class="author-initials" aria-hidden="true">{initials(profile.name)}</span>}
+      </div>
+      <div class="author-text">
+        <h1 class="author-name">{profile.name}</h1>
+        {profile.tagline && <p class="author-tagline">{profile.tagline}</p>}
+        {profile.bio && <p class="author-bio">{profile.bio}</p>}
+        {beats.length > 0 && (
+          <ul class="author-beats" aria-label="Writes about">
+            {beats.map((b) => <li>{b.href ? <a href={b.href}>{b.label}</a> : <span>{b.label}</span>}</li>)}
+          </ul>
+        )}
+        {links.length > 0 && (
+          <p class="author-links">
+            {links.map(([k, v]) => <a href={v} rel="me noopener" target="_blank">{LINK_LABELS[k] ?? k}</a>)}
+          </p>
+        )}
+      </div>
+    </section>
+
+    <AdSlot position="category-top" pageType="category" server:defer />
+
+    <section class="author-articles" aria-labelledby="author-articles-title">
+      <h2 id="author-articles-title" class="author-articles-title">Latest from {profile.name}</h2>
+      {first.items.length === 0
+        ? <p class="author-empty">No articles yet. Check back soon.</p>
+        : (
+          <div class="author-grid" id="author-articles-list">
+            {first.items.map((a) => <FeedCard article={a} />)}
+          </div>
+        )}
+      <LoadMoreButton nextPage={2} hasMore={first.hasMore} endpoint={`/api/author-articles?id=${encodeURIComponent(id)}`} targetId="author-articles-list" />
+    </section>
+  </main>
+
+  <Footer config={config} staging={staging} />
+  <AdSlot position="sticky-bottom" pageType="category" server:defer />
+</BaseLayout>
+
+<style>
+  .author-page { max-width: var(--container-max, 1200px); margin: 0 auto; padding: 2.5rem 1rem; }
+  .author-profile { display: grid; grid-template-columns: 1fr; gap: 1.5rem; align-items: start; margin-bottom: 2.5rem; }
+  @media (min-width: 720px) { .author-profile { grid-template-columns: 160px 1fr; gap: 2rem; } }
+  .author-portrait img, .author-initials {
+    width: 160px; height: 160px; border-radius: 9999px; object-fit: cover; display: flex; align-items: center; justify-content: center;
+  }
+  .author-initials { background: var(--color-primary, #1a1a2e); color: var(--color-article_hero_title, #fff); font-size: 3rem; font-weight: 700; }
+  .author-name { margin: 0; font-size: clamp(1.75rem, 3vw, 2.5rem); line-height: 1.15; }
+  .author-tagline { margin: 0.25rem 0 1rem; color: var(--color-muted, #6b7280); font-weight: 600; }
+  .author-bio { margin: 0 0 1rem; line-height: 1.7; max-width: 65ch; }
+  .author-beats { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+  .author-beats li > * {
+    display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; border: 1px solid var(--color-border, #e5e7eb);
+    font-size: 0.875rem; color: inherit; text-decoration: none;
+  }
+  .author-beats a:hover { border-color: var(--color-primary, #1a1a2e); }
+  .author-links { display: flex; flex-wrap: wrap; gap: 1rem; margin: 0; }
+  .author-links a { font-weight: 600; color: var(--color-link, var(--color-primary, #1a1a2e)); }
+  .author-articles-title { font-size: var(--text-2xl, 1.5rem); margin: 0 0 1.25rem; }
+  .author-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+  @media (min-width: 720px) { .author-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 1024px) { .author-grid { grid-template-columns: repeat(3, 1fr); } }
+  .author-empty { color: var(--color-muted, #6b7280); }
+</style>

@@ -47,6 +47,8 @@ export function getConfig(astro: APIContext | { locals: App.Locals }): ResolvedC
   if (config.scripts) {
     (config.scripts as unknown as Record<string, unknown>).before_footer ??= [];
   }
+  // Authors were added after many sites were seeded; a missing field means "no authors".
+  config.authors ??= [];
   return config;
 }
 
