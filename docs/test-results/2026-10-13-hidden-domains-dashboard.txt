@@ -1,0 +1,1337 @@
+
+ RUN  v3.2.4 /Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard
+
+stderr | src/actions/__tests__/domains.test.ts > domains actions > returns the error when the commit fails
+[domains] failed to unhide a.com: Error: GitHub 500
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/domains.test.ts:42:43
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+ ✓ src/actions/__tests__/domains.test.ts (4 tests) 9ms
+ ✓ src/components/config/grid/__tests__/GridSettingsForm.test.tsx (10 tests) 500ms
+ ✓ src/components/site-detail/__tests__/SiteThemeTab.grid.test.tsx (2 tests) 571ms
+   ✓ SiteThemeTab — Grid template > renders Grid colour + card-look fields in Grid mode and saves theme_template/theme_card  509ms
+ ✓ src/components/site-detail/__tests__/SiteThemeTab.refresh.test.tsx (2 tests) 592ms
+   ✓ SiteThemeTab — F2 refresh after template change > calls router.refresh() after a save that changes the template (modern -> grid)  458ms
+ ✓ src/components/site-detail/__tests__/SiteAuthorsSection.test.tsx (8 tests) 609ms
+ ✓ src/components/dashboard/__tests__/SitesTable.sort.test.tsx (3 tests) 634ms
+   ✓ SitesTable — sort by Group and Category > sorts by group name, ungrouped sites last, and cycles asc → desc → off  367ms
+ ✓ src/components/dashboard/__tests__/SitesTable.inlineEdit.test.tsx (3 tests) 758ms
+   ✓ SitesTable inline editing: category and tracking > category: pick from the network's categories and save it to the site  319ms
+ ✓ src/components/dashboard/__tests__/SitesTable.filters.test.tsx (4 tests) 849ms
+   ✓ SitesTable — Group filter and Export CSV > disables the Export CSV button once no sites match the filters  393ms
+ ✓ src/components/wizard/__tests__/StepTheme.grid.test.tsx (3 tests) 409ms
+ ✓ src/components/dashboard/__tests__/BulkPublishModal.test.tsx (14 tests) 1139ms
+ ✓ src/components/wizard/__tests__/wizard-page.flow.test.tsx (2 tests) 973ms
+   ✓ WizardPage — G2 template-dependent steps > Modern (default) shows the 7 Modern steps and mounts Content Brief next  341ms
+   ✓ WizardPage — G2 template-dependent steps > Grid shows the 6 Grid steps and never mounts the content steps or calls suggestTopics  631ms
+ ✓ src/components/dashboard/__tests__/SitesTable.columns.test.tsx (8 tests) 1312ms
+   ✓ SitesTable — column chooser > toggling a column in the chooser shows it, and unticking hides it again  321ms
+stderr | src/components/site-detail/grid/__tests__/GridSiteTab.test.tsx > GridSiteTab — pinning does not commit unsaved Feed settings > Pin persists only the pin change, not an in-progress Feed-settings edit
+[grid] failed to load bundles Error: Unexpected fetch: /api/bundles 
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/__tests__/GridSiteTab.test.tsx:82:11
+    at mockCall (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+spy@3.2.4/node_modules/[4m@vitest/spy[24m/dist/index.js:96:15)
+    at spy (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/tinyspy@4.0.4/node_modules/[4mtinyspy[24m/dist/index.js:47:80)
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/GridSiteTab.tsx:47:5
+    at Object.react_stack_bottom_frame (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15439:11)
+
+ ✓ src/components/settings/__tests__/SizeConfigPanel.test.tsx (33 tests) 384ms
+stderr | src/components/site-detail/grid/__tests__/GridSiteTab.test.tsx > GridSiteTab — pinning does not commit unsaved Feed settings > shows the story as pinned right after a successful Pin, before the site re-syncs
+[grid] failed to load bundles Error: Unexpected fetch: /api/bundles 
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/__tests__/GridSiteTab.test.tsx:82:11
+    at mockCall (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+spy@3.2.4/node_modules/[4m@vitest/spy[24m/dist/index.js:96:15)
+    at spy (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/tinyspy@4.0.4/node_modules/[4mtinyspy[24m/dist/index.js:47:80)
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/GridSiteTab.tsx:47:5
+    at Object.react_stack_bottom_frame (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15439:11)
+
+ ✓ src/components/authors/__tests__/AuthorProfileEditor.test.tsx (18 tests) 1745ms
+stderr | src/components/site-detail/grid/__tests__/GridSiteTab.test.tsx > GridSiteTab — inherited pins > a pool item pinned by a group (not in the site's grid.pinned) shows a disabled Pinned by group button
+[grid] failed to load bundles Error: Unexpected fetch: /api/bundles
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/__tests__/GridSiteTab.test.tsx:154:13
+    at mockCall (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+spy@3.2.4/node_modules/[4m@vitest/spy[24m/dist/index.js:96:15)
+    at spy (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/tinyspy@4.0.4/node_modules/[4mtinyspy[24m/dist/index.js:47:80)
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/GridSiteTab.tsx:47:5
+    at Object.react_stack_bottom_frame (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15439:11)
+
+ ✓ src/components/config/grid/__tests__/TopicsEditor.test.tsx (6 tests) 358ms
+ ✓ src/components/dashboard/__tests__/SitesTable.bulkPublish.test.tsx (3 tests) 351ms
+ ✓ src/components/wizard/__tests__/wizard-page.staging-reset.test.tsx (2 tests) 1732ms
+   ✓ WizardPage — staging result vs template changes > keeps the staging result when the template is not changed  1029ms
+   ✓ WizardPage — staging result vs template changes > clears the staging result when the template is switched after staging  702ms
+stderr | src/components/site-detail/grid/__tests__/GridSiteTab.test.tsx > GridSiteTab — Hide > saves the story to hidden_stories (with its title), removes its pin, and moves it to the Hidden list
+[grid] failed to load bundles Error: Unexpected fetch: /api/bundles 
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/__tests__/GridSiteTab.test.tsx:82:11
+    at mockCall (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+spy@3.2.4/node_modules/[4m@vitest/spy[24m/dist/index.js:96:15)
+    at spy (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/tinyspy@4.0.4/node_modules/[4mtinyspy[24m/dist/index.js:47:80)
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/components/site-detail/grid/GridSiteTab.tsx:47:5
+    at Object.react_stack_bottom_frame (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:25989:20)
+    at runWithFiberInDEV (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:874:13)
+    at commitHookEffectListMount (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13249:29)
+    at commitHookPassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:13336:11)
+    at commitPassiveMountOnFiber (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15484:13)
+    at recursivelyTraversePassiveMountEffects (/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/react-dom@19.2.4_react@19.2.4/node_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:15439:11)
+
+ ✓ src/components/site-detail/grid/__tests__/GridSiteTab.test.tsx (5 tests) 476ms
+ ✓ src/components/settings/__tests__/AdsConfigForm.test.tsx (23 tests) 408ms
+ ✓ src/components/dashboard/__tests__/SitesTable.similarweb.test.tsx (3 tests) 246ms
+ ✓ src/components/authors/__tests__/AssignAll.test.tsx (4 tests) 292ms
+ ✓ src/components/site-detail/grid/__tests__/StoriesTable.test.tsx (15 tests) 365ms
+ ✓ src/components/config/grid/__tests__/ChipMultiSelect.test.tsx (6 tests) 206ms
+ ✓ src/components/authors/__tests__/AuthorAvatar.test.tsx (3 tests) 336ms
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > mirrors the corrected domain to MongoDB
+[promoteSiteToProduction] No KV entries found for siteId="trendscores" in staging
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > mirrors the corrected domain to MongoDB
+[attachCustomDomain] Promoted 0 KV entries to production for trendscores
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > mirrors the corrected domain to MongoDB
+[attachCustomDomain] Patched config.domain to "trendscores.com" in KV + site.yaml
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > mirrors the rollback to MongoDB when CF registration fails
+[attachCustomDomain] CF registration failed, rolling back index Error: CF exploded
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:153:54
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > mirrors the rollback to MongoDB when KV seeding fails
+[attachCustomDomain] KV seed failed, rolling back CF + index Error: KV down
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:175:42
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > registers Custom Domain on the worker on happy path
+[promoteSiteToProduction] No KV entries found for siteId="trendscores" in staging
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > registers Custom Domain on the worker on happy path
+[attachCustomDomain] Promoted 0 KV entries to production for trendscores
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > registers Custom Domain on the worker on happy path
+[attachCustomDomain] Patched config.domain to "trendscores.com" in KV + site.yaml
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[attachCustomDomain] CF Custom Domain registration failed for trendscores.com — zone has conflicting DNS records. Attempting auto-cleanup and retry…
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[attachCustomDomain] Deleted 2 conflicting DNS record(s) for trendscores.com
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[attachCustomDomain] CF Custom Domain registration succeeded for trendscores.com after DNS cleanup
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[promoteSiteToProduction] No KV entries found for siteId="trendscores" in staging
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[attachCustomDomain] Promoted 0 KV entries to production for trendscores
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > auto-deletes conflicting DNS records and retries on 'externally managed DNS' error
+[attachCustomDomain] Patched config.domain to "trendscores.com" in KV + site.yaml
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index when DNS cleanup + retry still fails
+[attachCustomDomain] CF Custom Domain registration failed for trendscores.com — zone has conflicting DNS records. Attempting auto-cleanup and retry…
+
+stdout | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index when DNS cleanup + retry still fails
+[attachCustomDomain] Deleted 0 conflicting DNS record(s) for trendscores.com
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index when DNS cleanup + retry still fails
+[attachCustomDomain] CF registration failed after DNS cleanup, rolling back index Error: Failed to register custom domain trendscores.com: externally managed DNS records
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:278:7
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back index on unexpected CF registration errors
+[attachCustomDomain] CF registration failed, rolling back index Error: Failed to register custom domain: 403 Forbidden
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:303:7
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+stderr | src/actions/__tests__/attach-domain.test.ts > attachCustomDomain > rolls back CF registration + index when KV seed fails
+[attachCustomDomain] KV seed failed, rolling back CF + index Error: KV write failed
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:323:38
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10)
+    at runTest (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12)
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+    at runSuite (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8)
+
+stdout | src/actions/__tests__/attach-domain.test.ts > detachCustomDomain > deregisters Custom Domain from worker and deletes KV hostname entry
+[detachCustomDomain] Reverted config.domain to "trendscores" in KV + site.yaml
+
+stderr | src/actions/__tests__/attach-domain.test.ts > getAvailableZones > still lists zones when the hidden list can't be read
+[wizard] could not read hidden domains — showing all: Error: GitHub down
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/actions/__tests__/attach-domain.test.ts:436:45
+[90m    at processTicksAndRejections (node:internal/process/task_queues:104:5)[39m
+    at file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+runner@3.2.4/node_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+
+ ✓ src/actions/__tests__/attach-domain.test.ts (13 tests) 245ms
+ ❯ src/components/wizard/__tests__/StepContentBrief.topics.test.tsx (2 tests | 1 failed) 190ms
+   × StepContentBrief — topic suggestions > regenerate asks for topics different from everything suggested so far, even after deleting them all 149ms
+     → Unable to find an accessible element with the role "button" and name `/AI Suggest/`
+
+Here are the accessible roles:
+
+  heading:
+
+  Name "Content Brief":
+  [36m<h2[39m
+    [33mclass[39m=[32m"text-xl font-bold"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  combobox:
+
+  Name "":
+  [36m<select[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none "[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  option:
+
+  Name "Add audience...":
+  [36m<option[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  textbox:
+
+  Name "Tone":
+  [36m<input[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+    [33mid[39m=[32m"tone"[39m
+    [33mplaceholder[39m=[32m"e.g. Informative, friendly"[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<input[39m
+    [33mclass[39m=[32m"flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"[39m
+    [33mplaceholder[39m=[32m"Add more..."[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  Name "Content Guidelines":
+  [36m<textarea[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+    [33mid[39m=[32m"content-guidelines"[39m
+    [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated content..."[39m
+    [33mrows[39m=[32m"4"[39m
+  [36m/>[39m
+
+  Name "Image Guidelines":
+  [36m<textarea[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+    [33mid[39m=[32m"image-guidelines"[39m
+    [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."[39m
+    [33mrows[39m=[32m"3"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Suggesting...":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center gap-1 text-xs text-cyan hover:text-cyan/80 transition-colors disabled:opacity-50"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Remove Royal Watch":
+  [36m<button[39m
+    [33maria-label[39m=[32m"Remove Royal Watch"[39m
+    [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Remove Street Style":
+  [36m<button[39m
+    [33maria-label[39m=[32m"Remove Street Style"[39m
+    [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Mon":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Tue":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Wed":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Thu":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Fri":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Sat":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Sun":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "← Back":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] px-4 py-2 text-sm "[39m
+  [36m/>[39m
+
+  Name "Next →":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-cyan text-white hover:bg-cyan-dark active:bg-cyan-dark shadow-sm px-4 py-2 text-sm "[39m
+    [33mdisabled[39m=[32m""[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"text-xs text-[var(--text-muted)]"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"text-xs text-amber-400"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  spinbutton:
+
+  Name "Articles Per Day":
+  [36m<input[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+    [33mid[39m=[32m"articles-per-day"[39m
+    [33mmax[39m=[32m"10"[39m
+    [33mmin[39m=[32m"1"[39m
+    [33mtype[39m=[32m"number"[39m
+    [33mvalue[39m=[32m"1"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-6"[39m
+    [36m>[39m
+      [36m<h2[39m
+        [33mclass[39m=[32m"text-xl font-bold"[39m
+      [36m>[39m
+        [0mContent Brief[0m
+      [36m</h2>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"grid grid-cols-2 gap-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mTarget Audiences[0m
+          [36m</label>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"space-y-1.5"[39m
+          [36m>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none "[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m""[39m
+              [36m>[39m
+                [0mAdd audience...[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+            [33mfor[39m=[32m"tone"[39m
+          [36m>[39m
+            [0mTone[0m
+          [36m</label>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+            [33mid[39m=[32m"tone"[39m
+            [33mplaceholder[39m=[32m"e.g. Informative, friendly"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-between"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mTopics[0m
+          [36m</label>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 text-xs text-cyan hover:text-cyan/80 transition-colors disabled:opacity-50"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33mclass[39m=[32m"w-3 h-3 animate-spin"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [36m>[39m
+              [36m<circle[39m
+                [33mcx[39m=[32m"12"[39m
+                [33mcy[39m=[32m"12"[39m
+                [33mopacity[39m=[32m"0.25"[39m
+                [33mr[39m=[32m"10"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 2a10 10 0 0 1 10 10"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [0mSuggesting...[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"[39m
+          [36m>[39m
+            [0mRoyal Watch[0m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Remove Royal Watch"[39m
+              [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m×[0m
+            [36m</button>[39m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"[39m
+          [36m>[39m
+            [0mStreet Style[0m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Remove Street Style"[39m
+              [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m×[0m
+            [36m</button>[39m
+          [36m</span>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"[39m
+            [33mplaceholder[39m=[32m"Add more..."[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</div>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-xs text-[var(--text-muted)]"[39m
+        [36m>[39m
+          [0mPress Enter or comma to add. Backspace to remove last. [0m
+          [36m<span[39m
+            [33mclass[39m=[32m"font-medium"[39m
+          [36m>[39m
+            [0mAI Suggest[0m
+          [36m</span>[39m
+          [0m gives a fresh set each time.[0m
+          [36m<span[39m
+            [33mclass[39m=[32m"ml-1 tabular-nums"[39m
+          [36m>[39m
+            [0m2[0m
+            [0m/[0m
+            [0m20[0m
+          [36m</span>[39m
+        [36m</p>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"grid grid-cols-2 gap-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+            [33mfor[39m=[32m"articles-per-day"[39m
+          [36m>[39m
+            [0mArticles Per Day[0m
+          [36m</label>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+            [33mid[39m=[32m"articles-per-day"[39m
+            [33mmax[39m=[32m"10"[39m
+            [33mmin[39m=[32m"1"[39m
+            [33mtype[39m=[32m"number"[39m
+            [33mvalue[39m=[32m"1"[39m
+          [36m/>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mPreferred Days[0m
+          [36m</label>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex gap-2"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mMon[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mTue[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mWed[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mThu[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mFri[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mSat[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mSun[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [33mfor[39m=[32m"content-guidelines"[39m
+        [36m>[39m
+          [0mContent Guidelines[0m
+        [36m</label>[39m
+        [36m<textarea[39m
+          [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+          [33mid[39m=[32m"content-guidelines"[39m
+          [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated content..."[39m
+          [33mrows[39m=[32m"4"[39m
+        [36m/>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [33mfor[39m=[32m"image-guidelines"[39m
+        [36m>[39m
+          [0mImage Guidelines[0m
+        [36m</label>[39m
+        [36m<textarea[39m
+          [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+          [33mid[39m=[32m"image-guidelines"[39m
+          [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."[39m
+          [33mrows[39m=[32m"3"[39m
+        [36m/>[39m
+      [36m</div>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-xs text-amber-400"[39m
+      [36m>[39m
+        [0mSelect at least one preferred day.[0m
+      [36m</p>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex justify-between pt-4"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] px-4 py-2 text-sm "[39m
+        [36m>[39m
+          [0m← Back[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-cyan text-white hover:bg-cyan-dark active:bg-cyan-dark shadow-sm px-4 py-2 text-sm "[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0mNext →[0m
+        [36m</button>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+   ✓ StepContentBrief — topic suggestions > says so when no new topics could be generated, keeping the current ones 40ms
+ ✓ src/components/wizard/__tests__/WizardShell.steps.test.tsx (2 tests) 221ms
+ ✓ src/components/wizard/__tests__/StepGroups.test.tsx (3 tests) 260ms
+ ✓ src/components/ops/__tests__/OpsTable.similarweb.test.tsx (2 tests) 269ms
+ ✓ src/components/authors/__tests__/AuthorsPageClient.test.tsx (2 tests) 270ms
+ ✓ src/components/wizard/__tests__/ColorPickerField.test.tsx (3 tests) 170ms
+ ✓ src/components/site-detail/grid/__tests__/SummaryEditor.test.tsx (3 tests) 185ms
+ ✓ src/components/dashboard/__tests__/SimilarwebImportModal.test.tsx (2 tests) 136ms
+ ✓ src/components/authors/__tests__/NewAuthorModal.test.tsx (2 tests) 181ms
+ ✓ src/components/wizard/__tests__/StepIdentity.template.test.tsx (4 tests) 109ms
+ ✓ src/components/site-detail/grid/__tests__/GridCardLookFields.test.tsx (1 test) 116ms
+ ✓ src/lib/__tests__/remove-background.test.ts (2 tests) 179ms
+ ✓ src/components/authors/__tests__/AuthorsLibrary.test.tsx (5 tests) 227ms
+ ✓ src/components/wizard/__tests__/StepGridFeed.test.tsx (14 tests) 158ms
+ ✓ src/components/site-detail/__tests__/TopicEditModal.test.tsx (5 tests) 110ms
+ ✓ src/components/site-detail/__tests__/ContentAgentTab.grid.test.tsx (3 tests) 136ms
+ ✓ src/lib/__tests__/bulk-publish.test.ts (13 tests) 119ms
+ ✓ src/components/authors/__tests__/UnsavedChangesGuard.test.tsx (3 tests) 169ms
+ ✓ src/components/config/grid/__tests__/ChipMultiSelect.placement.test.tsx (2 tests) 114ms
+ ✓ src/components/site-detail/grid/__tests__/GridThemeFields.test.tsx (2 tests) 175ms
+ ✓ src/components/groups/__tests__/ThemeForm.test.tsx (2 tests) 136ms
+ ✓ src/app/api/sites/pending-changes/__tests__/route.test.ts (8 tests) 89ms
+ ✓ src/components/wizard/__tests__/StepIdentity.reserved.test.tsx (1 test) 139ms
+ ✓ src/components/site-detail/__tests__/GeneratedLogoSet.test.tsx (4 tests) 137ms
+ ✓ src/components/ui/__tests__/LogoThumb.test.tsx (2 tests) 113ms
+ ✓ src/components/config/__tests__/UnifiedConfigForm.grid.test.tsx (2 tests) 70ms
+stderr | src/app/api/sites/live-config/__tests__/route.test.ts > GET /api/sites/live-config > returns {} and never calls KV when Cloudflare credentials are missing
+[sites/live-config] Cloudflare credentials not configured — returning {}
+
+stderr | src/app/api/sites/live-config/__tests__/route.test.ts > GET /api/sites/live-config > gives all-null values for a site whose KV read throws, without failing the whole response
+[sites/live-config] failed to read live config for "broken-site": Error: KV unavailable
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/__tests__/route.test.ts:144:46
+    at mockCall (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/@vitest+spy@3.2.4/node_modules/[4m@vitest/spy[24m/dist/index.js:96:15)
+    at spy (file:///Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/node_modules/[4m.pnpm[24m/tinyspy@4.0.4/node_modules/[4mtinyspy[24m/dist/index.js:47:80)
+    at getKVEntry [90m(/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/__tests__/route.test.ts:12:39[90m)[39m
+    at readLiveConfigForSite [90m(/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/route.ts:130:9[90m)[39m
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/route.ts:187:32
+    at worker [90m(/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/route.ts:114:32[90m)[39m
+    at [90m/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/route.ts:119:63
+    at Array.from (<anonymous>)
+    at mapWithConcurrency [90m(/Users/asafcohen/Desktop/ATL-Content-Network/atomic-content-platform/services/dashboard/[39msrc/app/api/sites/live-config/route.ts:119:27[90m)[39m
+
+ ✓ src/app/api/sites/live-config/__tests__/route.test.ts (7 tests) 92ms
+ ✓ src/lib/__tests__/logo-contrast.test.ts (4 tests) 36ms
+ ✓ src/lib/__tests__/mongo.test.ts (3 tests) 11ms
+ ✓ src/components/dashboard/__tests__/SimilarwebCell.test.tsx (2 tests) 24ms
+ ✓ src/lib/db/__tests__/articles.test.ts (12 tests) 9ms
+ ✓ src/components/site-detail/grid/__tests__/SourcesPreview.test.tsx (3 tests) 25ms
+ ✓ src/components/wizard/__tests__/StepGoLive.grid.test.tsx (3 tests) 29ms
+ ✓ src/components/site-detail/__tests__/SiteDetailHeader.similarweb.test.tsx (3 tests) 36ms
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation picks the right background colour > wizard create (createSiteAndBuildStaging) > Grid site: prompts Gemini with the surface colour as the header background
+[wizard] logo by gemini-3.1-flash-image-preview
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation picks the right background colour > wizard create (createSiteAndBuildStaging) > Modern site: prompts Gemini with the primary colour as the header background (today's behaviour)
+[wizard] logo by gemini-3.1-flash-image-preview
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation picks the right background colour > generateLogoPreview > Grid site: prompts Gemini with the surface colour as the header background
+[wizard] logo by gemini-3.1-flash-image-preview
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation picks the right background colour > generateLogoPreview > Modern site: prompts Gemini with the primary colour as the header background
+[wizard] logo by gemini-3.1-flash-image-preview
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > uses OpenAI with a transparent background and the header-contrast rules (no glow), then the transparency-aware trim/resize
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #101010)
+
+stderr | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > falls back to Gemini when OpenAI fails
+[openai-image] gpt-image-2.5-sunburst failed: res.text is not a function
+
+stderr | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > falls back to Gemini when OpenAI fails
+[wizard] OpenAI logo failed — falling back to Gemini
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > falls back to Gemini when OpenAI fails
+[wizard] logo by gemini-3.1-flash-image-preview
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > works with only an OpenAI key (logo preview no longer requires GEMINI_API_KEY)
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #1a1a2e)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > preview makes exactly one OpenAI generation and no edits, and flags a faint logo
+[wizard] logo by gpt-image-2.5-sunburst (contrast 1.4:1 on #1a1a2e)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > retryForContrast asks for much stronger contrast
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #1a1a2e, contrast retry)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > reports which model made the logo
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #1a1a2e)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > new-site wizard: one logo generation, no edits (favicon is cropped from the logo)
+[wizard] logo by gpt-image-2.5-sunburst (contrast 1.4:1 on #101010)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > passes the site's tagline, topics and tone into the logo prompt (site page and new-site wizard)
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #101010)
+
+stdout | src/actions/__tests__/wizard-logo-background.test.ts > logo generation — OpenAI gpt-image-2.5-sunburst first, Gemini fallback > passes the site's tagline, topics and tone into the logo prompt (site page and new-site wizard)
+[wizard] logo by gpt-image-2.5-sunburst (contrast 12.0:1 on #101010)
+
+ ✓ src/actions/__tests__/wizard-logo-background.test.ts (14 tests) 20ms
+ ✓ src/lib/db/__tests__/configs.test.ts (20 tests) 21ms
+stderr | src/lib/authors/__tests__/store.test.ts > author store (network repo authors/*.yaml) > skips a hand-broken file instead of failing the whole list
+[authors] skipping unreadable authors/broken.yaml
+
+stderr | src/lib/authors/__tests__/store.test.ts > author store (network repo authors/*.yaml) > never overwrites a hand-broken file whose id a new author would take
+[authors] skipping unreadable authors/ann-lee.yaml
+
+stderr | src/lib/authors/__tests__/store.test.ts > author store (network repo authors/*.yaml) > one file that can't be read (rate limit) is skipped; the rest of the list still loads
+[authors] couldn't read authors/flaky.yaml: rate limited
+
+ ✓ src/lib/authors/__tests__/store.test.ts (8 tests) 21ms
+ ✓ src/lib/__tests__/site-columns.test.ts (37 tests) 12ms
+ ✓ src/components/site-detail/__tests__/ContentTab.grid.test.tsx (2 tests) 36ms
+ ✓ src/actions/__tests__/wizard-grid-site.test.ts (4 tests) 12ms
+ ✓ src/lib/db/__tests__/site-configs.test.ts (12 tests) 7ms
+stderr | src/lib/similarweb/__tests__/store.test.ts > Similarweb store (network repo similarweb.yaml on main) > a hand-broken file reads as empty instead of crashing the pages
+[similarweb] similarweb.yaml is not valid YAML — showing no data
+
+ ✓ src/lib/similarweb/__tests__/store.test.ts (4 tests) 9ms
+ ✓ src/lib/__tests__/site-sort.test.ts (8 tests) 10ms
+stderr | src/actions/__tests__/per-topic-migration.test.ts > migrateSiteToPerTopic > tracks bundles that failed to delete
+[migrate] DELETE /api/bundles/b-fail -> 500
+
+ ✓ src/actions/__tests__/per-topic-migration.test.ts (8 tests) 9ms
+ ✓ src/app/api/authors/__tests__/routes.test.ts (10 tests) 10ms
+ ✓ src/lib/similarweb/__tests__/format.test.ts (8 tests) 10ms
+stderr | src/app/api/categories/__tests__/route.test.ts > GET /api/categories > surfaces upstream error status with an empty items shape
+[categories] 400 from https://content-aggregator-v2-34cd--atomic.cloudgrid.io/api/categories?active=true&page=1&page_size=100
+
+ ✓ src/app/api/categories/__tests__/route.test.ts (3 tests) 6ms
+stderr | src/actions/__tests__/wizard-template.test.ts > createSiteAndBuildStaging — F1 template choice > writes theme.template: grid when the wizard's Grid template is chosen
+[wizard] Default site image generation failed: GEMINI_API_KEY not configured
+
+ ✓ src/app/api/sites/save/__tests__/versioned-logo.test.ts (2 tests) 6ms
+stderr | src/actions/__tests__/wizard-template.test.ts > createSiteAndBuildStaging — F1 template choice > never writes theme.template for the Modern (default) choice — byte-identical to pre-F1 output
+[wizard] Default site image generation failed: GEMINI_API_KEY not configured
+
+stderr | src/actions/__tests__/wizard-template.test.ts > createSiteAndBuildStaging — F1 template choice > omits theme.template when the wizard data predates this field (template undefined)
+[wizard] Default site image generation failed: GEMINI_API_KEY not configured
+
+ ✓ src/actions/__tests__/wizard-template.test.ts (3 tests) 17ms
+ ✓ src/lib/authors/__tests__/record.test.ts (9 tests) 9ms
+stderr | src/actions/__tests__/wizard-per-topic.test.ts > createSiteAndBuildStaging — per-topic wizard > writes brief.theme + brief.topics_v2 to site.yaml and never writes bundle_ids
+[wizard] Default site image generation failed: GEMINI_API_KEY not configured
+
+stderr | src/actions/__tests__/wizard-per-topic.test.ts > createSiteAndBuildStaging — per-topic wizard > omits brief.topics_v2 when the wizard passes an empty topics_v2
+[wizard] Default site image generation failed: GEMINI_API_KEY not configured
+
+ ✓ src/actions/__tests__/wizard-per-topic.test.ts (2 tests) 12ms
+stderr | src/lib/__tests__/hidden-domains.test.ts > hidden domains (network repo hidden-domains.yaml on main) > a hand-broken file reads as nothing hidden instead of crashing
+[hidden-domains] hidden-domains.yaml is not valid YAML — hiding nothing
+
+ ✓ src/lib/__tests__/hidden-domains.test.ts (5 tests) 9ms
+ ✓ src/app/api/agent/commit-article/__tests__/route.test.ts (2 tests) 13ms
+ ✓ src/app/api/agent/generate-dedicated/__tests__/route.test.ts (2 tests) 6ms
+ ✓ src/lib/db/__tests__/dashboard-index.test.ts (9 tests) 10ms
+ ✓ src/lib/authors/__tests__/generate-flow.test.ts (5 tests) 5ms
+ ✓ src/lib/__tests__/site-stats.test.ts (11 tests) 8ms
+ ✓ src/app/api/grid/summary/__tests__/route.test.ts (2 tests) 6ms
+ ✓ src/app/api/grid/pin/__tests__/route.test.ts (3 tests) 7ms
+ ✓ src/lib/authors/__tests__/library.test.ts (5 tests) 14ms
+ ✓ src/app/api/sites/save/__tests__/authors.test.ts (3 tests) 7ms
+ ✓ src/app/api/agent/generate/__tests__/route.test.ts (3 tests) 14ms
+ ✓ src/lib/authors/__tests__/assignment.test.ts (11 tests) 3ms
+ ✓ src/app/api/sites/similarweb/__tests__/import.test.ts (3 tests) 9ms
+ ✓ src/lib/authors/__tests__/with-sites.test.ts (3 tests) 6ms
+stderr | src/lib/__tests__/topic-suggestions.test.ts > requestTopicsFromGemini > returns null on an HTTP error or an unusable answer
+[wizard:suggestTopics] gemini HTTP 500
+
+stderr | src/lib/__tests__/topic-suggestions.test.ts > requestTopicsFromGemini > returns null on an HTTP error or an unusable answer
+[wizard:suggestTopics] unusable answer (finish=STOP): ["Only"]
+
+ ✓ src/lib/__tests__/topic-suggestions.test.ts (7 tests) 4ms
+ ✓ src/lib/authors/__tests__/site-author-flow.test.ts (2 tests) 4ms
+ ✓ src/lib/__tests__/logo-generation-flow.test.ts (6 tests) 3ms
+stderr | src/actions/__tests__/publish-staging-race.test.ts > publishing never wipes commits that land on staging mid-publish > copies again when a commit landed on staging during the publish
+[wizard] staging/buzzbriefdaily changed during publish (attempt 1) — copying again
+
+stderr | src/actions/__tests__/publish-staging-race.test.ts > publishing never wipes commits that land on staging mid-publish > leaves a busy staging branch untouched (nothing lost) after 3 tries
+[wizard] staging/buzzbriefdaily changed during publish (attempt 1) — copying again
+
+stderr | src/actions/__tests__/publish-staging-race.test.ts > publishing never wipes commits that land on staging mid-publish > leaves a busy staging branch untouched (nothing lost) after 3 tries
+[wizard] staging/buzzbriefdaily changed during publish (attempt 2) — copying again
+
+stderr | src/actions/__tests__/publish-staging-race.test.ts > publishing never wipes commits that land on staging mid-publish > leaves a busy staging branch untouched (nothing lost) after 3 tries
+[wizard] staging/buzzbriefdaily changed during publish (attempt 3) — copying again
+[wizard] staging/buzzbriefdaily kept changing during publish — left as is; nothing lost, the next publish includes the rest
+
+ ✓ src/actions/__tests__/publish-staging-race.test.ts (4 tests) 3ms
+ ✓ src/lib/__tests__/tracking-ids.test.ts (3 tests) 2ms
+ ✓ src/lib/authors/__tests__/site-assignment.test.ts (7 tests) 4ms
+ ✓ src/lib/__tests__/grid-summary-file.test.ts (6 tests) 15ms
+ ✓ src/components/settings/__tests__/ad-loader.test.ts (29 tests) 13ms
+ ✓ src/lib/__tests__/versioned-asset.test.ts (2 tests) 2ms
+stderr | src/lib/__tests__/openai-image.test.ts > generateOpenAIImage > returns null on an HTTP error, a missing image or a network error
+[openai-image] m failed: res.text is not a function
+
+stderr | src/lib/__tests__/openai-image.test.ts > generateOpenAIImage > returns null on an HTTP error, a missing image or a network error
+[openai-image] m → no image in response
+
+stderr | src/lib/__tests__/openai-image.test.ts > generateOpenAIImage > returns null on an HTTP error, a missing image or a network error
+[openai-image] m failed: ECONNRESET
+
+stderr | src/lib/__tests__/openai-image.test.ts > editOpenAIImage > returns null on failure
+[openai-image] m edit failed: down
+
+ ✓ src/lib/__tests__/openai-image.test.ts (5 tests) 4ms
+ ✓ src/lib/__tests__/config-normalizers.test.ts (35 tests) 4ms
+ ✓ src/lib/__tests__/grid-guard.test.ts (6 tests) 4ms
+ ✓ src/components/settings/__tests__/ad-size-config.test.ts (36 tests) 3ms
+ ✓ src/lib/__tests__/site-filters.test.ts (22 tests) 3ms
+ ✓ src/lib/__tests__/reference-data.test.ts (7 tests) 3ms
+ ✓ src/lib/authors/__tests__/pairing.test.ts (4 tests) 2ms
+ ✓ src/lib/__tests__/csv.test.ts (24 tests) 3ms
+ ✓ src/lib/__tests__/wizard-site-sections.test.ts (10 tests) 10ms
+ ✓ src/actions/__tests__/sync-action.test.ts (3 tests) 3ms
+ ✓ src/lib/__tests__/pending-changes.test.ts (6 tests) 3ms
+ ✓ src/actions/__tests__/bulk-publish.test.ts (3 tests) 3ms
+ ✓ src/lib/similarweb/__tests__/match.test.ts (4 tests) 2ms
+ ✓ src/lib/__tests__/ops-helpers.test.ts (13 tests) 2ms
+ ✓ src/lib/__tests__/grid-urls.test.ts (4 tests) 5ms
+ ✓ src/lib/similarweb/__tests__/parse.test.ts (5 tests) 2ms
+ ✓ src/actions/__tests__/go-live-status.test.ts (2 tests) 11ms
+ ✓ src/lib/__tests__/logo-prompt.test.ts (7 tests) 2ms
+ ✓ src/lib/__tests__/site-stats-today.test.ts (15 tests) 5ms
+ ✓ src/actions/__tests__/no-duplicate-sync-trigger.test.ts (2 tests) 2ms
+ ✓ src/lib/__tests__/grid-config.test.ts (8 tests) 2ms
+ ✓ src/actions/__tests__/sync-status.test.ts (9 tests) 1ms
+ ✓ src/lib/__tests__/site-checks.test.ts (6 tests) 3ms
+ ✓ src/lib/__tests__/domains-dashboard.test.ts (10 tests) 2ms
+ ✓ src/lib/__tests__/grid-slugs.test.ts (6 tests) 2ms
+ ✓ src/lib/__tests__/logo-background.test.ts (9 tests) 2ms
+ ✓ src/lib/__tests__/grid-domains.test.ts (8 tests) 3ms
+ ✓ src/components/wizard/__tests__/themePresets.test.ts (2 tests) 1ms
+ ✓ src/lib/authors/__tests__/connected.test.ts (1 test) 1ms
+ ✓ src/lib/__tests__/reserved-site-ids.test.ts (1 test) 2ms
+ ✓ src/lib/__tests__/infra-env.test.ts (3 tests) 1ms
+ ✓ src/lib/__tests__/site-rename-key.test.ts (3 tests) 1ms
+ ✓ src/lib/authors/__tests__/portrait-cleanup.test.ts (1 test) 1ms
+ ✓ src/components/wizard/__tests__/grid-preset-compat.test.ts (1 test) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/wizard/__tests__/StepContentBrief.topics.test.tsx > StepContentBrief — topic suggestions > regenerate asks for topics different from everything suggested so far, even after deleting them all
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name `/AI Suggest/`
+
+Here are the accessible roles:
+
+  heading:
+
+  Name "Content Brief":
+  [36m<h2[39m
+    [33mclass[39m=[32m"text-xl font-bold"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  combobox:
+
+  Name "":
+  [36m<select[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none "[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  option:
+
+  Name "Add audience...":
+  [36m<option[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  textbox:
+
+  Name "Tone":
+  [36m<input[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+    [33mid[39m=[32m"tone"[39m
+    [33mplaceholder[39m=[32m"e.g. Informative, friendly"[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<input[39m
+    [33mclass[39m=[32m"flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"[39m
+    [33mplaceholder[39m=[32m"Add more..."[39m
+    [33mvalue[39m=[32m""[39m
+  [36m/>[39m
+
+  Name "Content Guidelines":
+  [36m<textarea[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+    [33mid[39m=[32m"content-guidelines"[39m
+    [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated content..."[39m
+    [33mrows[39m=[32m"4"[39m
+  [36m/>[39m
+
+  Name "Image Guidelines":
+  [36m<textarea[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+    [33mid[39m=[32m"image-guidelines"[39m
+    [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."[39m
+    [33mrows[39m=[32m"3"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  button:
+
+  Name "Suggesting...":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center gap-1 text-xs text-cyan hover:text-cyan/80 transition-colors disabled:opacity-50"[39m
+    [33mdisabled[39m=[32m""[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Remove Royal Watch":
+  [36m<button[39m
+    [33maria-label[39m=[32m"Remove Royal Watch"[39m
+    [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Remove Street Style":
+  [36m<button[39m
+    [33maria-label[39m=[32m"Remove Street Style"[39m
+    [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+    [33mtype[39m=[32m"button"[39m
+  [36m/>[39m
+
+  Name "Mon":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Tue":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Wed":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Thu":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Fri":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Sat":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "Sun":
+  [36m<button[39m
+    [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+  [36m/>[39m
+
+  Name "← Back":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] px-4 py-2 text-sm "[39m
+  [36m/>[39m
+
+  Name "Next →":
+  [36m<button[39m
+    [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-cyan text-white hover:bg-cyan-dark active:bg-cyan-dark shadow-sm px-4 py-2 text-sm "[39m
+    [33mdisabled[39m=[32m""[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  paragraph:
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"text-xs text-[var(--text-muted)]"[39m
+  [36m/>[39m
+
+  Name "":
+  [36m<p[39m
+    [33mclass[39m=[32m"text-xs text-amber-400"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+  spinbutton:
+
+  Name "Articles Per Day":
+  [36m<input[39m
+    [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+    [33mid[39m=[32m"articles-per-day"[39m
+    [33mmax[39m=[32m"10"[39m
+    [33mmin[39m=[32m"1"[39m
+    [33mtype[39m=[32m"number"[39m
+    [33mvalue[39m=[32m"1"[39m
+  [36m/>[39m
+
+  --------------------------------------------------
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-6"[39m
+    [36m>[39m
+      [36m<h2[39m
+        [33mclass[39m=[32m"text-xl font-bold"[39m
+      [36m>[39m
+        [0mContent Brief[0m
+      [36m</h2>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"grid grid-cols-2 gap-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mTarget Audiences[0m
+          [36m</label>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"space-y-1.5"[39m
+          [36m>[39m
+            [36m<select[39m
+              [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors appearance-none "[39m
+            [36m>[39m
+              [36m<option[39m
+                [33mvalue[39m=[32m""[39m
+              [36m>[39m
+                [0mAdd audience...[0m
+              [36m</option>[39m
+            [36m</select>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+            [33mfor[39m=[32m"tone"[39m
+          [36m>[39m
+            [0mTone[0m
+          [36m</label>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+            [33mid[39m=[32m"tone"[39m
+            [33mplaceholder[39m=[32m"e.g. Informative, friendly"[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-between"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mTopics[0m
+          [36m</label>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 text-xs text-cyan hover:text-cyan/80 transition-colors disabled:opacity-50"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33mclass[39m=[32m"w-3 h-3 animate-spin"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [36m>[39m
+              [36m<circle[39m
+                [33mcx[39m=[32m"12"[39m
+                [33mcy[39m=[32m"12"[39m
+                [33mopacity[39m=[32m"0.25"[39m
+                [33mr[39m=[32m"10"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 2a10 10 0 0 1 10 10"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [0mSuggesting...[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 focus-within:ring-2 focus-within:ring-cyan/50 focus-within:border-cyan transition-colors"[39m
+        [36m>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"[39m
+          [36m>[39m
+            [0mRoyal Watch[0m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Remove Royal Watch"[39m
+              [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m×[0m
+            [36m</button>[39m
+          [36m</span>[39m
+          [36m<span[39m
+            [33mclass[39m=[32m"inline-flex items-center gap-1 rounded-md bg-cyan/15 text-cyan px-2 py-0.5 text-xs font-semibold"[39m
+          [36m>[39m
+            [0mStreet Style[0m
+            [36m<button[39m
+              [33maria-label[39m=[32m"Remove Street Style"[39m
+              [33mclass[39m=[32m"hover:text-red-400 transition-colors"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m×[0m
+            [36m</button>[39m
+          [36m</span>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"flex-1 min-w-[120px] bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none disabled:opacity-40"[39m
+            [33mplaceholder[39m=[32m"Add more..."[39m
+            [33mvalue[39m=[32m""[39m
+          [36m/>[39m
+        [36m</div>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-xs text-[var(--text-muted)]"[39m
+        [36m>[39m
+          [0mPress Enter or comma to add. Backspace to remove last. [0m
+          [36m<span[39m
+            [33mclass[39m=[32m"font-medium"[39m
+          [36m>[39m
+            [0mAI Suggest[0m
+          [36m</span>[39m
+          [0m gives a fresh set each time.[0m
+          [36m<span[39m
+            [33mclass[39m=[32m"ml-1 tabular-nums"[39m
+          [36m>[39m
+            [0m2[0m
+            [0m/[0m
+            [0m20[0m
+          [36m</span>[39m
+        [36m</p>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"grid grid-cols-2 gap-4"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+            [33mfor[39m=[32m"articles-per-day"[39m
+          [36m>[39m
+            [0mArticles Per Day[0m
+          [36m</label>[39m
+          [36m<input[39m
+            [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors  "[39m
+            [33mid[39m=[32m"articles-per-day"[39m
+            [33mmax[39m=[32m"10"[39m
+            [33mmin[39m=[32m"1"[39m
+            [33mtype[39m=[32m"number"[39m
+            [33mvalue[39m=[32m"1"[39m
+          [36m/>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"space-y-1.5"[39m
+        [36m>[39m
+          [36m<label[39m
+            [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [36m>[39m
+            [0mPreferred Days[0m
+          [36m</label>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"flex gap-2"[39m
+          [36m>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mMon[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mTue[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mWed[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mThu[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mFri[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mSat[0m
+            [36m</button>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"w-9 h-9 rounded-md text-xs font-semibold transition-colors bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"[39m
+            [36m>[39m
+              [0mSun[0m
+            [36m</button>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [33mfor[39m=[32m"content-guidelines"[39m
+        [36m>[39m
+          [0mContent Guidelines[0m
+        [36m</label>[39m
+        [36m<textarea[39m
+          [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+          [33mid[39m=[32m"content-guidelines"[39m
+          [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated content..."[39m
+          [33mrows[39m=[32m"4"[39m
+        [36m/>[39m
+      [36m</div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-1.5"[39m
+      [36m>[39m
+        [36m<label[39m
+          [33mclass[39m=[32m"block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]"[39m
+          [33mfor[39m=[32m"image-guidelines"[39m
+        [36m>[39m
+          [0mImage Guidelines[0m
+        [36m</label>[39m
+        [36m<textarea[39m
+          [33mclass[39m=[32m"w-full rounded-lg border border-[var(--border-primary)] bg-[var(--bg-elevated)] px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-cyan/50 focus:border-cyan transition-colors resize-y  "[39m
+          [33mid[39m=[32m"image-guidelines"[39m
+          [33mplaceholder[39m=[32m"Any specific guidelines for AI-generated images (e.g., style, colors, composition)..."[39m
+          [33mrows[39m=[32m"3"[39m
+        [36m/>[39m
+      [36m</div>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-xs text-amber-400"[39m
+      [36m>[39m
+        [0mSelect at least one preferred day.[0m
+      [36m</p>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"flex justify-between pt-4"[39m
+      [36m>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] px-4 py-2 text-sm "[39m
+        [36m>[39m
+          [0m← Back[0m
+        [36m</button>[39m
+        [36m<button[39m
+          [33mclass[39m=[32m"inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-cyan text-white hover:bg-cyan-dark active:bg-cyan-dark shadow-sm px-4 py-2 text-sm "[39m
+          [33mdisabled[39m=[32m""[39m
+        [36m>[39m
+          [0mNext →[0m
+        [36m</button>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ Object.getElementError ../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:76:38
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.1/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/components/wizard/__tests__/StepContentBrief.topics.test.tsx:31:34
+     29|     expect(vi.mocked(suggestTopics).mock.calls[0]![1] ?? []).toEqual([…
+     30| 
+     31|     await userEvent.click(screen.getByRole("button", { name: /AI Sugge…
+       |                                  ^
+     32|     expect(await screen.findByText("Celebrity Couples")).toBeInTheDocu…
+     33|     expect(vi.mocked(suggestTopics).mock.calls[1]![1]).toEqual(["Royal…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 132 passed (133)
+      Tests  1 failed | 895 passed (896)
+   Start at  14:38:17
+   Duration  11.32s (transform 3.99s, setup 9.66s, collect 17.25s, tests 20.43s, environment 70.91s, prepare 6.44s)
+
