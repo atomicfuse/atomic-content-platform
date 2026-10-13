@@ -52,6 +52,7 @@ import { isReservedSiteId } from "@/lib/reserved-site-ids";
 import { generateAndUploadDefaultSiteImage } from "@/lib/general-image";
 import { uploadToR2 } from "@/lib/r2-upload";
 import { fetchBlacklistedDomains } from "@/lib/domains-dashboard";
+import { readHiddenDomains } from "@/lib/hidden-domains";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { upsertDashboardIndexEntry, updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 import { deleteArticlesMeta } from "@/lib/db/articles";
@@ -593,16 +594,20 @@ export async function ensureStagingBranch(domain: string): Promise<string> {
   return stagingBranch;
 }
 
-/** Fetch Cloudflare zones not already used as a site identifier or as
- *  another site's custom_domain, and not blacklisted. */
+/** Fetch Cloudflare zones not already used as another site's custom_domain,
+ *  not blacklisted, and not hidden in Settings → Domains. */
 export async function getAvailableZones(): Promise<
   Array<{ domain: string; zoneId: string }>
 > {
-  const [assetsZones, dev1Zones, index, blacklisted] = await Promise.all([
+  const [assetsZones, dev1Zones, index, blacklisted, hidden] = await Promise.all([
     listZones(),
     listZones("financenewsbase"), // any Dev1 domain triggers Dev1 creds
     readDashboardIndex(),
     fetchBlacklistedDomains(),
+    readHiddenDomains().catch((err: unknown) => {
+      console.warn("[wizard] could not read hidden domains — showing all:", err);
+      return new Set<string>();
+    }),
   ]);
 
   const usedCustomDomains = new Set(
@@ -622,7 +627,8 @@ export async function getAvailableZones(): Promise<
       (z) =>
         z.status === "active" &&
         !usedCustomDomains.has(z.name) &&
-        !blacklisted.has(z.name),
+        !blacklisted.has(z.name) &&
+        !hidden.has(z.name),
     )
     .map((z) => ({ domain: z.name, zoneId: z.id }));
 }

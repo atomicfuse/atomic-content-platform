@@ -83,8 +83,13 @@ vi.mock("@/lib/general-image", () => ({
   generateAndUploadDefaultSiteImage: vi.fn(),
 }));
 vi.mock("@/lib/r2-upload", () => ({ uploadToR2: vi.fn() }));
+const mockFetchBlacklistedDomains = vi.fn().mockResolvedValue(new Set());
 vi.mock("@/lib/domains-dashboard", () => ({
-  fetchBlacklistedDomains: vi.fn().mockResolvedValue(new Set()),
+  fetchBlacklistedDomains: (...args: unknown[]) => mockFetchBlacklistedDomains(...args),
+}));
+const mockReadHiddenDomains = vi.fn().mockResolvedValue(new Set());
+vi.mock("@/lib/hidden-domains", () => ({
+  readHiddenDomains: (...args: unknown[]) => mockReadHiddenDomains(...args),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -397,5 +402,42 @@ describe("detachCustomDomain", () => {
     await expect(detachCustomDomain("trendscores")).rejects.toThrow(
       "No custom domain to detach",
     );
+  });
+});
+
+describe("getAvailableZones", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchBlacklistedDomains.mockResolvedValue(new Set());
+    mockReadHiddenDomains.mockResolvedValue(new Set());
+  });
+
+  async function setupZones(names: string[]): Promise<void> {
+    const { listZones } = await import("@/lib/cloudflare");
+    vi.mocked(listZones).mockImplementation(async (domain?: string) =>
+      domain ? [] : names.map((name) => ({ id: `z-${name}`, name, status: "active" }) as never),
+    );
+  }
+
+  it("leaves out domains hidden in Settings → Domains", async () => {
+    await setupZones(["a.com", "hidden.com", "b.com"]);
+    setupIndex([]);
+    mockReadHiddenDomains.mockResolvedValue(new Set(["hidden.com"]));
+
+    const { getAvailableZones } = await import("../wizard");
+    const zones = await getAvailableZones();
+
+    expect(zones.map((z) => z.domain)).toEqual(["a.com", "b.com"]);
+  });
+
+  it("still lists zones when the hidden list can't be read", async () => {
+    await setupZones(["a.com"]);
+    setupIndex([]);
+    mockReadHiddenDomains.mockRejectedValue(new Error("GitHub down"));
+
+    const { getAvailableZones } = await import("../wizard");
+    const zones = await getAvailableZones();
+
+    expect(zones.map((z) => z.domain)).toEqual(["a.com"]);
   });
 });
