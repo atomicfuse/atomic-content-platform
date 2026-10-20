@@ -44,6 +44,11 @@ The middleware classifies each request and emits one of these directives:
 | Static assets `/<siteId>/assets/*` | served by ASSETS binding | CF default (~24 h, tied to file hash) |
 | Anything else | — | no explicit Cache-Control; CF defaults apply |
 
+**Override:** any ad-free `?trending` response (the `trending` param or the
+`atl_noads` session cookie, see `src/lib/no-ads.ts`) is forced to
+`private, no-store`, whatever its route class, so a page without ads never
+reaches a shared cache.
+
 ### Why these specific numbers
 
 - **Server Islands `no-store`**: ad placements, tracking IDs, and pixels

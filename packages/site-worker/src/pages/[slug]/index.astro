@@ -12,7 +12,7 @@ import Sidebar from '../../themes/modern/components/Sidebar.astro';
 import NewsletterBand from '../../themes/modern/components/NewsletterBand.astro';
 import RelatedPosts from '../../themes/modern/components/RelatedPosts.astro';
 import AdSlot from '../../components/AdSlot.astro';
-import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv } from '../../lib/config';
+import { getConfig, getSiteId, isPreviewMode, getCanonicalDomain, isStagingEnv, isNoAds } from '../../lib/config';
 import { articleKey, articleIndexKey, sharedPageKey, type ArticleRecord, type ArticleIndexEntry, type SharedPage } from '../../lib/kv-schema';
 import { isVisibleArticle } from '../../utils/article-status';
 import { articleRedirectTarget } from '../../lib/redirects';
@@ -68,7 +68,8 @@ const articleBodyWithVideos = article
   ? injectVideos(articleBodyWithInlineAds, article.frontmatter.videos)
   : articleBodyWithInlineAds;
 
-const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article
+// Article scripts aren't part of the config, so an ad-free (`?trending`) session skips them here.
+const { headScripts: articleHeadScripts, bodyHtml: articleBodyFinal } = article && !isNoAds(Astro)
   ? injectArticleScripts(articleBodyWithVideos, article.frontmatter.scripts)
   : { headScripts: '', bodyHtml: articleBodyWithVideos };
 
