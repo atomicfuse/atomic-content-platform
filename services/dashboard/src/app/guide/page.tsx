@@ -38,6 +38,7 @@ const GUIDE_PAGES = [
   { slug: "24-grid-template", title: "Grid Template" },
   { slug: "25-similarweb", title: "Similarweb" },
   { slug: "26-authors", title: "Authors" },
+  { slug: "27-trending-no-ads", title: "Ad-Free Links (?trending)" },
 ];
 
 export default function GuidePage(): React.ReactElement {

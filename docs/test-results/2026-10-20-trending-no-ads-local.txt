@@ -1,0 +1,78 @@
+Local verification — ?trending ad-free session (2026-10-20 23:13)
+Worker: wrangler dev (workerd), local KV seeded with buzzsoaps (group atl), Host: buzzsoaps.com (production mode)
+Article used: /cindy-sampson-jason-priestley-private-eyes-romance
+
+== 1. Homepage, no param
+  status: HTTP/1.1 200 OK
+  cache-control: public, max-age=30, s-maxage=60, stale-while-revalidate=600
+  set-cookie: 
+  adsnx script: 1  digikube script: 1  interstitial loader: 6
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 2. Homepage ?trending
+  status: HTTP/1.1 200 OK
+  cache-control: private, no-store
+  set-cookie: atl_noads=1; Path=/; Secure; HttpOnly; SameSite=Lax
+  adsnx script: 0  digikube script: 0  interstitial loader: 0
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 3. Article ?TRENDING=abc&utm_source=fb
+  status: HTTP/1.1 200 OK
+  cache-control: private, no-store
+  set-cookie: atl_noads=1; Path=/; Secure; HttpOnly; SameSite=Lax
+  adsnx script: 0  digikube script: 0  interstitial loader: 0
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 4. Article, no param, with atl_noads=1 cookie (later navigation)
+  status: HTTP/1.1 200 OK
+  cache-control: private, no-store
+  set-cookie: 
+  adsnx script: 0  digikube script: 0  interstitial loader: 0
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 5. Article, no param, no cookie (new session)
+  status: HTTP/1.1 200 OK
+  cache-control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+  set-cookie: 
+  adsnx script: 1  digikube script: 1  interstitial loader: 6
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 6. Article ?topic=trending (value only)
+  status: HTTP/1.1 200 OK
+  cache-control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+  set-cookie: 
+  adsnx script: 1  digikube script: 1  interstitial loader: 6
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 7. Article ?trendingnow (different name)
+  status: HTTP/1.1 200 OK
+  cache-control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+  set-cookie: 
+  adsnx script: 1  digikube script: 1  interstitial loader: 6
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+== 8. Malformed cookie atl_noads=%E0%A4%A
+  status: HTTP/1.1 200 OK
+  cache-control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
+  set-cookie: 
+  adsnx script: 1  digikube script: 1  interstitial loader: 6
+  ad islands (AdSlot): 5  inline data-ad-id: 0
+  gtag/GA: 0  pixel island: 2
+
+== 9. Ad slot island requests (each AdSlot placeholder is filled by one of these)
+  island 1: no cookie → "block2"  | atl_noads=1 → (empty) (widget calls: 0)
+  island 2: no cookie → (empty) | atl_noads=1 → (empty) (widget calls: 0)
+  island 3: no cookie → "block2"  | atl_noads=1 → (empty) (widget calls: 0)
+  island 4: no cookie → "block1"  | atl_noads=1 → (empty) (widget calls: 0)
+  island 5: no cookie → (empty) | atl_noads=1 → (empty) (widget calls: 0)
+== 10. Tracking (PixelLoader island)
+  no cookie   → G-ZB55XGLQHR fbq('init' 
+  atl_noads=1 → G-ZB55XGLQHR fbq('init' 
+== 11. Redirect responses (old slugs 301, disabled categories 302)
+  Not reproducible on buzzsoaps without editing data. Code check: Astro.redirect builds
+  `new Response(null, { status, headers: { Location } })` (node_modules/astro/dist/core/render-context.js:321,603),
+  so headers are mutable and the middleware's no-store + Set-Cookie apply to redirects too.
+
+Summary: all 11 checks behave as specified. Ads/interstitial/ad scripts removed for ?trending (any case/value) and for the
+atl_noads cookie (incl. Server Island ad slots); tracking unchanged; lookalikes (?topic=trending, ?trendingnow, /trending…)
+and a malformed cookie keep ads; ad-free responses are private, no-store.

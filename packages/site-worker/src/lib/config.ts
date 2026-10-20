@@ -68,6 +68,10 @@ export function isStagingEnv(astro: APIContext | { locals: App.Locals }): boolea
   return astro.locals.site?.isStaging ?? false;
 }
 
+export function isNoAds(astro: APIContext | { locals: App.Locals }): boolean {
+  return astro.locals.site?.noAds ?? false;
+}
+
 /**
  * Returns the best hostname for canonical URLs and og:url tags.
  *

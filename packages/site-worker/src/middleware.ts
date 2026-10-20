@@ -5,6 +5,7 @@ import { siteLookupKey, siteConfigKey, conditionalOverridesKey, type SiteLookup,
 import { resolvePreview, generatePreviewScript, generateParamPropagationScript } from './lib/preview-override';
 import { deepMerge } from './lib/deep-merge';
 import { toGridPath } from './lib/grid/route';
+import { hasNoAdsParam, hasNoAdsCookie, stripAds, NO_ADS_COOKIE_HEADER } from './lib/no-ads';
 
 /**
  * Multi-tenant site resolution.
@@ -147,6 +148,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
   const hasConditionalOverride = matchedActivationParams.length > 0;
 
+  // --- Ad-free session (`?trending`) ---
+  // Runs after conditional overrides so an override can't bring ads back.
+  // The param sets a session cookie (below) so the rest of the visit —
+  // links, Server Islands, Grid fetches — stays ad-free too.
+  const noAdsParam = hasNoAdsParam(context.url.searchParams);
+  const noAds = noAdsParam || hasNoAdsCookie(context.request.headers.get('cookie'));
+  if (noAds) {
+    config = stripAds(config);
+  }
+
   // --- Template variable resolution in widget code ---
   // Ad placement `code` fields can contain `${paramName}` placeholders
   // that get resolved from URL query params at request-time. This works
@@ -180,7 +191,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const hasTemplateVars = templateParams.length > 0;
 
   const isStaging = hostname.endsWith('.workers.dev') || hostname === 'localhost';
-  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging };
+  context.locals.site = { siteId, hostname, config, isPreview: !!preview.siteIdOverride, isStaging, noAds };
 
   // Grid template: serve from src/pages/grid/* (separate routes → separate CSS bundles).
   // Every other site takes the unchanged `next()` path.
@@ -235,6 +246,15 @@ export const onRequest = defineMiddleware(async (context, next) => {
     finalResponse.headers.append('set-cookie', preview.setCookie);
     if (!preview.siteIdOverride) {
       finalResponse.headers.set('cache-control', 'private, no-store');
+    }
+  }
+
+  // Ad-free responses must never reach a shared cache — another visitor
+  // would get the page without ads.
+  if (noAds) {
+    finalResponse.headers.set('cache-control', 'private, no-store');
+    if (noAdsParam) {
+      finalResponse.headers.append('set-cookie', NO_ADS_COOKIE_HEADER);
     }
   }
 

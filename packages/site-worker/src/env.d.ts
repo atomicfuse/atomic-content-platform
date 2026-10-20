@@ -21,6 +21,9 @@ declare global {
          *  and interstitials are suppressed to avoid burning real
          *  impressions on staging/preview environments. */
         isStaging: boolean;
+        /** True for an ad-free `?trending` session (param or `atl_noads`
+         *  cookie). `config` is already ad-stripped; see lib/no-ads.ts. */
+        noAds: boolean;
       };
     }
   }
