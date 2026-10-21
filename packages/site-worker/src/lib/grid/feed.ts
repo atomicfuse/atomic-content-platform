@@ -102,6 +102,7 @@ export function buildPool(
   for (const src of sources) {
     src.articles
       .filter((a) => a.status === 'published' && time(a.publishDate) >= minTime // NaN dates fail both checks
+        && !!a.featuredImage?.trim() // no image → never a card (a pin still shows it)
         && !isStoryHidden(src.siteId, a.slug, grid.hidden_stories))
       .sort((x, y) => time(y.publishDate) - time(x.publishDate))
       .slice(0, grid.per_site_limit)

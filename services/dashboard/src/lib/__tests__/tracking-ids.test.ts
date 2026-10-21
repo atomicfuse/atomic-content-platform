@@ -5,6 +5,7 @@ describe("normalizeTrackingId", () => {
   it("accepts the usual formats, trimmed and upper-cased", () => {
     expect(normalizeTrackingId("ga4", "  g-abc123xyz ")).toEqual({ ok: true, value: "G-ABC123XYZ" });
     expect(normalizeTrackingId("gtm", "gtm-k9x2l4")).toEqual({ ok: true, value: "GTM-K9X2L4" });
+    expect(normalizeTrackingId("gtm", " GT-PB63Z593 ")).toEqual({ ok: true, value: "GT-PB63Z593" });
     expect(normalizeTrackingId("facebook_pixel", " 1234567890123 ")).toEqual({ ok: true, value: "1234567890123" });
   });
   it("explains a wrong format", () => {

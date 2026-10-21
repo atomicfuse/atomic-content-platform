@@ -2,13 +2,18 @@
  * Does a publisher image actually load? Some publishers block other sites from showing their images
  * (e.g. kansasreflector.com → 403), and the story page would show a placeholder instead. Only the first
  * bytes are requested. Any failure — status, non-image body, network error, timeout — counts as "no".
+ * `referer` should be a Grid site's origin: hotlink protection keys on it, so a check without one can pass
+ * while readers' browsers (which send our origin) get blocked.
  */
 const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
-export async function imageLoads(url: string, fetchFn: typeof fetch = fetch, timeoutMs = 8_000): Promise<boolean> {
+export async function imageLoads(url: string, fetchFn: typeof fetch = fetch, timeoutMs = 8_000, referer?: string): Promise<boolean> {
   try {
     const res = await fetchFn(url, {
-      headers: { range: 'bytes=0-2047', 'user-agent': BROWSER_UA, accept: 'image/avif,image/webp,image/*,*/*;q=0.8' },
+      headers: {
+        range: 'bytes=0-2047', 'user-agent': BROWSER_UA, accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+        ...(referer ? { referer } : {}),
+      },
       redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
     });
