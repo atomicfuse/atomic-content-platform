@@ -9,6 +9,11 @@ describe('imageLoads', () => {
     expect(await imageLoads('https://p/img.jpg', fetchFn as unknown as typeof fetch)).toBe(true);
     expect(new Headers(fetchFn.mock.calls[0]![1]!.headers).get('range')).toBe('bytes=0-2047');
   });
+  it('sends the given referer, as a reader\'s browser would', async () => {
+    const fetchFn = vi.fn(async (_u: string, _i?: RequestInit) => res(200, 'image/png'));
+    await imageLoads('https://p/img.jpg', fetchFn as unknown as typeof fetch, 1_000, 'https://grid.example/');
+    expect(new Headers(fetchFn.mock.calls[0]![1]!.headers).get('referer')).toBe('https://grid.example/');
+  });
   it.each([
     ['a hotlink block (403)', async () => res(403, 'text/html')],
     ['an HTML page with 200', async () => res(200, 'text/html')],

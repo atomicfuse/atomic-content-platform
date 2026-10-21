@@ -159,13 +159,17 @@ const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
     </style>
 
     <style set:html={`:root { ${cssVars} }`}></style>
-    {/* Publisher images (aggregator stories) can fail to load — swap in the placeholder.
+    {/* Publisher images (aggregator stories) can fail to load — drop that card (feed / related list);
+        the story page hero swaps in the placeholder instead.
         Capture phase: image error events don't bubble. Registered in <head> so it catches
         errors from images in the initial HTML and from infinite-scroll batches alike. */}
     {hasBundles && <script is:inline>
       document.addEventListener('error', function (e) {
         var t = e.target;
-        if (t && t.tagName === 'IMG' && t.dataset && t.dataset.fallback && t.getAttribute('src') !== t.dataset.fallback) t.src = t.dataset.fallback;
+        if (!t || t.tagName !== 'IMG' || !t.dataset || !t.dataset.fallback) return;
+        var card = t.closest('.g-card, .g-related li');
+        if (card) card.remove();
+        else if (t.getAttribute('src') !== t.dataset.fallback) t.src = t.dataset.fallback;
       }, true);
     </script>}
   </head>

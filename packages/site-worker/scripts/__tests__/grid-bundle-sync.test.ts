@@ -6,7 +6,7 @@ import { readNetworkArticleFrontmatter, syncBundles, type AggregatorItem } from 
 
 const art = (id: string): AggregatorItem => ({
   id, url: `https://x/${id}`, title: `T ${id}`, description: 'd', summary: '**What It Covers:**\nw',
-  thumbnail: { url: 'https://i' }, content_type: 'article', language: 'EN', source: { name: 'S' }, author: null,
+  thumbnail: { url: `https://i/${id}.jpg` }, content_type: 'article', language: 'EN', source: { name: 'S' }, author: null,
   published_at: '2026-10-06T00:00:00Z',
 });
 const NOW = new Date('2026-10-07T00:00:00Z');
@@ -53,7 +53,7 @@ describe('readNetworkArticleFrontmatter', () => {
 });
 
 describe('syncBundles — later rewrites and bad items', () => {
-  const existingIndex = (ids: string[]) => ({ bundleId: 'b', name: 'n', updatedAt: 'u', items: ids.map((id) => ({ id, slug: 's', title: 't', description: '', imageUrl: 'https://i', sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' })) });
+  const existingIndex = (ids: string[]) => ({ bundleId: 'b', name: 'n', updatedAt: 'u', items: ids.map((id) => ({ id, slug: 's', title: 't', description: '', imageUrl: `https://i/${id}.jpg`, sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' })) });
 
   it('drops an indexed story once a network site has rewritten it (D6), even with no new items', async () => {
     const out = await syncBundles(['b'], new Map(), new Set(['old']), {
@@ -133,5 +133,37 @@ describe('syncBundles — images that do not load', () => {
     });
     const index = JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value) as { items: Array<{ id: string }> };
     expect(index.items.map((i) => i.id)).toEqual(['keep']);
+  });
+});
+
+describe('syncBundles — no real story image', () => {
+  const withImage = (id: string, img: string): AggregatorItem => ({ ...art(id), thumbnail: { url: img } });
+  const ids = (out: Awaited<ReturnType<typeof syncBundles>>): string[] =>
+    (JSON.parse(out.entries.find((e) => e.key === 'grid-ext-index:b')!.value) as { items: Array<{ id: string }> }).items.map((i) => i.id).sort();
+
+  it('skips publisher stand-in images, by file name or shared by several stories', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [
+        withImage('ok', 'https://img/photo.jpg'),
+        withImage('npr', 'https://media.npr.org/include/images/facebook-default-wide-s1400-c85.jpg'),
+        withImage('fox1', 'https://a57.foxnews.com/og-fox-news.png'),
+        withImage('fox2', 'https://a57.foxnews.com/og-fox-news.png'),
+      ],
+      readIndex: async () => null, now: () => NOW,
+    });
+    expect(ids(out)).toEqual(['ok']);
+    expect(out.entries.map((e) => e.key)).not.toContain('grid-ext-item:npr');
+  });
+
+  it('removes already-indexed stories whose image is now shared with a new story', async () => {
+    const out = await syncBundles(['b'], new Map(), new Set(), {
+      fetchItems: async () => [withImage('new', 'https://img/logo.png')],
+      readIndex: async () => ({ bundleId: 'b', name: 'n', updatedAt: 'u', items: [
+        { id: 'old', slug: 's', title: 't', description: '', imageUrl: 'https://img/logo.png', sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' },
+        { id: 'keep', slug: 's', title: 't', description: '', imageUrl: 'https://img/keep.jpg', sourceName: 'S', publishedAt: '2026-10-01T00:00:00Z' },
+      ] }),
+      now: () => NOW,
+    });
+    expect(ids(out)).toEqual(['keep']);
   });
 });

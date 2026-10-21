@@ -74,6 +74,30 @@ export function isHttpUrl(value: string | null | undefined): value is string {
   }
 }
 
+/** File name of a publisher's stand-in picture ("social-default.jpg", "og_image_default.png") — no real story image. */
+const STAND_IN_FILE = /(^|[^a-z])(default|placeholder|fallback|no-?image|blank|spacer)([^a-z]|$)/i;
+
+/** True when the image URL is a publisher's generic stand-in rather than a picture of the story. */
+export function isStandInImage(url: string): boolean {
+  try {
+    return STAND_IN_FILE.test(decodeURIComponent(new URL(url).pathname.split('/').pop() ?? ''));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ids whose image is a stand-in: by file name, or one image URL shared by two or more stories (a publisher's
+ * logo / branding picture, e.g. og-fox-news.png). Pure — no network.
+ */
+export function standInImageIds(stories: ReadonlyArray<{ id: string; imageUrl: string }>): Set<string> {
+  const idsByUrl = new Map<string, Set<string>>();
+  for (const s of stories) idsByUrl.set(s.imageUrl, (idsByUrl.get(s.imageUrl) ?? new Set()).add(s.id));
+  const out = new Set<string>();
+  for (const [url, ids] of idsByUrl) if (ids.size > 1 || isStandInImage(url)) ids.forEach((id) => out.add(id));
+  return out;
+}
+
 /** Aggregator item → KV record, or null when it isn't eligible (spec D4, D6, D9). */
 export function toExternalRecord(item: AggregatorItem, rewritten: ReadonlySet<string>, now: Date): ExternalStoryRecord | null {
   if (item.content_type !== 'article') return null;
@@ -238,6 +262,13 @@ export async function syncBundles(
       }
       let existing = await deps.readIndex(bundleId);
       const originalCount = existing?.items.length ?? 0;
+      // No real image → never shown. Checked every run against the stored index too, so old entries are cleaned up.
+      const standIn = standInImageIds([...(existing?.items ?? []), ...records]);
+      if (standIn.size > 0) {
+        console.log(`[seed-grid] bundle ${bundleId}: ${standIn.size} stories skipped — no story image (publisher stand-in)`);
+        records = records.filter((r) => !standIn.has(r.id));
+        if (existing) existing = { ...existing, items: existing.items.filter((e) => !standIn.has(e.id)) };
+      }
       if (deps.imageLoads) {
         const known = new Set((existing?.items ?? []).map((e) => e.id));
         const candidates = [

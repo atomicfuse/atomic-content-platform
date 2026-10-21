@@ -8,7 +8,7 @@ const directory: NetworkDirectory = { generatedAt: 'g1', sites: [
   { siteId: 'a', hostname: 'a.com', name: 'A', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },
   { siteId: 'b', hostname: 'b.com', name: 'B', favicon: null, vertical: 'Travel', status: 'Live', isGrid: false, account: 'assets' },
 ] };
-const article = { slug: 'a1', title: 'A1', author: 'E', publishDate: '2026-09-26T00:00:00Z', tags: [], type: 'standard', status: 'published' };
+const article = { slug: 'a1', title: 'A1', author: 'E', publishDate: '2026-09-26T00:00:00Z', tags: [], type: 'standard', status: 'published', featuredImage: 'https://img/a1.jpg' };
 function fakeKv(data: Record<string, unknown>, throwKeys: string[] = []): KvReader {
   return { get: async <T,>(key: string): Promise<T | null> => { if (throwKeys.includes(key)) throw new Error('kv down'); return (data[key] as T) ?? null; } };
 }

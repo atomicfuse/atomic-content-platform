@@ -87,11 +87,14 @@ async function main(): Promise<void> {
     const favicons = local
       ? null
       : createFaviconStore(r2FaviconDeps(requireEnv('CLOUDFLARE_ACCOUNT_ID'), requireEnv('CLOUDFLARE_API_TOKEN'), process.env.R2_BUCKET ?? 'atl-assets-prod'));
+    // Check images the way readers' browsers load them: with a Grid site as the referer (hotlink blocks key on it).
+    const gridSite = directory.sites.find((s) => s.isGrid);
+    const imageReferer = gridSite ? `https://${gridSite.hostname}/` : undefined;
     const { entries: bundleEntries, failed } = await syncBundles(bundleIds, await fetchBundleNames(base), rewritten, {
       fetchItems: (id) => fetchBundleItems(base, id),
       readIndex,
       now: () => new Date(),
-      imageLoads: (url: string) => imageLoads(url),
+      imageLoads: (url: string) => imageLoads(url, fetch, undefined, imageReferer),
       recheckImages,
       ...(favicons ? { favicons: (domains: string[]) => favicons.resolve(domains) } : {}),
     });

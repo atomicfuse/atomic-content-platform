@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBriefSections, externalSlug, toExternalRecord, mergeBundleIndex, collectBundleIds, rewrittenIdsFromFrontmatter, type AggregatorItem } from '../lib/grid-bundles';
+import { parseBriefSections, externalSlug, toExternalRecord, mergeBundleIndex, collectBundleIds, rewrittenIdsFromFrontmatter, isStandInImage, type AggregatorItem } from '../lib/grid-bundles';
 
 const NOW = new Date('2026-10-07T12:00:00Z');
 const item = (o: Partial<AggregatorItem> = {}): AggregatorItem => ({
@@ -118,5 +118,19 @@ describe('publisher name', () => {
   it('is the publisher domain without www (the aggregator feed name is internal)', () => {
     expect(toExternalRecord(item({ url: 'https://news.yahoo.com/a' }), new Set(), NOW)!.sourceName).toBe('news.yahoo.com');
     expect(toExternalRecord(item({ url: 'https://WWW.Glamour.com/x' }), new Set(), NOW)!.sourceName).toBe('glamour.com');
+  });
+});
+
+describe('isStandInImage', () => {
+  it.each([
+    ['https://media.npr.org/include/images/facebook-default-wide-s1400-c85.jpg', true],
+    ['https://todaysparent.mblycdn.com/images/og_image_default.png', true],
+    ['https://www.dawn.com/_img/social-default.jpg', true],
+    ['https://x/no-image.png', true],
+    // "default" in the CDN path, not the file name → a real photo
+    ['https://afar.brightspotcdn.com/dims4/default/3628674/resize/1440x720!/quality/90/?url=x', false],
+    ['https://static01.nyt.com/images/18int-missing-soldiers-03-videoSixteenByNineJumbo1600.jpg', false],
+  ])('%s → %s', (url, expected) => {
+    expect(isStandInImage(url)).toBe(expected);
   });
 });

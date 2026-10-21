@@ -5,7 +5,7 @@ import { buildPool, filterByTopic, pageSlice } from '../feed';
 
 const NOW = new Date('2026-09-27T12:00:00Z');
 const art = (slug: string, date: string, status: ArticleIndexEntry['status'] = 'published'): ArticleIndexEntry => ({
-  slug, title: slug.toUpperCase(), author: 'E', publishDate: date, tags: [], type: 'standard', status,
+  slug, title: slug.toUpperCase(), author: 'E', publishDate: date, tags: [], type: 'standard', status, featuredImage: `https://img/${slug}.jpg`,
 });
 const g = (over: Partial<ResolvedGridConfig> = {}): ResolvedGridConfig => ({ ...GRID_DEFAULTS, ...over });
 const srcA = { siteId: 'a', pills: ['travel'], articles: [art('a1', '2026-09-26T00:00:00Z'), art('a2', '2026-09-20T00:00:00Z'), art('a3', '2026-09-10T00:00:00Z'), art('ar', '2026-09-27T00:00:00Z', 'review')] };
@@ -19,6 +19,12 @@ describe('buildPool', () => {
   it('drops unparseable dates and applies max_age_days', () => {
     const { items } = buildPool([srcA, srcB], g({ max_age_days: 10 }), NOW);
     expect(items.map((i) => i.slug)).toEqual(['a1', 'b1', 'a2']);
+  });
+  it('skips network articles without a featured image', () => {
+    const noImage = { ...art('n1', '2026-09-27T00:00:00Z'), featuredImage: undefined };
+    const blank = { ...art('n2', '2026-09-27T00:00:00Z'), featuredImage: '  ' };
+    const { items } = buildPool([{ siteId: 'a', pills: ['travel'], articles: [noImage, blank, art('a1', '2026-09-26T00:00:00Z')] }], g(), NOW);
+    expect(items.map((i) => i.slug)).toEqual(['a1']);
   });
   it('pins go first in config order, deduped from natural, even beyond limits', () => {
     const { items } = buildPool([srcA, srcB], g({ per_site_limit: 1, pinned: [
