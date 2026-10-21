@@ -21,11 +21,12 @@ To convert an existing site instead: **Site Settings → Theme → Template → 
 
 ## Aggregator bundles
 A pill can also pull stories straight from the **Content Aggregator**: add one or more **Bundles** to the pill (Grid tab → Topic pills → **+ Add bundle**). A bundle not added to any pill is not shown.
-- Only articles with an image are used (videos, trends and imageless items are skipped). If one of our network sites already rewrote the same story, only the network version is shown.
+- Only articles with a real image are used (videos, trends and imageless items are skipped). A publisher's generic stand-in picture counts as no image: an image named like `social-default.jpg` / `og_image_default.png`, or one image shared by several stories (a logo). If one of our network sites already rewrote the same story, only the network version is shown.
+- Network articles without a featured image never appear as cards either (a pinned one still shows).
 - **Stories per bundle** (default 20) is the bundle equivalent of "Articles per source site". **Maximum age** and **Pinned** work the same way.
 - **Blocked categories**: aggregator categories (e.g. "War and Conflicts") whose stories never appear on this site — in the feed or on story pages. A story is hidden if *any* of its categories is blocked, so blocking a main category also blocks its subcategories.
 - **Blocked publishers**: type a website (or paste any link from it) to block every aggregator story from that publisher and its subdomains, whatever bundle it comes from. E.g. `thetruthseeker.co.uk`.
-- A story is only picked up if its image actually loads — some publishers block other sites from showing their images, and those stories are skipped (they are checked again on each sync). To clear out stories already listed whose image stopped loading, run the network repo's **Sync Grid data to KV** workflow manually with **recheck images** ticked.
+- A story is only picked up if its image actually loads from one of our sites — some publishers block other sites from showing their images, and those stories are skipped (they are checked again on each sync). If an image still fails for a reader, that card is removed from the page. To clear out stories already listed whose image stopped loading, run the network repo's **Sync Grid data to KV** workflow manually with **recheck images** ticked.
 - Bundles refresh **hourly**. Once picked up, a story stays on the site — the aggregator's own expiry does not remove it; newer stories push it down the feed.
 - In Grid → Stories, aggregator stories show an **External · <publisher>** badge.
 - Cards show the publisher's domain (e.g. cnn.com) with its real favicon. Each publisher's icon is fetched once and stored on our own storage, so visitors never load it from a third party; a publisher with no icon gets a letter badge. New publishers get their icon on the next hourly sync.
@@ -33,7 +34,7 @@ A pill can also pull stories straight from the **Content Aggregator**: add one o
 ## Story pages
 Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab). Links to network sites carry UTM tags unless turned off; links to outside publishers (bundle stories) never carry UTM tags — any `utm_*` in the feed URL is removed too.
 
-**Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story has its own ad slots (above the content, in the text and below it; the sidebar and sticky ads stay single). The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
+**Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story has its own ad slots (between stories, above the content, in the text and below it; the sidebar, side rails and sticky ads stay single). The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
 - **Excerpt** (default): the opening paragraphs of the source article, never more than half of it.
 - **AI summary**: a ~200-word rewrite. Until a summary exists, the page shows the excerpt. Summaries are written hourly for sites that Grid sites actually use.
 - **Edit** a summary in Grid → Stories → Edit. Hand edits are never overwritten automatically. If the source article later changes, the story shows **Stale** so you can decide.
@@ -48,9 +49,14 @@ Clicking a card opens a story page on the Grid site with a **Read full story** b
 ## Look & feel
 Theme tab (Grid mode): the same colour presets as Modern, the Grid colours, and **Card look**: style, corners, image ratio, image position, density, source-line position.
 
+**Logo (Generate with AI):** a Grid site's logo is designed as a general news brand covering its topic pills (e.g. Trending news, Health) — the site's single category isn't used, so multi-topic sites need no special category.
+
 ## Ads
 - In-feed ads: add an ad placement with position **Grid feed** (Ads settings). **Ad every Nth tile** (Grid tab, default 3) sets the cadence; 0 turns in-feed ads off.
-- Story pages use the normal article positions (above content, after paragraph N, sidebar, below content, sticky bottom).
+- Story pages use the normal article positions (above content, after paragraph N, sidebar, below content, sticky bottom). The sidebar ad sits under the related stories and stays in view while reading.
+- **Between stories**: shown between each story of the endless story page.
+- **Left rail / Right rail**: 300px-wide ads fixed beside the page on every Grid page (homepage, topics, stories), only on screens 1600px wide and up. When a rail is set, the page narrows to make room (on a 1920px screen the feed goes from 5 to 4 columns). Below 1600px rails are not loaded at all.
+- Paste ad snippets as-is: Grid repeats a placement in every ad tile, so each slot automatically gets its own element ids (`widget1` becomes `widget1-block3-2`, in the `div` and in the `_sf_loadWidget(...)` call alike).
 
 ## Timing
 | Change | Appears on the Grid site |

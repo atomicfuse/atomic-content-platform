@@ -42,7 +42,8 @@ import {
   createEmailRoutingRule,
 } from "@/lib/email-routing";
 import { generateAuthorName } from "@/lib/author-names";
-import { buildLogoPrompt, isDarkColor } from "@/lib/logo-prompt";
+import { buildLogoPrompt, gridLogoSubject, isDarkColor } from "@/lib/logo-prompt";
+import type { GridFields } from "@/types/grid";
 import { editOpenAIImage, generateOpenAIImage } from "@/lib/openai-image";
 import { logoMedianContrast, MIN_LOGO_CONTRAST } from "@/lib/logo-contrast";
 import sharp from "sharp";
@@ -153,13 +154,14 @@ ${data.contentGuidelines || "Follow standard editorial guidelines."}
     if (process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY) {
       try {
         const { header: headerBg } = logoBackgroundFor(data.template, data.themeColors);
+        const grid = data.template === "grid" ? gridLogoSubject(data.grid?.topics) : null;
         const generated = await generateLogo(
           data.siteName,
-          data.vertical,
+          grid?.vertical ?? data.vertical,
           data.audiences.join(", ") || undefined,
           headerBg,
           data.themeColors,
-          { tagline: data.siteTagline, topics: data.topics, tone: data.tone },
+          { tagline: data.siteTagline, topics: grid?.topics ?? data.topics, tone: data.tone },
         );
         // One logo call only: site creation runs in a single request under the gateway's ~60 s limit.
         // The favicon is cropped from the logo below; "Generate with AI" on the site makes a full one.
@@ -1211,16 +1213,18 @@ async function loadLogoContext(domain: string): Promise<LogoContext> {
   const audiences = (brief?.audiences as string[] | undefined) ?? (brief?.audience ? [brief.audience as string] : []);
   const theme = config?.theme as Record<string, unknown> | undefined;
   const colors = theme?.colors as Record<string, string> | undefined;
-  const { header, footer } = logoBackgroundFor(theme?.template === "grid" ? "grid" : "modern", colors);
+  const isGrid = theme?.template === "grid";
+  const { header, footer } = logoBackgroundFor(isGrid ? "grid" : "modern", colors);
+  const grid = isGrid ? gridLogoSubject((config?.grid as GridFields | undefined)?.topics) : null;
   return {
     siteName: (config?.site_name as string) ?? domain,
-    vertical: site?.vertical ?? "Other",
+    vertical: grid?.vertical ?? site?.vertical ?? "Other",
     audience: audiences.join(", ") || undefined,
     colors,
     headerBg: header,
     footerBg: footer,
     tagline: typeof config?.site_tagline === "string" ? config.site_tagline : null,
-    topics: Array.isArray(brief?.topics) ? (brief.topics as unknown[]).filter((t): t is string => typeof t === "string") : [],
+    topics: grid?.topics ?? (Array.isArray(brief?.topics) ? (brief.topics as unknown[]).filter((t): t is string => typeof t === "string") : []),
     tone: typeof brief?.tone === "string" ? brief.tone : null,
   };
 }

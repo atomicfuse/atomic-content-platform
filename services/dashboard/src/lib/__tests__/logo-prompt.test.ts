@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildLogoPrompt } from "../logo-prompt";
+import { buildLogoPrompt, gridLogoSubject } from "../logo-prompt";
 
 const base = { siteName: "Scoopella", vertical: "Entertainment", headerBg: "#1a1a2e" };
 
@@ -59,3 +59,16 @@ describe("buildLogoPrompt", () => {
   });
 });
 
+
+describe("gridLogoSubject", () => {
+  it("makes a Grid site a general news brand covering its pills (All and blanks dropped)", () => {
+    const subject = gridLogoSubject([{ label: "All" }, { label: " Trending news " }, { label: "Health" }, { label: "" }, {}]);
+    expect(subject).toEqual({ vertical: "general news and trending stories", topics: ["Trending news", "Health"] });
+    const prompt = buildLogoPrompt({ ...base, ...subject, transparentOutput: true });
+    expect(prompt).toContain("a website about general news and trending stories");
+    expect(prompt).toContain("Covers: Trending news, Health");
+  });
+  it("still works with no pills", () => {
+    expect(gridLogoSubject(undefined).topics).toEqual([]);
+  });
+});
