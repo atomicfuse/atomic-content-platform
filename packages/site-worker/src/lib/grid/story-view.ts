@@ -9,6 +9,7 @@ import { injectInlineAds } from '../inline-ads';
 import { buildExternalOutboundUrl, buildOutboundUrl, escapeHtml } from './format';
 import { GRID_CARD_DEFAULTS } from './normalize';
 import { renderSourceLineHtml, selectPlacements, type AdPlacementLike } from './render';
+import { uniqueAdCode } from '../ad-code';
 import { externalStoryText, storyText } from './story';
 
 export interface StoryView {
@@ -122,7 +123,7 @@ export function renderStoryArticleHtml(v: StoryView, bodyHtml: string, heading: 
 function slotsHtml(placements: readonly AdPlacementLike[], position: string, suffix: string, staging: boolean): string {
   return selectPlacements(placements, position, 'article').map((p) => {
     const id = `${p.id ?? `${position}-article`}${suffix}`;
-    const code = staging ? '' : (p.code ?? '');
+    const code = staging ? '' : uniqueAdCode(p.code ?? '', id);
     return `<div data-ad-id="${escapeHtml(id)}" data-ad-position="${escapeHtml(position)}" data-ad-page-type="article"`
       + ` data-ad-device="${escapeHtml(p.device ?? 'all')}" data-sizes-desktop="${escapeHtml(JSON.stringify(p.sizes?.desktop ?? []))}"`
       + ` data-sizes-mobile="${escapeHtml(JSON.stringify(p.sizes?.mobile ?? []))}" class="atl-ad-slot atl-ad-${escapeHtml(position)}">${code}</div>`;
@@ -130,14 +131,16 @@ function slotsHtml(placements: readonly AdPlacementLike[], position: string, suf
 }
 
 /**
- * A story appended below the current one: its own above-content, in-article and below-content ads
+ * A story appended below the current one: a between-stories ad first, then its own above-content, in-article and
+ * below-content ads
  * (sidebar and sticky stay single for the page). `index` (2, 3, …) keeps ad ids unique on the page.
  */
 export function renderNextStoryHtml(v: StoryView, opts: { placements: readonly AdPlacementLike[]; staging: boolean; index: number }): string {
   const suffix = `-n${opts.index}`;
   const inline = opts.placements.map((p) => ({ ...p, ...(p.id ? { id: `${p.id}${suffix}` } : {}) }));
-  const body = injectInlineAds(v.bodyHtml, inline as Parameters<typeof injectInlineAds>[1], { staging: opts.staging });
+  const body = injectInlineAds(v.bodyHtml, inline as Parameters<typeof injectInlineAds>[1], { staging: opts.staging, uniqueIds: true });
   return `<section class="g-next" data-story-key="${escapeHtml(v.key)}" data-story-path="${escapeHtml(v.path)}" data-story-title="${escapeHtml(v.title)}">`
+    + slotsHtml(opts.placements, 'between-stories', suffix, opts.staging)
     + slotsHtml(opts.placements, 'above-content', suffix, opts.staging)
     + renderStoryArticleHtml(v, body, 'h2')
     + slotsHtml(opts.placements, 'below-content', suffix, opts.staging)
