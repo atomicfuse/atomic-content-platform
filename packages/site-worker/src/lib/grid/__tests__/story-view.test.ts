@@ -60,19 +60,22 @@ describe('renderNextStoryHtml', () => {
     { id: 'top', position: 'above-content', code: '<i>ad</i>' },
     { id: 'mid', position: 'after-paragraph-2', code: '<i>mid</i>' },
     { id: 'bottom', position: 'below-content', code: '<i>ad</i>' },
-    { id: 'side', position: 'sidebar', code: '<i>no</i>' },
+    { id: 'side', position: 'sidebar', code: '<i>side</i>' },
+    { id: 'sideb', position: 'sidebar-bottom', code: '<i>sideb</i>' },
   ];
   it('wraps the story with its key, path and title for the address bar', () => {
     const html = renderNextStoryHtml(v, { placements, staging: false, index: 2 });
-    expect(html).toMatch(/^<section class="g-next" data-story-key="scoopella\/big-news" data-story-path="\/story\/scoopella\/big-news" data-story-title="Big &lt;News&gt;">/);
+    expect(html).toMatch(/^<section class="g-story g-next" data-story-key="scoopella\/big-news" data-story-path="\/story\/scoopella\/big-news" data-story-title="Big &lt;News&gt;">/);
   });
-  it('gives the story its own above/inline/below ads with unique ids, but no sidebar ad', () => {
+  it('gives the story its own above/inline/below and sidebar ads with unique ids', () => {
     const html = renderNextStoryHtml(v, { placements, staging: false, index: 2 });
     expect(html).toContain('data-ad-id="top-n2"');
     expect(html).toContain('data-ad-id="bottom-n2"');
     expect(html).toContain('<i>mid</i>');
-    expect(html).not.toContain('side');
     expect(html.indexOf('top-n2')).toBeLessThan(html.indexOf('g-story__title'));
+    const aside = html.slice(html.indexOf('<aside class="g-story__side">'));
+    expect(aside.indexOf('data-ad-id="side-n2"')).toBeLessThan(aside.indexOf('data-ad-id="sideb-n2"'));
+    expect(html.indexOf('<aside')).toBeGreaterThan(html.indexOf('bottom-n2'));
   });
   it('opens with a between-stories ad, before the story\'s own above-content ad', () => {
     const html = renderNextStoryHtml(v, { placements: [...placements, { id: 'gap', position: 'between-stories', code: '<i>gap</i>' }], staging: false, index: 2 });

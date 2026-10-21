@@ -82,18 +82,48 @@ function renderCardHtml(item: GridPoolItem, index: number, ctx: TileRenderContex
     + `</a></article>`;
 }
 
+function slotHtml(p: AdPlacementLike, position: string, id: string, ctx: Pick<TileRenderContext, 'pageType' | 'staging'>, device = p.device ?? 'all'): string {
+  const code = ctx.staging ? '' : uniqueAdCode(p.code ?? '', id);
+  return `<div data-ad-id="${escapeHtml(id)}" data-ad-position="${escapeHtml(position)}" data-ad-page-type="${ctx.pageType}"`
+    + ` data-ad-device="${escapeHtml(device)}" data-sizes-desktop="${escapeHtml(JSON.stringify(p.sizes?.desktop ?? []))}"`
+    + ` data-sizes-mobile="${escapeHtml(JSON.stringify(p.sizes?.mobile ?? []))}" class="atl-ad-slot atl-ad-${escapeHtml(position)}">${code}</div>`;
+}
+
+/**
+ * What ad tile `adIndex` (1-based) shows. Several grid-feed placements take turns, one per tile (a blend, e.g.
+ * three native widgets and one display ad), separately for desktop and mobile so a device-only placement never
+ * leaves a tile empty on the other device. When the two devices get different placements, each is pinned to its
+ * device so a tile never shows two ads.
+ */
+export function rotatePlacements(placements: readonly AdPlacementLike[], adIndex: number): Array<{ placement: AdPlacementLike; device: string }> {
+  const pick = (device: 'desktop' | 'mobile'): AdPlacementLike | undefined => {
+    const list = placements.filter((p) => (p.device ?? 'all') === 'all' || p.device === device);
+    return list.length ? list[(adIndex - 1) % list.length] : undefined;
+  };
+  const desktop = pick('desktop');
+  const mobile = pick('mobile');
+  if (desktop === mobile) return desktop ? [{ placement: desktop, device: desktop.device ?? 'all' }] : [];
+  return [
+    ...(desktop ? [{ placement: desktop, device: 'desktop' }] : []),
+    ...(mobile ? [{ placement: mobile, device: 'mobile' }] : []),
+  ];
+}
+
+/** In-feed ad tile: card-shaped (grid.css), one rotating placement per tile. */
 function renderAdHtml(adIndex: number, ctx: TileRenderContext): string {
-  const placements = selectPlacements(ctx.placements, 'grid-feed', ctx.pageType);
-  if (placements.length === 0) return '';
+  const picks = rotatePlacements(selectPlacements(ctx.placements, 'grid-feed', ctx.pageType), adIndex);
+  if (picks.length === 0) return '';
   const minHeight = ctx.reservedHeight ? ` style="min-height:${ctx.reservedHeight}px"` : '';
-  const slots = placements.map((p) => {
-    const id = `${p.id ?? 'grid-feed'}-${adIndex}`;
-    const code = ctx.staging ? '' : uniqueAdCode(p.code ?? '', id);
-    return `<div data-ad-id="${escapeHtml(id)}" data-ad-position="grid-feed" data-ad-page-type="${ctx.pageType}"`
-      + ` data-ad-device="${escapeHtml(p.device ?? 'all')}" data-sizes-desktop="${escapeHtml(JSON.stringify(p.sizes?.desktop ?? []))}"`
-      + ` data-sizes-mobile="${escapeHtml(JSON.stringify(p.sizes?.mobile ?? []))}" class="atl-ad-slot atl-ad-grid-feed"${minHeight}>${code}</div>`;
-  }).join('');
-  return `<div class="g-tile g-tile--ad">${slots}</div>`;
+  const slots = picks.map(({ placement: p, device }) => slotHtml(p, 'grid-feed', `${p.id ?? 'grid-feed'}-${adIndex}`, ctx, device)).join('');
+  return `<div class="g-tile g-tile--ad"${minHeight}>${slots}</div>`;
+}
+
+/** Full-width banner row between feed batches (`grid-divider` placements); empty when none is configured. */
+export function renderDividerHtml(page: number, ctx: Pick<TileRenderContext, 'placements' | 'pageType' | 'staging'>): string {
+  const placements = selectPlacements(ctx.placements, 'grid-divider', ctx.pageType);
+  if (placements.length === 0) return '';
+  const slots = placements.map((p) => slotHtml(p, 'grid-divider', `${p.id ?? 'grid-divider'}-p${page}`, ctx)).join('');
+  return `<div class="g-tile g-tile--divider">${slots}</div>`;
 }
 
 /** Server-side and /api/feed share this renderer so both produce identical markup. */

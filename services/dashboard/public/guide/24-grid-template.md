@@ -34,7 +34,7 @@ A pill can also pull stories straight from the **Content Aggregator**: add one o
 ## Story pages
 Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab). Links to network sites carry UTM tags unless turned off; links to outside publishers (bundle stories) never carry UTM tags — any `utm_*` in the feed URL is removed too.
 
-**Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story has its own ad slots (between stories, above the content, in the text and below it; the sidebar, side rails and sticky ads stay single). The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
+**Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story is laid out like the first one, with its own ad slots (between stories, above the content, in the text, below it, and its own sidebar ads); the side rails and sticky bar stay single. The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
 - **Excerpt** (default): the opening paragraphs of the source article, never more than half of it.
 - **AI summary**: a ~200-word rewrite. Until a summary exists, the page shows the excerpt. Summaries are written hourly for sites that Grid sites actually use.
 - **Edit** a summary in Grid → Stories → Edit. Hand edits are never overwritten automatically. If the source article later changes, the story shows **Stale** so you can decide.
@@ -52,11 +52,22 @@ Theme tab (Grid mode): the same colour presets as Modern, the Grid colours, and 
 **Logo (Generate with AI):** a Grid site's logo is designed as a general news brand covering its topic pills (e.g. Trending news, Health) — the site's single category isn't used, so multi-topic sites need no special category.
 
 ## Ads
-- In-feed ads: add an ad placement with position **Grid feed** (Ads settings). **Ad every Nth tile** (Grid tab, default 3) sets the cadence; 0 turns in-feed ads off.
-- Story pages use the normal article positions (above content, after paragraph N, sidebar, below content, sticky bottom). The sidebar ad sits under the related stories and stays in view while reading.
-- **Between stories**: shown between each story of the endless story page.
-- **Left rail / Right rail**: 300px-wide ads fixed beside the page on every Grid page (homepage, topics, stories), only on screens 1600px wide and up. When a rail is set, the page narrows to make room (on a 1920px screen the feed goes from 5 to 4 columns). Below 1600px rails are not loaded at all.
-- Paste ad snippets as-is: Grid repeats a placement in every ad tile, so each slot automatically gets its own element ids (`widget1` becomes `widget1-block3-2`, in the `div` and in the `_sf_loadWidget(...)` call alike).
+Ad positions on a Grid site (Ads settings → position):
+
+| Position | Where |
+|---|---|
+| **Grid feed** | An ad tile in the feed, every Nth tile (**Ad every Nth tile**, Grid tab, default 3; 0 = off). The tile is shaped like a story card and the ad fills exactly the card's height. Several Grid feed placements **take turns** (e.g. three native widgets and one display ad), separately for desktop and mobile. |
+| **Grid divider** | A full-width banner at the end of each batch of stories (page 1 and every infinite-scroll batch). |
+| **Left rail / Right rail** | 300px ads fixed beside the page on every Grid page, screens 1600px+ only. The page narrows to make room (5 → 4 feed columns at 1920px); below 1600px rails are not loaded. |
+| **Homepage top / Category top** | Above the feed. |
+| **Above content, After paragraph N, Below content** | Story pages, and again for every story loaded below it. |
+| **Sidebar / Sidebar bottom** | Story pages: above and below the related stories. The whole sidebar stays in view while its story scrolls; every story loaded below gets its own sidebar ads. |
+| **Between stories** | Between stories of the endless story page. |
+| **Sticky bottom** | Bottom bar, capped at 250px high and 728px wide (use a small horizontal widget). |
+
+- An ad slot that is still empty 6 seconds after it appears is hidden (a feed tile, divider or rail as a whole), so unfilled ads leave no holes.
+- Paste ad snippets as-is: each slot automatically gets its own element ids (`widget1` becomes `widget1-block3-2`, in the `div` and in the `_sf_loadWidget(...)` call alike).
+- To make a native widget look like a story card, set its layout in the snippet's `qs`: `layout=vsm&count=1&g_title=none&g_imgrt=43&g_intro=0` (one item, no "Recommended for You" heading, 4:3 image, no description). `g_lo` / `g_mcol` set desktop / mobile columns, `count` the number of items, `layout=hsm` a horizontal small-image card.
 
 ## Timing
 | Change | Appears on the Grid site |

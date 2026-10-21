@@ -134,3 +134,31 @@ describe('injectInlineAds — uniqueIds (Grid story pages)', () => {
     expect(injectInlineAds('<p>a</p>', placements)).toContain('_sf_loadWidget("widget1")');
   });
 });
+
+describe('grid-feed rotation and divider', () => {
+  const p = (id: string, device?: string) => ({ id, position: 'grid-feed', code: `<i>${id}</i>`, ...(device ? { device } : {}) });
+  it('several placements take turns, one per ad tile', async () => {
+    const { rotatePlacements } = await import('../render');
+    const list = [p('n1'), p('n2'), p('d1')];
+    expect([1, 2, 3, 4].map((i) => rotatePlacements(list, i).map((x) => x.placement.id).join())).toEqual(['n1', 'n2', 'd1', 'n1']);
+  });
+  it('pins different desktop / mobile picks to their device so a tile never shows two ads', async () => {
+    const { rotatePlacements } = await import('../render');
+    expect(rotatePlacements([p('all'), p('mob', 'mobile')], 2)).toEqual([
+      { placement: p('all'), device: 'desktop' }, { placement: p('mob', 'mobile'), device: 'mobile' },
+    ]);
+    expect(rotatePlacements([p('all'), p('mob', 'mobile')], 1)).toEqual([{ placement: p('all'), device: 'all' }]);
+  });
+  it('renders one placement per tile in the feed', () => {
+    const html = renderTilesHtml(buildTiles([item('a'), item('b'), item('c'), item('d')], 0, 3), ctx({ placements: [p('n1'), p('n2')] }));
+    expect(html.match(/data-ad-id="[^"]+"/g)).toEqual(['data-ad-id="n1-1"', 'data-ad-id="n2-2"']);
+  });
+  it('divider: a full-width banner row per batch, only when a grid-divider placement exists', async () => {
+    const { renderDividerHtml } = await import('../render');
+    const base = { pageType: 'homepage' as const, staging: false };
+    expect(renderDividerHtml(1, { ...base, placements: [p('n1')] })).toBe('');
+    const html = renderDividerHtml(2, { ...base, placements: [{ id: 'banner', position: 'grid-divider', code: '<b>x</b>' }] });
+    expect(html).toContain('class="g-tile g-tile--divider"');
+    expect(html).toContain('data-ad-id="banner-p2"');
+  });
+});

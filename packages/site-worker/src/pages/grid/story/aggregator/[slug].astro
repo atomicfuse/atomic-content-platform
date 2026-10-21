@@ -52,14 +52,15 @@ Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, s
       <AdSlot position="above-content" pageType="article" server:defer />
       <Fragment set:html={articleHtml} />
       <AdSlot position="below-content" pageType="article" server:defer />
-      <NextStories storyKey={view.key} storyPath={view.path} storyTitle={view.title} pill={pills[0] ?? null} siteName={g.config.site_name} />
     </main>
     <aside class="g-story__side">
+      <AdSlot position="sidebar" pageType="article" server:defer />
       <RelatedStories items={related} sites={sites} now={now} />
-      <div class="g-story__sticky"><AdSlot position="sidebar" pageType="article" server:defer /></div>
+      <AdSlot position="sidebar-bottom" pageType="article" server:defer />
     </aside>
   </div>
   <div class="g-story__bottom"><RelatedStories items={related} sites={sites} now={now} /></div>
+  <NextStories storyKey={view.key} storyPath={view.path} storyTitle={view.title} pill={pills[0] ?? null} siteName={g.config.site_name} />
   <GridFooter config={g.config} />
   <AdSlot position="sticky-bottom" pageType="article" server:defer />
 </GridLayout>
