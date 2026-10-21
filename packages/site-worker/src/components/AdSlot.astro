@@ -181,9 +181,14 @@ const slotCode = (p: Placement): string => {
     background: rgba(255, 255, 255, 0.95);
     text-align: center;
     /* Acts as the positioning context for .atl-ad-close. */
+    /* A tall widget (e.g. a full-width 16:9 recommendation) must never cover the page and push the close button
+       off-screen: the bar is capped and the ad keeps a banner width. */
+    max-height: min(30vh, 250px);
+    overflow: hidden;
   }
   .atl-ad-sticky-wrapper .atl-ad-slot {
     margin: 0 auto;
+    max-width: 728px;
   }
   .atl-ad-close {
     position: absolute;
