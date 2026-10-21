@@ -39,7 +39,7 @@ const pills = data.resolved.pillsBySite.get(sourceSiteId) ?? [];
 const sites = new Map((data.directory?.sites ?? []).map((s) => [s.siteId, s]));
 const view = buildNetworkStoryView({ grid: g.grid, canonicalHost: g.canonicalHost, sites, now, sourceSiteId, hostname: source.hostname, record, summary, pills });
 const placements = (g.config.ads_config?.ad_placements ?? []) as Parameters<typeof injectInlineAds>[1];
-const articleHtml = renderStoryArticleHtml(view, injectInlineAds(view.bodyHtml, placements, { staging: g.staging }), 'h1');
+const articleHtml = renderStoryArticleHtml(view, injectInlineAds(view.bodyHtml, placements, { staging: g.staging, uniqueIds: true }), 'h1');
 const related = relatedItems(data.pool.items, { site: sourceSiteId, slug }, pills, 3);
 const fm = record.frontmatter;
 Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=600');
@@ -54,8 +54,8 @@ Astro.response.headers.set('cache-control', 'public, max-age=60, s-maxage=300, s
       <NextStories storyKey={view.key} storyPath={view.path} storyTitle={view.title} pill={pills[0] ?? null} siteName={g.config.site_name} />
     </main>
     <aside class="g-story__side">
-      <AdSlot position="sidebar" pageType="article" server:defer />
       <RelatedStories items={related} sites={sites} now={now} />
+      <div class="g-story__sticky"><AdSlot position="sidebar" pageType="article" server:defer /></div>
     </aside>
   </div>
   <div class="g-story__bottom"><RelatedStories items={related} sites={sites} now={now} /></div>

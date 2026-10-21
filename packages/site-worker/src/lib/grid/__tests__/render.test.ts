@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_CARD_DEFAULTS, type GridPoolItem, type NetworkDirectorySite } from '@atomic-platform/shared-types';
 import { renderTilesHtml, selectPlacements, type TileRenderContext } from '../render';
+import { uniqueAdCode } from '../../ad-code';
 import { buildTiles } from '../tiles';
 
 const item = (slug: string, over: Partial<GridPoolItem> = {}): GridPoolItem => ({
@@ -55,6 +56,29 @@ describe('renderTilesHtml', () => {
   });
 });
 
+describe('uniqueAdCode', () => {
+  const snippet = `<div id="widget1" style='background-color:#fcfbf7'></div>
+<script>
+    _sf_loadWidget("widget1", {qs: "g_lo=v&layout=vsm&count=1&obj_id=0"});
+</script>`;
+  it('suffixes every declared element id, wherever the snippet quotes it', () => {
+    const out = uniqueAdCode(snippet, 'block3-2');
+    expect(out).toContain('<div id="widget1-block3-2"');
+    expect(out).toContain('_sf_loadWidget("widget1-block3-2",');
+    expect(out).toContain('obj_id=0'); // query params named *_id are not element ids
+    expect(uniqueAdCode(`<div id='w'></div><script>document.querySelector('#w')</script>`, 's1'))
+      .toBe(`<div id='w-s1'></div><script>document.querySelector('#w-s1')</script>`);
+  });
+  it('leaves snippets without element ids unchanged', () => {
+    expect(uniqueAdCode('<script>window.x=1</script>', 'gf-1')).toBe('<script>window.x=1</script>');
+  });
+  it('gives each feed ad tile its own widget id', () => {
+    const html = renderTilesHtml(buildTiles([item('a'), item('b'), item('c'), item('d')], 0, 3),
+      ctx({ placements: [{ id: 'block3', position: 'grid-feed', code: snippet }] }));
+    expect(html.match(/id="widget1[^"]*"/g)).toEqual(['id="widget1-block3-1"', 'id="widget1-block3-2"']);
+  });
+});
+
 describe('selectPlacements', () => {
   it('mirrors AdSlot filtering (page_types, exclude_pages, legacy pages)', () => {
     const p = [
@@ -99,5 +123,14 @@ describe('sourceNameOf', () => {
     expect(sourceNameOf(item('x', { site: 'aggregator', kind: 'external' }), sites)).toBe('Source');
     expect(sourceNameOf(item('a'), sites)).toBe('scienceworld.com');
     expect(sourceNameOf(item('a', { site: 'unknown' }), sites)).toBe('unknown');
+  });
+});
+
+describe('injectInlineAds — uniqueIds (Grid story pages)', () => {
+  it('suffixes snippet ids with the slot id only when asked', async () => {
+    const { injectInlineAds } = await import('../../inline-ads');
+    const placements = [{ id: 'block4', position: 'after-paragraph-1', code: '<div id="widget1"></div><script>_sf_loadWidget("widget1")</script>' }];
+    expect(injectInlineAds('<p>a</p>', placements, { uniqueIds: true })).toContain('_sf_loadWidget("widget1-block4")');
+    expect(injectInlineAds('<p>a</p>', placements)).toContain('_sf_loadWidget("widget1")');
   });
 });

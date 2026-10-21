@@ -74,6 +74,11 @@ describe('renderNextStoryHtml', () => {
     expect(html).not.toContain('side');
     expect(html.indexOf('top-n2')).toBeLessThan(html.indexOf('g-story__title'));
   });
+  it('opens with a between-stories ad, before the story\'s own above-content ad', () => {
+    const html = renderNextStoryHtml(v, { placements: [...placements, { id: 'gap', position: 'between-stories', code: '<i>gap</i>' }], staging: false, index: 2 });
+    expect(html).toContain('data-ad-id="gap-n2"');
+    expect(html.indexOf('gap-n2')).toBeLessThan(html.indexOf('top-n2'));
+  });
   it('leaves ad code out on staging (mock fill)', () => {
     expect(renderNextStoryHtml(v, { placements, staging: true, index: 3 })).not.toContain('<i>ad</i>');
   });

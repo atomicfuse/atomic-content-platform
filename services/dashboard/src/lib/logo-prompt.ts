@@ -29,6 +29,17 @@ export interface LogoPromptInput {
   tone?: string | null;
 }
 
+/**
+ * Logo subject for a Grid site. Grid sites are multi-topic news feeds, so the single category doesn't describe
+ * them ("a website about Entertainment") — the logo is a general news brand and its topic pills fill "Covers".
+ */
+export function gridLogoSubject(pills: ReadonlyArray<{ label?: unknown }> | undefined): { vertical: string; topics: string[] } {
+  const topics = (pills ?? [])
+    .map((p) => (typeof p.label === "string" ? p.label.trim() : ""))
+    .filter((label) => label && label.toLowerCase() !== "all");
+  return { vertical: "general news and trending stories", topics };
+}
+
 /** "SITE PERSONALITY" block from the site's tagline, topics and tone; empty when none are set. */
 function personalityBlock(tagline?: string | null, topics?: string[], tone?: string | null): string {
   const lines: string[] = [];

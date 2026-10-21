@@ -11,6 +11,8 @@ import { getGridContext } from '../../lib/grid/context';
 import { cardBodyAttributes } from '../../lib/grid/head';
 import PixelLoader from '../../components/PixelLoader.astro';
 import InterstitialLoader from '../../components/InterstitialLoader.astro';
+import AdSlot from '../../components/AdSlot.astro';
+import { selectPlacements, type AdPlacementLike } from '../../lib/grid/render';
 import './styles/grid.css';
 
 interface Props {
@@ -86,6 +88,11 @@ const gridCtx = getGridContext(Astro);
 // render exactly as before.
 const hasBundles = (gridCtx?.grid.topics ?? []).some((t) => t.bundles.length > 0);
 const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
+// Side rails (wide screens only): when either is configured for this page type, the page narrows to make room.
+const placements = (config.ads_config?.ad_placements ?? []) as AdPlacementLike[];
+const leftRail = selectPlacements(placements, 'left-rail', pageType).length > 0;
+const rightRail = selectPlacements(placements, 'right-rail', pageType).length > 0;
+const hasRails = leftRail || rightRail;
 ---
 
 <!doctype html>
@@ -174,7 +181,7 @@ const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
     </script>}
   </head>
 
-  <body class="g-body" {...bodyAttrs}>
+  <body class="g-body" {...bodyAttrs} data-rails={hasRails ? 'true' : undefined}>
     {/* Injected body_start scripts from config layers. */}
     {bodyStartScripts.map((s) =>
       s.src
@@ -185,6 +192,43 @@ const bodyAttrs = gridCtx ? cardBodyAttributes(gridCtx.card) : {};
     )}
 
     <slot />
+
+    {/* Side rails: fixed beside the content, kept below the header and above the footer while scrolling.
+        Removed before their ad islands load on screens too narrow to show them (no hidden impressions). */}
+    {hasRails && (
+      <>
+        {leftRail && <aside class="g-rail g-rail--left" aria-label="Advertisement"><AdSlot position="left-rail" pageType={pageType} server:defer /></aside>}
+        {rightRail && <aside class="g-rail g-rail--right" aria-label="Advertisement"><AdSlot position="right-rail" pageType={pageType} server:defer /></aside>}
+        <script is:inline>
+          (function () {
+            var rails = document.querySelectorAll('.g-rail');
+            if (!window.matchMedia('(min-width: 1600px)').matches) {
+              rails.forEach(function (r) { r.remove(); });
+              return;
+            }
+            var header = document.querySelector('.g-header');
+            var footer = document.querySelector('.g-footer');
+            var root = document.documentElement;
+            var queued = false;
+            function place() {
+              queued = false;
+              var top = Math.max(16, (header ? header.getBoundingClientRect().bottom : 0) + 16);
+              if (footer) {
+                var tallest = 0;
+                rails.forEach(function (r) { tallest = Math.max(tallest, r.offsetHeight); });
+                top = Math.min(top, footer.getBoundingClientRect().top - 16 - tallest);
+              }
+              root.style.setProperty('--g-rail-top', top + 'px');
+            }
+            function queue() { if (!queued) { queued = true; requestAnimationFrame(place); } }
+            window.addEventListener('scroll', queue, { passive: true });
+            window.addEventListener('resize', queue);
+            if (window.ResizeObserver) rails.forEach(function (r) { new ResizeObserver(queue).observe(r); });
+            place();
+          })();
+        </script>
+      </>
+    )}
 
     {/* Injected body_end scripts from config layers.
          External (src) scripts load immediately. Inline scripts are deferred

@@ -128,6 +128,9 @@ const POSITION_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "homepage-mid", label: "Homepage Mid" },
   { value: "category-top", label: "Category Top" },
   { value: "grid-feed", label: "Grid feed — in-grid tile (Grid template only)" },
+  { value: "left-rail", label: "Left rail — beside the page, wide screens (Grid template only)" },
+  { value: "right-rail", label: "Right rail — beside the page, wide screens (Grid template only)" },
+  { value: "between-stories", label: "Between stories — endless story page (Grid template only)" },
 ];
 
 export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.ReactElement {

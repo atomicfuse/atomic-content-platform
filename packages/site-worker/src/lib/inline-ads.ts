@@ -7,6 +7,8 @@
  * Pure function — testable without a runtime.
  */
 
+import { uniqueAdCode } from './ad-code';
+
 interface InlinePlacement {
   id?: string;
   position?: string;
@@ -33,7 +35,7 @@ interface InlinePlacement {
  *
  * Returns the input unchanged when no inline placements match.
  */
-export function injectInlineAds(html: string, placements: readonly InlinePlacement[], options?: { staging?: boolean }): string {
+export function injectInlineAds(html: string, placements: readonly InlinePlacement[], options?: { staging?: boolean; uniqueIds?: boolean }): string {
   const staging = options?.staging ?? false;
   const inline: Array<{ id: string; position: string; afterIndex: number; sizesDesktop: number[][]; sizesMobile: number[][]; code: string }> = [];
   for (const p of placements) {
@@ -53,7 +55,7 @@ export function injectInlineAds(html: string, placements: readonly InlinePlaceme
       afterIndex: n,
       sizesDesktop: p.sizes?.desktop ?? [],
       sizesMobile: p.sizes?.mobile ?? [],
-      code: staging ? '' : (p.code ?? ''),
+      code: staging ? '' : options?.uniqueIds ? uniqueAdCode(p.code ?? '', p.id ?? `${p.position}-anon`) : (p.code ?? ''),
     });
   }
   if (inline.length === 0) return html;

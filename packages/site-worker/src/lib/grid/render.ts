@@ -1,6 +1,7 @@
 import type { GridPoolItem, NetworkDirectorySite, ResolvedGridCardConfig } from '@atomic-platform/shared-types';
 import { escapeHtml, formatAge } from './format';
 import type { Tile } from './tiles';
+import { uniqueAdCode } from '../ad-code';
 
 /** Structural subset of AdPlacement used by the Grid renderers. */
 export interface AdPlacementLike {
@@ -87,7 +88,7 @@ function renderAdHtml(adIndex: number, ctx: TileRenderContext): string {
   const minHeight = ctx.reservedHeight ? ` style="min-height:${ctx.reservedHeight}px"` : '';
   const slots = placements.map((p) => {
     const id = `${p.id ?? 'grid-feed'}-${adIndex}`;
-    const code = ctx.staging ? '' : (p.code ?? '');
+    const code = ctx.staging ? '' : uniqueAdCode(p.code ?? '', id);
     return `<div data-ad-id="${escapeHtml(id)}" data-ad-position="grid-feed" data-ad-page-type="${ctx.pageType}"`
       + ` data-ad-device="${escapeHtml(p.device ?? 'all')}" data-sizes-desktop="${escapeHtml(JSON.stringify(p.sizes?.desktop ?? []))}"`
       + ` data-sizes-mobile="${escapeHtml(JSON.stringify(p.sizes?.mobile ?? []))}" class="atl-ad-slot atl-ad-grid-feed"${minHeight}>${code}</div>`;

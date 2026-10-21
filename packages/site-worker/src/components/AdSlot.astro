@@ -15,6 +15,7 @@
  * replacing the inner ad div content.
  */
 import { getConfig, isStagingEnv } from '../lib/config';
+import { uniqueAdCode } from '../lib/ad-code';
 
 export interface Props {
   position: string;
@@ -64,11 +65,18 @@ const reserved = heights?.[position] ?? heights?.[position.replace(/-\d+$/, '')]
 const slotInlineStyle = (reserved && position !== 'sidebar') ? `min-height:${reserved}px` : '';
 const isSticky = position === 'sticky-bottom';
 const staging = isStagingEnv(Astro);
+// Grid pages also repeat snippets in feed tiles — give this slot's element ids their own suffix too.
+const isGrid = config.theme?.template === 'grid';
+const slotCode = (p: Placement): string => {
+  if (staging) return '';
+  const code = p.code ?? '';
+  return isGrid ? uniqueAdCode(code, p.id ?? `${position}-${pageType}`) : code;
+};
 
 ---
 
 {!isSticky && placements.map((p) => {
-  const widgetCode = staging ? '' : (p.code ?? '');
+  const widgetCode = slotCode(p);
   return (
     <div
       data-ad-id={p.id ?? `${position}-${pageType}`}
@@ -88,7 +96,7 @@ const staging = isStagingEnv(Astro);
 {isSticky && placements.length > 0 && (
   <div class="atl-ad-sticky-wrapper" data-atl-sticky-wrapper>
     {placements.map((p) => {
-      const widgetCode = staging ? '' : (p.code ?? '');
+      const widgetCode = slotCode(p);
       return (
         <div
           data-ad-id={p.id ?? `${position}-${pageType}`}

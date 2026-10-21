@@ -177,6 +177,19 @@ body.g-body .g-story__cta { display: inline-flex; align-items: center; justify-c
 .g-story__cta:hover { filter: brightness(1.08); }
 .g-story__cta:active { transform: translateY(1px); }
 .g-story__side { display: flex; flex-direction: column; gap: 24px; }
+/* Sidebar ad sits under the related stories and stays in view down the endless story column. */
+.g-story__sticky { position: sticky; top: 16px; }
+
+/* Side rails (GridLayout.astro): 300px ads beside the content from 1600px up. The page narrows so they fit;
+   --g-rail-top is kept below the header / above the footer by the layout's script. */
+.g-rail { display: none; }
+@media (min-width: 1600px) {
+  body.g-body[data-rails] { --g-rail-w: 300px; --g-page-max: min(1630px, calc(100vw - 2 * (var(--g-rail-w) + 2 * var(--g-gutter)))); }
+  body.g-body[data-rails] .g-story, body.g-body[data-rails] .g-story__bottom { max-width: min(1200px, var(--g-page-max)); }
+  .g-rail { display: block; position: fixed; z-index: 5; top: var(--g-rail-top, 16px); width: var(--g-rail-w); max-height: calc(100vh - 32px); overflow: hidden; }
+  .g-rail--left { left: calc(50% - var(--g-page-max) / 2 - var(--g-rail-w) - var(--g-gutter) / 2); }
+  .g-rail--right { right: calc(50% - var(--g-page-max) / 2 - var(--g-rail-w) - var(--g-gutter) / 2); }
+}
 .g-story__bottom { display: none; max-width: 1200px; margin: 0 auto; padding: 0 var(--g-gutter) 32px; width: 100%; }
 /* Endless story page: stories appended below the first one (NextStories.astro). */
 .g-next-stories { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
