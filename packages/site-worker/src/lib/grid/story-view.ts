@@ -131,18 +131,17 @@ function slotsHtml(placements: readonly AdPlacementLike[], position: string, suf
 }
 
 /**
- * A story appended below the current one: a between-stories ad first, then its own above-content, in-article and
- * below-content ads
- * (sidebar and sticky stay single for the page). `index` (2, 3, …) keeps ad ids unique on the page.
+ * A story appended below the current one, laid out like the page's own story (dazzr's story stream): a
+ * between-stories ad, its own above-content, in-article and below-content ads, and its own sidebar ads.
+ * `index` (2, 3, …) keeps ad ids unique on the page. Sticky-bottom and the side rails stay single for the page.
  */
 export function renderNextStoryHtml(v: StoryView, opts: { placements: readonly AdPlacementLike[]; staging: boolean; index: number }): string {
   const suffix = `-n${opts.index}`;
   const inline = opts.placements.map((p) => ({ ...p, ...(p.id ? { id: `${p.id}${suffix}` } : {}) }));
   const body = injectInlineAds(v.bodyHtml, inline as Parameters<typeof injectInlineAds>[1], { staging: opts.staging, uniqueIds: true });
-  return `<section class="g-next" data-story-key="${escapeHtml(v.key)}" data-story-path="${escapeHtml(v.path)}" data-story-title="${escapeHtml(v.title)}">`
-    + slotsHtml(opts.placements, 'between-stories', suffix, opts.staging)
-    + slotsHtml(opts.placements, 'above-content', suffix, opts.staging)
-    + renderStoryArticleHtml(v, body, 'h2')
-    + slotsHtml(opts.placements, 'below-content', suffix, opts.staging)
+  const slots = (position: string): string => slotsHtml(opts.placements, position, suffix, opts.staging);
+  return `<section class="g-story g-next" data-story-key="${escapeHtml(v.key)}" data-story-path="${escapeHtml(v.path)}" data-story-title="${escapeHtml(v.title)}">`
+    + `<div class="g-story__main">${slots('between-stories')}${slots('above-content')}${renderStoryArticleHtml(v, body, 'h2')}${slots('below-content')}</div>`
+    + `<aside class="g-story__side">${slots('sidebar')}${slots('sidebar-bottom')}</aside>`
     + `</section>`;
 }

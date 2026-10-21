@@ -56,7 +56,7 @@ const feedHref = pill ? `/topic/${pill}` : '/';
         if (e.isIntersecting) show(e.target.dataset.storyPath, e.target.dataset.storyTitle);
       });
     }, { rootMargin: '-35% 0px -60% 0px' });
-    // The page's own story (appended ones live inside .g-story__main too, so watch the article itself).
+    // The page's own story: the first article on the page (appended stories are .g-next sections after it).
     var first = document.querySelector('.g-story__main > .g-story__article');
     if (first) {
       first.dataset.storyPath = root.dataset.path;

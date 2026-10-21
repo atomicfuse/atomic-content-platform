@@ -63,7 +63,7 @@ body.g-body a { color: inherit; text-decoration: none; touch-action: manipulatio
 body.g-body :focus-visible { outline: 2px solid var(--g-focus); outline-offset: 2px; border-radius: 4px; }
 
 .g-main { flex: 1 0 auto; width: 100%; max-width: var(--g-page-max); margin: 0 auto; padding: 16px var(--g-gutter) 48px; }
-.g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--g-card-min), 100%), 1fr)); gap: var(--g-gap); }
+.g-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--g-card-min), 100%), 1fr)); grid-auto-flow: dense; gap: var(--g-gap); }
 .g-empty { padding: 64px 16px; text-align: center; color: var(--g-muted); }
 
 /* Cards */
@@ -91,7 +91,16 @@ body.g-body .g-card__link:focus-visible { outline-offset: -2px; border-radius: i
 .g-card__intro { margin: 0; font-size: 1rem; line-height: 1.45; opacity: .7; /* .7 keeps AA (6.0:1) on white; .6 fails */
   display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .g-card[data-pinned="true"] { border-color: var(--g-accent); }
-.g-tile--ad { max-height: 300px; overflow: hidden; border-radius: var(--g-radius); min-width: 0; }
+/* In-feed ad tile = a card: same frame as a story card, and the ad fills exactly the row's card height (absolute
+   fill, so a tall widget can never stretch the row; overflow is clipped). */
+.g-tile--ad { position: relative; min-width: 0; min-height: 260px; background: var(--g-card-bg); border: 1px solid var(--g-card-border); border-radius: var(--g-radius); overflow: hidden; }
+.g-tile--ad > .atl-ad-slot { position: absolute; inset: 0; margin: 0; overflow: hidden; }
+/* Device-only slots (same rules as AdSlot.astro's global style, which only arrives with a server island). */
+@media (max-width: 959px) { body.g-body .atl-ad-slot[data-ad-device="desktop"] { display: none !important; } }
+@media (min-width: 960px) { body.g-body .atl-ad-slot[data-ad-device="mobile"] { display: none !important; } }
+/* Full-width banner between feed batches; later cards backfill the row it interrupts (grid-auto-flow: dense). */
+.g-tile--divider { grid-column: 1 / -1; min-width: 0; max-height: 320px; overflow: hidden; display: flex; justify-content: center; }
+.g-tile--divider > .atl-ad-slot { margin: 0; width: 100%; max-width: 970px; }
 
 .g-feed-status { text-align: center; color: var(--g-muted); padding: 16px; min-height: 1em; font-size: .9rem; }
 .g-sentinel { height: 1px; }
@@ -176,9 +185,9 @@ body.g-body .g-card__link:focus-visible { outline-offset: -2px; border-radius: i
 body.g-body .g-story__cta { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 28px; margin-top: 24px; border-radius: var(--g-radius-pill); background: var(--g-accent); color: var(--g-accent-fg); font-weight: 700; transition: filter .2s ease-out; }
 .g-story__cta:hover { filter: brightness(1.08); }
 .g-story__cta:active { transform: translateY(1px); }
-.g-story__side { display: flex; flex-direction: column; gap: 24px; }
-/* Sidebar ad sits under the related stories and stays in view down the endless story column. */
-.g-story__sticky { position: sticky; top: 16px; }
+.g-story__main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* The whole sidebar (top ad, related, bottom ad) stays in view while its story scrolls (dazzr). */
+.g-story__side { display: flex; flex-direction: column; gap: 24px; position: sticky; top: 24px; align-self: start; }
 
 /* Side rails (GridLayout.astro): 300px ads beside the content from 1600px up. The page narrows so they fit;
    --g-rail-top is kept below the header / above the footer by the layout's script. */
@@ -192,9 +201,10 @@ body.g-body .g-story__cta { display: inline-flex; align-items: center; justify-c
 }
 .g-story__bottom { display: none; max-width: 1200px; margin: 0 auto; padding: 0 var(--g-gutter) 32px; width: 100%; }
 /* Endless story page: stories appended below the first one (NextStories.astro). */
-.g-next-stories { display: flex; flex-direction: column; gap: 32px; margin-top: 32px; }
+.g-next-stories { display: flex; flex-direction: column; }
 .g-next-stories:empty { display: none; }
-.g-next { display: flex; flex-direction: column; gap: 16px; padding-top: 32px; border-top: 1px solid var(--g-border); }
+/* Each appended story is a full .g-story (main + its own sidebar), separated by a rule. */
+.g-next { border-top: 1px solid var(--g-border); padding-top: 32px; }
 .g-next-more { display: flex; width: fit-content; align-items: center; min-height: 44px; padding: 0 24px; border-radius: var(--g-radius-pill); border: 1px solid var(--g-border); color: var(--g-heading); font-weight: 600; margin: 24px auto 0; }
 .g-next-more[hidden] { display: none; }
 
@@ -208,6 +218,7 @@ body.g-body .g-story__cta { display: inline-flex; align-items: center; justify-c
 .g-related__item img { grid-column: 2; grid-row: 1 / span 2; width: 96px; height: 72px; object-fit: cover; border-radius: min(var(--g-radius-img), 6px); background: var(--g-border); }
 @media (max-width: 960px) {
   .g-story { grid-template-columns: 1fr; }
+  .g-story__side { position: static; }
   .g-story__side .g-related { display: none; }
   .g-story__bottom { display: block; }
 }
@@ -225,9 +236,9 @@ body.g-body .g-story__cta { display: inline-flex; align-items: center; justify-c
    Defaults (bordered / rounded / 4:3 / top / comfortable / below) are the base rules above.
    Design direction: docs/superpowers/specs/2026-09-27-grid-design-direction.md ("Card anatomy"). */
 /* Card style */
-body.g-body[data-card-style="shadow"] .g-card { border-color: transparent; box-shadow: 0 1px 3px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .06); }
+body.g-body[data-card-style="shadow"] :is(.g-card, .g-tile--ad) { border-color: transparent; box-shadow: 0 1px 3px rgb(0 0 0 / .06), 0 8px 24px rgb(0 0 0 / .06); }
 body.g-body[data-card-style="shadow"] .g-card:hover { box-shadow: 0 2px 6px rgb(0 0 0 / .08), 0 16px 40px rgb(0 0 0 / .10); }
-body.g-body[data-card-style="flat"] .g-card { border-color: transparent; box-shadow: none; }
+body.g-body[data-card-style="flat"] :is(.g-card, .g-tile--ad) { border-color: transparent; box-shadow: none; }
 body.g-body[data-card-style="flat"] .g-card:hover { box-shadow: none; }
 /* Corners */
 body.g-body[data-card-corners="square"] { --g-radius: 0px; --g-radius-img: 0px; }
