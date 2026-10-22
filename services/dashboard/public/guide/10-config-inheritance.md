@@ -43,6 +43,8 @@ Two rules to remember:
 
 Groups carry everything — theme colors, fonts, ad placements, tracking IDs, scripts, legal pages, ads.txt entries. A single group can hold any combination of these fields, so the same ad setup can be re-used across unrelated editorial verticals without duplication.
 
+**Clone a group** (group page → **Clone Group**) to start a new group from an existing one: every saved setting is copied (ads, scripts, tracking, ads.txt, theme, legal), but no sites — add sites to the new group from each site's settings. A new or cloned group can't reuse an existing group's ID.
+
 ## Overrides
 
 Overrides live in `overrides/config/<id>.yaml` and use **REPLACE semantics**: if an override defines a field (e.g. `ads_config`), it completely replaces the value produced by the group chain — no deep merge. Fields the override does not mention pass through untouched.

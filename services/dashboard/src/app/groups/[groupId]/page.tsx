@@ -412,12 +412,21 @@ export default function GroupDetailPage(): React.ReactElement {
             Save
           </Button>
         </div>
-        <Button
-          variant="danger"
-          onClick={(): void => setShowDeleteModal(true)}
-        >
-          Delete Group
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Clones the saved settings (not unsaved edits) into a new group, without its sites. */}
+          <Button
+            variant="secondary"
+            onClick={(): void => router.push(`/groups/new?from=${encodeURIComponent(groupId)}`)}
+          >
+            Clone Group
+          </Button>
+          <Button
+            variant="danger"
+            onClick={(): void => setShowDeleteModal(true)}
+          >
+            Delete Group
+          </Button>
+        </div>
       </div>
 
       {/* Rebuild confirmation modal */}

@@ -38,6 +38,10 @@ export async function PUT(
 ): Promise<NextResponse> {
   const { groupId } = await params;
   try {
+    // Creating (new group / clone): never overwrite an existing group.
+    if (req.nextUrl.searchParams.get("create") === "1" && (await readFileContent(`groups/${groupId}.yaml`)) !== null) {
+      return NextResponse.json({ error: `A group with the ID "${groupId}" already exists` }, { status: 409 });
+    }
     const body = (await req.json()) as Record<string, unknown>;
     const yamlContent = stringifyYaml(body, { lineWidth: 0 });
     await commitNetworkFiles(
