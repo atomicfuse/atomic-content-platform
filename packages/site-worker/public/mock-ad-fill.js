@@ -117,6 +117,56 @@
       mockBrand: 'GroupAd Demo',
       mockCta: 'Learn More'
     },
+    // Grid template positions (matched by position when the placement id has no entry of its own).
+    'grid-feed': {
+      label: 'GRID FEED',
+      color: '#00838f',
+      bg: '#e0f7fa',
+      mockBrand: 'Native Card Ad',
+      mockCta: 'Read More'
+    },
+    'grid-divider': {
+      label: 'GRID DIVIDER',
+      color: '#ef6c00',
+      bg: '#fff3e0',
+      mockBrand: 'Full-Width Banner',
+      mockCta: 'Shop Now →'
+    },
+    'left-rail': {
+      label: 'LEFT RAIL',
+      color: '#5e35b1',
+      bg: '#ede7f6',
+      mockBrand: 'Skyscraper\n300 × 600',
+      mockCta: 'Learn More'
+    },
+    'right-rail': {
+      label: 'RIGHT RAIL',
+      color: '#5e35b1',
+      bg: '#ede7f6',
+      mockBrand: 'Skyscraper\n300 × 600',
+      mockCta: 'Learn More'
+    },
+    'sidebar-bottom': {
+      label: 'SIDEBAR BOTTOM',
+      color: '#ad1457',
+      bg: '#fce4ec',
+      mockBrand: 'Sidebar Bottom Ad',
+      mockCta: 'See Offer'
+    },
+    'between-stories': {
+      label: 'BETWEEN STORIES',
+      color: '#2e7d32',
+      bg: '#e8f5e9',
+      mockBrand: 'Between Stories Ad',
+      mockCta: 'Discover'
+    },
+    'sticky-bottom': {
+      label: 'STICKY BOTTOM',
+      color: '#37474f',
+      bg: '#eceff1',
+      mockBrand: 'Anchor Banner',
+      mockCta: 'Open'
+    },
     'mini-mid': {
       label: 'GROUP: MINI MID',
       color: '#AD1457',
@@ -135,9 +185,24 @@
     mockCta: 'Learn More'
   };
 
+  // Grid repeats a placement with a suffix (grid-feed-3, sidebar-n2, banner-p2): match the placement id without
+  // it, then the slot's position.
+  function mockFor(el, adId) {
+    var id = adId;
+    while (true) {
+      if (MOCK_ADS[id]) return MOCK_ADS[id];
+      var shorter = id.replace(/-(?:n|p)?\d+$/, '');
+      if (shorter === id) break;
+      id = shorter;
+    }
+    return MOCK_ADS[el.dataset.adPosition] || DEFAULT_MOCK;
+  }
+
   function fillSlot(el) {
     var adId = el.dataset.adId || el.id.replace('ad-', '');
-    var mock = MOCK_ADS[adId] || DEFAULT_MOCK;
+    var mock = mockFor(el, adId);
+    // A Grid feed tile is card-shaped: the mock fills the whole card.
+    var fillsTile = el.dataset.adPosition === 'grid-feed';
     var sizesDesktop = [];
     var sizesMobile = [];
     
@@ -158,8 +223,8 @@
     ad.style.cssText = [
       'box-sizing: border-box',
       'width: 100%',
-      w > 0 ? ('max-width: ' + w + 'px') : '',
-      h > 0 ? ('height: ' + h + 'px') : 'height: auto',
+      w > 0 && !fillsTile ? ('max-width: ' + w + 'px') : '',
+      fillsTile ? 'height: 100%' : (h > 0 ? ('height: ' + h + 'px') : 'height: auto'),
       'background: ' + mock.bg,
       'border: 2px dashed ' + mock.color,
       'border-radius: 8px',
