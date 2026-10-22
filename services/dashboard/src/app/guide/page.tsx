@@ -39,6 +39,7 @@ const GUIDE_PAGES = [
   { slug: "25-similarweb", title: "Similarweb" },
   { slug: "26-authors", title: "Authors" },
   { slug: "27-trending-no-ads", title: "Ad-Free Links (?trending)" },
+  { slug: "28-mock-ads-preview", title: "Mock-Ad Preview (?mockads)" },
 ];
 
 export default function GuidePage(): React.ReactElement {

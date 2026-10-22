@@ -6,6 +6,7 @@ import { resolvePreview, generatePreviewScript, generateParamPropagationScript }
 import { deepMerge } from './lib/deep-merge';
 import { toGridPath } from './lib/grid/route';
 import { hasNoAdsParam, hasNoAdsCookie, stripAds, NO_ADS_COOKIE_HEADER } from './lib/no-ads';
+import { mockAdsParam, hasMockAdsCookie, mockAds, MOCK_ADS_COOKIE_HEADER, MOCK_ADS_CLEAR_COOKIE_HEADER } from './lib/mock-ads';
 
 /**
  * Multi-tenant site resolution.
@@ -154,6 +155,12 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // links, Server Islands, Grid fetches — stays ad-free too.
   const noAdsParam = hasNoAdsParam(context.url.searchParams);
   const noAds = noAdsParam || hasNoAdsCookie(context.request.headers.get('cookie'));
+  // --- Mock-ad preview session (`?mockads`, `?mockads=off`) — every slot shows a mock; ad-free wins over it.
+  const mockParam = mockAdsParam(context.url.searchParams);
+  const mock = !noAds && mockParam !== 'off' && (mockParam === 'on' || hasMockAdsCookie(context.request.headers.get('cookie')));
+  if (mock) {
+    config = mockAds(config);
+  }
   if (noAds) {
     config = stripAds(config);
   }
@@ -256,6 +263,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (noAdsParam) {
       finalResponse.headers.append('set-cookie', NO_ADS_COOKIE_HEADER);
     }
+  }
+  // Same for mock-ad previews: other visitors must never get the mocks.
+  if (mock) {
+    finalResponse.headers.set('cache-control', 'private, no-store');
+    if (mockParam === 'on') finalResponse.headers.append('set-cookie', MOCK_ADS_COOKIE_HEADER);
+  }
+  if (mockParam === 'off') {
+    finalResponse.headers.append('set-cookie', MOCK_ADS_CLEAR_COOKIE_HEADER);
   }
 
   return finalResponse;
