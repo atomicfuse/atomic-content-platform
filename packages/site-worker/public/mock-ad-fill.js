@@ -117,6 +117,56 @@
       mockBrand: 'GroupAd Demo',
       mockCta: 'Learn More'
     },
+    // Grid template positions (matched by position when the placement id has no entry of its own).
+    'grid-feed': {
+      label: 'GRID FEED',
+      color: '#00838f',
+      bg: '#e0f7fa',
+      mockBrand: 'Native Card Ad',
+      mockCta: 'Read More'
+    },
+    'grid-divider': {
+      label: 'GRID DIVIDER',
+      color: '#ef6c00',
+      bg: '#fff3e0',
+      mockBrand: 'Full-Width Banner',
+      mockCta: 'Shop Now →'
+    },
+    'left-rail': {
+      label: 'LEFT RAIL',
+      color: '#5e35b1',
+      bg: '#ede7f6',
+      mockBrand: 'Skyscraper\n300 × 600',
+      mockCta: 'Learn More'
+    },
+    'right-rail': {
+      label: 'RIGHT RAIL',
+      color: '#5e35b1',
+      bg: '#ede7f6',
+      mockBrand: 'Skyscraper\n300 × 600',
+      mockCta: 'Learn More'
+    },
+    'sidebar-bottom': {
+      label: 'SIDEBAR BOTTOM',
+      color: '#ad1457',
+      bg: '#fce4ec',
+      mockBrand: 'Sidebar Bottom Ad',
+      mockCta: 'See Offer'
+    },
+    'between-stories': {
+      label: 'BETWEEN STORIES',
+      color: '#2e7d32',
+      bg: '#e8f5e9',
+      mockBrand: 'Between Stories Ad',
+      mockCta: 'Discover'
+    },
+    'sticky-bottom': {
+      label: 'STICKY BOTTOM',
+      color: '#37474f',
+      bg: '#eceff1',
+      mockBrand: 'Anchor Banner',
+      mockCta: 'Open'
+    },
     'mini-mid': {
       label: 'GROUP: MINI MID',
       color: '#AD1457',
@@ -135,9 +185,53 @@
     mockCta: 'Learn More'
   };
 
+  // Grid repeats a placement with a suffix (grid-feed-3, sidebar-n2, banner-p2): match the placement id without
+  // it, then the slot's position.
+  function mockFor(el, adId) {
+    var id = adId;
+    while (true) {
+      if (MOCK_ADS[id]) return MOCK_ADS[id];
+      var shorter = id.replace(/-(?:n|p)?\d+$/, '');
+      if (shorter === id) break;
+      id = shorter;
+    }
+    return MOCK_ADS[el.dataset.adPosition] || DEFAULT_MOCK;
+  }
+
+  // Native in-feed ad, laid out like a Grid story card (dazzr-style): 4:3 image with an AD badge, a
+  // "▷ advertiser" line and a two-line headline. Headlines rotate so neighbouring tiles differ.
+  var NATIVE_HEADLINES = [
+    ['Doctors Stunned By This Simple Morning Habit', 'HealthDaily'],
+    ['The New Electric Car Everyone Is Talking About', 'AutoReview'],
+    ['15 Budget Travel Destinations For This Winter', 'TravelMag'],
+    ['Homeowners Are Ditching Their Old Windows For This', 'Home Experts'],
+    ['This Kitchen Trick Saves Hours Every Week', 'Kitchen Tips'],
+    ['Seniors Are Loving This New Phone Plan', 'Mobile Deals']
+  ];
+  function fillNativeCard(el, adId) {
+    var n = parseInt((adId.match(/(\d+)$/) || [0, 0])[1], 10) || 0;
+    var item = NATIVE_HEADLINES[n % NATIVE_HEADLINES.length];
+    var hue = (n * 47) % 360;
+    el.innerHTML = '';
+    var card = document.createElement('a');
+    card.href = '#';
+    card.onclick = function (e) { e.preventDefault(); };
+    card.style.cssText = 'display:flex;flex-direction:column;height:100%;color:inherit;text-decoration:none;font-family:inherit';
+    card.innerHTML =
+      '<div style="position:relative;margin:8px 8px 0;aspect-ratio:4/3;border-radius:9px;overflow:hidden;'
+      + 'background:linear-gradient(135deg,hsl(' + hue + ' 45% 72%),hsl(' + ((hue + 40) % 360) + ' 50% 52%))">'
+      + '<span style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.55);color:#fff;font:600 10px/1 sans-serif;padding:3px 5px;border-radius:3px">AD</span></div>'
+      + '<div style="padding:10px 12px 12px">'
+      + '<p style="margin:0 0 6px;font-size:.85rem;color:var(--g-muted,#777)">&#9655; ' + item[1] + '</p>'
+      + '<h3 style="margin:0;font-size:1rem;line-height:1.3;color:var(--g-heading,#222);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + item[0] + '</h3>'
+      + '</div>';
+    el.appendChild(card);
+  }
+
   function fillSlot(el) {
     var adId = el.dataset.adId || el.id.replace('ad-', '');
-    var mock = MOCK_ADS[adId] || DEFAULT_MOCK;
+    if (el.dataset.adPosition === 'grid-feed') { fillNativeCard(el, adId); return; }
+    var mock = mockFor(el, adId);
     var sizesDesktop = [];
     var sizesMobile = [];
     
