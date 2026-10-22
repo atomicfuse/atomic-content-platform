@@ -8,6 +8,8 @@ import {
   configToSizeTuples,
   sizeTuplesToConfig,
 } from "./ad-size-config";
+import { adCodeWarnings } from "@/lib/ad-code-check";
+
 /** Ad placement — mirrors @atomic-platform/shared-types */
 interface AdPlacementSizes {
   desktop?: number[][];
@@ -429,6 +431,9 @@ export function AdsConfigForm({ value, onChange }: AdsConfigFormProps): React.Re
               <p className="text-xs text-[var(--text-muted)]">
                 Raw HTML + script tags from your ad network. Rendered server-side inside this ad position.
               </p>
+              {adCodeWarnings(placement.code).map((w) => (
+                <p key={w} className="text-xs text-amber-500">{w}</p>
+              ))}
             </div>
 
             {/* Page Types */}
