@@ -198,11 +198,40 @@
     return MOCK_ADS[el.dataset.adPosition] || DEFAULT_MOCK;
   }
 
+  // Native in-feed ad, laid out like a Grid story card (dazzr-style): 4:3 image with an AD badge, a
+  // "▷ advertiser" line and a two-line headline. Headlines rotate so neighbouring tiles differ.
+  var NATIVE_HEADLINES = [
+    ['Doctors Stunned By This Simple Morning Habit', 'HealthDaily'],
+    ['The New Electric Car Everyone Is Talking About', 'AutoReview'],
+    ['15 Budget Travel Destinations For This Winter', 'TravelMag'],
+    ['Homeowners Are Ditching Their Old Windows For This', 'Home Experts'],
+    ['This Kitchen Trick Saves Hours Every Week', 'Kitchen Tips'],
+    ['Seniors Are Loving This New Phone Plan', 'Mobile Deals']
+  ];
+  function fillNativeCard(el, adId) {
+    var n = parseInt((adId.match(/(\d+)$/) || [0, 0])[1], 10) || 0;
+    var item = NATIVE_HEADLINES[n % NATIVE_HEADLINES.length];
+    var hue = (n * 47) % 360;
+    el.innerHTML = '';
+    var card = document.createElement('a');
+    card.href = '#';
+    card.onclick = function (e) { e.preventDefault(); };
+    card.style.cssText = 'display:flex;flex-direction:column;height:100%;color:inherit;text-decoration:none;font-family:inherit';
+    card.innerHTML =
+      '<div style="position:relative;margin:8px 8px 0;aspect-ratio:4/3;border-radius:9px;overflow:hidden;'
+      + 'background:linear-gradient(135deg,hsl(' + hue + ' 45% 72%),hsl(' + ((hue + 40) % 360) + ' 50% 52%))">'
+      + '<span style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.55);color:#fff;font:600 10px/1 sans-serif;padding:3px 5px;border-radius:3px">AD</span></div>'
+      + '<div style="padding:10px 12px 12px">'
+      + '<p style="margin:0 0 6px;font-size:.85rem;color:var(--g-muted,#777)">&#9655; ' + item[1] + '</p>'
+      + '<h3 style="margin:0;font-size:1rem;line-height:1.3;color:var(--g-heading,#222);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + item[0] + '</h3>'
+      + '</div>';
+    el.appendChild(card);
+  }
+
   function fillSlot(el) {
     var adId = el.dataset.adId || el.id.replace('ad-', '');
+    if (el.dataset.adPosition === 'grid-feed') { fillNativeCard(el, adId); return; }
     var mock = mockFor(el, adId);
-    // A Grid feed tile is card-shaped: the mock fills the whole card.
-    var fillsTile = el.dataset.adPosition === 'grid-feed';
     var sizesDesktop = [];
     var sizesMobile = [];
     
@@ -223,8 +252,8 @@
     ad.style.cssText = [
       'box-sizing: border-box',
       'width: 100%',
-      w > 0 && !fillsTile ? ('max-width: ' + w + 'px') : '',
-      fillsTile ? 'height: 100%' : (h > 0 ? ('height: ' + h + 'px') : 'height: auto'),
+      w > 0 ? ('max-width: ' + w + 'px') : '',
+      h > 0 ? ('height: ' + h + 'px') : 'height: auto',
       'background: ' + mock.bg,
       'border: 2px dashed ' + mock.color,
       'border-radius: 8px',

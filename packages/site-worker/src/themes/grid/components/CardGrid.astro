@@ -34,6 +34,24 @@ const { html, hasMore, nextPage, topic, empty } = Astro.props;
         old.replaceWith(s);
       });
     }
+    // Full-width dividers (grid-divider ads) every 6 rows of cards, like dazzr: divider k goes on row 7k once
+    // 6k rows of cards exist above it. Below 3 columns (phones) it stays at the end of its batch, so a divider
+    // never lands above the reader and shifts the page.
+    function placeDividers() {
+      var dividers = grid.querySelectorAll(':scope > .g-tile--divider');
+      if (!dividers.length) return;
+      var cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+      var cards = Array.prototype.filter.call(grid.querySelectorAll(':scope > .g-tile:not(.g-tile--divider)'), function (t) {
+        return t.style.display !== 'none'; // collapsed (unfilled) ad tiles take no cell
+      }).length;
+      var cardRows = Math.floor(cards / Math.max(cols, 1));
+      dividers.forEach(function (d, i) {
+        var k = i + 1;
+        d.style.gridRow = cols >= 3 && cardRows >= 6 * k ? String(7 * k) : '';
+      });
+    }
+    placeDividers();
+    window.addEventListener('resize', placeDividers);
     function nearBottom() { return sentinel.getBoundingClientRect().top < window.innerHeight + 800; }
     async function load() {
       if (loading || !hasMore) return;
@@ -51,6 +69,7 @@ const { html, hasMore, nextPage, topic, empty } = Astro.props;
         var nodes = Array.prototype.slice.call(tpl.content.children);
         grid.append(tpl.content);
         nodes.forEach(runScripts);
+        placeDividers();
         page += 1;
         if (!hasMore) { observer.disconnect(); sentinel.remove(); }
       } catch (e) {
