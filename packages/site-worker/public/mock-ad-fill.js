@@ -228,6 +228,27 @@
     el.appendChild(card);
   }
 
+  // Standard ad sizes per position, [desktop, mobile]; after-paragraph-N shares one entry.
+  var POSITION_SIZES = {
+    'homepage-top': [[970, 90], [320, 100]],
+    'category-top': [[970, 90], [320, 100]],
+    'homepage-mid': [[728, 90], [300, 250]],
+    'above-content': [[728, 90], [320, 100]],
+    'after-paragraph': [[336, 280], [300, 250]],
+    'below-content': [[728, 90], [300, 250]],
+    'between-stories': [[728, 90], [300, 250]],
+    'sidebar': [[300, 250], [300, 250]],
+    'sidebar-bottom': [[300, 600], [300, 250]],
+    'left-rail': [[300, 600], [300, 600]],
+    'right-rail': [[300, 600], [300, 600]],
+    'grid-divider': [[970, 250], [320, 100]],
+    'sticky-bottom': [[728, 90], [320, 50]]
+  };
+  function defaultSize(position, isMobile) {
+    var entry = POSITION_SIZES[(position || '').replace(/-\d+$/, '')];
+    return entry ? entry[isMobile ? 1 : 0] : [0, 0];
+  }
+
   function fillSlot(el) {
     var adId = el.dataset.adId || el.id.replace('ad-', '');
     if (el.dataset.adPosition === 'grid-feed') { fillNativeCard(el, adId); return; }
@@ -240,7 +261,8 @@
     
     var isMobile = window.innerWidth < 768;
     var sizes = isMobile ? sizesMobile : sizesDesktop;
-    var size = (sizes && sizes.length > 0) ? sizes[0] : [0, 0];
+    // Placements without sizes (e.g. native widgets that size themselves) mock the standard size of their position.
+    var size = (sizes && sizes.length > 0) ? sizes[0] : defaultSize(el.dataset.adPosition, isMobile);
     var w = size[0];
     var h = size[1];
 
