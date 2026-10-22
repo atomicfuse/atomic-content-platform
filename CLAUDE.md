@@ -7,7 +7,7 @@ Orientation for Claude Code sessions. Read this before touching code. For full a
 - **Never run `grid plug` (formerly `cloudgrid plug`) without explicit user permission.** Always ask first.
 - **Never commit directly to `main`.** Asaf uses `asaf-dev`, Michal uses `michal-dev`.
 - **Never `git add -A`** — may include secrets. Stage specific files.
-- **Never call `gh pr create`** — token lacks `pull_requests:write`. Print compare URL instead:
+- **Open or merge a PR only when Asaf explicitly says so** ("open a PR", "merge it"). The local `gh` login (`asaf-atomic`, `repo` scope) can run `gh pr create` / `gh pr merge`; the services' `GITHUB_TOKEN` cannot (no `pull_requests:write`). Otherwise just push the dev branch and print the compare URL:
   `https://github.com/atomicfuse/atomic-content-platform/compare/main...<dev-branch>`
 
 ## Overview
@@ -208,7 +208,7 @@ Full env var list in `docs/architecture.md`.
 2. **`sites/` on main is incomplete** — only published sites. Use `dashboard-index.yaml`.
 3. **Writer fallback** — no branch + `LOCAL_NETWORK_PATH` = disk write, bypassing git.
 4. **`CONTENT_AGENT_URL` DNS** — doesn't resolve on host; use fallback pattern.
-5. **GITHUB_TOKEN** — no `pull_requests:write`; print compare URL.
+5. **GITHUB_TOKEN** — no `pull_requests:write`, so the services can't open PRs. (Claude uses the local `gh` login, and only when asked.)
 6. **Article count + topic rotation** — scheduler uses `articles_per_day` from site-level `brief.schedule` (fallback: `ceil(articles_per_week / preferred_days.length)`). Topics are selected via round-robin (`site_stats.topicRotation.nextIndex` in MongoDB), 1 article per topic per run. A manual dashboard "Generate N" with no topic splits N across all topics (`manualPerTopicTarget`). Every topic fetches backup candidates (`candidateLimit`) so a skipped item is replaced. Per-topic `schedule` fields in `topics_v2` are deprecated and ignored.
 7. **Astro 6 env** — `Astro.locals.runtime.env` removed. Use `import { env } from 'cloudflare:workers'`.
 8. **Middleware must run first** — `run_worker_first = true` in `wrangler.toml` required.
