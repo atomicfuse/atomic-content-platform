@@ -638,25 +638,27 @@ export function UnifiedConfigForm({
         />
       </section>
 
-      {/* 7. Theme */}
-      <section>
-        <SectionHeader title="Theme" />
-        {showMergeModes && (
-          <>
-            <MergeModeSelector
-              fieldName="theme"
-              options={THEME_MODES}
-              value={modes.theme}
-              onChange={(v): void => updateMode("theme", v as "merge" | "replace")}
-            />
-            {isReplaceMode("theme") && <ReplaceWarningBanner fieldName="theme" />}
-          </>
-        )}
-        <ThemeForm
-          value={config.theme ?? {}}
-          onChange={(v): void => updateField("theme", v)}
-        />
-      </section>
+      {/* 7. Theme — not in site mode: the site's own Theme tab edits it there. */}
+      {!isSite && (
+        <section>
+          <SectionHeader title="Theme" />
+          {showMergeModes && (
+            <>
+              <MergeModeSelector
+                fieldName="theme"
+                options={THEME_MODES}
+                value={modes.theme}
+                onChange={(v): void => updateMode("theme", v as "merge" | "replace")}
+              />
+              {isReplaceMode("theme") && <ReplaceWarningBanner fieldName="theme" />}
+            </>
+          )}
+          <ThemeForm
+            value={config.theme ?? {}}
+            onChange={(v): void => updateField("theme", v)}
+          />
+        </section>
+      )}
 
       {/* 7b. Grid template settings (group-level only) */}
       {mode === "group" && (
