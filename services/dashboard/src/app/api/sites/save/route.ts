@@ -16,6 +16,7 @@ import { versionedAsset } from "@/lib/versioned-asset";
 import { upsertSiteConfig } from "@/lib/db/site-configs";
 import { updateDashboardIndexEntry } from "@/lib/db/dashboard-index";
 import { applyGridConfigUpdates } from "@/lib/grid-config";
+import { applyAdsTxtAndLegal } from "@/lib/site-config-updates";
 import { applySiteAuthors, refuseIfHasAuthors } from "@/lib/authors/site-assignment";
 import { siteTopicsOf } from "@/lib/authors/assignment";
 import { invalidateConnectedSites } from "@/lib/authors/with-sites";
@@ -23,7 +24,7 @@ import type { SiteAuthor } from "@/lib/authors/types";
 
 interface SaveRequestBody {
   domain: string;
-  configUpdates: Partial<StagingSiteConfig> | null;
+  configUpdates: (Partial<StagingSiteConfig> & { ads_txt?: string[]; legal?: Record<string, string> }) | null;
   logoBase64: string | null;
   /** Optional alternate footer logo. `null` removes the existing one, `undefined` leaves it untouched. */
   footerLogoBase64?: string | null;
@@ -215,6 +216,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           delete (existing as Record<string, unknown>).ads_config;
         }
       }
+      applyAdsTxtAndLegal(existing as Record<string, unknown>, configUpdates);
       // merge_modes is a feature-branch directive — the main-branch
       // seed-kv.ts ignores it. Don't persist until it ships on main.
       // if (configUpdates.merge_modes !== undefined) {

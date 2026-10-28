@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { InfoTooltip } from "@/components/ui/Tooltip";
 import { useToast } from "@/components/ui/Toast";
+import { syncInBatches } from "@/lib/rebuild-batches";
+import type { BatchTotals } from "@/lib/rebuild-batches";
 
 interface AffectedSite {
   domain: string;
@@ -19,26 +21,44 @@ interface RebuildConfirmModalProps {
   changeLabel: string;
 }
 
+/** Sites per /api/sites/rebuild request — keeps each request well under the ~60 s gateway limit. */
+const STAGING_BATCH_SIZE = 5;
+
 const REBUILD_NOW_TOOLTIP = (
   <span className="block space-y-1">
-    <span className="block">This will trigger a KV sync for all affected sites.</span>
+    <span className="block">Refreshes the staging preview of every affected site.</span>
     <span className="block">Each site syncs independently and takes about 1 minute.</span>
-    <span className="block">Check &quot;Also sync to production&quot; to push changes to live sites immediately.</span>
   </span>
 );
 
 const REBUILD_LATER_TOOLTIP = (
   <span className="block space-y-1">
-    <span className="block">Your changes are saved in git but won&apos;t appear on the live site yet.</span>
-    <span className="block">The site will pick up your changes when any of these happen:</span>
-    <span className="block pl-2">&bull; You click &quot;Sync now&quot; from the site detail page</span>
-    <span className="block pl-2">&bull; A new article is published by the content pipeline</span>
-    <span className="block pl-2">&bull; Someone edits the site config from the dashboard</span>
-    <span className="block pl-2">&bull; A push to the staging branch triggers the sync-kv workflow</span>
-    <span className="block text-[var(--text-muted)]">Until one of these happens, visitors see the previous version.</span>
+    <span className="block">Live sites still update automatically from this commit.</span>
+    <span className="block">Staging previews pick up the change on the next push to each site&apos;s staging branch
+      (an article publish, a site config edit, or &quot;Sync now&quot; on the site page).</span>
   </span>
 );
 
+interface RebuildResponse {
+  results?: Array<{ ok: boolean }>;
+}
+
+/** Triggers the staging sync for one batch of sites. */
+async function syncStagingBatch(domains: string[], reason: string): Promise<BatchTotals> {
+  const res = await fetch("/api/sites/rebuild", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ domains, reason }),
+  });
+  if (!res.ok) throw new Error(`Staging sync failed: HTTP ${res.status}`);
+  const data = (await res.json()) as RebuildResponse;
+  const ok = (data.results ?? []).filter((r) => r.ok).length;
+  return { ok, failed: domains.length - ok };
+}
+
+// Note: every caller saves org/group/override files on main, and a main push
+// re-syncs every published site to production by itself (sync-kv.yml). Only the
+// staging KV needs a per-site trigger, so there is no production step here.
 export function RebuildConfirmModal({
   open,
   onClose,
@@ -46,28 +66,9 @@ export function RebuildConfirmModal({
   changeLabel,
 }: RebuildConfirmModalProps): React.ReactElement {
   const [rebuilding, setRebuilding] = useState(false);
-  const [syncProduction, setSyncProduction] = useState(true);
-  const [liveDomains, setLiveDomains] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
   const { toast } = useToast();
   const count = affectedSites.length;
-
-  // Determine which affected sites are Live (eligible for production sync)
-  useEffect(() => {
-    if (!open || affectedSites.length === 0) {
-      setLiveDomains([]);
-      return;
-    }
-    const affectedSet = new Set(affectedSites.map((s) => s.domain));
-    fetch("/api/sites/list")
-      .then((res) => res.json())
-      .then((sites: Array<{ domain: string; status: string }>) => {
-        const live = sites
-          .filter((s) => affectedSet.has(s.domain) && s.status === "Live")
-          .map((s) => s.domain);
-        setLiveDomains(live);
-      })
-      .catch(() => setLiveDomains([]));
-  }, [open, affectedSites]);
 
   async function handleRebuild(): Promise<void> {
     if (count === 0) {
@@ -76,56 +77,24 @@ export function RebuildConfirmModal({
       return;
     }
     setRebuilding(true);
-    try {
-      // Stage 1: staging KV sync (existing behavior)
-      const res = await fetch("/api/sites/rebuild", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          domains: affectedSites.map((s) => s.domain),
-          reason: changeLabel,
-        }),
-      });
-      if (!res.ok) throw new Error(`Staging sync failed: HTTP ${res.status}`);
-
-      // Stage 2: production KV sync (if checkbox checked and Live sites exist)
-      if (syncProduction && liveDomains.length > 0) {
-        const prodRes = await fetch("/api/sites/rebuild-production", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            domains: liveDomains,
-            reason: changeLabel,
-          }),
-        });
-        if (!prodRes.ok) {
-          toast(
-            `Staging synced (${count} sites). Production sync failed — try again from the site detail page.`,
-            "error",
-          );
-          onClose();
-          return;
-        }
-        toast(
-          `Syncing ${count} site(s) to staging + ${liveDomains.length} to production — changes will be live in ~1 minute`,
-          "success",
-        );
-      } else {
-        toast(
-          `Syncing ${count} site(s) — changes will be live in ~1 minute`,
-          "success",
-        );
-      }
-      onClose();
-    } catch {
-      toast("Failed to trigger rebuilds", "error");
-    } finally {
-      setRebuilding(false);
+    setProgress(0);
+    const { ok, failed } = await syncInBatches(
+      affectedSites.map((s) => s.domain),
+      STAGING_BATCH_SIZE,
+      (batch) => syncStagingBatch(batch, changeLabel),
+      (done) => setProgress(done),
+    );
+    setRebuilding(false);
+    if (failed > 0) {
+      toast(`Staging sync triggered for ${ok} of ${count} site(s); ${failed} failed. Live sites still update from the commit.`, "error");
+    } else {
+      toast(`Staging sync triggered for ${count} site(s) — previews update in ~1 minute`, "success");
     }
+    onClose();
   }
 
   function handleSkip(): void {
-    toast("Saved to git. Sites will sync on next push.", "info");
+    toast("Saved to git. Live sites update automatically; staging previews on their next sync.", "info");
     onClose();
   }
 
@@ -141,27 +110,16 @@ export function RebuildConfirmModal({
       : `${count} site(s) affected: ${displayDomains.join(", ")}${overflow > 0 ? `, +${overflow} more` : ""}`;
 
   return (
-    <Modal open={open} onClose={onClose} title="Changes saved — sync to Worker?" size="sm">
+    <Modal open={open} onClose={onClose} title="Changes saved — sync staging previews?" size="sm">
       <div className="space-y-4">
         <p className="text-sm text-[var(--text-secondary)]">
-          Your changes are saved to git. To see them on the live site, affected sites need to sync.
+          Your changes are saved to git. Live sites update automatically from this commit in a few minutes.
+          Sync now to refresh the staging previews too.
         </p>
 
         <p className="text-sm text-[var(--text-primary)] font-medium">
           {sitesLabel}
         </p>
-
-        {liveDomains.length > 0 && (
-          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={syncProduction}
-              onChange={(e): void => setSyncProduction(e.target.checked)}
-              className="rounded border-[var(--border)] accent-[var(--color-primary)]"
-            />
-            Also sync to production ({liveDomains.length} Live site{liveDomains.length !== 1 ? "s" : ""})
-          </label>
-        )}
 
         <div className="flex flex-col gap-3 pt-2">
           <div className="flex items-center gap-2">
@@ -171,7 +129,7 @@ export function RebuildConfirmModal({
               autoFocus
               className="flex-1"
             >
-              Sync now
+              {rebuilding ? `Syncing staging… ${progress}/${count}` : "Sync now"}
             </Button>
             <InfoTooltip content={REBUILD_NOW_TOOLTIP} maxWidth={320} />
           </div>
