@@ -14,7 +14,10 @@
  *   - GTM loaded separately (uses its own dataLayer push)
  * See: https://developers.google.com/tag-platform/gtagjs/install
  */
-import { getConfig } from '../lib/config';
+import { getConfig, isStagingEnv } from '../lib/config';
+import { decideConsent } from '../lib/consent';
+import { countryFromRequest, consentCookieFromRequest } from '../lib/consent-request';
+import { inertHtml, inertScript, renderConsentUi } from '../lib/consent-scripts';
 
 const config = getConfig(Astro);
 const t = config.tracking ?? {};
@@ -30,6 +33,28 @@ const customScripts = Array.isArray(t.custom) ? (t.custom as Array<{ id?: string
 // its own gtag('config', ...) call in a single script block.
 const gtagIds: string[] = [ga4, googleAds].filter((id): id is string => !!id);
 const primaryGtagId = gtagIds[0] ?? null;
+
+// Cookie consent — decided here, per request (this island is no-store), never in cached HTML.
+// Google tags always load and follow Consent Mode (default set in the page head); only the
+// Meta pixel and custom tracking are held back until the visitor allows marketing.
+const consent = config.consent;
+const consentCountry = consent.enabled ? countryFromRequest(Astro.request, { isStaging: isStagingEnv(Astro) }) : null;
+const consentDecision = decideConsent({
+  consent,
+  country: consentCountry,
+  cookie: consent.enabled ? consentCookieFromRequest(Astro.request) : null,
+});
+const holdMarketing = !consentDecision.marketingAllowed;
+
+const facebookPixelJs = facebookPixel ? `
+    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+    document,'script','https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '${facebookPixel}');
+    fbq('track', 'PageView');
+  ` : '';
 ---
 
 {/* GTM — loaded independently from gtag.js. GTM manages its own
@@ -61,17 +86,12 @@ const primaryGtagId = gtagIds[0] ?? null;
   </>
 )}
 
-{/* Meta / Facebook pixel — independent from Google tags. */}
-{facebookPixel && (
-  <script is:inline set:html={`
-    !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-    n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
-    n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
-    t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
-    document,'script','https://connect.facebook.net/en_US/fbevents.js');
-    fbq('init', '${facebookPixel}');
-    fbq('track', 'PageView');
-  `} />
+{/* Meta / Facebook pixel — independent from Google tags. Held back (inert) without marketing consent. */}
+{facebookPixel && (holdMarketing
+  ? <Fragment set:html={inertScript(facebookPixelJs)} />
+  : <script is:inline set:html={facebookPixelJs} />
 )}
 
-{customScripts.map((s) => s.html ? <Fragment set:html={s.html} /> : null)}
+{customScripts.map((s) => s.html ? <Fragment set:html={holdMarketing ? inertHtml(s.html) : s.html} /> : null)}
+
+{consent.enabled && <Fragment set:html={renderConsentUi({ consent, decision: consentDecision, country: consentCountry })} />}

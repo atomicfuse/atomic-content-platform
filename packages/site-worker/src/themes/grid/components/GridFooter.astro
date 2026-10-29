@@ -1,6 +1,7 @@
 ---
 /** Grid template footer: copyright + legal links. */
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import { safePrivacyUrl } from '../../../lib/consent-scripts';
 
 interface Props {
   config: ResolvedConfig;
@@ -22,6 +23,9 @@ const links = [
       {links.map(([label, href]) => (
         <a class="g-footer__link" href={href}>{label}</a>
       ))}
+      {config.consent?.enabled && (
+        <a class="g-footer__link" href={safePrivacyUrl(config.consent.privacy_url)} data-atl-consent-open>Cookie settings</a>
+      )}
     </nav>
   </div>
 </footer>
