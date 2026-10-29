@@ -58,10 +58,11 @@ const CONSENT_CSS = `
 .atl-consent{position:fixed;left:0;right:0;bottom:0;z-index:2147483000;font-family:inherit;font-size:14px;line-height:1.45;color:var(--color-text,#111);background:var(--color-background,var(--color-surface,#fff));border-top:1px solid var(--color-border,rgba(0,0,0,.12));box-shadow:0 -4px 16px rgba(0,0,0,.08)}
 .atl-consent[hidden],.atl-consent [hidden]{display:none!important}
 .atl-consent__bar,.atl-consent__panel{box-sizing:border-box;max-width:1100px;margin:0 auto;padding:14px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 20px}
-.atl-consent__panel{flex-direction:column;align-items:stretch}
+.atl-consent__panel{flex-direction:column;align-items:stretch;max-height:80vh;overflow:auto}
+.atl-consent__panel .atl-consent__msg{flex:none}
 .atl-consent__msg,.atl-consent__title{margin:0;flex:1 1 320px}
 .atl-consent__title{font-weight:700;font-size:15px;flex:none}
-.atl-consent a{color:inherit;text-decoration:underline}
+.atl-consent a{color:inherit!important;text-decoration:underline!important}
 .atl-consent__actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .atl-consent__btn{appearance:none;border:0;border-radius:6px;padding:9px 18px;min-width:96px;font:inherit;font-weight:600;cursor:pointer;background:var(--color-primary,#1a1a2e);color:var(--color-primary-fg,#fff)}
 .atl-consent__link{appearance:none;background:none;border:0;padding:9px 6px;font:inherit;color:inherit;text-decoration:underline;cursor:pointer}
@@ -72,11 +73,15 @@ const CONSENT_CSS = `
 @media (max-width:600px){.atl-consent__actions{width:100%}.atl-consent__btn{flex:1 1 0;min-width:0}}
 `.trim();
 
-/** Runs in the browser. Applies choices live, wires the footer link, keeps clear of the sticky-bottom ad. */
+/**
+ * Runs in the browser. Applies choices live, wires the footer link, keeps clear of the sticky-bottom ad.
+ * The PixelLoader island renders inside <head>, which is never displayed — so the banner is moved to <body>.
+ */
 const CONSENT_CLIENT = `(function(){try{
 var cfgEl=document.getElementById('atl-consent-config');var root=document.querySelector('.atl-consent');
 if(!cfgEl||!root)return;
 var cfg=JSON.parse(cfgEl.textContent||'{}');
+if(root.parentNode!==document.body){document.body.appendChild(root);}
 var bar=root.querySelector('[data-atl-consent-bar]');var panel=root.querySelector('[data-atl-consent-panel]');
 var state={a:!!cfg.analytics,m:!!cfg.marketing};var fromBar=false;
 function v(b){return b?'granted':'denied';}
@@ -92,10 +97,13 @@ for(var k=0;k<inner.length;k++){var o=inner[k],c=document.createElement('script'
 for(var x=0;x<o.attributes.length;x++){c.setAttribute(o.attributes[x].name,o.attributes[x].value);}
 c.text=o.text;o.parentNode.replaceChild(c,o);}
 t[j].parentNode.replaceChild(f,t[j]);}}
+// The sticky-bottom ad is its own island and can appear (or be closed) after the banner — re-measure while visible.
+var timer=null;
+function track(){place();if(!timer){timer=setInterval(function(){if(root.hidden){clearInterval(timer);timer=null;}else{place();}},500);}}
 function hide(){root.hidden=true;}
-function showBar(){root.hidden=false;bar.hidden=false;panel.hidden=true;place();}
+function showBar(){root.hidden=false;bar.hidden=false;panel.hidden=true;track();}
 function openPanel(viaBar){fromBar=viaBar;root.hidden=false;bar.hidden=true;panel.hidden=false;
-input('analytics').checked=state.a;input('marketing').checked=state.m;place();input('analytics').focus();}
+input('analytics').checked=state.a;input('marketing').checked=state.m;track();input('analytics').focus();}
 function closePanel(){if(fromBar){showBar();}else{hide();}}
 function choose(a,m){
 document.cookie='atl_consent=v1.'+(a?1:0)+'.'+(m?1:0)+'; Path=/; Max-Age=15552000; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');

@@ -174,6 +174,38 @@ describe('client script', () => {
   });
 });
 
+describe('island rendered in <head>', () => {
+  it('moves the banner into <body> so it can be displayed', () => {
+    const c = consent();
+    const decision = decideConsent({ consent: c, country: 'DE', cookie: null });
+    document.head.insertAdjacentHTML('beforeend', renderConsentUi({ consent: c, decision, country: 'DE' }));
+    // eslint-disable-next-line no-new-func
+    new Function(document.head.querySelector('script[data-atl-consent-client]')?.textContent ?? '')();
+    expect(root().parentElement).toBe(document.body);
+    expect(root().hidden).toBe(false);
+    document.head.querySelectorAll('style, script').forEach((n) => n.remove());
+  });
+});
+
+describe('sticky-bottom ad', () => {
+  it('sits above a sticky ad that appears after the banner', () => {
+    vi.useFakeTimers();
+    try {
+      mount({ country: 'DE' });
+      expect(root().style.bottom).toBe('0px');
+      const sticky = document.createElement('div');
+      sticky.setAttribute('data-atl-sticky-wrapper', '');
+      sticky.getClientRects = (): DOMRectList => [{}] as unknown as DOMRectList;
+      sticky.getBoundingClientRect = (): DOMRect => ({ height: 50 }) as DOMRect;
+      document.body.appendChild(sticky);
+      vi.advanceTimersByTime(600);
+      expect(root().style.bottom).toBe('50px');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('inert helpers', () => {
   it('inertScript cannot be broken out of with </script>', () => {
     document.body.innerHTML = inertScript('var s = "</script><img src=x id=pwn>";');
