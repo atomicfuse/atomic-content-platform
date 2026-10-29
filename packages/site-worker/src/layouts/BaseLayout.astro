@@ -8,6 +8,7 @@
  */
 import { getConfig, isStagingEnv } from '../lib/config';
 import { themeForegroundVars } from '../lib/contrast';
+import { buildConsentBootstrap } from '../lib/consent-scripts';
 import PixelLoader from '../components/PixelLoader.astro';
 import InterstitialLoader from '../components/InterstitialLoader.astro';
 import '../themes/modern/styles/theme.css';
@@ -107,6 +108,9 @@ const cssVars = [
     )}
 
     <slot name="head" />
+
+    {/* Consent Mode defaults — must precede scripts.head (ad SDKs) and the pixel island. */}
+    {config.consent.enabled && <script is:inline set:html={buildConsentBootstrap()} />}
 
     {/* Injected head scripts from config.scripts.head (org/group/override/site layers). */}
     {headScripts.map((s) =>

@@ -53,6 +53,9 @@ importers:
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0
+      jsdom:
+        specifier: ^29.0.2
+        version: 29.0.2
       marked:
         specifier: ^14.1.4
         version: 14.1.4
