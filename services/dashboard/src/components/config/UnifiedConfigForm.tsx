@@ -9,6 +9,8 @@ import { AdsConfigForm } from "../settings/AdsConfigForm";
 import { AdsTxtEditor } from "../settings/AdsTxtEditor";
 import { LegalForm } from "../settings/LegalForm";
 import { ThemeForm } from "../groups/ThemeForm";
+import { ConsentSection } from "./ConsentSection";
+import type { ConsentFormValue } from "@/lib/config-normalizers";
 
 import type { AdsConfigFormValue } from "../settings/AdsConfigForm";
 import type { GridFields } from "@/types/grid";
@@ -83,6 +85,8 @@ export interface UnifiedConfigFields {
   theme: Record<string, unknown>;
   legal: Record<string, string>;
   grid?: GridFields;
+  /** Cookie-consent settings; undefined = inherit everything from the layer above. */
+  consent?: ConsentFormValue;
 }
 
 export interface UnifiedConfigFormProps {
@@ -688,6 +692,16 @@ export function UnifiedConfigForm({
         <LegalForm
           value={config.legal ?? {}}
           onChange={(v): void => updateField("legal", v)}
+        />
+      </section>
+
+      {/* 9. Cookie consent */}
+      <section>
+        <SectionHeader title="Cookie consent" />
+        <ConsentSection
+          value={config.consent ?? {}}
+          onChange={(v): void => updateField("consent", Object.keys(v).length > 0 ? v : undefined)}
+          mode={mode}
         />
       </section>
     </div>

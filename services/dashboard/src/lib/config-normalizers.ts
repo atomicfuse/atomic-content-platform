@@ -182,3 +182,41 @@ export function stripDefaultOverrideFields(config: Record<string, unknown>): Rec
 
   return out;
 }
+
+/**
+ * Cookie-consent form value. Every key is optional: an omitted key means
+ * "inherit from the layer above" (org → group → override → site).
+ */
+export type ConsentFormValue = Partial<{
+  enabled: boolean;
+  show_to: "everyone" | "countries";
+  countries: string[];
+  message: string;
+  privacy_url: string;
+}>;
+
+const COUNTRY_CODE = /^[A-Z]{2}$/;
+
+/** Splits "fr, de" into ["FR", "DE"]: upper-cased, deduped, invalid codes dropped. */
+export function parseCountryList(text: string): string[] {
+  const codes = text
+    .split(/[\s,]+/)
+    .map((c) => c.trim().toUpperCase())
+    .filter((c) => COUNTRY_CODE.test(c));
+  return [...new Set(codes)];
+}
+
+/** Keeps only valid consent keys; undefined when nothing is set (the section inherits). */
+export function normalizeConsent(raw: unknown): ConsentFormValue | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: ConsentFormValue = {};
+  if (typeof r.enabled === "boolean") out.enabled = r.enabled;
+  if (r.show_to === "everyone" || r.show_to === "countries") out.show_to = r.show_to;
+  if (Array.isArray(r.countries)) {
+    out.countries = parseCountryList(r.countries.filter((c): c is string => typeof c === "string").join(","));
+  }
+  if (typeof r.message === "string" && r.message) out.message = r.message;
+  if (typeof r.privacy_url === "string" && r.privacy_url) out.privacy_url = r.privacy_url;
+  return Object.keys(out).length > 0 ? out : undefined;
+}

@@ -10,6 +10,7 @@ import {
   normalizeScripts,
   normalizeAdsConfig,
   normalizeAdsTxt,
+  normalizeConsent,
 } from "@/lib/config-normalizers";
 import { snapshotSections, collectChangedSections } from "@/lib/site-config-updates";
 import type { SectionSnapshots } from "@/lib/site-config-updates";
@@ -56,6 +57,7 @@ export function SiteConfigTab({ domain }: SiteConfigTabProps): React.ReactElemen
         ads_txt: normalizeAdsTxt(raw.ads_txt),
         theme: (raw.theme ?? {}) as Record<string, unknown>,
         legal: (raw.legal ?? {}) as Record<string, string>,
+        consent: normalizeConsent(raw.consent),
       };
       setFormConfig(initialConfig);
 
