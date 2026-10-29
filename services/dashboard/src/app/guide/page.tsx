@@ -40,6 +40,7 @@ const GUIDE_PAGES = [
   { slug: "26-authors", title: "Authors" },
   { slug: "27-trending-no-ads", title: "Ad-Free Links (?trending)" },
   { slug: "28-mock-ads-preview", title: "Mock-Ad Preview (?mockads)" },
+  { slug: "29-cookie-consent", title: "Cookie Consent" },
 ];
 
 export default function GuidePage(): React.ReactElement {
