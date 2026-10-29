@@ -508,6 +508,31 @@ export interface ScriptsConfig {
  * Organisation-level configuration — the root of the config hierarchy.
  * Defines defaults inherited by all groups and sites in the network.
  */
+/**
+ * Cookie-consent banner settings (`consent:` block). Merged across
+ * org → groups → overrides → site with the generic deep merge; `countries`
+ * is replaced by the last layer that sets it.
+ */
+export interface ConsentConfig {
+  /** Master switch. Off = no banner, tracking behaves as before. */
+  enabled: boolean;
+
+  /** Who sees the banner: every visitor, or only visitors from `countries`. */
+  show_to: "everyone" | "countries";
+
+  /** ISO 3166-1 alpha-2 codes (upper-case); used when `show_to` is "countries". */
+  countries: string[];
+
+  /** Banner text. Empty = the built-in default message. */
+  message: string;
+
+  /** Link target for "Privacy Policy" in the banner. */
+  privacy_url: string;
+}
+
+/** Consent settings after seed-time resolution (every field filled). */
+export type ResolvedConsentConfig = ConsentConfig;
+
 export interface OrgConfig {
   /** Display name of the organisation. */
   organization: string;
@@ -570,6 +595,9 @@ export interface OrgConfig {
   /** Legal page templates keyed by slug (e.g. "privacy-policy", "terms"). */
   legal: Record<string, string>;
 
+  /** Cookie-consent banner settings. */
+  consent?: Partial<ConsentConfig>;
+
   /** Default preview page configuration. */
   preview_page?: Partial<PreviewPageConfig>;
 
@@ -623,6 +651,9 @@ export interface GroupConfig {
 
   /** Legal page overrides keyed by slug. */
   legal_pages_override?: Record<string, string>;
+
+  /** Group-level cookie-consent overrides. */
+  consent?: Partial<ConsentConfig>;
 
   /** Group-level preview page overrides. */
   preview_page?: Partial<PreviewPageConfig>;
@@ -705,6 +736,9 @@ export interface SiteConfig {
 
   /** Site-level legal page overrides. */
   legal?: Record<string, string>;
+
+  /** Site-level cookie-consent overrides. */
+  consent?: Partial<ConsentConfig>;
 
   /** Site-level advertising overrides. */
   ads_config?: Partial<AdsConfig>;
@@ -806,6 +840,9 @@ export interface ResolvedConfig {
 
   /** Merged legal pages. */
   legal: Record<string, string>;
+
+  /** Resolved cookie-consent settings (runtime default in the worker — older KV entries lack it). */
+  consent: ResolvedConsentConfig;
 
   /** Placeholder heights used at build time for CLS prevention. */
   ad_placeholder_heights: AdPlaceholderHeights;

@@ -50,6 +50,8 @@ export type {
   GroupConfig,
   SiteConfig,
   ResolvedConfig,
+  ConsentConfig,
+  ResolvedConsentConfig,
   DeepPartial,
   TopicV2,
   TopicV2Source,
