@@ -3,6 +3,8 @@ import {
   snapshotSections,
   collectChangedSections,
   applyAdsTxtAndLegal,
+  applyConsent,
+  SAVED_SECTIONS,
 } from "../site-config-updates";
 
 const BASE = {
@@ -67,5 +69,33 @@ describe("applyAdsTxtAndLegal", () => {
     const site: Record<string, unknown> = { ads_txt: ["keep"], legal: { company_name: "Keep" }, tracking: { ga4: "G" } };
     applyAdsTxtAndLegal(site, {});
     expect(site).toEqual({ ads_txt: ["keep"], legal: { company_name: "Keep" }, tracking: { ga4: "G" } });
+  });
+});
+
+describe("consent section", () => {
+  it("is a saved section that collectChangedSections picks up", () => {
+    expect(SAVED_SECTIONS).toContain("consent");
+    const initial = snapshotSections({ consent: undefined });
+    expect(collectChangedSections({ consent: { enabled: true } }, initial)).toEqual({ consent: { enabled: true } });
+    // Reset to inherit: undefined would vanish from the JSON body, so it is sent as null.
+    const was = snapshotSections({ consent: { enabled: true } });
+    expect(collectChangedSections({ consent: undefined }, was)).toEqual({ consent: null });
+  });
+
+  it("applyConsent replaces the block, and an empty value removes it (inherit)", () => {
+    const site: Record<string, unknown> = { consent: { enabled: true, message: "old" } };
+    applyConsent(site, { consent: { enabled: false } });
+    expect(site.consent).toEqual({ enabled: false });
+    applyConsent(site, { consent: {} });
+    expect(site).not.toHaveProperty("consent");
+    site.consent = { enabled: true };
+    applyConsent(site, { consent: undefined });
+    expect(site.consent).toEqual({ enabled: true });
+  });
+
+  it("applyConsent removes the block when the request explicitly clears it with null", () => {
+    const site: Record<string, unknown> = { consent: { enabled: true } };
+    applyConsent(site, { consent: null });
+    expect(site).not.toHaveProperty("consent");
   });
 });

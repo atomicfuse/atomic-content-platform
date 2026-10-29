@@ -1,5 +1,6 @@
 import type { APIContext } from 'astro';
 import type { ResolvedConfig, ResolvedLayoutConfig } from '@atomic-platform/shared-types';
+import { CONSENT_DEFAULTS } from './consent';
 
 /**
  * Runtime layout defaults — mirrors LAYOUT_DEFAULTS from shared-types.
@@ -49,6 +50,8 @@ export function getConfig(astro: APIContext | { locals: App.Locals }): ResolvedC
   }
   // Authors were added after many sites were seeded; a missing field means "no authors".
   config.authors ??= [];
+  // Consent was added after every site was seeded; a missing block means "off".
+  config.consent ??= { ...CONSENT_DEFAULTS, countries: [] };
   return config;
 }
 

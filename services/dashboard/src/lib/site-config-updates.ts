@@ -6,7 +6,7 @@
  */
 
 /** Config tab sections that are saved to site.yaml. */
-export const SAVED_SECTIONS = ["tracking", "scripts", "scripts_vars", "ads_config", "ads_txt", "legal"] as const;
+export const SAVED_SECTIONS = ["tracking", "scripts", "scripts_vars", "ads_config", "ads_txt", "legal", "consent"] as const;
 
 export type SavedSection = (typeof SAVED_SECTIONS)[number];
 
@@ -27,7 +27,10 @@ export function collectChangedSections(
 ): Partial<Record<SavedSection, unknown>> {
   const changed: Partial<Record<SavedSection, unknown>> = {};
   for (const key of SAVED_SECTIONS) {
-    if (JSON.stringify(form[key]) !== initial[key]) changed[key] = form[key];
+    if (JSON.stringify(form[key]) === initial[key]) continue;
+    // A consent section reset to "inherit" is undefined, which JSON drops — send null so the
+    // save route removes the site's block.
+    changed[key] = key === "consent" && form[key] === undefined ? null : form[key];
   }
   return changed;
 }
@@ -53,4 +56,20 @@ export function applyAdsTxtAndLegal(
     if (Object.keys(legal).length > 0) site.legal = legal;
     else delete site.legal;
   }
+}
+
+/**
+ * Writes the `consent` block from a save request into the parsed site.yaml.
+ * Absent = untouched; null or an empty object removes the block (the site inherits).
+ */
+export function applyConsent(
+  site: Record<string, unknown>,
+  updates: { consent?: Record<string, unknown> | null },
+): void {
+  if (updates.consent === undefined) return;
+  if (updates.consent === null || Object.keys(updates.consent).length === 0) {
+    delete site.consent;
+    return;
+  }
+  site.consent = updates.consent;
 }

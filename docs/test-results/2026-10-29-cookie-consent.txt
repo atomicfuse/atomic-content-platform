@@ -1,0 +1,70 @@
+# Cookie consent banner — test results (2026-10-29), issue #256
+
+## pnpm typecheck (all packages)
+ Tasks:    5 successful, 5 total
+Cached:    3 cached, 5 total
+  Time:    7.125s 
+
+
+## site-worker pnpm test
+ Test Files  57 passed (57)
+      Tests  735 passed (735)
+
+## dashboard pnpm test
+ Test Files  139 passed (139)
+      Tests  932 passed (932)
+(First full run: 1 failure in StepContentBrief.topics.test.tsx — unrelated wizard test, passes 3/3 in isolation and on this rerun; timing flake under full-suite load.)
+
+## content-pipeline pnpm test
+ Test Files  99 passed (99)
+      Tests  911 passed (911)
+
+## Test count delta
+- site-worker: 671 -> 735 (+64): consent, consent-config, consent-bootstrap, consent-request, consent-island
+- dashboard:   917 -> 932 (+15): consent-normalizer, ConsentSection, site-config-updates
+- content-pipeline: 911 (unchanged)
+
+## Build
+- packages/site-worker `pnpm build`: success
+
+## Local runtime check (wrangler dev, local KV/R2 only — KV_REMOTE=false R2_REMOTE=false)
+Seeded babyparenttrends (modern, GA4 + Meta pixel) and hypezen (Grid, sticky-bottom ad) from a scratch copy of
+the network repo with `consent: { enabled: true }` in org.yaml. Playwright (Chromium); screenshots in
+docs/test-results/screenshots/2026-10-29-cookie-consent/.
+
+Island output via curl (cf-ipcountry / cookies):
+- request.cf.country (real, IL) wins over a faked cf-ipcountry header -> country detection works in workerd.
+- staging cookie atl_consent_country=FR -> region opt_in, banner shown, Meta pixel inert.
+- stored atl_consent=v1.0.0 -> no banner, pixel inert; v1.1.1 -> no banner, pixel live.
+
+Browser, modern (babyparenttrends):
+  [modern] DE banner visible: true
+  [modern] DE fbq before accept: undefined
+  [modern] DE consent defaults: [["default","denied","denied","region"],["default","granted","granted","global"]]
+  [modern] DE fbq after accept: function banner visible: false
+  [modern] DE cookie: v1.1.1
+  [modern] DE after reload banner visible: false fbq: function
+  [modern] US banner visible: true fbq at load: function
+  [modern] US footer link: Do not sell or share my personal information
+  [modern] US cookie after reject: v1.0.0
+  [modern] US footer link reopens panel: true
+  [modern] mobile banner visible: true
+Browser, Grid (hypezen — no Meta pixel, so fbq stays undefined by design):
+  DE: banner visible; consent defaults = denied (region) + granted (global); Accept -> cookie v1.1.1, banner gone,
+      not shown again after reload. US: banner visible, footer link "Do not sell or share my personal information",
+      Reject -> v1.0.0, footer link reopens the panel. Mobile banner visible.
+  Banner sits above the 50px sticky-bottom ad (bottom: 50px) — fixed after the first run showed it covering the ad
+  (the ad island loads after the banner); regression test added.
+Bugs found and fixed during this check:
+  - Banner invisible: the PixelLoader island renders inside <head>; the client script now moves it to <body>
+    (regression test added).
+  - Banner covered the sticky-bottom ad (see above).
+  - Settings panel too tall; Grid CSS removed the Privacy Policy underline.
+
+Consent disabled (org.yaml without consent): page has no bootstrap and no footer link; island has no consent
+markup and the Meta pixel renders live — same as before the change.
+
+Screenshots:
+  modern-de-banner-desktop.png, modern-de-settings-panel.png, modern-fr-banner-mobile.png,
+  modern-us-reopened-from-footer.png, grid-de-banner-above-sticky-ad.png, grid-de-banner-desktop.png,
+  grid-de-settings-panel.png, grid-fr-banner-mobile.png, grid-us-reopened-from-footer.png

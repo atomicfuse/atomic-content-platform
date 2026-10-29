@@ -11,7 +11,7 @@ import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import { UnifiedConfigForm } from "@/components/config/UnifiedConfigForm";
 import type { UnifiedConfigFields, OverrideMergeModes } from "@/components/config/UnifiedConfigForm";
 import { DEFAULT_MERGE_MODES } from "@/components/config/UnifiedConfigForm";
-import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig, stripDefaultOverrideFields } from "@/lib/config-normalizers";
+import { normalizeAdsTxt, normalizeTracking, normalizeScripts, normalizeAdsConfig, stripDefaultOverrideFields, normalizeConsent } from "@/lib/config-normalizers";
 import { COMPANIES } from "@/lib/constants";
 
 interface OverrideConfig {
@@ -254,6 +254,7 @@ export default function OverrideDetailPage(): React.ReactElement {
     ads_txt: normalizeAdsTxt(config.ads_txt),
     theme: (config.theme ?? {}) as Record<string, unknown>,
     legal: (config.legal ?? {}) as Record<string, string>,
+    consent: normalizeConsent(config.consent),
   };
 
   const tabs = [

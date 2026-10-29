@@ -6,6 +6,7 @@
  * Dark background with light text.
  */
 import type { ResolvedConfig } from '@atomic-platform/shared-types';
+import { safePrivacyUrl } from '../../../lib/consent-scripts';
 import NewsletterForm from './_newsletter-form.astro';
 
 interface Props {
@@ -68,6 +69,10 @@ const quickLinks = [
         {quickLinks.map(({ label, href }) => (
           <li><a href={href}>{label}</a></li>
         ))}
+        {/* Opens the cookie-consent panel (island script); falls back to the privacy page without JS. */}
+        {config.consent?.enabled && (
+          <li><a href={safePrivacyUrl(config.consent.privacy_url)} data-atl-consent-open>Cookie settings</a></li>
+        )}
       </ul>
     </div>
 

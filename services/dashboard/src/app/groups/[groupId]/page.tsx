@@ -18,6 +18,7 @@ import {
   normalizeTracking,
   normalizeScripts,
   normalizeAdsConfig,
+  normalizeConsent,
 } from "@/lib/config-normalizers";
 import { COMPANIES } from "@/lib/constants";
 
@@ -244,6 +245,7 @@ export default function GroupDetailPage(): React.ReactElement {
     ads_txt: normalizeAdsTxt(config.ads_txt),
     theme: (config.theme ?? {}) as Record<string, unknown>,
     legal: (config.legal ?? {}) as Record<string, string>,
+    consent: normalizeConsent(config.consent),
     grid: (config.grid ?? undefined) as GridFields | undefined,
   };
 

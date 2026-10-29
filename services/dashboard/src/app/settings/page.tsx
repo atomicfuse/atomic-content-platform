@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import { GeneralForm } from "@/components/settings/GeneralForm";
 import { RebuildConfirmModal } from "@/components/shared/RebuildConfirmModal";
 import type { UnifiedConfigFields } from "@/components/config/UnifiedConfigForm";
+import { normalizeConsent } from "@/lib/config-normalizers";
 
 const UnifiedConfigForm = dynamic(
   () => import("@/components/config/UnifiedConfigForm").then((m) => m.UnifiedConfigForm),
@@ -182,6 +183,7 @@ export default function OrgSettingsPage(): React.ReactElement {
     ads_txt: Array.isArray(config.ads_txt) ? (config.ads_txt as string[]) : [],
     theme: (config.theme ?? {}) as Record<string, unknown>,
     legal: (config.legal ?? {}) as Record<string, string>,
+    consent: normalizeConsent(config.consent),
   };
 
   // Defaults tab data

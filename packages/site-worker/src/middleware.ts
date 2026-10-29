@@ -7,6 +7,7 @@ import { deepMerge } from './lib/deep-merge';
 import { toGridPath } from './lib/grid/route';
 import { hasNoAdsParam, hasNoAdsCookie, stripAds, NO_ADS_COOKIE_HEADER } from './lib/no-ads';
 import { mockAdsParam, hasMockAdsCookie, mockAds, MOCK_ADS_COOKIE_HEADER, MOCK_ADS_CLEAR_COOKIE_HEADER } from './lib/mock-ads';
+import { consentCountryParam, consentCountryCookieHeader, CONSENT_COUNTRY_CLEAR_COOKIE_HEADER } from './lib/consent-request';
 
 /**
  * Multi-tenant site resolution.
@@ -271,6 +272,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
   if (mockParam === 'off') {
     finalResponse.headers.append('set-cookie', MOCK_ADS_CLEAR_COOKIE_HEADER);
+  }
+  // Staging only: `?consent_country=DE` previews the consent banner as a visitor from that
+  // country (read by the PixelLoader island); `?consent_country=` clears it.
+  if (isStaging) {
+    const consentCountry = consentCountryParam(context.url.searchParams);
+    if (consentCountry === 'clear') {
+      finalResponse.headers.append('set-cookie', CONSENT_COUNTRY_CLEAR_COOKIE_HEADER);
+    } else if (consentCountry) {
+      finalResponse.headers.append('set-cookie', consentCountryCookieHeader(consentCountry));
+    }
   }
 
   return finalResponse;
