@@ -66,6 +66,7 @@ import { contentTypeForFile } from './lib/content-types';
 import { validateResolvedConfig } from './lib/validate-config';
 import { parseRedirectFrom, redirectEntries } from './lib/article-redirects';
 import { normalizeSiteAuthors } from '../src/lib/author-ids';
+import { normalizeConsentConfig } from '../src/lib/consent';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -660,6 +661,10 @@ async function resolveSiteConfig(
     pages_project: String(site.pages_project ?? siteId),
     // Authors are site-only (never inherited from org/groups/overrides).
     authors: normalizeSiteAuthors(site.authors),
+    consent: normalizeConsentConfig(
+      (merged as Record<string, unknown>).consent,
+      (msg) => console.warn(`[seed-kv] ${siteId}: ${msg}`),
+    ),
   } as unknown as ResolvedConfig;
 
   // Resolve support_email from the org-level pattern + site domain.
