@@ -8,10 +8,12 @@ import { GridSettingsForm } from "./GridSettingsForm";
 interface GridSettingsSectionProps {
   value: GridFields;
   onChange: (next: GridFields) => void;
+  /** Passed to GridSettingsForm: the AI-summary run note (off in the wizard, where nothing is published yet). */
+  showSummaryRun?: boolean;
 }
 
 /** GridSettingsForm wired up with its reference data (source sites, verticals, aggregator bundles and categories). */
-export function GridSettingsSection({ value, onChange }: GridSettingsSectionProps): React.ReactElement {
+export function GridSettingsSection({ value, onChange, showSummaryRun = false }: GridSettingsSectionProps): React.ReactElement {
   const { verticals } = useVerticals();
   const { categories } = useAllCategories();
   const [sites, setSites] = useState<SiteOption[]>([]);
@@ -45,6 +47,7 @@ export function GridSettingsSection({ value, onChange }: GridSettingsSectionProp
       verticals={verticals.map((v) => v.name)}
       bundles={bundles}
       categories={categories}
+      showSummaryRun={showSummaryRun}
     />
   );
 }

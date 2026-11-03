@@ -6,6 +6,7 @@ import { SiteMultiPicker } from "./SiteMultiPicker";
 import { ChipMultiSelect } from "./ChipMultiSelect";
 import { categoryOptions } from "./categoryOptions";
 import { DomainBlocklist } from "./DomainBlocklist";
+import { GridSummariesRunNote } from "./GridSummariesRunNote";
 import type { CategoryItem } from "@/lib/reference-data";
 
 interface GridSettingsFormProps {
@@ -17,6 +18,8 @@ interface GridSettingsFormProps {
   bundles?: BundleOption[];
   /** Content Aggregator taxonomy for "Blocked categories". */
   categories?: CategoryItem[];
+  /** Show the "AI summaries run hourly / Generate now" note when AI summary is chosen (not in the wizard). */
+  showSummaryRun?: boolean;
 }
 
 type NumberKey = "per_site_limit" | "per_bundle_limit" | "max_age_days" | "excerpt_paragraphs" | "feed_ad_every" | "page_size";
@@ -70,7 +73,8 @@ const inputClass =
  * `pinned` is managed from the site's Stories tab and is preserved untouched
  * here.
  */
-export function GridSettingsForm({ value, onChange, sites, verticals, bundles = [], categories = [] }: GridSettingsFormProps): React.ReactElement {
+export function GridSettingsForm({ value, onChange, sites, verticals, bundles = [], categories = [], showSummaryRun = false }: GridSettingsFormProps): React.ReactElement {
+  const wantsSummaries = value.story_mode === "ai_summary" || value.external_story_mode === "ai_summary";
   const set = <K extends keyof GridFields>(key: K, v: GridFields[K] | undefined): void => {
     const next = { ...value };
     if (v === undefined) delete next[key];
@@ -167,6 +171,8 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
           </select>
         </label>
 
+        {showSummaryRun && wantsSummaries && <GridSummariesRunNote />}
+
         {NUMBER_FIELDS.map((f) => (
           <label key={f.key} className="flex flex-col gap-1 text-sm text-[var(--text-primary)]">
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -201,7 +207,7 @@ export function GridSettingsForm({ value, onChange, sites, verticals, bundles = 
             onChange={(e): void => set("outbound_utm", e.target.checked)}
             className="h-4 w-4 rounded border-[var(--border-primary)] text-cyan focus:ring-cyan/50"
           />
-          Add UTM tags to &quot;Read full story&quot; links to network sites (never on outside publishers)
+          Add UTM tags to &quot;Read original story&quot; links to network sites (never on outside publishers)
         </label>
       </section>
     </div>
