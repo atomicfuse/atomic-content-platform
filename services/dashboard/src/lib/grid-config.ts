@@ -29,3 +29,33 @@ export function applyGridConfigUpdates(existing: Record<string, unknown>, update
   existing.theme = theme;
   if (updates.grid !== undefined) existing.grid = updates.grid;
 }
+
+/**
+ * Category label for every Grid site. A Grid site never feeds other Grids, so its
+ * category is display-only; its real categories are the verticals its topic pills use.
+ */
+export const MULTI_CATEGORY = "Multi-category";
+
+/**
+ * Verticals a Grid site's topic pills draw from, de-duplicated case-insensitively
+ * in pill order. Empty for a Modern site or a Grid site with no vertical pills.
+ */
+export function gridCategoryChips(config: Record<string, unknown> | null | undefined): string[] {
+  if (!isGridSiteConfig(config)) return [];
+  const topics = (config?.grid as { topics?: unknown } | undefined)?.topics;
+  if (!Array.isArray(topics)) return [];
+  const seen = new Set<string>();
+  const chips: string[] = [];
+  for (const topic of topics) {
+    const verticals = (topic as { verticals?: unknown } | null)?.verticals;
+    if (!Array.isArray(verticals)) continue;
+    for (const v of verticals) {
+      if (typeof v !== "string" || !v.trim()) continue;
+      const key = v.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      chips.push(v.trim());
+    }
+  }
+  return chips;
+}

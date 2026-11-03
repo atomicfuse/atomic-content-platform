@@ -9,6 +9,8 @@ The **Grid** template turns a site into a card-grid news feed (like dazzr.com). 
 4. **Review** shows the template, the topic pills and the included/excluded site counts.
 5. Grid sites never get generated articles: the site gets an empty content brief (0 articles a day), and the scheduler skips any site whose own Theme template is Grid.
 
+**Category:** a Grid site is always **Multi-category** — you don't pick a category in the wizard. The Sites list and the site header show "Multi-category" with a small chip for each vertical the topic pills use (e.g. *Sports · News · Celebs*), and the chips update by themselves when you change the pills. Filter the Sites list by **Multi-category** to see every Grid site.
+
 To convert an existing site instead: **Site Settings → Theme → Template → Grid**, then **Save Theme**. A **Grid** tab appears where you add the topic pills and choose the verticals that feed each one.
 
 ## How stories are chosen
@@ -32,7 +34,7 @@ A pill can also pull stories straight from the **Content Aggregator**: add one o
 - Cards show the publisher's domain (e.g. cnn.com) with its real favicon. Each publisher's icon is fetched once and stored on our own storage, so visitors never load it from a third party; a publisher with no icon gets a letter badge. New publishers get their icon on the next hourly sync.
 
 ## Story pages
-Clicking a card opens a story page on the Grid site with a **Read full story** button to the original article (new tab). Links to network sites carry UTM tags unless turned off; links to outside publishers (bundle stories) never carry UTM tags — any `utm_*` in the feed URL is removed too.
+Clicking a card opens a story page on the Grid site with a small **Read original story ↗** link (bottom right) to the original article (new tab). Links to network sites carry UTM tags unless turned off; links to outside publishers (bundle stories) never carry UTM tags — any `utm_*` in the feed URL is removed too.
 
 **Endless reading:** when a reader reaches the end of a story, the next one loads below it — the next story in the same pill, then from All once the pill runs out, never repeating. Each loaded story is laid out like the first one, with its own ad slots (between stories, above the content, in the text, below it, and its own sidebar ads); the side rails and sticky bar stay single. The address bar and page title follow the story on screen, and each story counts as its own pageview. After 10 stories a **More stories** link leads back to the feed.
 - **Excerpt** (default): the opening paragraphs of the source article, never more than half of it.

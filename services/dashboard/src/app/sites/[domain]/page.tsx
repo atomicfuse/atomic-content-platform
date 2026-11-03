@@ -6,7 +6,7 @@ import { WORKER_STAGING_URL } from "@/lib/constants";
 import { SiteDetailHeader } from "@/components/site-detail/SiteDetailHeader";
 import { readSimilarwebStatus } from "@/lib/similarweb/store";
 import { PendingChangesBar } from "@/components/site-detail/PendingChangesBar";
-import { isGridSiteConfig } from "@/lib/grid-config";
+import { gridCategoryChips, isGridSiteConfig } from "@/lib/grid-config";
 import { SiteDetailTabs } from "./SiteDetailTabs";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +90,7 @@ export default async function SiteDetailPage({
       <SiteDetailHeader
         site={site}
         similarweb={similarweb}
+        gridCategories={isGridSiteConfig(siteConfig) ? gridCategoryChips(siteConfig) : null}
         logoUrl={
           (siteConfig?.theme as Record<string, unknown> | undefined)?.logo
             ? `/api/sites/asset?domain=${encodeURIComponent(decodedDomain)}&file=${encodeURIComponent(((siteConfig!.theme as Record<string, unknown>).logo as string).replace(/^\//, ""))}`

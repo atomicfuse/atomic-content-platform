@@ -32,6 +32,7 @@ import {
 } from "@/lib/site-columns";
 import { isPublishEligible } from "@/lib/pending-changes";
 import { InlineCategorySelect, TrackingCell } from "./InlineSiteEditors";
+import { GridCategoryLabel } from "./GridCategoryLabel";
 import { useVerticals } from "@/hooks/useReferenceData";
 import { SimilarwebCell } from "./SimilarwebCell";
 import { SimilarwebImportModal } from "./SimilarwebImportModal";
@@ -47,6 +48,8 @@ const BulkPublishModal = dynamic(
 
 interface SitesTableProps {
   sites: DashboardSiteEntry[];
+  /** Grid sites' category chips by site id; a listed site shows "Multi-category" read-only. */
+  gridCategories?: Record<string, string[]>;
 }
 
 /** Clickable header for a sortable column: label + arrow (dimmed when inactive). */
@@ -123,7 +126,7 @@ function formatRelativeDate(dateStr: string): string {
   return `${months} months ago`;
 }
 
-export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
+export function SitesTable({ sites, gridCategories = {} }: SitesTableProps): React.ReactElement {
   const router = useRouter();
   // The network's categories, for the inline Category editor.
   const { verticals } = useVerticals();
@@ -336,7 +339,10 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             onError={(msg): void => { toast(msg, "error"); }}
           />
         );
-      case "category":
+      case "category": {
+        // Grid sites span several categories (their topic pills) — not a single editable one.
+        const gridChips = gridCategories[site.domain];
+        if (gridChips) return <GridCategoryLabel chips={gridChips} />;
         return (
           <InlineCategorySelect
             domain={site.domain}
@@ -350,6 +356,7 @@ export function SitesTable({ sites }: SitesTableProps): React.ReactElement {
             onError={(msg): void => { toast(msg, "error"); }}
           />
         );
+      }
       case "status":
         return <StatusBadge status={site.status} />;
       case "similarweb":

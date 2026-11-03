@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import type { WizardFormData } from "@/types/dashboard";
+import { MULTI_CATEGORY } from "@/lib/grid-config";
 
 interface StepGoLiveProps {
   data: WizardFormData;
@@ -42,7 +43,7 @@ export function StepGoLive({
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Category</p>
-            <p className="font-medium">{data.vertical}</p>
+            <p className="font-medium">{isGrid ? MULTI_CATEGORY : data.vertical || "None"}</p>
           </div>
           <div>
             <p className="text-[var(--text-muted)]">Theme</p>

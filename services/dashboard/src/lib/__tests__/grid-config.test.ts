@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyGridConfigUpdates, isGridSiteConfig } from "../grid-config";
+import { applyGridConfigUpdates, gridCategoryChips, isGridSiteConfig } from "../grid-config";
 
 describe("isGridSiteConfig", () => {
   it("true when theme.template is 'grid'", () => {
@@ -40,5 +40,26 @@ describe("applyGridConfigUpdates", () => {
     const existing: Record<string, unknown> = { theme: { base: "x" } };
     applyGridConfigUpdates(existing, {});
     expect(existing).toEqual({ theme: { base: "x" } });
+  });
+});
+
+describe("gridCategoryChips", () => {
+  it("lists pill verticals once each, in pill order", () => {
+    const config = {
+      theme: { template: "grid" },
+      grid: { topics: [
+        { label: "All", verticals: [] },
+        { label: "Sports", verticals: ["Sports", "News"] },
+        { label: "Celebs", verticals: ["news", " Celebs ", ""] },
+        { label: "Deals", bundles: ["b1"] },
+      ] },
+    };
+    expect(gridCategoryChips(config)).toStrictEqual(["Sports", "News", "Celebs"]);
+  });
+
+  it("is empty for Modern sites and Grid sites without pills", () => {
+    expect(gridCategoryChips({ theme: {}, grid: { topics: [{ label: "X", verticals: ["Y"] }] } })).toStrictEqual([]);
+    expect(gridCategoryChips({ theme: { template: "grid" } })).toStrictEqual([]);
+    expect(gridCategoryChips(null)).toStrictEqual([]);
   });
 });
