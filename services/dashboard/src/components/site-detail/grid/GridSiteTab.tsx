@@ -235,7 +235,7 @@ export function GridSiteTab({ domain }: GridSiteTabProps): React.ReactElement {
     <div className="space-y-8">
       <section className="space-y-3">
         <h3 className="text-sm font-bold text-[var(--text-primary)]">Feed settings</h3>
-        <GridSettingsSection value={grid} onChange={setGrid} />
+        <GridSettingsSection value={grid} onChange={setGrid} showSummaryRun />
         <div className="flex items-center gap-3 pt-2 border-t border-[var(--border-secondary)]">
           {dirty ? (
             <p className="text-xs text-amber-500 flex-1">You have unsaved changes — click Save Grid settings to apply.</p>

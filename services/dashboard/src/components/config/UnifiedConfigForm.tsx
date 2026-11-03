@@ -671,7 +671,7 @@ export function UnifiedConfigForm({
           <p className="mb-3 text-xs opacity-70">
             Applies only to sites in this group that use the Grid template. Site-level settings override these.
           </p>
-          <GridSettingsSection value={config.grid ?? {}} onChange={(v): void => updateField("grid", v)} />
+          <GridSettingsSection value={config.grid ?? {}} onChange={(v): void => updateField("grid", v)} showSummaryRun />
         </section>
       )}
 

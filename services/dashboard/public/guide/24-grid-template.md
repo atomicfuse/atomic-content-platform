@@ -46,6 +46,8 @@ Clicking a card opens a story page on the Grid site with a small **Read original
 - **What It Covers** (default): the aggregator's short description of the story.
 - **AI summary**: a ~120–150-word rewrite of the aggregator's facts. Until it exists, the page shows What It Covers.
 
+**When AI summaries appear:** switching a mode to **AI summary** doesn't change any story when you save. An hourly job (at :30) writes the summaries from the **published** settings, and they show on the site a few minutes after it finishes. Until then, stories keep their current text. To skip the wait, save (and publish, on a Live site), then click **Generate now** in the note under the two settings. Summaries show about 10 minutes later. To check it worked, open a story: its text should now be the AI summary.
+
 **Per-story AI summary**: in Grid → Stories, **Use AI summary** creates a summary for that one story and shows it whatever the site's setting is. **Back to default** returns the story to the site's setting (the summary is kept, so you can switch back at no cost).
 
 ## Look & feel
