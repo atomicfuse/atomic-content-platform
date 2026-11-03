@@ -51,6 +51,7 @@ describe('renderStoryArticleHtml', () => {
     expect(html).toContain('Original story by');
     expect(html).toContain('class="g-story__hero" src="/scoopella/assets/a.jpg"');
     expect(html).toContain('class="g-story__cta"');
+    expect(html).toContain('Read original story');
   });
 });
 

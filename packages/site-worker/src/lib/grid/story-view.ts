@@ -115,7 +115,7 @@ export function renderStoryArticleHtml(v: StoryView, bodyHtml: string, heading: 
     + `<div class="g-story__byline"><span class="g-story__by">Original story by</span> ${v.sourceLineHtml} <span class="g-story__date">${escapeHtml(v.published)}</span></div>`
     + hero
     + `<div class="g-story__prose">${bodyHtml}</div>`
-    + (v.outbound ? `<a class="g-story__cta" href="${escapeHtml(v.outbound)}" target="_blank" rel="noopener">Read full story</a>` : '')
+    + (v.outbound ? `<a class="g-story__cta" href="${escapeHtml(v.outbound)}" target="_blank" rel="noopener">Read original story<span class="g-story__cta-icon" aria-hidden="true">↗</span></a>` : '')
     + `</article>`;
 }
 

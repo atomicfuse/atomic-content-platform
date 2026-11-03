@@ -18,7 +18,7 @@ export function formatAge(iso: string, now: Date): string {
   return `${Math.floor(days / 365)}y`;
 }
 
-/** "Read full story" target on the source site's production host. */
+/** "Read original story" target on the source site's production host. */
 export function buildOutboundUrl(hostname: string, slug: string, gridHost: string, utm: boolean): string {
   const url = new URL(`https://${hostname}/${encodeURIComponent(slug)}`);
   if (utm) {
@@ -29,7 +29,7 @@ export function buildOutboundUrl(hostname: string, slug: string, gridHost: strin
 }
 
 /**
- * "Read full story" on the publisher's site for an aggregator story. Publishers aren't network sites, so
+ * "Read original story" on the publisher's site for an aggregator story. Publishers aren't network sites, so
  * the link never carries UTM tags — ours are never added and any `utm_*` already in the feed URL is removed.
  * Null for anything that isn't an absolute http(s) URL — the page then omits the button.
  */
