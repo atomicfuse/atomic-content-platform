@@ -1,5 +1,6 @@
 import { getMongoDb } from "../mongo";
 import { COLLECTIONS } from "./collections";
+import { gridCategoryChips, isGridSiteConfig } from "../grid-config";
 
 function useMongoReads(): boolean {
   return process.env.USE_MONGO_READS === "true";
@@ -89,6 +90,35 @@ export async function listSiteConfigEntries(): Promise<Array<{ siteId: string; c
   const db = await getMongoDb();
   const docs = await db.collection(COLLECTIONS.siteConfigs).find({}).sort({ domain: 1 }).toArray();
   return docs.map((doc) => ({ siteId: String((doc as Record<string, unknown>).domain), config: restoreSiteConfigDoc(doc as Record<string, unknown>) }));
+}
+
+/**
+ * Every Grid site's category chips (the verticals its topic pills use), keyed by
+ * site id. Mongo reads only the Grid docs and just the fields needed. With Mongo
+ * reads off, falls back to reading `fallback` sites' site.yaml from Git (the
+ * caller passes the sites already labelled "Multi-category").
+ */
+export async function listGridSiteCategories(
+  fallback: ReadonlyArray<{ domain: string; branch?: string }>,
+): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  if (!useMongoReads()) {
+    const { readSiteConfig } = await import("../github");
+    await Promise.all(fallback.map(async ({ domain, branch }) => {
+      const config = await readSiteConfig(domain, branch).catch(() => null);
+      if (isGridSiteConfig(config)) out[domain] = gridCategoryChips(config);
+    }));
+    return out;
+  }
+  const db = await getMongoDb();
+  const docs = await db.collection(COLLECTIONS.siteConfigs)
+    .find({ "theme.template": "grid" }, { projection: { domain: 1, "theme.template": 1, "grid.topics": 1 } })
+    .toArray();
+  for (const doc of docs) {
+    const record = doc as Record<string, unknown>;
+    out[String(record.domain)] = gridCategoryChips(record);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

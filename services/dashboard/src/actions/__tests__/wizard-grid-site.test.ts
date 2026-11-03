@@ -124,19 +124,20 @@ describe("createSiteAndBuildStaging — G5 Grid site", () => {
       topics: [],
       seo_keywords_focus: [],
       content_guidelines: [],
+      vertical: "Multi-category",
       review_percentage: 5,
       schedule: { articles_per_day: 0, preferred_days: [], preferred_time: "10:00" },
     });
   });
 
-  it("keeps the explicit category as brief.vertical and the index vertical", async () => {
+  it("always writes Multi-category as brief.vertical and the index vertical, ignoring a picked category", async () => {
     const files = await committedFiles(makeGridFormData({ vertical: "News", verticalId: "v9" }));
     const { parse } = await import("yaml");
     const site = parse(files.find((f) => f.path.endsWith("site.yaml"))!.content) as { brief: Record<string, unknown> };
-    expect(site.brief.vertical).toBe("News");
-    expect(site.brief.vertical_id).toBe("v9");
+    expect(site.brief.vertical).toBe("Multi-category");
+    expect(site.brief.vertical_id).toBeUndefined();
     const { addSitesToIndex } = await import("@/lib/github");
-    expect(vi.mocked(addSitesToIndex).mock.calls[0]![0][0]!.vertical).toBe("News");
+    expect(vi.mocked(addSitesToIndex).mock.calls[0]![0][0]!.vertical).toBe("Multi-category");
   });
 
   it("does not use leftover topics for the default site image vertical", async () => {

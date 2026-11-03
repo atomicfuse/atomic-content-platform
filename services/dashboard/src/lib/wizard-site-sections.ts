@@ -1,5 +1,6 @@
 import type { WizardFormData } from "@/types/dashboard";
 import type { GridFields } from "@/types/grid";
+import { MULTI_CATEGORY } from "@/lib/grid-config";
 
 /**
  * Pure builders for the template-dependent parts of the wizard's site.yaml
@@ -25,6 +26,9 @@ export function wizardDataForTemplate(data: WizardFormData): WizardFormData {
   if (!isGridWizard(data)) return data;
   return {
     ...data,
+    // A stale single category from the Modern path never applies: Grid is "Multi-category".
+    vertical: "",
+    verticalId: "",
     audiences: [],
     audienceIds: [],
     tone: "",
@@ -40,10 +44,12 @@ export function wizardDataForTemplate(data: WizardFormData): WizardFormData {
 
 /**
  * Display-only category label: explicit vertical, then the first topic
- * filter name, then the first plain topic. Grid data has no topics, so it
- * reduces to the explicit vertical.
+ * filter name, then the first plain topic. A Grid site is always
+ * "Multi-category" (its pills set its real categories).
  */
 export function wizardDisplayVertical(data: WizardFormData): string | undefined {
+  // A Grid site spans several categories (its topic pills); it is always "Multi-category".
+  if (isGridWizard(data)) return MULTI_CATEGORY;
   return data.vertical || data.topics_v2[0]?.name || data.topics[0] || undefined;
 }
 

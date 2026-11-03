@@ -6,6 +6,7 @@ import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { COMPANIES } from "@/lib/constants";
 import { useAudiences, useVerticals } from "@/hooks/useReferenceData";
+import { MULTI_CATEGORY } from "@/lib/grid-config";
 import { TemplateSelector } from "@/components/shared/TemplateSelector";
 import type { WizardFormData } from "@/types/dashboard";
 import { isReservedSiteId } from "@/lib/reserved-site-ids";
@@ -196,20 +197,29 @@ export function StepIdentity({
       />
 
       {/* Category — display/organization label only. Sites grid groups by
-          this; aggregator filtering is driven by topics_v2, not by category. */}
-      <Select
-        label="Category (optional)"
-        options={[
-          { value: "", label: "— None —" },
-          ...verticals.map((v) => ({ value: v.id, label: v.name })),
-        ]}
-        value={data.verticalId}
-        onChange={(e): void => {
-          const id = e.target.value;
-          const name = verticals.find((v) => v.id === id)?.name ?? "";
-          onChange({ verticalId: id, vertical: name });
-        }}
-      />
+          this; aggregator filtering is driven by topics_v2, not by category.
+          A Grid site is always "Multi-category": its topic pills set its categories. */}
+      {isGrid ? (
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">Category</p>
+          <p className="text-sm font-medium">{MULTI_CATEGORY}</p>
+          <p className="text-xs text-[var(--text-muted)]">Grid sites cover several categories. They come from the topic pills you set in the feed step.</p>
+        </div>
+      ) : (
+        <Select
+          label="Category (optional)"
+          options={[
+            { value: "", label: "— None —" },
+            ...verticals.map((v) => ({ value: v.id, label: v.name })),
+          ]}
+          value={data.verticalId}
+          onChange={(e): void => {
+            const id = e.target.value;
+            const name = verticals.find((v) => v.id === id)?.name ?? "";
+            onChange({ verticalId: id, vertical: name });
+          }}
+        />
+      )}
 
       {!isGrid && (
         <div className="space-y-1.5">

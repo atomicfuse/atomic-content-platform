@@ -140,8 +140,8 @@ describe("buildWizardSiteSections — Grid", () => {
       seo_keywords_focus: [],
       content_guidelines: [],
       image_guidelines: undefined,
-      vertical: "News",
-      vertical_id: "v1",
+      vertical: "Multi-category",
+      vertical_id: undefined,
       review_percentage: 5,
       schedule: { articles_per_day: 0, preferred_days: [], preferred_time: "10:00" },
     });
@@ -164,9 +164,9 @@ describe("buildWizardSiteSections — Grid", () => {
     expect(out.grid).toStrictEqual({});
   });
 
-  it("display vertical ignores leftover topics for Grid (explicit vertical only)", () => {
-    const data = wizardDataForTemplate(makeFormData({ template: "grid", vertical: "" }));
-    expect(wizardDisplayVertical(data)).toBeUndefined();
+  it("display vertical is always Multi-category for Grid, ignoring a leftover category", () => {
+    const data = wizardDataForTemplate(makeFormData({ template: "grid", vertical: "News" }));
+    expect(wizardDisplayVertical(data)).toBe("Multi-category");
     expect(wizardDisplayVertical(makeFormData({ vertical: "" }))).toBe("Destinations");
   });
 });

@@ -2,6 +2,7 @@ import { StatusBadge } from "@/components/ui/Badge";
 import { workerPreviewUrl } from "@/lib/constants";
 import type { DashboardSiteEntry } from "@/types/dashboard";
 import { RefreshCacheButton } from "./RefreshCacheButton";
+import { GridCategoryLabel } from "@/components/dashboard/GridCategoryLabel";
 import { similarwebBadgeText } from "@/lib/similarweb/format";
 import type { SimilarwebStatus } from "@/lib/similarweb/types";
 
@@ -10,12 +11,15 @@ interface SiteDetailHeaderProps {
   logoUrl?: string | null;
   /** Latest Similarweb result (badge next to the status); null/undefined = none shown. */
   similarweb?: SimilarwebStatus | null;
+  /** Set for Grid sites: the verticals their topic pills use (shown as "Multi-category" + chips). */
+  gridCategories?: string[] | null;
 }
 
 export function SiteDetailHeader({
   site,
   logoUrl,
   similarweb,
+  gridCategories,
 }: SiteDetailHeaderProps): React.ReactElement {
   // No badge for a site without a real domain (spec: "nothing for sites without a domain").
   const similarwebText = site.custom_domain ? similarwebBadgeText(similarweb) : null;
@@ -64,7 +68,7 @@ export function SiteDetailHeader({
           <div className="flex items-center gap-3 mt-1 text-sm text-[var(--text-secondary)]">
             <span>{site.company}</span>
             <span>&middot;</span>
-            <span>{site.vertical}</span>
+            {gridCategories ? <GridCategoryLabel chips={gridCategories} max={6} /> : <span>{site.vertical}</span>}
           </div>
           {site.custom_domain && (
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
