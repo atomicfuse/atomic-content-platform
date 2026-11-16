@@ -16,7 +16,7 @@ import {
 import type { GenerateJobData, SchedulerRunData } from "./types.js";
 import { notifyError, notifySummary } from "../lib/notifications.js";
 import { updateWeeklySummary } from "../stats/weekly-summary.js";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../lib/frontmatter.js";
 import { upsertArticlesBatch, deleteArticlesForSiteBranch } from "../lib/db/articles.js";
 
 const HISTORY_PATH = "scheduler/history.json";
@@ -297,7 +297,7 @@ export async function autoPublishSite(
     if (articleFiles.length > 0) {
       const articleDocs = articleFiles.map((f) => {
         const slug = f.path.split("/articles/")[1]?.replace(/\.md$/, "") ?? "";
-        const parsed = matter(f.content);
+        const parsed = parseFrontmatter(f.content);
         return {
           domain,
           slug,

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import type { AgentConfig } from "../../lib/config.js";
 import { createOctokit, readFile, listFiles } from "../../lib/github.js";
 import { listActiveSites, readSiteBriefWithFallback } from "../../lib/site-brief.js";
@@ -194,7 +195,7 @@ export async function scanArticlesForGeneralImages(
 
       let parsed: matter.GrayMatterFile<string>;
       try {
-        parsed = matter(content);
+        parsed = parseFrontmatter(content);
       } catch {
         skipped.push({ domain: site.domain, slug, reason: "invalid frontmatter" });
         continue;

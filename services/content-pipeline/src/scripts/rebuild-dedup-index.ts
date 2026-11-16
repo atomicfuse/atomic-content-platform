@@ -9,7 +9,7 @@
  */
 import path from "node:path";
 import fs from "node:fs/promises";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../lib/frontmatter.js";
 import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex } from "../agents/content-generation/agent.js";
 
 const args = process.argv.slice(2);
@@ -48,7 +48,7 @@ async function rebuildForSite(domain: string): Promise<void> {
   for (const file of mdFiles) {
     try {
       const content = await fs.readFile(path.join(articlesDir, file), "utf-8");
-      const { data } = matter(content);
+      const { data } = parseFrontmatter(content);
       if (data.source_url) {
         try { urls.add(normalizeUrl(data.source_url as string)); } catch { /* skip */ }
       }

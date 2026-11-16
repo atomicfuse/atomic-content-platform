@@ -1,4 +1,4 @@
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 
 const REQUIRED_FIELDS = ["title", "description", "slug", "publishDate", "author", "tags", "status", "type"];
 
@@ -46,7 +46,7 @@ export function verifyMigrationFiles(
   // Parse all files once upfront
   const parsed = mdContents.map((f) => ({
     path: f.path,
-    ...matter(f.content),
+    ...parseFrontmatter(f.content),
   }));
 
   // 1. Article count

@@ -13,6 +13,7 @@
  */
 
 import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import { generateContent } from "../../lib/ai.js";
 import { createOctokit, readFile, commitFile } from "../../lib/github.js";
 import { readSiteBrief } from "../../lib/site-brief.js";
@@ -49,7 +50,7 @@ export async function regenerateArticle(
     // Read original article
     const octokit = createOctokit(config.github);
     const raw = await readFile(octokit, config.networkRepo, articlePath, branch);
-    const { data: frontmatter, content: body } = matter(raw);
+    const { data: frontmatter, content: body } = parseFrontmatter(raw);
 
     // Extract site domain from path
     const pathParts = articlePath.split("/");

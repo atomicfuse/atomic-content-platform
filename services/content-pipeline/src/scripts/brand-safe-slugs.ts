@@ -18,7 +18,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync, renameSync } from
 import { tmpdir } from "node:os";
 import path from "node:path";
 import dotenv from "dotenv";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../lib/frontmatter.js";
 import { aiSlugJudge, brandSafeSlug, findUnsafeSlugTerms } from "../lib/brand-safety.js";
 import { renameArticleText, uniqueSlug } from "./brand-safe-slugs-lib.js";
 
@@ -72,7 +72,7 @@ async function plan(): Promise<void> {
       // Second layer: the AI reviewer on every slug the word list passed.
       for (const s of [...taken].filter((x) => !unsafe.includes(x)).sort()) {
         const branch = branches.find((b) => slugsByBranch.get(b)!.includes(s))!;
-        const title = String(matter(git(["show", `origin/${branch}:sites/${site}/articles/${s}.md`])).data.title ?? s);
+        const title = String(parseFrontmatter(git(["show", `origin/${branch}:sites/${site}/articles/${s}.md`])).data.title ?? s);
         try {
           if (!(await aiSlugJudge(s, title)).safe) unsafe.push(s);
         } catch (err) {
@@ -83,7 +83,7 @@ async function plan(): Promise<void> {
     for (const oldSlug of unsafe) {
       const onBranches = branches.filter((b) => slugsByBranch.get(b)!.includes(oldSlug));
       const raw = git(["show", `origin/${onBranches[0]}:sites/${site}/articles/${oldSlug}.md`]);
-      const title = String(matter(raw).data.title ?? oldSlug);
+      const title = String(parseFrontmatter(raw).data.title ?? oldSlug);
       const safe = await brandSafeSlug(oldSlug, title);
       // The full check (list + reviewer) can pass a slug the first look flagged — the reviewer isn't
       // deterministic. Keep it as is rather than "renaming" it to itself with a -2 suffix.
