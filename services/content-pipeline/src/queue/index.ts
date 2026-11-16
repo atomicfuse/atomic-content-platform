@@ -1,7 +1,7 @@
 import type { Redis } from "ioredis";
 import { Queue, type Worker, type QueueEvents, type FlowProducer } from "bullmq";
 import type { BatchContentGenerationResult } from "../agents/content-generation/agent.js";
-import type { GenerateJobData, SchedulerRunData } from "./types.js";
+import type { GenerateJobData, SchedulerRunData, SchedulerPlanData } from "./types.js";
 import { SCHEDULER_RUN_QUEUE } from "./types.js";
 import { createRedisConnection } from "./connection.js";
 import {
@@ -10,6 +10,8 @@ import {
   createGenerateWorker,
 } from "./content-generation.js";
 import { setupSchedulerFlow } from "./scheduler-flow.js";
+import { setupSchedulerPlan } from "./scheduler-plan.js";
+import type { SchedulerPlanOutcome } from "../agents/scheduled-publisher/index.js";
 import type { AgentConfig } from "../lib/config.js";
 import { notifyError } from "../lib/notifications.js";
 import {
@@ -28,7 +30,7 @@ import type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData, ImportArt
 
 export type { GenerateJobData } from "./types.js";
 export { GENERATE_QUEUE, SCHEDULER_RUN_QUEUE, DEFAULT_JOB_OPTIONS } from "./types.js";
-export type { SchedulerRunData } from "./types.js";
+export type { SchedulerRunData, SchedulerPlanData } from "./types.js";
 export { IMPORT_SITE_QUEUE, IMPORT_FINALIZE_QUEUE, IMPORT_ARTICLES_QUEUE } from "./types.js";
 export type { ImportSiteJobData, ImportSiteResult, ImportFinalizeData, ImportArticlesJobData, ImportArticlesResult } from "./types.js";
 
@@ -40,6 +42,8 @@ export interface QueueInstances {
   flowProducer: FlowProducer;
   schedulerRunWorker: Worker<SchedulerRunData>;
   schedulerRunQueue: Queue<SchedulerRunData>;
+  schedulerPlanQueue: Queue<SchedulerPlanData>;
+  schedulerPlanWorker: Worker<SchedulerPlanData, SchedulerPlanOutcome>;
   importSiteQueue: Queue<ImportSiteJobData, ImportSiteResult>;
   importSiteWorker: Worker<ImportSiteJobData, ImportSiteResult>;
   importFinalizeQueue: Queue<ImportFinalizeData>;
@@ -101,6 +105,8 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
   });
 
   console.log("[worker] Scheduler-run worker started");
+
+  const { schedulerPlanQueue, schedulerPlanWorker } = setupSchedulerPlan(connection, config, flowProducer);
 
   // Import site queue
   const githubToken = process.env.GITHUB_TOKEN ?? "";
@@ -167,6 +173,8 @@ export function startWorkers(redisUrl: string, config: AgentConfig): QueueInstan
     flowProducer,
     schedulerRunWorker,
     schedulerRunQueue,
+    schedulerPlanQueue,
+    schedulerPlanWorker,
     importSiteQueue,
     importSiteWorker,
     importFinalizeQueue,

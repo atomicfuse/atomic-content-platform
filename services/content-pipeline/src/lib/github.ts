@@ -115,6 +115,13 @@ type TreeEntry = {
   size?: number;
 };
 
+/**
+ * Max branch trees kept in memory. Each recursive tree of the network repo is
+ * ~8k entries (~3MB of heap) and every staging branch is a full copy of the
+ * repo, so an unbounded cache grew with sites × repo size and OOM-killed the
+ * pipeline during the 2026-11 scheduler outage. LRU-bounded: ~30MB ceiling.
+ */
+export const TREE_CACHE_MAX = 10;
 const treeCache = new Map<string, TreeEntry[]>();
 const blobCache = new Map<string, string>();
 const BLOB_CACHE_MAX = 200;
@@ -126,9 +133,13 @@ export async function getTreeCached(
 ): Promise<TreeEntry[]> {
   const ref = branch ?? "main";
   const cacheKey = `${repo}:${ref}`;
-  if (treeCache.has(cacheKey)) {
+  const cached = treeCache.get(cacheKey);
+  if (cached) {
     recordCacheHit("tree");
-    return treeCache.get(cacheKey)!;
+    // Re-insert so this branch becomes the most recently used.
+    treeCache.delete(cacheKey);
+    treeCache.set(cacheKey, cached);
+    return cached;
   }
 
   const { owner, repo: repoName } = parseRepo(repo);
@@ -151,6 +162,10 @@ export async function getTreeCached(
     throw new TreeTruncatedError(ref);
   }
 
+  if (treeCache.size >= TREE_CACHE_MAX) {
+    const oldest = treeCache.keys().next().value;
+    if (oldest !== undefined) treeCache.delete(oldest);
+  }
   treeCache.set(cacheKey, tree.tree);
   return tree.tree;
 }
@@ -213,33 +228,6 @@ async function listFilesNonRecursive(
   return dirTree.tree;
 }
 
-/** Resolve the blob SHA for a repo path on a branch, with a fallback for
- *  truncated trees. */
-async function resolveBlobSha(
-  octokit: Octokit,
-  repo: string,
-  path: string,
-  branch?: string,
-): Promise<string> {
-  let entry: TreeEntry | undefined;
-  try {
-    const tree = await getTreeCached(octokit, repo, branch);
-    entry = tree.find((f) => f.path === path && f.type === "blob");
-  } catch (err) {
-    if (err instanceof TreeTruncatedError) {
-      const dirPath = path.split("/").slice(0, -1).join("/");
-      const fileName = path.split("/").pop()!;
-      const entries = await listFilesNonRecursive(octokit, repo, dirPath, branch);
-      entry = entries.find((e) => e.path === fileName && e.type === "blob");
-    } else {
-      throw err;
-    }
-  }
-
-  if (!entry?.sha) throw new Error(`Expected file at ${path}, got nothing`);
-  return entry.sha;
-}
-
 /** Fetch a blob's content as normalized base64 (no line breaks), cached by
  *  SHA. This is the binary-safe primitive: text callers decode it as UTF-8;
  *  callers committing binary assets pass it straight through as base64. */
@@ -268,6 +256,41 @@ async function fetchBlobBase64(
   return base64;
 }
 
+function missingFileError(path: string): Error {
+  // Note: grid-summaries matches this exact message to detect a missing file.
+  return new Error(`Expected file at ${path}, got nothing`);
+}
+
+/**
+ * Fetch one file's content as normalized base64 by path — a single contents
+ * API request, independent of repo size. Never downloads the branch tree.
+ * Files over 1MB come back without a body; those are fetched via the blob API.
+ */
+async function fetchFileBase64(
+  octokit: Octokit,
+  repo: string,
+  path: string,
+  branch?: string,
+): Promise<string> {
+  const { owner, repo: repoName } = parseRepo(repo);
+  let data: unknown;
+  try {
+    ({ data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch ?? "main" }));
+  } catch (err) {
+    if ((err as { status?: number } | null)?.status === 404) throw missingFileError(path);
+    throw err;
+  }
+  recordApiCall("getContent");
+
+  // An array means `path` is a directory.
+  if (Array.isArray(data)) throw missingFileError(path);
+  const file = data as { type?: string; content?: string; sha?: string };
+  if (file.type !== "file" || !file.sha) throw missingFileError(path);
+
+  if (file.content) return file.content.replace(/\n/g, "");
+  return fetchBlobBase64(octokit, owner, repoName, file.sha);
+}
+
 /**
  * Read a text file from the network repo (decoded as UTF-8).
  * Do NOT use for binary assets (images, fonts) — UTF-8 decoding corrupts
@@ -279,9 +302,7 @@ export async function readFile(
   path: string,
   branch?: string,
 ): Promise<string> {
-  const { owner, repo: repoName } = parseRepo(repo);
-  const sha = await resolveBlobSha(octokit, repo, path, branch);
-  const base64 = await fetchBlobBase64(octokit, owner, repoName, sha);
+  const base64 = await fetchFileBase64(octokit, repo, path, branch);
   return Buffer.from(base64, "base64").toString("utf-8");
 }
 
@@ -297,9 +318,7 @@ export async function readFileBase64(
   path: string,
   branch?: string,
 ): Promise<string> {
-  const { owner, repo: repoName } = parseRepo(repo);
-  const sha = await resolveBlobSha(octokit, repo, path, branch);
-  return fetchBlobBase64(octokit, owner, repoName, sha);
+  return fetchFileBase64(octokit, repo, path, branch);
 }
 
 /**

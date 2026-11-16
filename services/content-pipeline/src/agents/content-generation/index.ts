@@ -1583,6 +1583,8 @@ async function shutdown(signal: string): Promise<void> {
     await queueInstances.generateQueue.close();
     await queueInstances.schedulerRunWorker.close();
     await queueInstances.schedulerRunQueue.close();
+    await queueInstances.schedulerPlanWorker.close();
+    await queueInstances.schedulerPlanQueue.close();
     await queueInstances.importSiteWorker.close();
     await queueInstances.importFinalizeWorker.close();
     await queueInstances.importSiteQueue.close();

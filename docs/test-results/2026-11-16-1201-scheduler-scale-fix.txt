@@ -1,0 +1,36 @@
+=== content-pipeline: tsc --noEmit ===
+typecheck OK
+
+=== content-pipeline: vitest run ===
+
+ Test Files  100 passed (100)
+      Tests  930 passed (930)
+   Start at  12:01:40
+   Duration  7.76s (transform 1.49s, setup 0ms, collect 12.10s, tests 50.48s, environment 10ms, prepare 4.71s)
+
+
+=== dashboard: tsc --noEmit ===
+typecheck OK
+
+=== dashboard: vitest run ===
+
+ Test Files  140 passed (140)
+      Tests  943 passed (943)
+   Start at  12:01:50
+   Duration  17.35s (transform 2.65s, setup 15.94s, collect 20.89s, tests 21.79s, environment 125.88s, prepare 9.04s)
+
+
+=== Real-world measurement (read-only, local, 82 live sites from dashboard-index.yaml) ===
+Same loop the scheduler runs before enqueuing: listActiveSites + readSiteBriefWithFallback per site.
+BEFORE (readFile via recursive tree per branch): 82 sites, 125s, RSS 126MB -> 433MB (grows ~3.5MB/site)
+AFTER  (readFile via contents API), sequential:   82 sites, 26.5s, peak RSS 121MB, 0 failures
+AFTER  (readFile via contents API), concurrency 5: 82 sites,  5.2s, peak RSS 135MB, 0 failures
+
+=== Test count delta ===
+content-pipeline: before 911 (99 files) -> after 930 (100 files): +19
+  github-cache.test.ts rewritten 6 -> 12 tests; scheduler-plan.test.ts new, 13 tests
+dashboard: 943 passing after; +4 new (scheduler-run-result.test.ts). Baseline not captured before the change.
+
+=== Production evidence (grid logs, before fix) ===
+scheduled-publisher 07:00 UTC daily since 2026-11-03: HTTP_STATUS:000, ~85-108s, curl exit 52 (empty reply), 7 retries, pods restarted.
+run-alerts daily since 2026-11-01: same pattern (~113-129s). Last scheduler run committed: 2026-11-02T07.

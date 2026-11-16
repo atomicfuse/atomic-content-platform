@@ -3,22 +3,12 @@
 import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { summarizeRunNow, type RunNowResult } from "@/lib/scheduler-run-result";
 
 interface SchedulerConfig {
   enabled: boolean;
   run_at_hours: number[];
   timezone: string;
-}
-
-interface RunResult {
-  status?: string;
-  configStatus?: string;
-  skippedGlobal?: string;
-  triggered?: string[];
-  skipped?: Array<{ domain: string; reason: string }>;
-  errors?: Array<{ domain: string; error: string }>;
-  error?: string;
-  details?: string;
 }
 
 type Preset = "once" | "twice" | "every4" | "every2" | "custom";
@@ -46,7 +36,7 @@ export default function SettingsSchedulerPage(): React.ReactElement {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [runResult, setRunResult] = useState<RunResult | null>(null);
+  const [runResult, setRunResult] = useState<RunNowResult | null>(null);
   const [preset, setPreset] = useState<Preset>("once");
   const initialConfigRef = useRef<string>("");
   const dirty = config !== null && JSON.stringify(config) !== initialConfigRef.current;
@@ -110,13 +100,11 @@ export default function SettingsSchedulerPage(): React.ReactElement {
     setRunResult(null);
     try {
       const res = await fetch("/api/scheduler/run-now", { method: "POST" });
-      const data = (await res.json()) as RunResult;
+      const data = (await res.json()) as RunNowResult;
       setRunResult(data);
       if (res.ok) {
-        toast(
-          `Triggered ${data.triggered?.length ?? 0} site(s)`,
-          "success",
-        );
+        const summary = summarizeRunNow(data);
+        toast(summary.message, summary.tone);
       } else {
         toast(data.error ?? "Run failed", "error");
       }
@@ -252,6 +240,9 @@ export default function SettingsSchedulerPage(): React.ReactElement {
                 configStatus: {runResult.configStatus ?? "—"}
                 {runResult.skippedGlobal ? `  •  skippedGlobal: ${runResult.skippedGlobal}` : ""}
               </p>
+              {(runResult.queued || runResult.alreadyQueued) && (
+                <p className="text-xs">{summarizeRunNow(runResult).message}</p>
+              )}
               <div className="text-xs space-y-1">
                 <p>
                   <span className="text-green-700 dark:text-green-400 font-mono">
