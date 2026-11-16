@@ -7,6 +7,7 @@
 import matter from "gray-matter";
 import type { Octokit } from "@octokit/rest";
 import { clearTreeCache, commitBatch, readFile } from "../../lib/github.js";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import { isGeneralImage } from "../../lib/general-image.js";
 import { upsertArticleMeta } from "../../lib/db/articles.js";
 
@@ -15,7 +16,7 @@ import { upsertArticleMeta } from "../../lib/db/articles.js";
  * this image, or it shows a non-default image someone chose (never overwritten).
  */
 export function heroImageUpdateForMain(mainRaw: string, imageUrl: string, altText: string): string | null {
-  const parsed = matter(mainRaw);
+  const parsed = parseFrontmatter(mainRaw);
   const current = (parsed.data.featuredImage ?? parsed.data.featured_image) as string | undefined;
   if (current === imageUrl) return null;
   if (!isGeneralImage(current, "")) return null;
@@ -37,11 +38,17 @@ export async function applyHeroImagesToMain(octokit: Octokit, repo: string, imag
       let raw: string;
       try {
         raw = await readFile(octokit, repo, path, "main");
-      } catch {
-        continue; // not published yet — the next publish carries the image
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // A missing file just means the article isn't published yet — the next publish carries the image.
+        if (!message.includes("got nothing")) {
+          console.warn(`[n8n-image] Could not read ${path} on main — hero image stays on staging until the next publish:`, message);
+        }
+        continue;
       }
       const updated = heroImageUpdateForMain(raw, img.imageUrl, img.altText);
       if (updated) { files.push({ path, content: updated }); applied.push(img); }
+      else console.log(`[n8n-image] ${img.siteDomain}/${img.slug} on main already has this or a hand-picked image — left unchanged`);
     }
     if (files.length === 0) return;
     const message = files.length === 1

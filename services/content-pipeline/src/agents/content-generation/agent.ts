@@ -21,6 +21,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs/promises";
 import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import { parse as parseYaml } from "yaml";
 
 // v2 pipeline modules
@@ -376,7 +377,7 @@ export async function getAllExistingArticles(
       if (!file.endsWith(".md")) continue;
       try {
         const content = await fs.readFile(path.join(articlesDir, file), "utf-8");
-        const { data } = matter(content);
+        const { data } = parseFrontmatter(content);
         extractFromFrontmatter(data);
       } catch {
         // Skip unparseable files
@@ -420,7 +421,7 @@ export async function getAllExistingArticles(
         `${articlesPath}/${file}`,
         branch,
       );
-      const { data } = matter(content);
+      const { data } = parseFrontmatter(content);
       extractFromFrontmatter(data);
     } catch {
       // Skip unparseable files

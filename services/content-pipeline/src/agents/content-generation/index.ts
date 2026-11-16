@@ -52,7 +52,7 @@ import {
   SiteNotFoundError,
 } from "./bulk-image.js";
 import { randomUUID } from "node:crypto";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import { createOctokit, readFile, listFiles, clearTreeCache } from "../../lib/github.js";
 import { readSiteBrief, readSiteBriefWithFallback, listActiveSites } from "../../lib/site-brief.js";
 import { getAtlChecks, getAllAtlChecks } from "../../checks/repo.js";
@@ -490,7 +490,7 @@ async function handleRequest(
       const octokit = createOctokit(config.github);
       const articlePath = `sites/${siteDomain}/articles/${slug}.md`;
       const content = await readFile(octokit, config.github.repo, articlePath, branch);
-      const parsed = matter(content);
+      const parsed = parseFrontmatter(content);
       description = (parsed.data.description as string) ?? articleTitle;
       summary = parsed.content.slice(0, 500);
 
@@ -1219,7 +1219,7 @@ async function handleRequest(
                   const filePath = `sites/${site.domain}/articles/${fileName}`;
                   try {
                     const content = await readFile(octokit, repo, filePath, branch);
-                    const { data: frontmatter } = matter(content);
+                    const { data: frontmatter } = parseFrontmatter(content);
                     docs.push({ domain: site.domain, slug, branch, frontmatter });
                   } catch (readErr) {
                     const msg = readErr instanceof Error ? readErr.message : String(readErr);

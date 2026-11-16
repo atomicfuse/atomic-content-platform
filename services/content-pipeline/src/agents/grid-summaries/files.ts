@@ -1,4 +1,5 @@
 import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 
 /** Frontmatter of grid-summaries/<site>/<slug>.md. */
 export interface SummaryFrontmatter {
@@ -27,7 +28,7 @@ export function serializeSummaryFile(fm: SummaryFrontmatter, markdown: string): 
 
 /** Parses a summary file; null when it has no usable frontmatter. */
 export function parseSummaryFile(raw: string): { fm: SummaryFrontmatter; markdown: string } | null {
-  const parsed = matter(raw);
+  const parsed = parseFrontmatter(raw);
   const d = parsed.data as Record<string, unknown>;
   if (typeof d.source_site !== "string" || typeof d.slug !== "string") return null;
   const str = (v: unknown): string => (v instanceof Date ? v.toISOString() : v == null ? "" : String(v));

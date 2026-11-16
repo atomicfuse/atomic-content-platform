@@ -10,6 +10,7 @@
  */
 
 import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import { optimizeImage } from "../../lib/image-optimizer.js";
 import { uploadToR2, buildR2Key } from "../../lib/r2-upload.js";
 import {
@@ -162,7 +163,8 @@ export function createGitImageVerifier(
       try {
         clearTreeCache(branch);
         const raw = await readFile(octokit, networkRepo, path, branch);
-        const featured = matter(raw).data.featuredImage ?? matter(raw).data.featured_image;
+        const { data } = parseFrontmatter(raw);
+        const featured = data.featuredImage ?? data.featured_image;
         return typeof featured === "string" ? featured : undefined;
       } catch {
         // Not on this branch (or unreadable) — try the next one.
@@ -481,7 +483,7 @@ async function flushBulkBuffer(): Promise<void> {
 
       // Dual-write to MongoDB (supplementary — never fails the pipeline)
       const mongoDocs = files.map((f) => {
-        const parsed = matter(f.content);
+        const parsed = parseFrontmatter(f.content);
         // Extract siteDomain from path: sites/<domain>/articles/<slug>.md
         const parts = f.path.split("/");
         const domain = parts[1] ?? "";
@@ -771,7 +773,7 @@ export async function processN8nImageResult(
       }
       throw readErr;
     }
-    const parsed = matter(rawContent);
+    const parsed = parseFrontmatter(rawContent);
     parsed.data["featuredImage"] = imageUrl;
     parsed.data["image_alt"] = altText;
     const updatedContent = matter.stringify(parsed.content, parsed.data);
@@ -791,7 +793,7 @@ export async function processN8nImageResult(
         clearTreeCache(branch);
         const rawContent = await readArticleWithFallback(octokit, github.repo, articlePath, branch, tag);
 
-        const parsed = matter(rawContent);
+        const parsed = parseFrontmatter(rawContent);
         parsed.data["featuredImage"] = imageUrl;
         parsed.data["image_alt"] = altText;
 

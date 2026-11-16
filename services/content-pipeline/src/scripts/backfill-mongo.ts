@@ -13,7 +13,7 @@
  */
 
 import { parse as parseYaml } from "yaml";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../lib/frontmatter.js";
 import type { Db } from "mongodb";
 import type { Octokit } from "@octokit/rest";
 import type { AnyBulkWriteOperation } from "mongodb";
@@ -117,7 +117,7 @@ export async function backfillArticles(
 
           try {
             const content = await readFile(octokit, repo, filePath, branch);
-            const { data: frontmatter } = matter(content);
+            const { data: frontmatter } = parseFrontmatter(content);
 
             ops.push({
               updateOne: {

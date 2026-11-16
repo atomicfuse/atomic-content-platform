@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import Anthropic from "@anthropic-ai/sdk";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../../lib/frontmatter.js";
 import type {
   CsvSiteRow,
   MigrationProgress,
@@ -272,7 +272,7 @@ export async function runMigration(
     const dedupUrls = new Set<string>();
     const dedupTitles = new Set<string>();
     for (const f of files) {
-      const { data: fm } = matter(f.content);
+      const { data: fm } = parseFrontmatter(f.content);
       if (fm.source_url) {
         try { dedupUrls.add(normalizeUrl(fm.source_url as string)); } catch { /* skip invalid URLs */ }
       }
@@ -301,7 +301,7 @@ export async function runMigration(
 
     // Dual-write to MongoDB (supplementary — never fails the pipeline)
     const mongoArticles = files.map((f) => {
-      const { data: fm } = matter(f.content);
+      const { data: fm } = parseFrontmatter(f.content);
       // Extract slug from path: sites/<domain>/articles/<slug>.md
       const pathSlug = f.path.split("/").pop()?.replace(".md", "") ?? "";
       return {

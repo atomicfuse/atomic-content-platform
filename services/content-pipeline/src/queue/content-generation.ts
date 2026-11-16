@@ -1,7 +1,7 @@
 import { Queue, Worker, QueueEvents, UnrecoverableError } from "bullmq";
 import type { Job } from "bullmq";
 import type { Redis } from "ioredis";
-import matter from "gray-matter";
+import { parseFrontmatter } from "../lib/frontmatter.js";
 import type { BatchContentGenerationResult, ContentGenerationResult, ContentGenerationParams } from "../agents/content-generation/agent.js";
 import { normalizeUrl, normalizeTitleKey, dedupIndexPath, serializeDedupIndex, getAllExistingArticles } from "../agents/content-generation/agent.js";
 import { GENERATE_QUEUE } from "./types.js";
@@ -168,7 +168,7 @@ export async function processGenerateJob(
     const existingArticles = await getAllExistingArticles(config, siteDomain, branch);
     for (const r of created) {
       if (r._pendingArticle) {
-        const { data } = matter(r._pendingArticle.content);
+        const { data } = parseFrontmatter(r._pendingArticle.content);
         if (data.source_url) existingArticles.urls.add(normalizeUrl(data.source_url as string));
         if (data.title) existingArticles.titles.add(normalizeTitleKey(data.title as string));
         // Original aggregator title + item id — the cross-run dedup keys that
@@ -195,7 +195,7 @@ export async function processGenerateJob(
 
     // Dual-write to MongoDB (supplementary — never fails the pipeline)
     const mongoArticles = pendingArticles.map((a) => {
-      const { data: fm } = matter(a.content);
+      const { data: fm } = parseFrontmatter(a.content);
       return {
         domain: a.siteDomain,
         slug: a.slug,
