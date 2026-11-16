@@ -2,6 +2,7 @@ interface GitHubApiStats {
   getRef: number;
   getTree: number;
   getBlob: number;
+  getContent: number;
   getCommit: number;
   createTree: number;
   createCommit: number;
@@ -14,7 +15,7 @@ let stats: GitHubApiStats = newStats();
 
 function newStats(): GitHubApiStats {
   return {
-    getRef: 0, getTree: 0, getBlob: 0, getCommit: 0,
+    getRef: 0, getTree: 0, getBlob: 0, getContent: 0, getCommit: 0,
     createTree: 0, createCommit: 0, updateRef: 0,
     treeCacheHits: 0, blobCacheHits: 0,
   };
@@ -40,14 +41,14 @@ export function resetApiStats(): GitHubApiStats {
 }
 
 export function totalApiCalls(s: GitHubApiStats): number {
-  return s.getRef + s.getTree + s.getBlob + s.getCommit +
+  return s.getRef + s.getTree + s.getBlob + s.getContent + s.getCommit +
     s.createTree + s.createCommit + s.updateRef;
 }
 
 export function formatApiStats(s: GitHubApiStats): string {
   const total = totalApiCalls(s);
   return `[github-stats] ${total} API calls` +
-    ` (ref:${s.getRef} tree:${s.getTree} blob:${s.getBlob}` +
+    ` (ref:${s.getRef} tree:${s.getTree} blob:${s.getBlob} content:${s.getContent}` +
     ` commit:${s.getCommit} createTree:${s.createTree}` +
     ` createCommit:${s.createCommit} updateRef:${s.updateRef})` +
     ` | cache hits: tree=${s.treeCacheHits} blob=${s.blobCacheHits}`;

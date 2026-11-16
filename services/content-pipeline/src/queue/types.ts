@@ -25,8 +25,28 @@ export interface SchedulerRunData {
   skipped: Array<{ domain: string; reason: string }>;
 }
 
+/**
+ * Background planning job for one scheduler tick. The cron request only
+ * enqueues this; the per-site eligibility checks run in the worker so the
+ * request time does not grow with the number of sites.
+ */
+export interface SchedulerPlanData {
+  runId: string;
+  timezone: string;
+  forced: boolean;
+}
+
 export const GENERATE_QUEUE = "content-generation";
 export const SCHEDULER_RUN_QUEUE = "scheduler-run";
+export const SCHEDULER_PLAN_QUEUE = "scheduler-plan";
+
+/** Retries cover a pod restart or a transient GitHub error while planning. */
+export const SCHEDULER_PLAN_JOB_OPTIONS: JobsOptions = {
+  attempts: 3,
+  backoff: { type: "exponential", delay: 30_000 },
+  removeOnComplete: { age: 7 * 24 * 3600, count: 500 },
+  removeOnFail: { age: 30 * 24 * 3600 },
+};
 
 export const DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 3,

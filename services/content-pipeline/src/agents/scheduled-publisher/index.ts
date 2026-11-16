@@ -4,9 +4,13 @@
  * Called by the CloudGrid cron job via HTTP. On each tick:
  * 1. Read global scheduler config from network repo (scheduler/config.yaml).
  *    Skip early unless enabled and current hour ∈ run_at_hours (or force=true).
- * 2. List all sites in the network repo.
- * 3. For each site, read brief.schedule. Skip unless today is a preferred day.
- * 4. Trigger ContentGenerationAgent with count = articles_per_day
+ * 2. Queue path (production): enqueue one `scheduler-plan` job for the hour and
+ *    return. The plan worker (`planSchedulerRun`) lists sites, reads each
+ *    site.yaml, keeps the sites due today and creates the scheduler-run flow.
+ *    Keeping per-site work out of the request is what lets the cron stay fast
+ *    as the network grows (see the 2026-11 outage in docs/superpowers/specs).
+ * 3. Direct path (no queue, local dev): same per-site checks inline, then
+ *    trigger ContentGenerationAgent with count = articles_per_day
  *    (fallback: ceil(articles_per_week / preferred_days.length)).
  *
  * Global hour gating lives in the network repo so schedule changes don't
@@ -30,6 +34,9 @@ import type { SiteRunResult } from "./history.js";
 import { createSchedulerFlow, buildRunId, shouldAutoPublish, autoPublishSite } from "../../queue/scheduler-flow.js";
 import type { SchedulerSite } from "../../queue/scheduler-flow.js";
 import type { QueueInstances } from "../../queue/index.js";
+import type { FlowProducer, JobsOptions } from "bullmq";
+import { SCHEDULER_PLAN_QUEUE, SCHEDULER_PLAN_JOB_OPTIONS } from "../../queue/types.js";
+import type { SchedulerPlanData } from "../../queue/types.js";
 import { notifyError, notifySummary } from "../../lib/notifications.js";
 import { updateWeeklySummary } from "../../stats/weekly-summary.js";
 
@@ -76,6 +83,12 @@ export interface ScheduledPublishResult {
   triggered: string[];
   skipped: Array<{ domain: string; reason: string }>;
   errors: Array<{ domain: string; error: string }>;
+  /** Queue path: the run was handed to a background planning job. */
+  queued?: boolean;
+  /** Queue path: a planning job for this hour already exists — nothing new was enqueued. */
+  alreadyQueued?: boolean;
+  /** Queue path: hourly run id (matches the scheduler-run flow and history entry). */
+  runId?: string;
 }
 
 /** Read the scheduler config from the network repo. 404 → defaults. */
@@ -165,11 +178,11 @@ type EligibilityResult =
   | { kind: "skipped"; reason: string };
 
 async function checkSiteEligibility(
+  octokit: ReturnType<typeof createOctokit>,
   siteEntry: { domain: string; branch: string },
   config: AgentConfig,
-  schedCfg: SchedulerConfig,
+  timezone: string,
 ): Promise<EligibilityResult> {
-  const octokit = createOctokit(config.github);
   try {
     const { data, branch: foundBranch } = await readSiteBriefWithFallback(
       octokit,
@@ -184,7 +197,7 @@ async function checkSiteEligibility(
     const count = resolveArticlesPerDay(schedule);
     if (count <= 0) return { kind: "skipped", reason: "no publishing schedule" };
 
-    if (!isTodayPreferredDay(schedule, schedCfg.timezone)) {
+    if (!isTodayPreferredDay(schedule, timezone)) {
       return {
         kind: "skipped",
         reason: `not a preferred day (${(schedule.preferred_days ?? []).join(", ")})`,
@@ -194,6 +207,116 @@ async function checkSiteEligibility(
     return { kind: "eligible", branch: foundBranch, count, briefData: data };
   } catch {
     return { kind: "skipped", reason: "no brief configured" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Background planning (queue path)
+// ---------------------------------------------------------------------------
+
+/** Sites whose site.yaml is read in parallel while planning a run. */
+const PLAN_CONCURRENCY = 5;
+
+/** The subset of a BullMQ Job that enqueueing a plan job needs. */
+interface SchedulerPlanJobLike {
+  getState(): Promise<string>;
+  remove(): Promise<void>;
+}
+
+/** The subset of a BullMQ Queue that enqueueing a plan job needs. */
+export interface SchedulerPlanQueueLike {
+  getJob(jobId: string): Promise<SchedulerPlanJobLike | undefined>;
+  add(name: string, data: SchedulerPlanData, opts: JobsOptions): Promise<unknown>;
+}
+
+/**
+ * Enqueue the background planning job for this hour. The jobId is per hour, so
+ * a duplicate cron tick or a second "Run now" in the same hour is a no-op —
+ * unless that job failed all its retries, in which case it is replaced so an
+ * operator can retry within the same hour.
+ */
+export async function enqueueSchedulerPlan(
+  queue: SchedulerPlanQueueLike,
+  data: SchedulerPlanData,
+): Promise<{ alreadyQueued: boolean }> {
+  const jobId = `scheduler-plan-${data.runId}`;
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    if ((await existing.getState()) !== "failed") return { alreadyQueued: true };
+    await existing.remove();
+  }
+  await queue.add(SCHEDULER_PLAN_QUEUE, data, { ...SCHEDULER_PLAN_JOB_OPTIONS, jobId });
+  return { alreadyQueued: false };
+}
+
+export interface SchedulerPlanOutcome {
+  enqueued: number;
+  skipped: Array<{ domain: string; reason: string }>;
+  /** Set when this hour's flow already existed (not an error worth retrying). */
+  duplicate?: string;
+}
+
+/**
+ * Plan one scheduler run inside the `scheduler-plan` worker: read every active
+ * site's brief (one direct file read each, PLAN_CONCURRENCY at a time), keep
+ * the sites due today, and hand them to the scheduler-run flow.
+ *
+ * Throws when the site list cannot be read so BullMQ retries the job.
+ */
+export async function planSchedulerRun(
+  config: AgentConfig,
+  data: SchedulerPlanData,
+  flowProducer: FlowProducer,
+): Promise<SchedulerPlanOutcome> {
+  const octokit = createOctokit(config.github);
+  const activeSites = await listActiveSites(octokit, config.networkRepo);
+  console.log(
+    `[scheduler-plan] ${data.runId}: checking ${activeSites.length} site(s) in tz=${data.timezone}${data.forced ? " (forced)" : ""}`,
+  );
+
+  const eligibleSites: SchedulerSite[] = [];
+  const skippedSites: Array<{ domain: string; reason: string }> = [];
+  await processWithConcurrency(
+    activeSites,
+    PLAN_CONCURRENCY,
+    activeSites.length,
+    async (siteEntry) => {
+      const outcome = await checkSiteEligibility(octokit, siteEntry, config, data.timezone);
+      if (outcome.kind === "eligible") {
+        eligibleSites.push({
+          domain: siteEntry.domain,
+          branch: outcome.branch,
+          count: outcome.count,
+          briefJson: JSON.stringify(outcome.briefData),
+        });
+      } else {
+        skippedSites.push({ domain: siteEntry.domain, reason: outcome.reason });
+      }
+    },
+    () => true,
+  );
+
+  if (eligibleSites.length === 0) {
+    console.log(`[scheduler-plan] ${data.runId}: no site due (${skippedSites.length} skipped)`);
+    return { enqueued: 0, skipped: skippedSites };
+  }
+
+  try {
+    const { enqueued } = await createSchedulerFlow(
+      flowProducer,
+      data.runId,
+      data.timezone,
+      data.forced,
+      eligibleSites,
+      skippedSites,
+    );
+    console.log(`[scheduler] Enqueued Flow: ${enqueued} site(s), runId=${data.runId}`);
+    return { enqueued, skipped: skippedSites };
+  } catch (err) {
+    // flowProducer.add() throws if this hour's scheduler-run already exists.
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[scheduler] Flow creation failed (likely duplicate): ${message}`);
+    return { enqueued: 0, skipped: skippedSites, duplicate: message };
   }
 }
 
@@ -335,9 +458,10 @@ async function processSingleSite(
 }
 
 /**
- * Main entry point: check all sites and trigger content generation for due sites.
- * When `force` is true, bypass global enabled/hour gating (per-site preferred_days
- * still applies).
+ * Main entry point for a cron tick or "Run now". Applies the global gate, then
+ * either queues the background planning job (queue path — returns `queued`) or
+ * processes due sites inline (direct path). When `force` is true, bypass global
+ * enabled/hour gating (per-site preferred_days still applies).
  */
 export async function runScheduledPublish(
   config: AgentConfig,
@@ -379,6 +503,32 @@ export async function runScheduledPublish(
     }
   }
 
+  // ---------- Queue path: hand off to a background planning job ----------
+  // The per-site checks run in the scheduler-plan worker, so this request
+  // returns in about a second regardless of how many sites exist.
+  if (queueInstances) {
+    const runId = buildRunId();
+    const { alreadyQueued } = await enqueueSchedulerPlan(queueInstances.schedulerPlanQueue, {
+      runId,
+      timezone: schedCfg.timezone,
+      forced: force,
+    });
+    console.log(
+      alreadyQueued
+        ? `[scheduled-publisher] Run ${runId} already queued — nothing new enqueued`
+        : `[scheduled-publisher] Queued planning job for run ${runId}${force ? " (forced)" : ""}`,
+    );
+    return {
+      ...result,
+      queued: !alreadyQueued,
+      alreadyQueued,
+      runId,
+      errors: alreadyQueued
+        ? [{ domain: "scheduler", error: `Run ${runId} was already queued this hour` }]
+        : [],
+    };
+  }
+
   // 2. List all active sites (from dashboard-index.yaml, non-deleted)
   const octokit = createOctokit(config.github);
   let activeSites: Array<{ domain: string; branch: string; status: string }>;
@@ -398,70 +548,6 @@ export async function runScheduledPublish(
   console.log(
     `[scheduled-publisher] Tick firing${force ? " (forced)" : ""}: checking ${activeSites.length} site(s) in tz=${schedCfg.timezone}`,
   );
-
-  // ---------- Queue path: enqueue as Flow ----------
-  if (queueInstances) {
-    const runId = buildRunId();
-    const eligibleSites: SchedulerSite[] = [];
-    const skippedSites: Array<{ domain: string; reason: string }> = [];
-
-    // Do Layer 2 (per-site) filtering BEFORE enqueuing
-    for (const siteEntry of activeSites) {
-      const outcome = await checkSiteEligibility(siteEntry, config, schedCfg);
-      if (outcome.kind === "eligible") {
-        eligibleSites.push({
-          domain: siteEntry.domain,
-          branch: outcome.branch,
-          count: outcome.count,
-          briefJson: JSON.stringify(outcome.briefData),
-        });
-      } else {
-        skippedSites.push({ domain: siteEntry.domain, reason: outcome.reason });
-      }
-    }
-
-    if (eligibleSites.length === 0) {
-      return {
-        status: "ok",
-        configStatus: result.configStatus,
-        triggered: [],
-        skipped: skippedSites,
-        errors: [],
-      };
-    }
-
-    try {
-      const { enqueued } = await createSchedulerFlow(
-        queueInstances.flowProducer,
-        runId,
-        schedCfg.timezone,
-        force,
-        eligibleSites,
-        skippedSites,
-      );
-
-      console.log(`[scheduler] Enqueued Flow: ${enqueued} site(s), runId=${runId}`);
-      return {
-        status: "ok",
-        configStatus: result.configStatus,
-        triggered: eligibleSites.map((s) => s.domain),
-        skipped: skippedSites,
-        errors: [],
-      };
-    } catch (err) {
-      // flowProducer.add() throws if a job with this jobId already exists
-      // (duplicate cron tick within the same hour). Log and return safely.
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[scheduler] Flow creation failed (likely duplicate): ${message}`);
-      return {
-        status: "ok",
-        configStatus: result.configStatus,
-        triggered: [],
-        skipped: skippedSites,
-        errors: [{ domain: "scheduler", error: message }],
-      };
-    }
-  }
 
   // ---------- Fallback: direct execution (no queue) ----------
 
