@@ -4,6 +4,7 @@ import {
   getSiteEmailConfig,
   createEmailRoutingRule,
   deleteEmailRoutingRule,
+  enableEmailRouting,
   buildContactEmail,
   findEmailRule,
   getDestinationForDomain,
@@ -61,25 +62,18 @@ export async function POST(
     }
 
     const destination = await getDestinationForDomain(domain);
-    const rule = await createEmailRoutingRule(site.zone_id, domain, destination);
-    if (!rule) {
-      return NextResponse.json(
-        { error: "Email routing unavailable — API token lacks Email Routing permissions" },
-        { status: 503 },
-      );
-    }
+    await enableEmailRouting(site.zone_id, domain);
+    const rule = await createEmailRoutingRule(site.zone_id, site.custom_domain, destination);
     return NextResponse.json({
-      address: buildContactEmail(domain),
+      address: buildContactEmail(site.custom_domain),
       destination,
       active: true,
       ruleId: rule.id,
     });
   } catch (error) {
     console.error(`[email-routing] create ${domain}:`, error);
-    return NextResponse.json(
-      { error: "Failed to create email routing" },
-      { status: 500 },
-    );
+    const message = error instanceof Error ? error.message : "Failed to create email routing";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
@@ -95,7 +89,7 @@ export async function DELETE(
       return NextResponse.json({ error: "No zone ID" }, { status: 400 });
     }
 
-    const email = buildContactEmail(domain);
+    const email = buildContactEmail(site.custom_domain ?? domain);
     const rule = await findEmailRule(site.zone_id, email, domain);
     if (rule) {
       await deleteEmailRoutingRule(site.zone_id, rule.id, domain);

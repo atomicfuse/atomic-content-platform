@@ -193,7 +193,7 @@ Resolved at seed-time by `seed-kv.ts`. Key rules:
 | `LOCAL_NETWORK_PATH` | pipeline (dev) | Enables local-FS write when no branch passed. |
 | `NETWORK_DATA_PATH` | seed-kv | Path to network repo checkout. |
 | `CLOUDFLARE_ACCOUNT_ID` | dashboard, seed-kv | `4a8cfd85d617b38ce1813a552132bc86` (Assets). Legacy Dev1: `953511f6356ff606d84ac89bba3eff50`. |
-| `CLOUDFLARE_API_TOKEN` | dashboard, CI | Scopes: Zone:Read, DNS:Edit, Workers Scripts:Edit, KV Storage:Edit, R2:Edit. |
+| `CLOUDFLARE_API_TOKEN` | dashboard, CI | Scopes: Zone:Read, DNS:Edit, Workers Scripts:Edit, KV Storage:Edit, R2:Edit, Zone Settings:Edit + Email Routing Rules:Edit (go-live enables Email Routing so `info@<domain>` receives mail — without Zone Settings it throws). |
 | `KV_NAMESPACE_ID` | seed-kv | Staging: `f6c35e1fa8c841b8b193509a3a237f7f`. Prod: `b258e47065274b8b8af1a0b6d6529c1d`. |
 | `R2_BUCKET` | seed-kv | `atl-assets-prod` (single bucket for both envs). |
 | `R2_ACCESS_KEY_ID/SECRET` | dashboard | R2 S3 API. Required for image uploads + site deletion cleanup. |

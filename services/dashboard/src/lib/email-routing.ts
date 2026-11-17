@@ -154,42 +154,45 @@ export async function getEmailRoutingStatus(zoneId: string, domain?: string): Pr
   }
 }
 
-/** Enable email routing on a zone. No-op if already enabled. */
+function isCfAuthError(errors: CloudflareResponse<unknown>["errors"]): boolean {
+  return errors.some((e) => e.code === 10000 || /authentication/i.test(e.message));
+}
+
+function formatCfErrors(errors: CloudflareResponse<unknown>["errors"]): string {
+  return errors.map((e) => `[${e.code}] ${e.message}`).join(", ");
+}
+
+/**
+ * Enable email routing on a zone: Cloudflare adds the MX + SPF + DKIM records,
+ * without which mail to info@<domain> is never delivered. No-op if already enabled.
+ * Uses POST /email/routing/dns (POST /email/routing/enable is deprecated).
+ * Needs the token permission "Zone → Zone Settings → Edit"; throws without it,
+ * because a forwarding rule on a zone with routing off silently drops all mail.
+ */
 export async function enableEmailRouting(zoneId: string, domain?: string): Promise<void> {
   const alreadyEnabled = await getEmailRoutingStatus(zoneId, domain);
   if (alreadyEnabled) return;
 
   const headers = headersFromCreds(getCredentials(domain));
   const res = await fetch(
-    `${CF_API_BASE}/zones/${zoneId}/email/routing/enable`,
-    { method: "POST", headers },
+    `${CF_API_BASE}/zones/${zoneId}/email/routing/dns`,
+    { method: "POST", headers, body: "{}" },
   );
   const data = (await res.json()) as CloudflareResponse<unknown>;
-  if (!data.success) {
-    // CF returns a distinct code when routing is already active — treat as success.
-    // Known codes: 1004 "already enabled" (varies by zone state).
-    const isAlreadyEnabled = data.errors.some(
-      (e) =>
-        e.code === 1004 ||
-        /already\s+enabled/i.test(e.message),
+  if (data.success) return;
+
+  // CF returns a distinct code when routing is already active — treat as success.
+  const isAlreadyEnabled = data.errors.some(
+    (e) => e.code === 1004 || /already\s+enabled/i.test(e.message),
+  );
+  if (isAlreadyEnabled) return;
+
+  if (isCfAuthError(data.errors)) {
+    throw new Error(
+      `Failed to enable email routing for zone ${zoneId}: the Cloudflare API token needs "Zone → Zone Settings → Edit" (${formatCfErrors(data.errors)})`,
     );
-    if (isAlreadyEnabled) return;
-
-    // Auth error — routing may already be enabled but token lacks the enable permission.
-    // Log warning and allow rule creation to proceed.
-    const isAuthError = data.errors.some((e) => e.code === 10000);
-    if (isAuthError) {
-      console.warn(
-        `[enableEmailRouting] Auth error for zone ${zoneId} — email routing may already be enabled. Continuing.`,
-      );
-      return;
-    }
-
-    const detail = data.errors
-      .map((e) => `[${e.code}] ${e.message}`)
-      .join(", ");
-    throw new Error(`Failed to enable email routing: ${detail}`);
   }
+  throw new Error(`Failed to enable email routing for zone ${zoneId}: ${formatCfErrors(data.errors)}`);
 }
 
 /** List email routing rules for a zone. */
@@ -225,13 +228,13 @@ export async function findEmailRule(
   );
 }
 
-/** Create an email routing rule to forward contact@domain to the destination.
- *  Returns null when the API token lacks Email Routing permissions (auth error). */
+/** Create an email routing rule to forward info@<domain> to the destination.
+ *  `domain` must be the real hostname (e.g. "zestguide.com"), not the site id. */
 export async function createEmailRoutingRule(
   zoneId: string,
   domain: string,
   destination?: string,
-): Promise<EmailRoutingRule | null> {
+): Promise<EmailRoutingRule> {
   const email = buildContactEmail(domain);
   const dest = destination ?? (await getDestinationForDomain(domain));
 
@@ -256,22 +259,12 @@ export async function createEmailRoutingRule(
 
   const data = (await res.json()) as CloudflareResponse<EmailRoutingRule>;
   if (!data.success) {
-    // Auth error — token likely lacks Email Routing:Edit scope. This is a
-    // known condition (the main CF token doesn't include email permissions).
-    // Log a warning and return null so callers aren't disrupted.
-    const isAuthError = data.errors.some(
-      (e) => e.code === 10000 || /authentication/i.test(e.message),
-    );
-    if (isAuthError) {
-      console.warn(
-        `[createEmailRoutingRule] Auth error for zone ${zoneId} — token may lack Email Routing permissions. Skipping.`,
+    if (isCfAuthError(data.errors)) {
+      throw new Error(
+        `Failed to create email routing rule for ${email}: the Cloudflare API token needs "Zone → Email Routing Rules → Edit" (${formatCfErrors(data.errors)})`,
       );
-      return null;
     }
-
-    throw new Error(
-      `Failed to create email routing rule: ${data.errors.map((e) => e.message).join(", ")}`,
-    );
+    throw new Error(`Failed to create email routing rule for ${email}: ${formatCfErrors(data.errors)}`);
   }
   return data.result;
 }
@@ -310,7 +303,8 @@ export async function getSiteEmailConfig(
   zoneId: string | null,
   customDomain: string | null,
 ): Promise<SiteEmailConfig> {
-  const address = buildContactEmail(domain);
+  // The address lives on the real hostname (info@zestguide.com), not the site id.
+  const address = buildContactEmail(customDomain ?? domain);
   const destination = await getDestinationForDomain(domain);
 
   // No zone ID or no custom domain = not active
