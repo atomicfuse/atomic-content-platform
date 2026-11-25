@@ -81,7 +81,7 @@ export function articlesByAuthor(
 }
 
 /** Category-page slug — same rule as src/pages/category/[topic].astro. */
-const topicSlug = (t: string): string => t.toLowerCase().replace(/\s+/g, '-');
+export const topicSlug = (t: string): string => t.toLowerCase().replace(/\s+/g, '-');
 
 /** Beats that are also site topics link to their category page; others are plain labels. */
 export function beatLinks(beats: string[], siteTopics: string[]): Array<{ label: string; href: string | null }> {
